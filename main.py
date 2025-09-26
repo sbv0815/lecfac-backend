@@ -7,12 +7,11 @@ from datetime import datetime
 
 # Importar el procesador (necesitamos adaptarlo)
 from invoice_processor import process_invoice_products
-from database import create_tables, init_db
+from database import create_tables
 
 @app.on_event("startup")
 async def startup_event():
-    await init_db()
-    await create_tables()
+    create_tables()
 
 app = FastAPI(title="LecFac API", version="1.0.0")
 
@@ -178,6 +177,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
