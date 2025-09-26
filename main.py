@@ -5,13 +5,9 @@ import os
 import tempfile
 from datetime import datetime
 
-# Importar el procesador (necesitamos adaptarlo)
+# Importar el procesador y database
 from invoice_processor import process_invoice_products
 from database import create_tables
-
-@app.on_event("startup")
-async def startup_event():
-    create_tables()
 
 app = FastAPI(title="LecFac API", version="1.0.0")
 
@@ -23,9 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# AQUÍ va el startup event, DESPUÉS de definir app
+@app.on_event("startup")
+async def startup_event():
+    create_tables()
+
 @app.get("/")
 async def root():
     return {"message": "LecFac API funcionando", "version": "1.0.0"}
+
+# ... resto de endpoints
 
 @app.get("/test", response_class=HTMLResponse)
 async def test_page():
@@ -177,6 +180,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
