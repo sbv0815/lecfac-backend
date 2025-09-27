@@ -483,10 +483,49 @@ async def get_user_invoices(user_id: int):
         conn.close()
         raise HTTPException(500, f"Error obteniendo facturas: {str(e)}")
 
+@app.delete("/invoices/{factura_id}")
+async def delete_invoice(factura_id: int, usuario_id: int):
+    """Elimina una factura y todos sus productos asociados"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(500, "Error de base de datos")
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Verificar que la factura pertenece al usuario
+        cursor.execute(
+            "SELECT id FROM facturas WHERE id = ? AND usuario_id = ?", 
+            (factura_id, usuario_id)
+        )
+        
+        if not cursor.fetchone():
+            raise HTTPException(404, "Factura no encontrada o no autorizada")
+        
+        # Eliminar productos asociados (por CASCADE debería ser automático, pero por seguridad)
+        cursor.execute("DELETE FROM productos WHERE factura_id = ?", (factura_id,))
+        productos_eliminados = cursor.rowcount
+        
+        # Eliminar factura
+        cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": f"Factura eliminada (incluidos {productos_eliminados} productos)"
+        }
+        
+    except Exception as e:
+        conn.close()
+        raise HTTPException(500, f"Error eliminando factura: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
