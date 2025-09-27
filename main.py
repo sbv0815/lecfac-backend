@@ -381,7 +381,6 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
-    """Guarda una factura procesada en la base de datos"""
     conn = get_db_connection()
     if not conn:
         raise HTTPException(500, "Error de base de datos")
@@ -389,32 +388,55 @@ async def save_invoice(invoice: SaveInvoice):
     try:
         cursor = conn.cursor()
         
+        print(f"=== GUARDANDO FACTURA ===")
+        print(f"Usuario ID: {invoice.usuario_id}")
+        print(f"Establecimiento: {invoice.establecimiento}")
+        print(f"Productos recibidos: {len(invoice.productos)}")
+        
         # Insertar factura
         cursor.execute(
             "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (?, ?, ?)",
-            (invoice.usuario_id, invoice.establecimiento, datetime.now())
+            (invoice.usuario_id, invoice.establecimiento, datetime.now().isoformat())
         )
         
         factura_id = cursor.lastrowid
+        print(f"Factura ID generado: {factura_id}")
         
-        # Insertar productos
-        for producto in invoice.productos:
-            cursor.execute(
-                "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
-                (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
-            )
+        # Insertar productos con logging detallado
+        productos_guardados = 0
+        for i, producto in enumerate(invoice.productos):
+            print(f"Producto {i+1}: {producto}")
+            
+            # Verificar que el producto tenga datos válidos
+            if producto.get('codigo') or (producto.get('nombre') and len(str(producto.get('nombre'))) > 1):
+                try:
+                    cursor.execute(
+                        "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
+                        (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
+                    )
+                    productos_guardados += 1
+                    print(f"✅ Producto {i+1} guardado exitosamente")
+                except Exception as e:
+                    print(f"❌ Error guardando producto {i+1}: {e}")
+            else:
+                print(f"⚠️ Producto {i+1} omitido (sin código ni nombre válido)")
         
         conn.commit()
         conn.close()
         
+        print(f"=== RESULTADO ===")
+        print(f"Productos guardados: {productos_guardados}/{len(invoice.productos)}")
+        
         return {
             "success": True, 
             "factura_id": factura_id,
-            "productos_guardados": len(invoice.productos),
-            "message": "Factura guardada exitosamente"
+            "productos_guardados": productos_guardados,
+            "total_productos": len(invoice.productos),
+            "message": f"Factura guardada con {productos_guardados} de {len(invoice.productos)} productos"
         }
         
     except Exception as e:
+        print(f"❌ ERROR GUARDANDO FACTURA: {str(e)}")
         conn.close()
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
 
@@ -465,6 +487,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
