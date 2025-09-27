@@ -71,6 +71,7 @@ def extract_vendor_name(raw_text):
         r'(OLIMPICA\s+\w+)',
         r'(D1\s+\w*)',
         r'(SURTIMAX\s+\w*)',
+         r'(ARA\s+\w*)',
     ]
     
     for pattern in patterns:
@@ -177,7 +178,7 @@ def extract_products_with_prices(document):
     }
     
     for entity in document.entities:
-        if entity.type_ == "line_item" and entity.confidence > 0.7:
+        if entity.type_ == "line_item" and entity.confidence > 0.4:
             
             raw_item_text = entity.mention_text
             product_code = extract_product_code(raw_item_text)
