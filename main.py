@@ -342,9 +342,19 @@ async def login_user(user: UserLogin):
 
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...)):
-    """Procesa una factura y extrae productos"""
-    allowed_types = ["image/jpeg", "image/png", "application/pdf"]
-    if file.content_type not in allowed_types:
+    # Tipos MIME aceptados - agregamos octet-stream
+    allowed_types = [
+        "image/jpeg", 
+        "image/png", 
+        "application/pdf",
+        "application/octet-stream"  # Agregado para galería
+    ]
+    
+    # También verificar por extensión del archivo
+    file_extension = file.filename.lower() if file.filename else ""
+    valid_extensions = file_extension.endswith(('.jpg', '.jpeg', '.png', '.pdf'))
+    
+    if file.content_type not in allowed_types and not valid_extensions:
         raise HTTPException(400, f"Tipo de archivo no soportado: {file.content_type}")
     
     try:
@@ -455,6 +465,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
