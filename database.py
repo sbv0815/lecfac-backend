@@ -1,22 +1,36 @@
 import os
-import psycopg2
 import sqlite3
 import bcrypt
 from urllib.parse import urlparse
 
+# Intentar importar psycopg2, pero continuar si falla
+try:
+    import psycopg2
+    POSTGRESQL_AVAILABLE = True
+    print("✅ psycopg2 disponible")
+except ImportError as e:
+    POSTGRESQL_AVAILABLE = False
+    print(f"⚠️ psycopg2 no disponible: {e}")
+    print("🔄 Usando SQLite como fallback")
+
 def get_db_connection():
     """
-    Obtiene conexión a la base de datos (PostgreSQL o SQLite según configuración)
+    Obtiene conexión a la base de datos (PostgreSQL o SQLite según disponibilidad)
     """
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
     
-    if database_type == "postgresql":
+    if database_type == "postgresql" and POSTGRESQL_AVAILABLE:
         return get_postgresql_connection()
     else:
+        if database_type == "postgresql" and not POSTGRESQL_AVAILABLE:
+            print("⚠️ PostgreSQL solicitado pero no disponible, usando SQLite")
         return get_sqlite_connection()
 
 def get_postgresql_connection():
     """Conexión a PostgreSQL"""
+    if not POSTGRESQL_AVAILABLE:
+        return None
+        
     try:
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
@@ -39,7 +53,8 @@ def get_postgresql_connection():
         
     except Exception as e:
         print(f"❌ Error conectando a PostgreSQL: {e}")
-        return None
+        print("🔄 Fallback a SQLite")
+        return get_sqlite_connection()
 
 def get_sqlite_connection():
     """Conexión a SQLite (fallback)"""
@@ -56,16 +71,22 @@ def create_tables():
     """Crear tablas según el tipo de base de datos"""
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
     
-    if database_type == "postgresql":
+    if database_type == "postgresql" and POSTGRESQL_AVAILABLE:
         create_postgresql_tables()
     else:
         create_sqlite_tables()
 
 def create_postgresql_tables():
     """Crear tablas en PostgreSQL"""
+    if not POSTGRESQL_AVAILABLE:
+        print("❌ PostgreSQL no disponible, creando tablas SQLite")
+        create_sqlite_tables()
+        return
+        
     conn = get_postgresql_connection()
     if not conn:
         print("❌ No se pudo crear conexión para crear tablas PostgreSQL")
+        create_sqlite_tables()
         return
     
     try:
@@ -119,6 +140,8 @@ def create_postgresql_tables():
         
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
+        print("🔄 Fallback a SQLite")
+        create_sqlite_tables()
         if conn:
             conn.close()
 
@@ -190,101 +213,6 @@ def verify_password(password: str, hashed: str) -> bool:
     """Verifica una contraseña contra su hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def migrate_sqlite_to_postgresql():
-    """
-    Función para migrar datos de SQLite a PostgreSQL
-    ⚠️ Ejecutar solo una vez durante la migración
-    """
-    print("🔄 Iniciando migración SQLite → PostgreSQL")
-    
-    # Conexiones
-    sqlite_conn = get_sqlite_connection()
-    postgresql_conn = get_postgresql_connection()
-    
-    if not sqlite_conn or not postgresql_conn:
-        print("❌ No se pudieron establecer las conexiones necesarias")
-        return False
-    
-    try:
-        sqlite_cursor = sqlite_conn.cursor()
-        pg_cursor = postgresql_conn.cursor()
-        
-        # Migrar usuarios
-        print("📤 Migrando usuarios...")
-        sqlite_cursor.execute("SELECT email, password_hash, nombre FROM usuarios")
-        usuarios = sqlite_cursor.fetchall()
-        
-        for usuario in usuarios:
-            pg_cursor.execute(
-                "INSERT INTO usuarios (email, password_hash, nombre) VALUES (%s, %s, %s) ON CONFLICT (email) DO NOTHING",
-                usuario
-            )
-        
-        # Obtener mapeo de IDs de usuarios
-        user_id_map = {}
-        sqlite_cursor.execute("SELECT id, email FROM usuarios")
-        for old_id, email in sqlite_cursor.fetchall():
-            pg_cursor.execute("SELECT id FROM usuarios WHERE email = %s", (email,))
-            new_id = pg_cursor.fetchone()[0]
-            user_id_map[old_id] = new_id
-        
-        # Migrar facturas
-        print("📤 Migrando facturas...")
-        sqlite_cursor.execute("SELECT id, usuario_id, establecimiento, fecha_cargue FROM facturas")
-        facturas = sqlite_cursor.fetchall()
-        
-        factura_id_map = {}
-        for old_id, usuario_id, establecimiento, fecha_cargue in facturas:
-            new_usuario_id = user_id_map.get(usuario_id)
-            if new_usuario_id:
-                pg_cursor.execute(
-                    "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (%s, %s, %s) RETURNING id",
-                    (new_usuario_id, establecimiento, fecha_cargue)
-                )
-                new_id = pg_cursor.fetchone()[0]
-                factura_id_map[old_id] = new_id
-        
-        # Migrar productos
-        print("📤 Migrando productos...")
-        sqlite_cursor.execute("SELECT factura_id, codigo, nombre, valor FROM productos")
-        productos = sqlite_cursor.fetchall()
-        
-        for factura_id, codigo, nombre, valor in productos:
-            new_factura_id = factura_id_map.get(factura_id)
-            if new_factura_id:
-                pg_cursor.execute(
-                    "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
-                    (new_factura_id, codigo, nombre, valor)
-                )
-        
-        postgresql_conn.commit()
-        
-        # Verificar migración
-        pg_cursor.execute("SELECT COUNT(*) FROM usuarios")
-        usuarios_count = pg_cursor.fetchone()[0]
-        pg_cursor.execute("SELECT COUNT(*) FROM facturas")
-        facturas_count = pg_cursor.fetchone()[0]
-        pg_cursor.execute("SELECT COUNT(*) FROM productos")
-        productos_count = pg_cursor.fetchone()[0]
-        
-        print(f"✅ Migración completada:")
-        print(f"   - Usuarios: {usuarios_count}")
-        print(f"   - Facturas: {facturas_count}")
-        print(f"   - Productos: {productos_count}")
-        
-        sqlite_conn.close()
-        postgresql_conn.close()
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error en migración: {e}")
-        if sqlite_conn:
-            sqlite_conn.close()
-        if postgresql_conn:
-            postgresql_conn.close()
-        return False
-
 def test_database_connection():
     """Función para probar la conexión a la base de datos"""
     print("🔧 Probando conexión a base de datos...")
@@ -295,16 +223,22 @@ def test_database_connection():
     
     try:
         cursor = conn.cursor()
-        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
         
-        if database_type == "postgresql":
+        # Detectar qué tipo de base estamos usando realmente
+        try:
             cursor.execute("SELECT version()")
             version = cursor.fetchone()[0]
             print(f"✅ PostgreSQL conectado: {version}")
-        else:
-            cursor.execute("SELECT sqlite_version()")
-            version = cursor.fetchone()[0]
-            print(f"✅ SQLite conectado: {version}")
+            actual_type = "postgresql"
+        except:
+            try:
+                cursor.execute("SELECT sqlite_version()")
+                version = cursor.fetchone()[0]
+                print(f"✅ SQLite conectado: {version}")
+                actual_type = "sqlite"
+            except:
+                print("❌ No se pudo identificar el tipo de base de datos")
+                actual_type = "unknown"
         
         conn.close()
         return True
@@ -315,19 +249,42 @@ def test_database_connection():
             conn.close()
         return False
 
+def get_database_type():
+    """Devuelve el tipo de base de datos que se está usando realmente"""
+    conn = get_db_connection()
+    if not conn:
+        return "none"
+    
+    try:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT version()")
+            conn.close()
+            return "postgresql"
+        except:
+            try:
+                cursor.execute("SELECT sqlite_version()")
+                conn.close()
+                return "sqlite"
+            except:
+                conn.close()
+                return "unknown"
+    except:
+        return "error"
+
 if __name__ == "__main__":
     # Script para ejecutar migraciones manuales
     import sys
     
     if len(sys.argv) > 1:
-        if sys.argv[1] == "migrate":
-            migrate_sqlite_to_postgresql()
-        elif sys.argv[1] == "test":
+        if sys.argv[1] == "test":
             test_database_connection()
         elif sys.argv[1] == "create":
             create_tables()
+        elif sys.argv[1] == "type":
+            print(f"Tipo de base de datos: {get_database_type()}")
     else:
         print("Comandos disponibles:")
-        print("  python database.py migrate  - Migrar SQLite a PostgreSQL")
         print("  python database.py test     - Probar conexión")
         print("  python database.py create   - Crear tablas")
+        print("  python database.py type     - Ver tipo de BD")
