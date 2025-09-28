@@ -8,7 +8,7 @@ from datetime import datetime
 
 # Importar el procesador y database
 from invoice_processor import process_invoice_products
-from database import create_tables, get_db_connection, hash_password, verify_password
+from database import create_tables, get_db_connection, hash_password, verify_password, test_database_connection
 
 app = FastAPI(title="LecFac API", version="1.0.0")
 
@@ -37,11 +37,57 @@ class SaveInvoice(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    create_tables()
+    """Inicialización de la aplicación"""
+    print("🚀 Iniciando LecFac API...")
+    
+    # Probar conexión a base de datos
+    if test_database_connection():
+        print("📊 Conexión a base de datos exitosa")
+    else:
+        print("❌ Error de conexión a base de datos")
+    
+    # Crear tablas
+    try:
+        create_tables()
+        print("🗃️ Tablas verificadas/creadas")
+    except Exception as e:
+        print(f"❌ Error creando tablas: {e}")
 
 @app.get("/")
 async def root():
-    return {"message": "LecFac API funcionando", "version": "1.0.0"}
+    """Endpoint raíz con información del sistema"""
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    return {
+        "message": "LecFac API funcionando", 
+        "version": "1.0.0",
+        "database": database_type,
+        "status": "active"
+    }
+
+@app.get("/health")
+async def health_check():
+    """Endpoint de salud para verificar el sistema"""
+    try:
+        # Verificar conexión a BD
+        conn = get_db_connection()
+        if conn:
+            conn.close()
+            db_status = "connected"
+        else:
+            db_status = "disconnected"
+        
+        return {
+            "status": "healthy" if db_status == "connected" else "unhealthy",
+            "database": db_status,
+            "database_type": os.environ.get("DATABASE_TYPE", "sqlite"),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @app.get("/test", response_class=HTMLResponse)
 async def test_page():
@@ -63,11 +109,18 @@ async def test_page():
             .button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
             .button:hover { background: #0056b3; }
             input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 3px; }
+            .status { background: #e3f2fd; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>🧾 LecFac - Sistema Completo</h1>
+            
+            <!-- Estado del sistema -->
+            <div class="status" id="systemStatus">
+                <h3>📊 Estado del Sistema</h3>
+                <p id="statusText">Verificando...</p>
+            </div>
             
             <!-- Sección de Registro -->
             <div class="section">
@@ -109,6 +162,29 @@ async def test_page():
 
         <script>
             let currentUserId = null;
+            
+            // Verificar estado del sistema al cargar
+            async function checkSystemStatus() {
+                try {
+                    const response = await fetch('/health');
+                    const status = await response.json();
+                    
+                    const statusText = document.getElementById('statusText');
+                    if (status.status === 'healthy') {
+                        statusText.innerHTML = `✅ Sistema funcionando - Base de datos: ${status.database_type} (${status.database})`;
+                        statusText.style.color = '#2e7d32';
+                    } else {
+                        statusText.innerHTML = `❌ Sistema con problemas - ${status.error || 'Error desconocido'}`;
+                        statusText.style.color = '#d32f2f';
+                    }
+                } catch (error) {
+                    document.getElementById('statusText').innerHTML = `❌ Error conectando con API: ${error.message}`;
+                    document.getElementById('statusText').style.color = '#d32f2f';
+                }
+            }
+            
+            // Verificar estado al cargar la página
+            checkSystemStatus();
             
             // Registro de usuario
             document.getElementById('registerForm').addEventListener('submit', async function(e) {
@@ -242,6 +318,7 @@ async def test_page():
                             <p><strong>Establecimiento:</strong> ${data.data.establecimiento}</p>
                             <p><strong>Productos encontrados:</strong> ${data.data.productos.length}</p>
                             <p><strong>ID Factura:</strong> ${saveResult.factura_id}</p>
+                            <p><strong>Productos guardados:</strong> ${saveResult.productos_guardados}/${saveResult.total_productos}</p>
                             <h4>Primeros 5 productos:</h4>
                             <ul>
                                 ${data.data.productos.slice(0, 5).map(p => 
@@ -268,6 +345,8 @@ async def debug_info():
     """Endpoint de debug para verificar configuración"""
     return {
         "environment_variables": {
+            "DATABASE_TYPE": os.environ.get("DATABASE_TYPE", "sqlite"),
+            "DATABASE_URL": "CONFIGURADO" if os.environ.get("DATABASE_URL") else "NO CONFIGURADO",
             "GCP_PROJECT_ID": os.environ.get("GCP_PROJECT_ID", "NO CONFIGURADO"),
             "DOC_AI_LOCATION": os.environ.get("DOC_AI_LOCATION", "NO CONFIGURADO"), 
             "DOC_AI_PROCESSOR_ID": os.environ.get("DOC_AI_PROCESSOR_ID", "NO CONFIGURADO"),
@@ -277,54 +356,96 @@ async def debug_info():
         "working_directory": os.getcwd()
     }
 
-@app.post("/users/register")
-async def register_user(user: UserRegister):
-    """Registra un nuevo usuario"""
+# Función auxiliar para manejar queries de base de datos
+def execute_query(query, params=None, fetch_one=False, fetch_all=False):
+    """
+    Función auxiliar para ejecutar queries con manejo de diferencias entre PostgreSQL y SQLite
+    """
     conn = get_db_connection()
     if not conn:
-        raise HTTPException(500, "Error de base de datos")
+        raise HTTPException(500, "Error de conexión a base de datos")
     
     try:
         cursor = conn.cursor()
         
+        # Convertir placeholders si es necesario (SQLite usa ?, PostgreSQL usa %s)
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+        if database_type == "postgresql" and query.count("?") > 0:
+            # Convertir ? a %s para PostgreSQL
+            query = query.replace("?", "%s")
+        
+        cursor.execute(query, params or ())
+        
+        if fetch_one:
+            result = cursor.fetchone()
+        elif fetch_all:
+            result = cursor.fetchall()
+        else:
+            result = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        return result
+        
+    except Exception as e:
+        conn.close()
+        raise e
+
+@app.post("/users/register")
+async def register_user(user: UserRegister):
+    """Registra un nuevo usuario"""
+    try:
         # Verificar si el email ya existe
-        cursor.execute("SELECT id FROM usuarios WHERE email = ?", (user.email,))
-        if cursor.fetchone():
+        existing = execute_query(
+            "SELECT id FROM usuarios WHERE email = ?", 
+            (user.email,), 
+            fetch_one=True
+        )
+        
+        if existing:
             raise HTTPException(400, "El email ya está registrado")
         
         # Crear usuario
         password_hash = hash_password(user.password)
-        cursor.execute(
-            "INSERT INTO usuarios (email, password_hash, nombre) VALUES (?, ?, ?)",
-            (user.email, password_hash, user.nombre)
-        )
         
-        user_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+        if database_type == "postgresql":
+            # PostgreSQL con RETURNING
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO usuarios (email, password_hash, nombre) VALUES (%s, %s, %s) RETURNING id",
+                (user.email, password_hash, user.nombre)
+            )
+            user_id = cursor.fetchone()[0]
+            conn.commit()
+            conn.close()
+        else:
+            # SQLite
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO usuarios (email, password_hash, nombre) VALUES (?, ?, ?)",
+                (user.email, password_hash, user.nombre)
+            )
+            user_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
         
         return {"success": True, "user_id": user_id, "message": "Usuario creado"}
         
     except Exception as e:
-        conn.close()
         raise HTTPException(500, f"Error: {str(e)}")
 
 @app.post("/users/login")
 async def login_user(user: UserLogin):
     """Inicia sesión de usuario"""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(500, "Error de base de datos")
-    
     try:
-        cursor = conn.cursor()
-        cursor.execute(
+        result = execute_query(
             "SELECT id, password_hash, nombre FROM usuarios WHERE email = ?", 
-            (user.email,)
+            (user.email,),
+            fetch_one=True
         )
-        
-        result = cursor.fetchone()
-        conn.close()
         
         if not result or not verify_password(user.password, result[1]):
             raise HTTPException(401, "Email o contraseña incorrectos")
@@ -337,7 +458,6 @@ async def login_user(user: UserLogin):
         }
         
     except Exception as e:
-        conn.close()
         raise HTTPException(500, f"Error: {str(e)}")
 
 @app.post("/invoices/parse")
@@ -381,25 +501,31 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(500, "Error de base de datos")
-    
+    """Guardar factura con productos"""
     try:
-        cursor = conn.cursor()
-        
         print(f"=== GUARDANDO FACTURA ===")
         print(f"Usuario ID: {invoice.usuario_id}")
         print(f"Establecimiento: {invoice.establecimiento}")
         print(f"Productos recibidos: {len(invoice.productos)}")
         
-        # Insertar factura
-        cursor.execute(
-            "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (?, ?, ?)",
-            (invoice.usuario_id, invoice.establecimiento, datetime.now().isoformat())
-        )
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        factura_id = cursor.lastrowid
+        # Insertar factura
+        if database_type == "postgresql":
+            cursor.execute(
+                "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (%s, %s, %s) RETURNING id",
+                (invoice.usuario_id, invoice.establecimiento, datetime.now().isoformat())
+            )
+            factura_id = cursor.fetchone()[0]
+        else:
+            cursor.execute(
+                "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (?, ?, ?)",
+                (invoice.usuario_id, invoice.establecimiento, datetime.now().isoformat())
+            )
+            factura_id = cursor.lastrowid
+        
         print(f"Factura ID generado: {factura_id}")
         
         # Insertar productos con logging detallado
@@ -410,10 +536,16 @@ async def save_invoice(invoice: SaveInvoice):
             # Verificar que el producto tenga datos válidos
             if producto.get('codigo') or (producto.get('nombre') and len(str(producto.get('nombre'))) > 1):
                 try:
-                    cursor.execute(
-                        "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
-                        (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
-                    )
+                    if database_type == "postgresql":
+                        cursor.execute(
+                            "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
+                            (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
+                            (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
+                        )
                     productos_guardados += 1
                     print(f"✅ Producto {i+1} guardado exitosamente")
                 except Exception as e:
@@ -437,41 +569,41 @@ async def save_invoice(invoice: SaveInvoice):
         
     except Exception as e:
         print(f"❌ ERROR GUARDANDO FACTURA: {str(e)}")
-        conn.close()
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
 
 @app.get("/users/{user_id}/invoices")
 async def get_user_invoices(user_id: int):
     """Obtiene todas las facturas de un usuario"""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(500, "Error de base de datos")
-    
     try:
-        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
         
-        # Obtener facturas del usuario
-        cursor.execute(
-            """SELECT f.id, f.establecimiento, f.fecha_cargue, 
-               COUNT(p.id) as total_productos
-               FROM facturas f 
-               LEFT JOIN productos p ON f.id = p.factura_id
-               WHERE f.usuario_id = ? 
-               GROUP BY f.id, f.establecimiento, f.fecha_cargue
-               ORDER BY f.fecha_cargue DESC""", 
-            (user_id,)
-        )
+        if database_type == "postgresql":
+            query = """SELECT f.id, f.establecimiento, f.fecha_cargue, 
+                       COUNT(p.id) as total_productos
+                       FROM facturas f 
+                       LEFT JOIN productos p ON f.id = p.factura_id
+                       WHERE f.usuario_id = %s 
+                       GROUP BY f.id, f.establecimiento, f.fecha_cargue
+                       ORDER BY f.fecha_cargue DESC"""
+        else:
+            query = """SELECT f.id, f.establecimiento, f.fecha_cargue, 
+                       COUNT(p.id) as total_productos
+                       FROM facturas f 
+                       LEFT JOIN productos p ON f.id = p.factura_id
+                       WHERE f.usuario_id = ? 
+                       GROUP BY f.id, f.establecimiento, f.fecha_cargue
+                       ORDER BY f.fecha_cargue DESC"""
+        
+        result = execute_query(query, (user_id,), fetch_all=True)
         
         facturas = []
-        for row in cursor.fetchall():
+        for row in result:
             facturas.append({
                 "id": row[0],
                 "establecimiento": row[1], 
                 "fecha_cargue": row[2],
                 "total_productos": row[3]
             })
-        
-        conn.close()
         
         return {
             "success": True,
@@ -480,37 +612,30 @@ async def get_user_invoices(user_id: int):
         }
         
     except Exception as e:
-        conn.close()
         raise HTTPException(500, f"Error obteniendo facturas: {str(e)}")
 
 @app.delete("/invoices/{factura_id}")
 async def delete_invoice(factura_id: int, usuario_id: int):
     """Elimina una factura y todos sus productos asociados"""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(500, "Error de base de datos")
-    
     try:
-        cursor = conn.cursor()
-        
         # Verificar que la factura pertenece al usuario
-        cursor.execute(
+        result = execute_query(
             "SELECT id FROM facturas WHERE id = ? AND usuario_id = ?", 
-            (factura_id, usuario_id)
+            (factura_id, usuario_id),
+            fetch_one=True
         )
         
-        if not cursor.fetchone():
+        if not result:
             raise HTTPException(404, "Factura no encontrada o no autorizada")
         
-        # Eliminar productos asociados (por CASCADE debería ser automático, pero por seguridad)
-        cursor.execute("DELETE FROM productos WHERE factura_id = ?", (factura_id,))
-        productos_eliminados = cursor.rowcount
+        # Eliminar productos asociados
+        productos_eliminados = execute_query(
+            "DELETE FROM productos WHERE factura_id = ?", 
+            (factura_id,)
+        )
         
         # Eliminar factura
-        cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
-        
-        conn.commit()
-        conn.close()
+        execute_query("DELETE FROM facturas WHERE id = ?", (factura_id,))
         
         return {
             "success": True,
@@ -518,19 +643,9 @@ async def delete_invoice(factura_id: int, usuario_id: int):
         }
         
     except Exception as e:
-        conn.close()
         raise HTTPException(500, f"Error eliminando factura: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
-
