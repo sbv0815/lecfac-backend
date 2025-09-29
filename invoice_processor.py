@@ -6,9 +6,7 @@ import time
 from datetime import datetime
 from google.cloud import documentai
 import traceback
-from PIL import Image, ImageEnhance, ImageFilter
-import cv2
-import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 # Intentar importar Tesseract (opcional)
 try:
@@ -36,30 +34,38 @@ def setup_environment():
         raise Exception("JSON inválido")
 
 def preprocess_image(image_path):
-    """Preprocesamiento agresivo para mejorar OCR"""
+    """Preprocesamiento solo con PIL (sin OpenCV)"""
     try:
-        # Leer imagen con OpenCV
-        img = cv2.imread(image_path)
+        from PIL import ImageEnhance, ImageFilter, ImageOps
+        
+        # Abrir imagen
+        img = Image.open(image_path)
         
         # Convertir a escala de grises
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = img.convert('L')
         
-        # Aumentar contraste con CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(gray)
+        # Aumentar contraste
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2.5)
         
-        # Reducir ruido
-        denoised = cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)
+        # Aumentar brillo
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(1.2)
         
-        # Binarización adaptativa
-        binary = cv2.adaptiveThreshold(
-            denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-            cv2.THRESH_BINARY, 11, 2
-        )
+        # Aumentar nitidez
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(2.0)
+        
+        # Aplicar filtro para reducir ruido
+        img = img.filter(ImageFilter.MedianFilter(size=3))
+        
+        # Binarización simple
+        threshold = 128
+        img = img.point(lambda p: 255 if p > threshold else 0, mode='1')
         
         # Guardar imagen procesada
-        processed_path = image_path.replace('.jpg', '_processed.jpg').replace('.png', '_processed.png')
-        cv2.imwrite(processed_path, binary)
+        processed_path = image_path.replace('.jpg', '_processed.png').replace('.png', '_processed.png')
+        img.save(processed_path)
         
         return processed_path
     except Exception as e:
@@ -249,7 +255,7 @@ def extract_products_tesseract_aggressive(image_path):
         processed_path = preprocess_image(image_path)
         img = Image.open(processed_path)
         
-        # PASADA 1: PSM 6 (bloque uniforme)
+        # PASADA 1: PSM 6 (bloque uniforme) - más común en facturas
         texto_psm6 = pytesseract.image_to_string(
             img, lang='spa', 
             config='--psm 6 --oem 3'
@@ -261,51 +267,763 @@ def extract_products_tesseract_aggressive(image_path):
             config='--psm 4 --oem 3'
         )
         
-        # Combinar textos
-        texto_completo = texto_psm6 + "\n" + texto_psm4
+        # PASADA 3: PSM 11 (texto disperso)
+        texto_psm11 = pytesseract.image_to_string(
+            img, lang='spa', 
+            config='--psm 11 --oem 3'
+        )
         
-        # Patrones más flexibles
+        # Combinar todos los textos
+        texto_completo = texto_psm6 + "\n" + texto_psm4 + "\n" + texto_psm11
+        
+        print(f"\n📝 Texto OCR capturado ({len(texto_completo)} chars)")
+        
+        # Patrones ULTRA flexibles para capturar más productos
         patterns = [
-            # Patrón principal: Código + Nombre + Precio
-            r'(\d{6,13})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-\.\(\)]{2,80}?)\s+.*?(\d{1,3}[,\.]\d{3})',
+            # Patrón 1: Código largo + texto + precio al final
+            r'(\d{13})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[A-Z]?\s*
+
+def combinar_y_deduplicar(productos_ai, productos_tesseract):
+    """Combina resultados priorizando calidad y cobertura"""
+    productos_finales = {}
+    
+    # Prioridad 1: Document AI con código válido
+    for prod in productos_ai:
+        codigo = prod.get('codigo')
+        if codigo and len(codigo) >= 8:  # Solo códigos EAN largos de AI
+            productos_finales[codigo] = prod
+    
+    # Prioridad 2: Tesseract con códigos no vistos
+    for prod in productos_tesseract:
+        codigo = prod.get('codigo')
+        if codigo:
+            if codigo not in productos_finales:
+                productos_finales[codigo] = prod
+            elif productos_finales[codigo].get('valor', 0) == 0 and prod.get('valor', 0) > 0:
+                # Actualizar precio si AI no lo detectó
+                productos_finales[codigo]['valor'] = prod['valor']
+    
+    # Prioridad 3: Productos de AI sin código pero con nombre
+    for prod in productos_ai:
+        if not prod.get('codigo') and prod.get('nombre'):
+            # Usar hash del nombre como código temporal
+            import hashlib
+            nombre_hash = hashlib.md5(prod['nombre'].encode()).hexdigest()[:8]
+            temp_codigo = f"TEMP_{nombre_hash}"
             
-            # Patrón alternativo: Solo código visible al inicio de línea
+            if temp_codigo not in productos_finales:
+                prod['codigo'] = temp_codigo
+                productos_finales[temp_codigo] = prod
+    
+    # Convertir a lista
+    resultado = list(productos_finales.values())
+    
+    # Ordenar: primero con código numérico, luego temporales
+    resultado.sort(key=lambda x: (
+        x.get('codigo', '').startswith('TEMP'),
+        x.get('codigo', '')
+    ))
+    
+    return resultado
+
+def process_invoice_complete(file_path):
+    """Procesamiento completo mejorado"""
+    inicio = time.time()
+    
+    try:
+        print(f"\n{'='*70}")
+        print("🔍 PROCESAMIENTO MEJORADO - OBJETIVO: 70%+ PRODUCTOS")
+        print(f"{'='*70}")
+        
+        setup_environment()
+        
+        # MÉTODO 1: Document AI
+        print("\n[1/3] 📄 Document AI procesando...")
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as image:
+            content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(content=content, mime_type=mime_type)
+            )
+        )
+        
+        establecimiento = extract_vendor_name(result.document.text)
+        total_factura = extract_total_invoice(result.document.text)
+        productos_ai = extract_products_document_ai(result.document)
+        print(f"   ✓ {len(productos_ai)} productos detectados")
+        
+        # MÉTODO 2: Tesseract agresivo
+        print("\n[2/3] 🔬 Tesseract OCR (modo agresivo)...")
+        productos_tesseract = extract_products_tesseract_aggressive(file_path)
+        print(f"   ✓ {len(productos_tesseract)} productos detectados")
+        
+        # MÉTODO 3: Combinar inteligentemente
+        print("\n[3/3] 🔀 Combinando y deduplicando...")
+        productos_finales = combinar_y_deduplicar(productos_ai, productos_tesseract)
+        
+        tiempo_total = int(time.time() - inicio)
+        
+        print(f"\n{'='*70}")
+        print(f"✅ RESULTADO FINAL")
+        print(f"{'='*70}")
+        print(f"📍 Establecimiento: {establecimiento}")
+        print(f"💰 Total factura: ${total_factura:,}" if total_factura else "💰 Total: No detectado")
+        print(f"📦 Productos únicos: {len(productos_finales)}")
+        print(f"   ├─ Document AI: {len(productos_ai)}")
+        print(f"   ├─ Tesseract: {len(productos_tesseract)}")
+        print(f"   └─ Finales (sin duplicados): {len(productos_finales)}")
+        print(f"⏱️  Tiempo: {tiempo_total}s")
+        print(f"{'='*70}\n")
+        
+        return {
+            "establecimiento": establecimiento,
+            "total": total_factura,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": productos_finales,
+            "metadatos": {
+                "metodo": "enhanced_triple_extraction",
+                "productos_ai": len(productos_ai),
+                "productos_tesseract": len(productos_tesseract),
+                "productos_finales": len(productos_finales),
+                "tiempo_segundos": tiempo_total
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO: {str(e)}")
+        traceback.print_exc()
+        return None
+
+# Mantener compatibilidad
+def process_invoice_products(file_path):
+    """Versión legacy - redirige al nuevo procesador"""
+    return process_invoice_complete(file_path)
+,
+            r'(\d{12})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[A-Z]?\s*
+
+def combinar_y_deduplicar(productos_ai, productos_tesseract):
+    """Combina resultados priorizando calidad y cobertura"""
+    productos_finales = {}
+    
+    # Prioridad 1: Document AI con código válido
+    for prod in productos_ai:
+        codigo = prod.get('codigo')
+        if codigo and len(codigo) >= 8:  # Solo códigos EAN largos de AI
+            productos_finales[codigo] = prod
+    
+    # Prioridad 2: Tesseract con códigos no vistos
+    for prod in productos_tesseract:
+        codigo = prod.get('codigo')
+        if codigo:
+            if codigo not in productos_finales:
+                productos_finales[codigo] = prod
+            elif productos_finales[codigo].get('valor', 0) == 0 and prod.get('valor', 0) > 0:
+                # Actualizar precio si AI no lo detectó
+                productos_finales[codigo]['valor'] = prod['valor']
+    
+    # Prioridad 3: Productos de AI sin código pero con nombre
+    for prod in productos_ai:
+        if not prod.get('codigo') and prod.get('nombre'):
+            # Usar hash del nombre como código temporal
+            import hashlib
+            nombre_hash = hashlib.md5(prod['nombre'].encode()).hexdigest()[:8]
+            temp_codigo = f"TEMP_{nombre_hash}"
+            
+            if temp_codigo not in productos_finales:
+                prod['codigo'] = temp_codigo
+                productos_finales[temp_codigo] = prod
+    
+    # Convertir a lista
+    resultado = list(productos_finales.values())
+    
+    # Ordenar: primero con código numérico, luego temporales
+    resultado.sort(key=lambda x: (
+        x.get('codigo', '').startswith('TEMP'),
+        x.get('codigo', '')
+    ))
+    
+    return resultado
+
+def process_invoice_complete(file_path):
+    """Procesamiento completo mejorado"""
+    inicio = time.time()
+    
+    try:
+        print(f"\n{'='*70}")
+        print("🔍 PROCESAMIENTO MEJORADO - OBJETIVO: 70%+ PRODUCTOS")
+        print(f"{'='*70}")
+        
+        setup_environment()
+        
+        # MÉTODO 1: Document AI
+        print("\n[1/3] 📄 Document AI procesando...")
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as image:
+            content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(content=content, mime_type=mime_type)
+            )
+        )
+        
+        establecimiento = extract_vendor_name(result.document.text)
+        total_factura = extract_total_invoice(result.document.text)
+        productos_ai = extract_products_document_ai(result.document)
+        print(f"   ✓ {len(productos_ai)} productos detectados")
+        
+        # MÉTODO 2: Tesseract agresivo
+        print("\n[2/3] 🔬 Tesseract OCR (modo agresivo)...")
+        productos_tesseract = extract_products_tesseract_aggressive(file_path)
+        print(f"   ✓ {len(productos_tesseract)} productos detectados")
+        
+        # MÉTODO 3: Combinar inteligentemente
+        print("\n[3/3] 🔀 Combinando y deduplicando...")
+        productos_finales = combinar_y_deduplicar(productos_ai, productos_tesseract)
+        
+        tiempo_total = int(time.time() - inicio)
+        
+        print(f"\n{'='*70}")
+        print(f"✅ RESULTADO FINAL")
+        print(f"{'='*70}")
+        print(f"📍 Establecimiento: {establecimiento}")
+        print(f"💰 Total factura: ${total_factura:,}" if total_factura else "💰 Total: No detectado")
+        print(f"📦 Productos únicos: {len(productos_finales)}")
+        print(f"   ├─ Document AI: {len(productos_ai)}")
+        print(f"   ├─ Tesseract: {len(productos_tesseract)}")
+        print(f"   └─ Finales (sin duplicados): {len(productos_finales)}")
+        print(f"⏱️  Tiempo: {tiempo_total}s")
+        print(f"{'='*70}\n")
+        
+        return {
+            "establecimiento": establecimiento,
+            "total": total_factura,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": productos_finales,
+            "metadatos": {
+                "metodo": "enhanced_triple_extraction",
+                "productos_ai": len(productos_ai),
+                "productos_tesseract": len(productos_tesseract),
+                "productos_finales": len(productos_finales),
+                "tiempo_segundos": tiempo_total
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO: {str(e)}")
+        traceback.print_exc()
+        return None
+
+# Mantener compatibilidad
+def process_invoice_products(file_path):
+    """Versión legacy - redirige al nuevo procesador"""
+    return process_invoice_complete(file_path)
+,
+            r'(\d{10})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[A-Z]?\s*
+
+def combinar_y_deduplicar(productos_ai, productos_tesseract):
+    """Combina resultados priorizando calidad y cobertura"""
+    productos_finales = {}
+    
+    # Prioridad 1: Document AI con código válido
+    for prod in productos_ai:
+        codigo = prod.get('codigo')
+        if codigo and len(codigo) >= 8:  # Solo códigos EAN largos de AI
+            productos_finales[codigo] = prod
+    
+    # Prioridad 2: Tesseract con códigos no vistos
+    for prod in productos_tesseract:
+        codigo = prod.get('codigo')
+        if codigo:
+            if codigo not in productos_finales:
+                productos_finales[codigo] = prod
+            elif productos_finales[codigo].get('valor', 0) == 0 and prod.get('valor', 0) > 0:
+                # Actualizar precio si AI no lo detectó
+                productos_finales[codigo]['valor'] = prod['valor']
+    
+    # Prioridad 3: Productos de AI sin código pero con nombre
+    for prod in productos_ai:
+        if not prod.get('codigo') and prod.get('nombre'):
+            # Usar hash del nombre como código temporal
+            import hashlib
+            nombre_hash = hashlib.md5(prod['nombre'].encode()).hexdigest()[:8]
+            temp_codigo = f"TEMP_{nombre_hash}"
+            
+            if temp_codigo not in productos_finales:
+                prod['codigo'] = temp_codigo
+                productos_finales[temp_codigo] = prod
+    
+    # Convertir a lista
+    resultado = list(productos_finales.values())
+    
+    # Ordenar: primero con código numérico, luego temporales
+    resultado.sort(key=lambda x: (
+        x.get('codigo', '').startswith('TEMP'),
+        x.get('codigo', '')
+    ))
+    
+    return resultado
+
+def process_invoice_complete(file_path):
+    """Procesamiento completo mejorado"""
+    inicio = time.time()
+    
+    try:
+        print(f"\n{'='*70}")
+        print("🔍 PROCESAMIENTO MEJORADO - OBJETIVO: 70%+ PRODUCTOS")
+        print(f"{'='*70}")
+        
+        setup_environment()
+        
+        # MÉTODO 1: Document AI
+        print("\n[1/3] 📄 Document AI procesando...")
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as image:
+            content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(content=content, mime_type=mime_type)
+            )
+        )
+        
+        establecimiento = extract_vendor_name(result.document.text)
+        total_factura = extract_total_invoice(result.document.text)
+        productos_ai = extract_products_document_ai(result.document)
+        print(f"   ✓ {len(productos_ai)} productos detectados")
+        
+        # MÉTODO 2: Tesseract agresivo
+        print("\n[2/3] 🔬 Tesseract OCR (modo agresivo)...")
+        productos_tesseract = extract_products_tesseract_aggressive(file_path)
+        print(f"   ✓ {len(productos_tesseract)} productos detectados")
+        
+        # MÉTODO 3: Combinar inteligentemente
+        print("\n[3/3] 🔀 Combinando y deduplicando...")
+        productos_finales = combinar_y_deduplicar(productos_ai, productos_tesseract)
+        
+        tiempo_total = int(time.time() - inicio)
+        
+        print(f"\n{'='*70}")
+        print(f"✅ RESULTADO FINAL")
+        print(f"{'='*70}")
+        print(f"📍 Establecimiento: {establecimiento}")
+        print(f"💰 Total factura: ${total_factura:,}" if total_factura else "💰 Total: No detectado")
+        print(f"📦 Productos únicos: {len(productos_finales)}")
+        print(f"   ├─ Document AI: {len(productos_ai)}")
+        print(f"   ├─ Tesseract: {len(productos_tesseract)}")
+        print(f"   └─ Finales (sin duplicados): {len(productos_finales)}")
+        print(f"⏱️  Tiempo: {tiempo_total}s")
+        print(f"{'='*70}\n")
+        
+        return {
+            "establecimiento": establecimiento,
+            "total": total_factura,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": productos_finales,
+            "metadatos": {
+                "metodo": "enhanced_triple_extraction",
+                "productos_ai": len(productos_ai),
+                "productos_tesseract": len(productos_tesseract),
+                "productos_finales": len(productos_finales),
+                "tiempo_segundos": tiempo_total
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO: {str(e)}")
+        traceback.print_exc()
+        return None
+
+# Mantener compatibilidad
+def process_invoice_products(file_path):
+    """Versión legacy - redirige al nuevo procesador"""
+    return process_invoice_complete(file_path)
+,
+            
+            # Patrón 2: Código + descripción larga + precio
+            r'(\d{6,13})\s+([A-ZÀ-Ÿ\?\!][A-ZÀ-Ÿ\s/\-\.\(\)\?\!]{2,100}?)\s+(\d{1,3}[,\.]\d{3})',
+            
+            # Patrón 3: Líneas que empiezan con número
             r'^(\d{6,13})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})',
             
-            # Patrón PLU corto
-            r'(\d{3,6})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-\.]{3,50}?)\s+.*?(\d{1,3}[,\.]\d{3})',
+            # Patrón 4: PLU corto (productos frescos)
+            r'^(\d{3,6})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})',
+            
+            # Patrón 5: Precio con letras N, X, A, E, H al final (común en facturas)
+            r'(\d{6,13})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[NXAEH]\s*
+
+def combinar_y_deduplicar(productos_ai, productos_tesseract):
+    """Combina resultados priorizando calidad y cobertura"""
+    productos_finales = {}
+    
+    # Prioridad 1: Document AI con código válido
+    for prod in productos_ai:
+        codigo = prod.get('codigo')
+        if codigo and len(codigo) >= 8:  # Solo códigos EAN largos de AI
+            productos_finales[codigo] = prod
+    
+    # Prioridad 2: Tesseract con códigos no vistos
+    for prod in productos_tesseract:
+        codigo = prod.get('codigo')
+        if codigo:
+            if codigo not in productos_finales:
+                productos_finales[codigo] = prod
+            elif productos_finales[codigo].get('valor', 0) == 0 and prod.get('valor', 0) > 0:
+                # Actualizar precio si AI no lo detectó
+                productos_finales[codigo]['valor'] = prod['valor']
+    
+    # Prioridad 3: Productos de AI sin código pero con nombre
+    for prod in productos_ai:
+        if not prod.get('codigo') and prod.get('nombre'):
+            # Usar hash del nombre como código temporal
+            import hashlib
+            nombre_hash = hashlib.md5(prod['nombre'].encode()).hexdigest()[:8]
+            temp_codigo = f"TEMP_{nombre_hash}"
+            
+            if temp_codigo not in productos_finales:
+                prod['codigo'] = temp_codigo
+                productos_finales[temp_codigo] = prod
+    
+    # Convertir a lista
+    resultado = list(productos_finales.values())
+    
+    # Ordenar: primero con código numérico, luego temporales
+    resultado.sort(key=lambda x: (
+        x.get('codigo', '').startswith('TEMP'),
+        x.get('codigo', '')
+    ))
+    
+    return resultado
+
+def process_invoice_complete(file_path):
+    """Procesamiento completo mejorado"""
+    inicio = time.time()
+    
+    try:
+        print(f"\n{'='*70}")
+        print("🔍 PROCESAMIENTO MEJORADO - OBJETIVO: 70%+ PRODUCTOS")
+        print(f"{'='*70}")
+        
+        setup_environment()
+        
+        # MÉTODO 1: Document AI
+        print("\n[1/3] 📄 Document AI procesando...")
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as image:
+            content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(content=content, mime_type=mime_type)
+            )
+        )
+        
+        establecimiento = extract_vendor_name(result.document.text)
+        total_factura = extract_total_invoice(result.document.text)
+        productos_ai = extract_products_document_ai(result.document)
+        print(f"   ✓ {len(productos_ai)} productos detectados")
+        
+        # MÉTODO 2: Tesseract agresivo
+        print("\n[2/3] 🔬 Tesseract OCR (modo agresivo)...")
+        productos_tesseract = extract_products_tesseract_aggressive(file_path)
+        print(f"   ✓ {len(productos_tesseract)} productos detectados")
+        
+        # MÉTODO 3: Combinar inteligentemente
+        print("\n[3/3] 🔀 Combinando y deduplicando...")
+        productos_finales = combinar_y_deduplicar(productos_ai, productos_tesseract)
+        
+        tiempo_total = int(time.time() - inicio)
+        
+        print(f"\n{'='*70}")
+        print(f"✅ RESULTADO FINAL")
+        print(f"{'='*70}")
+        print(f"📍 Establecimiento: {establecimiento}")
+        print(f"💰 Total factura: ${total_factura:,}" if total_factura else "💰 Total: No detectado")
+        print(f"📦 Productos únicos: {len(productos_finales)}")
+        print(f"   ├─ Document AI: {len(productos_ai)}")
+        print(f"   ├─ Tesseract: {len(productos_tesseract)}")
+        print(f"   └─ Finales (sin duplicados): {len(productos_finales)}")
+        print(f"⏱️  Tiempo: {tiempo_total}s")
+        print(f"{'='*70}\n")
+        
+        return {
+            "establecimiento": establecimiento,
+            "total": total_factura,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": productos_finales,
+            "metadatos": {
+                "metodo": "enhanced_triple_extraction",
+                "productos_ai": len(productos_ai),
+                "productos_tesseract": len(productos_tesseract),
+                "productos_finales": len(productos_finales),
+                "tiempo_segundos": tiempo_total
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO: {str(e)}")
+        traceback.print_exc()
+        return None
+
+# Mantener compatibilidad
+def process_invoice_products(file_path):
+    """Versión legacy - redirige al nuevo procesador"""
+    return process_invoice_complete(file_path)
+,
+            
+            # Patrón 6: Líneas con KG (productos por peso)
+            r'(\d{6,13})\s+(.+?KG.+?)\s+(\d{1,3}[,\.]\d{3})',
+            
+            # Patrón 7: Captura incluso sin código al inicio
+            r'([A-ZÀ-Ÿ]{3}[A-ZÀ-Ÿ\s/\-\.]{3,60}?)\s+(\d{1,3}[,\.]\d{3})\s*[NXAEH]?\s*
+
+def combinar_y_deduplicar(productos_ai, productos_tesseract):
+    """Combina resultados priorizando calidad y cobertura"""
+    productos_finales = {}
+    
+    # Prioridad 1: Document AI con código válido
+    for prod in productos_ai:
+        codigo = prod.get('codigo')
+        if codigo and len(codigo) >= 8:  # Solo códigos EAN largos de AI
+            productos_finales[codigo] = prod
+    
+    # Prioridad 2: Tesseract con códigos no vistos
+    for prod in productos_tesseract:
+        codigo = prod.get('codigo')
+        if codigo:
+            if codigo not in productos_finales:
+                productos_finales[codigo] = prod
+            elif productos_finales[codigo].get('valor', 0) == 0 and prod.get('valor', 0) > 0:
+                # Actualizar precio si AI no lo detectó
+                productos_finales[codigo]['valor'] = prod['valor']
+    
+    # Prioridad 3: Productos de AI sin código pero con nombre
+    for prod in productos_ai:
+        if not prod.get('codigo') and prod.get('nombre'):
+            # Usar hash del nombre como código temporal
+            import hashlib
+            nombre_hash = hashlib.md5(prod['nombre'].encode()).hexdigest()[:8]
+            temp_codigo = f"TEMP_{nombre_hash}"
+            
+            if temp_codigo not in productos_finales:
+                prod['codigo'] = temp_codigo
+                productos_finales[temp_codigo] = prod
+    
+    # Convertir a lista
+    resultado = list(productos_finales.values())
+    
+    # Ordenar: primero con código numérico, luego temporales
+    resultado.sort(key=lambda x: (
+        x.get('codigo', '').startswith('TEMP'),
+        x.get('codigo', '')
+    ))
+    
+    return resultado
+
+def process_invoice_complete(file_path):
+    """Procesamiento completo mejorado"""
+    inicio = time.time()
+    
+    try:
+        print(f"\n{'='*70}")
+        print("🔍 PROCESAMIENTO MEJORADO - OBJETIVO: 70%+ PRODUCTOS")
+        print(f"{'='*70}")
+        
+        setup_environment()
+        
+        # MÉTODO 1: Document AI
+        print("\n[1/3] 📄 Document AI procesando...")
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as image:
+            content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(content=content, mime_type=mime_type)
+            )
+        )
+        
+        establecimiento = extract_vendor_name(result.document.text)
+        total_factura = extract_total_invoice(result.document.text)
+        productos_ai = extract_products_document_ai(result.document)
+        print(f"   ✓ {len(productos_ai)} productos detectados")
+        
+        # MÉTODO 2: Tesseract agresivo
+        print("\n[2/3] 🔬 Tesseract OCR (modo agresivo)...")
+        productos_tesseract = extract_products_tesseract_aggressive(file_path)
+        print(f"   ✓ {len(productos_tesseract)} productos detectados")
+        
+        # MÉTODO 3: Combinar inteligentemente
+        print("\n[3/3] 🔀 Combinando y deduplicando...")
+        productos_finales = combinar_y_deduplicar(productos_ai, productos_tesseract)
+        
+        tiempo_total = int(time.time() - inicio)
+        
+        print(f"\n{'='*70}")
+        print(f"✅ RESULTADO FINAL")
+        print(f"{'='*70}")
+        print(f"📍 Establecimiento: {establecimiento}")
+        print(f"💰 Total factura: ${total_factura:,}" if total_factura else "💰 Total: No detectado")
+        print(f"📦 Productos únicos: {len(productos_finales)}")
+        print(f"   ├─ Document AI: {len(productos_ai)}")
+        print(f"   ├─ Tesseract: {len(productos_tesseract)}")
+        print(f"   └─ Finales (sin duplicados): {len(productos_finales)}")
+        print(f"⏱️  Tiempo: {tiempo_total}s")
+        print(f"{'='*70}\n")
+        
+        return {
+            "establecimiento": establecimiento,
+            "total": total_factura,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": productos_finales,
+            "metadatos": {
+                "metodo": "enhanced_triple_extraction",
+                "productos_ai": len(productos_ai),
+                "productos_tesseract": len(productos_tesseract),
+                "productos_finales": len(productos_finales),
+                "tiempo_segundos": tiempo_total
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO: {str(e)}")
+        traceback.print_exc()
+        return None
+
+# Mantener compatibilidad
+def process_invoice_products(file_path):
+    """Versión legacy - redirige al nuevo procesador"""
+    return process_invoice_complete(file_path)
+,
         ]
         
         codigos_vistos = set()
+        nombres_vistos = set()
         
-        for pattern in patterns:
-            matches = re.finditer(pattern, texto_completo, re.MULTILINE)
-            for match in matches:
-                codigo = match.group(1).strip()
-                nombre = match.group(2).strip()
-                precio = clean_amount(match.group(3))
+        lineas = texto_completo.split('\n')
+        print(f"📄 Líneas totales capturadas: {len(lineas)}")
+        
+        productos_por_linea = 0
+        
+        for linea in lineas:
+            linea = linea.strip()
+            
+            # Saltar líneas que claramente no son productos
+            if len(linea) < 10:
+                continue
+            if 'TOTAL' in linea.upper():
+                continue
+            if 'SUBTOTAL' in linea.upper():
+                continue
+            
+            for pattern in patterns:
+                matches = re.finditer(pattern, linea, re.MULTILINE | re.IGNORECASE)
                 
-                # Validaciones
-                if codigo in codigos_vistos:
-                    continue
-                
-                # Limpiar nombre
-                nombre = re.sub(r'\d{4,}', '', nombre)  # Remover números largos
-                nombre = re.sub(r'\s+', ' ', nombre).strip()
-                
-                # Validar calidad
-                if (len(codigo) >= 3 and 
-                    len(nombre) > 3 and 
-                    precio and 
-                    precio > 100):  # Precio mínimo razonable
+                for match in matches:
+                    # Extraer según cantidad de grupos
+                    if len(match.groups()) == 3:
+                        grupo1, grupo2, grupo3 = match.groups()
+                        
+                        # Determinar qué es código, nombre y precio
+                        if grupo1.isdigit() and len(grupo1) >= 3:
+                            codigo = grupo1
+                            nombre = grupo2
+                            precio_str = grupo3
+                        else:
+                            # No hay código, solo nombre y precio
+                            codigo = None
+                            nombre = grupo1
+                            precio_str = grupo2
+                    else:
+                        continue
                     
+                    # Limpiar precio
+                    precio = clean_amount(precio_str)
+                    if not precio:
+                        precio = 0  # Aceptar productos con precio 0
+                    
+                    # Limpiar nombre
+                    if nombre:
+                        nombre = re.sub(r'\d{4,}', '', nombre)  # Remover números largos
+                        nombre = re.sub(r'\s+', ' ', nombre).strip()
+                        nombre = nombre[:80]
+                    
+                    # Validaciones mínimas
+                    if not nombre or len(nombre) < 3:
+                        continue
+                    
+                    # Evitar duplicados por código
+                    if codigo and codigo in codigos_vistos:
+                        continue
+                    
+                    # Evitar duplicados por nombre similar
+                    nombre_norm = nombre.lower().replace(' ', '')
+                    if nombre_norm in nombres_vistos:
+                        continue
+                    
+                    # Agregar producto
                     productos.append({
                         "codigo": codigo,
-                        "nombre": nombre[:80],
+                        "nombre": nombre,
                         "valor": precio,
                         "fuente": "tesseract"
                     })
-                    codigos_vistos.add(codigo)
+                    
+                    if codigo:
+                        codigos_vistos.add(codigo)
+                    nombres_vistos.add(nombre_norm)
+                    productos_por_linea += 1
+                    
+                    break  # Ya encontramos match en esta línea
+        
+        print(f"✓ Productos extraídos por Tesseract: {len(productos)}")
         
         # Limpiar archivo temporal
         if processed_path != image_path:
