@@ -190,10 +190,12 @@ def extract_unit_price_from_text(text):
     if not text:
         return None
     
-    # Buscar patrones de precio
     price_patterns = [
-        r'\$\s*(\d{1,3}[,\.]\d{3})',      # $12,500 o $12.500
-        r'(\d{1,3}[,\.]\d{3})\s*
+        r'\$\s*(\d{1,3}[,\.]\d{3})',      
+        r'(\d{1,3}[,\.]\d{3})\s*$',
+        r'\$\s*(\d{1,6})',
+        r'(\d{4,6})\s*$',
+    ]
 
 def extract_all_entities_info(document):
     """Extrae TODA la información de las entidades para análisis"""
