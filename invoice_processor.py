@@ -442,11 +442,7 @@ def extract_products_document_ai(document):
     if not code and _is_weight_only_or_fragment(name):
         continue
 
-# si alguna propiedad viene negativa (descuento), descartar
-    has_negative = any('-' in (getattr(prop, 'mention_text', '') or '') 
-                   for prop in getattr(e, 'properties', []))
-    if has_negative:
-        continue
+
 
 
 
