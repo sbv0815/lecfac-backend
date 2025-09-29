@@ -181,7 +181,7 @@ def extract_unit_price_from_text(text):
     return None
 
 def extract_products_with_prices(document):
-    """Extrae productos con sus precios"""
+    """Extrae productos con sus precios - Maneja entidades separadas"""
     
     raw_text = document.text
     
@@ -194,66 +194,82 @@ def extract_products_with_prices(document):
     print(f"\n=== ANÁLISIS DE ENTIDADES ===")
     print(f"Total de entidades encontradas: {len(document.entities)}")
     
-    productos_unicos = {}
+    # Filtrar solo line_items
+    line_items = [e for e in document.entities if e.type_ == "line_item" and e.confidence > 0.35]
+    print(f"Line items válidos: {len(line_items)}")
     
-    for i, entity in enumerate(document.entities):
-        print(f"\n--- Entidad {i+1}/{len(document.entities)} ---")
-        print(f"Tipo: {entity.type_}")
-        print(f"Confianza: {entity.confidence:.3f}")
+    productos_finales = []
+    i = 0
+    
+    while i < len(line_items):
+        entity = line_items[i]
+        
+        print(f"\n--- Procesando line_item {i+1}/{len(line_items)} ---")
         print(f"Texto: {entity.mention_text[:150]}")
         
-        if entity.type_ == "line_item" and entity.confidence > 0.35:
+        raw_item_text = entity.mention_text
+        
+        product_code = extract_product_code(raw_item_text)
+        print(f"  → Código: {product_code}")
+        
+        product_name = clean_product_name(raw_item_text, product_code)
+        print(f"  → Nombre: {product_name}")
+        
+        unit_price = None
+        cantidad = 1
+        
+        # Buscar precio en propiedades de esta entidad
+        for prop in entity.properties:
+            if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                price_candidate = clean_amount(prop.mention_text)
+                if price_candidate:
+                    unit_price = price_candidate
+                    print(f"  → Precio en propiedades: {unit_price}")
             
-            raw_item_text = entity.mention_text
-            
-            product_code = extract_product_code(raw_item_text)
-            print(f"  → Código extraído: {product_code}")
-            
-            product_name = clean_product_name(raw_item_text, product_code)
-            print(f"  → Nombre extraído: {product_name}")
-            
-            unit_price = None
-            cantidad = 1
-            
-            for prop in entity.properties:
-                print(f"    Propiedad: {prop.type_} = '{prop.mention_text}' (conf: {prop.confidence:.3f})")
+            if prop.type_ == "line_item/quantity":
+                try:
+                    cantidad = int(prop.mention_text)
+                except:
+                    pass
+        
+        # Si no hay precio, buscar en texto
+        if not unit_price:
+            unit_price = extract_unit_price_from_text(raw_item_text)
+            if unit_price:
+                print(f"  → Precio en texto: {unit_price}")
+        
+        # Si tenemos código/nombre pero NO precio, buscar en siguiente entidad
+        if (product_code or (product_name and len(product_name) > 2)) and not unit_price:
+            if i + 1 < len(line_items):
+                next_entity = line_items[i + 1]
+                print(f"  ⚠️ Sin precio, buscando en siguiente entidad...")
+                print(f"     Siguiente: {next_entity.mention_text[:80]}")
                 
-                if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
-                    price_candidate = clean_amount(prop.mention_text)
-                    print(f"      → Conversión: '{prop.mention_text}' → {price_candidate}")
-                    
-                    if price_candidate:
-                        unit_price = price_candidate
-                        print(f"      ✓ Precio ACEPTADO: {unit_price}")
-                
-                if prop.type_ == "line_item/quantity":
-                    try:
-                        cantidad = int(prop.mention_text)
-                        print(f"      ✓ Cantidad: {cantidad}")
-                    except:
-                        pass
-            
-            if not unit_price:
-                unit_price = extract_unit_price_from_text(raw_item_text)
-                if unit_price:
-                    print(f"    ✓ Precio del texto: {unit_price}")
-            
-            if product_code or (product_name and len(product_name) > 2):
-                producto_key = product_code or product_name
-                
-                if producto_key not in productos_unicos or unit_price:
-                    producto = {
-                        "codigo": product_code,
-                        "nombre": product_name or "Producto sin descripción",
-                        "valor": unit_price or 0
-                    }
-                    
-                    productos_unicos[producto_key] = producto
-                    print(f"  ✓ AGREGADO: {producto['codigo']} - {producto['nombre']} - ${producto['valor']}")
-            else:
-                print(f"  ✗ Omitido: sin código ni nombre")
+                # Buscar precio en siguiente entidad
+                for prop in next_entity.properties:
+                    if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                        price_candidate = clean_amount(prop.mention_text)
+                        if price_candidate:
+                            unit_price = price_candidate
+                            print(f"  ✓ Precio encontrado en siguiente entidad: {unit_price}")
+                            i += 1  # Saltar siguiente entidad ya que la usamos
+                            break
+        
+        # Agregar producto si es válido
+        if product_code or (product_name and len(product_name) > 2):
+            producto = {
+                "codigo": product_code,
+                "nombre": product_name or "Producto sin descripción",
+                "valor": unit_price or 0
+            }
+            productos_finales.append(producto)
+            print(f"  ✓ AGREGADO: {producto['codigo']} - {producto['nombre']} - ${producto['valor']}")
+        else:
+            print(f"  ✗ Omitido: sin código ni nombre válido")
+        
+        i += 1
     
-    invoice_data["productos"] = list(productos_unicos.values())
+    invoice_data["productos"] = productos_finales
     
     print(f"\n=== RESUMEN ===")
     print(f"Productos extraídos: {len(invoice_data['productos'])}")
