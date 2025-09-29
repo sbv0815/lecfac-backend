@@ -156,11 +156,14 @@ def _is_weight_only_or_fragment(text: str) -> bool:
     if re.match(r'^\d{1,3}[.,]\d{3}\b', s) and not re.search(r'[A-ZÀ-Ÿ]', s):
         return True
 
-    # Si solo quedan palabras "débiles"
+    # Si solo quedan "palabras" débiles (KG, X, N, H, A, E, etc.)
     tokens = re.findall(r'[A-ZÀ-Ÿ]{2,}', s)
     weak = {'KG','X','N','H','A','E','BA','C','DE','DEL','LA','EL','AL','POR'}
     strong = [t for t in tokens if t not in weak]
+
+    # Requiere al menos una palabra "real" de 4+ letras
     return not any(len(t) >= 4 for t in strong)
+
 
 
 # =====================
