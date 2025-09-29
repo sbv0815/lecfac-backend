@@ -59,8 +59,9 @@ def clean_amount(amount_str):
     return None
 
 def extract_vendor_name(raw_text):
-    """Extrae el nombre del establecimiento"""
+    """Extrae el nombre del establecimiento - Supermercados y droguerías"""
     patterns = [
+        # Supermercados
         r'(ALMACENES\s+(?:EXITO|ÉXITO)[^\n]*)',
         r'((?:EXITO|ÉXITO)\s+\w+)',
         r'(CARULLA[^\n]*)',
@@ -74,6 +75,22 @@ def extract_vendor_name(raw_text):
         r'(SURTIMAX[^\n]*)',
         r'(ARA[^\n]*)',
         r'(FALABELLA[^\n]*)',
+        r'(LA\s+14[^\n]*)',
+        r'(MERCADEFAM[^\n]*)',
+        
+        # Droguerías
+        r'(CRUZ\s+VERDE[^\n]*)',
+        r'(DROGAS\s+LA\s+REBAJA[^\n]*)',
+        r'(LA\s+REBAJA[^\n]*)',
+        r'(CAFAM[^\n]*)',
+        r'(COLSUBSIDIO[^\n]*)',
+        r'(LOCATEL[^\n]*)',
+        r'(DROGUERIA[^\n]*)',
+        
+        # Ferreterías
+        r'(HOMECENTER[^\n]*)',
+        r'(EPA[^\n]*)',
+        r'(CONSTRURAMA[^\n]*)',
     ]
     
     for pattern in patterns:
