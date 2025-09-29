@@ -135,37 +135,24 @@ def clean_product_name(text, product_code=None):
     if not text:
         return None
     
+    # Remover código si existe
     if product_code:
         text = re.sub(rf'^{re.escape(product_code)}\s*', '', text)
     else:
         text = re.sub(r'^\d{6,}\s*', '', text)
     
-    text = re.sub(r'^\d+DF\.[A-Z]{2}\.', '', text)
-    text = re.sub(r'^DF\.[A-Z]{2}\.', '', text)
-    text = re.sub(r'^\d{4,8}DF\.', '', text)
+    # Remover prefijos comunes de sistemas POS (Jumbo, Éxito, etc)
+    text = re.sub(r'^\d+DF\.[A-Z]{2}\.', '', text)  # 343718DF.VD.
+    text = re.sub(r'^DF\.[A-Z]{2}\.', '', text)     # DF.VD.
+    text = re.sub(r'^\d{4,8}DF\.', '', text)         # 343718DF.
+    
+    # Remover precios y cantidades
     text = re.sub(r'\d+[,\.]\d{3}', '', text)
     text = re.sub(r'\$\d+', '', text)
     text = re.sub(r'\d+\s*[xX]\s*\d+', '', text)
-    text = re.sub(r'[XNH]\s*$', '', text)
-    text = re.sub(r'\s+DF\.[A-Z\.%\s]*', '', text)
-    text = re.sub(r'-\d+,\d+', '', text)
-    text = re.sub(r'\s+\d+$', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'\n+', ' ', text)
-    text = text.strip()
     
-    words = []
-    for word in text.split():
-        if re.search(r'[A-Za-zÀ-ÿ]{2,}', word):
-            word = re.sub(r'[^\w\sÀ-ÿ]+$', '', word)
-            if len(word) >= 2 and not word.isdigit():
-                words.append(word)
-    
-    if words:
-        name = ' '.join(words[:5])
-        return name[:50] if len(name) > 0 else None
-    
-    return None
+    # Remover sufijos y códigos internos
+    text = re.sub(r'[XNH]\s*
 
 def extract_unit_price_from_text(text):
     """Extrae precio unitario del texto"""
