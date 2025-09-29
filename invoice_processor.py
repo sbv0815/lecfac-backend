@@ -131,24 +131,32 @@ def extract_product_code(text):
     return None
 
 def clean_product_name(text, product_code=None):
-    """Extrae el nombre limpio del producto"""
+    """Extrae el nombre limpio del producto - MEJORADO"""
     if not text:
         return None
     
+    # Remover código
     if product_code:
         text = re.sub(rf'^{re.escape(product_code)}\s*', '', text)
     else:
         text = re.sub(r'^\d{6,}\s*', '', text)
     
+    # Remover prefijos comunes de sistemas POS
+    text = re.sub(r'^\d+DF\.[A-Z]{2}\.', '', text)  # Quita "343718DF.VD."
+    text = re.sub(r'^DF\.[A-Z]{2}\.', '', text)     # Quita "DF.VD."
+    
+    # Remover precios
     text = re.sub(r'\d+[,\.]\d{3}', '', text)
     text = re.sub(r'\$\d+', '', text)
-    text = re.sub(r'\d+\s*[xX]\s*\d+', '', text)
+    
+    # Remover sufijos
     text = re.sub(r'[XNH]\s*$', '', text)
     text = re.sub(r'\s+DF\.[A-Z\.%\s]*', '', text)
-    text = re.sub(r'-\d+,\d+', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'\n+', ' ', text)
     
+    # Normalizar espacios
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Extraer solo palabras válidas
     words = []
     for word in text.split():
         if re.search(r'[A-Za-zÀ-ÿ]{2,}', word):
