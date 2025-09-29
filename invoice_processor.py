@@ -181,7 +181,7 @@ def extract_unit_price_from_text(text):
     return None
 
 def extract_products_with_prices(document):
-    """Extrae productos con sus precios - Maneja entidades separadas"""
+    """Extrae productos con sus precios - Maneja entidades separadas + fallback"""
     
     raw_text = document.text
     
@@ -269,12 +269,58 @@ def extract_products_with_prices(document):
         
         i += 1
     
+    # FALLBACK: Si se detectaron muy pocos productos, intentar extracción por regex del texto completo
+    if len(productos_finales) < 2:
+        print(f"\n⚠️ Solo {len(productos_finales)} productos detectados. Intentando fallback con regex...")
+        productos_regex = extract_products_from_text(raw_text)
+        
+        if len(productos_regex) > len(productos_finales):
+            print(f"✓ Fallback encontró {len(productos_regex)} productos adicionales")
+            # Agregar productos que no estén ya
+            codigos_existentes = {p['codigo'] for p in productos_finales if p['codigo']}
+            for prod in productos_regex:
+                if prod['codigo'] not in codigos_existentes:
+                    productos_finales.append(prod)
+                    print(f"  ✓ Agregado por regex: {prod['codigo']} - {prod['nombre']} - ${prod['valor']}")
+    
     invoice_data["productos"] = productos_finales
     
     print(f"\n=== RESUMEN ===")
     print(f"Productos extraídos: {len(invoice_data['productos'])}")
     
     return invoice_data
+
+def extract_products_from_text(text):
+    """Fallback: Extrae productos usando regex cuando Document AI falla"""
+    productos = []
+    
+    # Patrón para líneas de productos: CODIGO NOMBRE ... PRECIO
+    # Ejemplo: 1183777 AREPA EL CARRIEL ... 5.290
+    pattern = r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/]+?)\s+.*?(\d{1,3}[,\.]\d{3})'
+    
+    matches = re.finditer(pattern, text, re.MULTILINE)
+    
+    for match in matches:
+        codigo = match.group(1)
+        nombre_raw = match.group(2).strip()
+        precio_raw = match.group(3)
+        
+        # Limpiar nombre
+        nombre = re.sub(r'\s+', ' ', nombre_raw)
+        nombre = nombre[:50]
+        
+        # Limpiar precio
+        precio = clean_amount(precio_raw)
+        
+        if codigo and nombre and len(nombre) > 3:
+            producto = {
+                "codigo": codigo,
+                "nombre": nombre,
+                "valor": precio or 0
+            }
+            productos.append(producto)
+    
+    return productos
 
 def process_invoice_products(file_path):
     """Función principal que procesa una factura"""
@@ -335,8 +381,5 @@ def process_invoice_products(file_path):
         
     except Exception as e:
         print(f"\n✗ ERROR: {str(e)}")
-        traceback.print_exc()
-        return None
-        print(f"✗ Traceback:")
         traceback.print_exc()
         return None
