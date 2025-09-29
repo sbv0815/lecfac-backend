@@ -991,10 +991,38 @@ async def database_stats():
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
+def es_codigo_peso_variable(codigo):
+    """Detecta códigos de peso variable o PLU temporal"""
+    if not codigo or len(codigo) < 6:
+        return False
+    
+    if codigo.startswith('29') and len(codigo) >= 12:
+        return True
+    
+    if codigo.startswith('2') and len(codigo) == 13:
+        if codigo.count('0') > 5:
+            return True
+    
+    return False
+
+def generar_codigo_unico(nombre, factura_id, posicion):
+    """Genera código único basado en el nombre"""
+    import hashlib
+    
+    if not nombre or len(nombre) < 3:
+        return f"AUTO_{factura_id}_{posicion}"
+    
+    nombre_norm = nombre.upper().strip()
+    hash_obj = hashlib.md5(nombre_norm.encode())
+    hash_hex = hash_obj.hexdigest()[:8].upper()
+    
+    return f"PLU_{hash_hex}"
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
