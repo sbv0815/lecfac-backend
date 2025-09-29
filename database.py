@@ -180,7 +180,7 @@ def create_postgresql_tables():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS codigos_locales (
             id SERIAL PRIMARY KEY,
-            producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestro(id) ON DELETE CASCADE,
+            producto_id INTEGER NOT NULL REFERENCES productos_maestro(id) ON DELETE CASCADE,
             cadena VARCHAR(50) NOT NULL,
             codigo_local VARCHAR(20) NOT NULL,
             descripcion_local TEXT,
@@ -194,7 +194,7 @@ def create_postgresql_tables():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_historicos (
             id SERIAL PRIMARY KEY,
-            producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestro(id),
+            producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
             establecimiento TEXT NOT NULL,
             cadena VARCHAR(50),
             precio INTEGER NOT NULL,
@@ -217,10 +217,10 @@ def create_postgresql_tables():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos_maestro(categoria)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_fresco ON productos_maestro(es_fresco)')
         
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_producto ON codigos_locales(producto_maestro_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_producto ON codigos_locales(producto_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_cadena_codigo ON codigos_locales(cadena, codigo_local)')
         
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto ON precios_historicos(producto_maestro_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto ON precios_historicos(producto_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_cadena ON precios_historicos(cadena)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_historicos(establecimiento)')
@@ -284,13 +284,13 @@ def create_sqlite_tables():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_historicos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            producto_maestro_id INTEGER NOT NULL,
+            producto_id INTEGER NOT NULL,
             establecimiento TEXT NOT NULL,
             precio INTEGER NOT NULL,
             usuario_id INTEGER,
             factura_id INTEGER,
             fecha_reporte DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestro (id) ON DELETE CASCADE,
+            FOREIGN KEY (producto_id) REFERENCES productos_maestro (id) ON DELETE CASCADE,
             FOREIGN KEY (usuario_id) REFERENCES usuarios (id),
             FOREIGN KEY (factura_id) REFERENCES facturas (id)
         )
@@ -379,13 +379,13 @@ def registrar_precio_historico(cursor, producto_id: int, establecimiento: str, c
     if os.environ.get("DATABASE_TYPE") == "postgresql":
         cursor.execute("""
             INSERT INTO precios_historicos 
-            (producto_maestro_id, establecimiento, cadena, precio, usuario_id, factura_id)
+            (producto_id, establecimiento, cadena, precio, usuario_id, factura_id)
             VALUES (%s, %s, %s, %s, %s, %s)
         """, (producto_id, establecimiento, cadena, precio, usuario_id, factura_id))
     else:
         cursor.execute("""
             INSERT INTO precios_historicos 
-            (producto_maestro_id, establecimiento, precio, usuario_id, factura_id)
+            (producto_id, establecimiento, precio, usuario_id, factura_id)
             VALUES (?, ?, ?, ?, ?)
         """, (producto_id, establecimiento, precio, usuario_id, factura_id))
 
@@ -451,6 +451,3 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
-        print(f"⚠️ Error en migración: {e}")
-        if conn:
-            conn.close()
