@@ -59,9 +59,8 @@ def clean_amount(amount_str):
     return None
 
 def extract_vendor_name(raw_text):
-    """Extrae el nombre del establecimiento - Supermercados y droguerías"""
+    """Extrae el nombre del establecimiento"""
     patterns = [
-        # Supermercados
         r'(ALMACENES\s+(?:EXITO|ÉXITO)[^\n]*)',
         r'((?:EXITO|ÉXITO)\s+\w+)',
         r'(CARULLA[^\n]*)',
@@ -75,22 +74,6 @@ def extract_vendor_name(raw_text):
         r'(SURTIMAX[^\n]*)',
         r'(ARA[^\n]*)',
         r'(FALABELLA[^\n]*)',
-        r'(LA\s+14[^\n]*)',
-        r'(MERCADEFAM[^\n]*)',
-        
-        # Droguerías
-        r'(CRUZ\s+VERDE[^\n]*)',
-        r'(DROGAS\s+LA\s+REBAJA[^\n]*)',
-        r'(LA\s+REBAJA[^\n]*)',
-        r'(CAFAM[^\n]*)',
-        r'(COLSUBSIDIO[^\n]*)',
-        r'(LOCATEL[^\n]*)',
-        r'(DROGUERIA[^\n]*)',
-        
-        # Ferreterías
-        r'(HOMECENTER[^\n]*)',
-        r'(EPA[^\n]*)',
-        r'(CONSTRURAMA[^\n]*)',
     ]
     
     for pattern in patterns:
@@ -198,7 +181,7 @@ def extract_unit_price_from_text(text):
     return None
 
 def extract_products_with_prices(document):
-    """Extrae productos con sus precios - Maneja entidades separadas + fallback"""
+    """Extrae productos con sus precios - Maneja entidades separadas + fallback agresivo"""
     
     raw_text = document.text
     
@@ -260,7 +243,6 @@ def extract_products_with_prices(document):
             if i + 1 < len(line_items):
                 next_entity = line_items[i + 1]
                 print(f"  ⚠️ Sin precio, buscando en siguiente entidad...")
-                print(f"     Siguiente: {next_entity.mention_text[:80]}")
                 
                 # Buscar precio en siguiente entidad
                 for prop in next_entity.properties:
@@ -286,56 +268,137 @@ def extract_products_with_prices(document):
         
         i += 1
     
-    # FALLBACK: Si se detectaron muy pocos productos, intentar extracción por regex del texto completo
-    if len(productos_finales) < 2:
-        print(f"\n⚠️ Solo {len(productos_finales)} productos detectados. Intentando fallback con regex...")
-        productos_regex = extract_products_from_text(raw_text)
-        
-        if len(productos_regex) > len(productos_finales):
-            print(f"✓ Fallback encontró {len(productos_regex)} productos adicionales")
-            # Agregar productos que no estén ya
-            codigos_existentes = {p['codigo'] for p in productos_finales if p['codigo']}
-            for prod in productos_regex:
-                if prod['codigo'] not in codigos_existentes:
-                    productos_finales.append(prod)
-                    print(f"  ✓ Agregado por regex: {prod['codigo']} - {prod['nombre']} - ${prod['valor']}")
+    # FALLBACK AGRESIVO: Extraer directamente del texto con regex
+    print(f"\n⚙️ ACTIVANDO FALLBACK REGEX...")
+    productos_regex = extract_products_from_text_aggressive(raw_text)
+    print(f"✓ Regex encontró {len(productos_regex)} productos")
+    
+    # Combinar productos: agregar los que no estén duplicados
+    codigos_existentes = {p['codigo'] for p in productos_finales if p['codigo']}
+    
+    for prod_regex in productos_regex:
+        if prod_regex['codigo'] not in codigos_existentes:
+            productos_finales.append(prod_regex)
+            codigos_existentes.add(prod_regex['codigo'])
+            print(f"  + Agregado por regex: {prod_regex['codigo']} - {prod_regex['nombre']} - ${prod_regex['valor']}")
     
     invoice_data["productos"] = productos_finales
     
     print(f"\n=== RESUMEN ===")
     print(f"Productos extraídos: {len(invoice_data['productos'])}")
+    print(f"  - Document AI: {len(line_items)}")
+    print(f"  - Fallback regex: {len(productos_regex)}")
+    print(f"  - Total único: {len(productos_finales)}")
     
     return invoice_data
 
-def extract_products_from_text(text):
-    """Fallback: Extrae productos usando regex cuando Document AI falla"""
+def extract_products_from_text_aggressive(text):
+    """Fallback: Extrae productos usando regex agresivo"""
     productos = []
     
-    # Patrón para líneas de productos: CODIGO NOMBRE ... PRECIO
-    # Ejemplo: 1183777 AREPA EL CARRIEL ... 5.290
-    pattern = r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/]+?)\s+.*?(\d{1,3}[,\.]\d{3})'
+    # Patrones múltiples para diferentes formatos de factura
+    patterns = [
+        # Patrón 1: CODIGO NOMBRE ... PRECIO (múltiples líneas)
+        # Ejemplo: 1183777 AREPA EL CARRIEL\n01 un 5.290
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-]{3,50}?)(?:\n|\s+).*?(\d{1,3}[,\.]\d{3})',
+        
+        # Patrón 2: CODIGO NOMBRE PRECIO en una sola línea
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/\-]+?)\s+.*?(\d{1,3}[,\.]\d{3})\s*
+
+def process_invoice_products(file_path):
+    """Función principal que procesa una factura"""
     
-    matches = re.finditer(pattern, text, re.MULTILINE)
+    try:
+        print("=== INICIANDO PROCESAMIENTO ===")
+        print(f"Archivo: {file_path}")
+        print(f"Existe: {os.path.exists(file_path)}")
+        
+        setup_environment()
+        print("✓ Credenciales configuradas")
+        
+        project_id = os.environ['GCP_PROJECT_ID']
+        location = os.environ['DOC_AI_LOCATION']
+        processor_id = os.environ['DOC_AI_PROCESSOR_ID']
+        
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{project_id}/locations/{location}/processors/{processor_id}"
+        
+        with open(file_path, "rb") as image:
+            image_content = image.read()
+        
+        print(f"✓ Archivo leído: {len(image_content)} bytes")
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        raw_document = documentai.RawDocument(
+            content=image_content,
+            mime_type=mime_type
+        )
+        
+        request = documentai.ProcessRequest(
+            name=name,
+            raw_document=raw_document
+        )
+        
+        print("→ Enviando a Document AI...")
+        result = client.process_document(request=request)
+        document = result.document
+        
+        print(f"✓ Texto extraído: {len(document.text)} caracteres")
+        print(f"✓ Entidades encontradas: {len(document.entities)}")
+        
+        invoice_data = extract_products_with_prices(document)
+        
+        print(f"\n✓ COMPLETADO")
+        print(f"✓ Establecimiento: {invoice_data['establecimiento']}")
+        print(f"✓ Productos: {len(invoice_data['productos'])}")
+        
+        for i, prod in enumerate(invoice_data['productos'][:3]):
+            print(f"  {i+1}. {prod['codigo']} - {prod['nombre']} - ${prod['valor']}")
+        
+        return invoice_data
+        
+    except Exception as e:
+        print(f"\n✗ ERROR: {str(e)}")
+        traceback.print_exc()
+        return None
+,
+        
+        # Patrón 3: Productos cortos (frescos)
+        r'(\d{2,5})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s]{4,30}?)\s+.*?(\d{1,3}[,\.]\d{3})',
+    ]
     
-    for match in matches:
-        codigo = match.group(1)
-        nombre_raw = match.group(2).strip()
-        precio_raw = match.group(3)
+    for pattern in patterns:
+        matches = re.finditer(pattern, text, re.MULTILINE)
         
-        # Limpiar nombre
-        nombre = re.sub(r'\s+', ' ', nombre_raw)
-        nombre = nombre[:50]
-        
-        # Limpiar precio
-        precio = clean_amount(precio_raw)
-        
-        if codigo and nombre and len(nombre) > 3:
-            producto = {
-                "codigo": codigo,
-                "nombre": nombre,
-                "valor": precio or 0
-            }
-            productos.append(producto)
+        for match in matches:
+            codigo = match.group(1).strip()
+            nombre_raw = match.group(2).strip()
+            precio_raw = match.group(3).strip()
+            
+            # Limpiar nombre (eliminar números y caracteres raros)
+            nombre = re.sub(r'\d+', '', nombre_raw)
+            nombre = re.sub(r'\s+', ' ', nombre)
+            nombre = nombre.strip()
+            
+            # Limpiar precio
+            precio = clean_amount(precio_raw)
+            
+            # Validar que sea un producto válido
+            if codigo and len(nombre) > 3 and precio and precio > 0:
+                producto = {
+                    "codigo": codigo,
+                    "nombre": nombre[:50],
+                    "valor": precio
+                }
+                
+                # Evitar duplicados en la misma extracción regex
+                if not any(p['codigo'] == codigo for p in productos):
+                    productos.append(producto)
     
     return productos
 
