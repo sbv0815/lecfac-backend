@@ -332,6 +332,37 @@ def create_sqlite_tables():
         )
         ''')
         
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historial_compras_usuario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            producto_id INTEGER NOT NULL,
+            fecha_compra DATETIME DEFAULT CURRENT_TIMESTAMP,
+            precio_pagado INTEGER NOT NULL,
+            establecimiento TEXT,
+            factura_id INTEGER,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE,
+            FOREIGN KEY (producto_id) REFERENCES productos_maestro (id),
+            FOREIGN KEY (factura_id) REFERENCES facturas (id)
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS patrones_compra (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            producto_id INTEGER NOT NULL,
+            frecuencia_dias INTEGER,
+            ultima_compra DATETIME,
+            proxima_compra_estimada DATETIME,
+            veces_comprado INTEGER DEFAULT 1,
+            recordatorio_activo INTEGER DEFAULT 1,
+            UNIQUE(usuario_id, producto_id),
+            FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE,
+            FOREIGN KEY (producto_id) REFERENCES productos_maestro (id)
+        )
+        ''')
+        
         conn.commit()
         conn.close()
         print("✅ Tablas SQLite creadas exitosamente")
@@ -441,6 +472,155 @@ def actualizar_estadisticas_usuario(cursor, usuario_id: int, productos_aportados
             SET facturas_aportadas = facturas_aportadas + 1
             WHERE id = ?
         """, (usuario_id,))
+
+def registrar_compra_personal(cursor, usuario_id: int, producto_id: int, precio: int, 
+                              establecimiento: str, cadena: str, factura_id: int):
+    """Registra una compra en el historial personal del usuario"""
+    from datetime import datetime
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            INSERT INTO historial_compras_usuario 
+            (usuario_id, producto_id, precio_pagado, establecimiento, cadena, factura_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (usuario_id, producto_id, precio, establecimiento, cadena, factura_id))
+    else:
+        cursor.execute("""
+            INSERT INTO historial_compras_usuario 
+            (usuario_id, producto_id, precio_pagado, establecimiento, factura_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (usuario_id, producto_id, precio, establecimiento, factura_id))
+
+def calcular_patron_compra(cursor, usuario_id: int, producto_id: int):
+    """Calcula el patrón de compra y actualiza recordatorios"""
+    from datetime import datetime, timedelta
+    
+    # Obtener historial de compras del producto
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT fecha_compra 
+            FROM historial_compras_usuario 
+            WHERE usuario_id = %s AND producto_id = %s
+            ORDER BY fecha_compra DESC
+            LIMIT 10
+        """, (usuario_id, producto_id))
+    else:
+        cursor.execute("""
+            SELECT fecha_compra 
+            FROM historial_compras_usuario 
+            WHERE usuario_id = ? AND producto_id = ?
+            ORDER BY fecha_compra DESC
+            LIMIT 10
+        """, (usuario_id, producto_id))
+    
+    fechas = cursor.fetchall()
+    
+    if len(fechas) < 2:
+        return None  # Necesitamos al menos 2 compras para calcular patrón
+    
+    # Calcular diferencias en días entre compras
+    diferencias = []
+    for i in range(len(fechas) - 1):
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            fecha1 = fechas[i][0]
+            fecha2 = fechas[i + 1][0]
+        else:
+            fecha1 = datetime.fromisoformat(fechas[i][0])
+            fecha2 = datetime.fromisoformat(fechas[i + 1][0])
+        
+        diff = (fecha1 - fecha2).days
+        if diff > 0:  # Ignorar compras el mismo día
+            diferencias.append(diff)
+    
+    if not diferencias:
+        return None
+    
+    # Calcular frecuencia promedio
+    frecuencia_promedio = sum(diferencias) / len(diferencias)
+    frecuencia_dias = round(frecuencia_promedio)
+    
+    # Calcular próxima compra estimada
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        ultima_compra = fechas[0][0]
+    else:
+        ultima_compra = datetime.fromisoformat(fechas[0][0])
+    
+    proxima_compra = ultima_compra + timedelta(days=frecuencia_dias)
+    
+    # Actualizar o crear patrón
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            INSERT INTO patrones_compra 
+            (usuario_id, producto_id, frecuencia_dias, ultima_compra, proxima_compra_estimada, veces_comprado)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (usuario_id, producto_id) 
+            DO UPDATE SET 
+                frecuencia_dias = EXCLUDED.frecuencia_dias,
+                ultima_compra = EXCLUDED.ultima_compra,
+                proxima_compra_estimada = EXCLUDED.proxima_compra_estimada,
+                veces_comprado = patrones_compra.veces_comprado + 1
+        """, (usuario_id, producto_id, frecuencia_dias, ultima_compra, proxima_compra, len(fechas)))
+    else:
+        cursor.execute("""
+            INSERT OR REPLACE INTO patrones_compra 
+            (usuario_id, producto_id, frecuencia_dias, ultima_compra, proxima_compra_estimada, veces_comprado)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (usuario_id, producto_id, frecuencia_dias, ultima_compra, proxima_compra, len(fechas)))
+    
+    return {
+        "frecuencia_dias": frecuencia_dias,
+        "proxima_compra": proxima_compra
+    }
+
+def obtener_recordatorios_pendientes(usuario_id: int):
+    """Obtiene los productos que el usuario debería comprar pronto"""
+    from datetime import datetime, timedelta
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    hoy = datetime.now()
+    ventana_recordatorio = hoy + timedelta(days=2)  # Recordar 2 días antes
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT 
+                p.codigo_ean,
+                p.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.proxima_compra_estimada,
+                EXTRACT(DAY FROM (pc.proxima_compra_estimada - CURRENT_TIMESTAMP)) as dias_restantes
+            FROM patrones_compra pc
+            JOIN productos_maestro p ON pc.producto_id = p.id
+            WHERE pc.usuario_id = %s 
+                AND pc.recordatorio_activo = TRUE
+                AND pc.proxima_compra_estimada <= %s
+                AND pc.veces_comprado >= 2
+            ORDER BY pc.proxima_compra_estimada ASC
+        """, (usuario_id, ventana_recordatorio))
+    else:
+        cursor.execute("""
+            SELECT 
+                p.codigo_ean,
+                p.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.proxima_compra_estimada,
+                julianday(pc.proxima_compra_estimada) - julianday('now') as dias_restantes
+            FROM patrones_compra pc
+            JOIN productos_maestro p ON pc.producto_id = p.id
+            WHERE pc.usuario_id = ? 
+                AND pc.recordatorio_activo = 1
+                AND julianday(pc.proxima_compra_estimada) <= julianday('now', '+2 days')
+                AND pc.veces_comprado >= 2
+            ORDER BY pc.proxima_compra_estimada ASC
+        """, (usuario_id,))
+    
+    recordatorios = cursor.fetchall()
+    conn.close()
+    
+    return recordatorios
 
 # ============================================
 # FUNCIONES ORIGINALES
