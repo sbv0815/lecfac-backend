@@ -102,6 +102,41 @@ def get_sqlite_connection():
         print(f"❌ Error conectando a SQLite: {e}")
         return None
 
+
+def migrar_esquema():
+    """Migra el esquema existente a la nueva estructura"""
+    conn = get_postgresql_connection()
+    if not conn:
+        return
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Agregar columna cadena si no existe
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS cadena VARCHAR(50)
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS fecha_factura DATE
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS total_factura INTEGER
+        """)
+        
+        conn.commit()
+        conn.close()
+        print("✅ Migración de esquema completada")
+        
+    except Exception as e:
+        print(f"⚠️ Error en migración: {e}")
+        if conn:
+            conn.close()
+
 def create_tables():
     """Crear tablas según el tipo de base de datos"""
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
