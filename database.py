@@ -162,6 +162,12 @@ def create_postgresql_tables():
     try:
         cursor = conn.cursor()
         
+        # PRIMERO: Migrar esquema existente
+        print("🔄 Migrando esquema existente...")
+        migrar_esquema()
+        
+        # Luego continúa con el resto del código...
+        
         # Tabla usuarios (sin cambios)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
