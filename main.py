@@ -9,6 +9,9 @@ from datetime import datetime
 # Importar el procesador y database
 from invoice_processor import process_invoice_products
 from database import create_tables, get_db_connection, hash_password, verify_password, test_database_connection
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+
 
 app = FastAPI(title="LecFac API", version="1.0.0")
 
@@ -35,10 +38,16 @@ class SaveInvoice(BaseModel):
     establecimiento: str
     productos: list
 
-@app.on_event("startup")
-async def startup_event():
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Inicialización de la aplicación"""
+    # TODO LO QUE VA ANTES DEL yield ES EL STARTUP
     print("🚀 Iniciando LecFac API...")
+    print("✅ Tesseract OCR disponible")
+    print("✅ psycopg3 disponible")
     
     # Probar conexión a base de datos
     if test_database_connection():
@@ -52,6 +61,14 @@ async def startup_event():
         print("🗃️ Tablas verificadas/creadas")
     except Exception as e:
         print(f"❌ Error creando tablas: {e}")
+    
+    yield  # <-- Aquí la app está corriendo
+    
+    # TODO LO QUE VA DESPUÉS DEL yield ES EL SHUTDOWN (limpieza)
+    print("👋 Cerrando LecFac API...")
+
+# DESPUÉS defines la app usando la función lifespan
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def root():
@@ -1256,6 +1273,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
