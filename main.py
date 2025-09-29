@@ -1196,70 +1196,154 @@ async def process_invoice_async(
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
-def procesar_factura_background(file_path, factura_id, usuario_id):
-    """Procesa factura en background con triple método"""
+from database import (
+    buscar_o_crear_producto, 
+    registrar_precio_historico,
+    actualizar_estadisticas_usuario
+)
+
+def procesar_factura_background(temp_file_path: str, factura_id: int, usuario_id: int):
+    """Procesa factura con validaciones estrictas tipo Waze"""
     try:
-        from invoice_processor import process_invoice_complete
+        print(f"🔄 Procesando factura {factura_id}")
         
-        # Procesar con triple método
-        result = process_invoice_complete(file_path)
+        # 1. PROCESAR CON OCR
+        resultado = process_invoice_products(temp_file_path)
         
-        if not result:
-            actualizar_estado_factura(factura_id, "error")
+        # 2. VALIDAR TOTAL (OBLIGATORIO)
+        total_factura = resultado.get("total", 0)
+        if not total_factura or total_factura <= 0:
+            print(f"❌ Factura {factura_id}: Total no detectado")
+            actualizar_estado_factura(factura_id, "error", "Total de factura no detectado")
             return
         
-        # Guardar productos en catálogo
+        establecimiento = resultado.get("establecimiento", "Desconocido")
+        cadena = extraer_cadena(establecimiento)  # Ej: "JUMBO" de "JUMBO BULEVAR"
+        productos_detectados = resultado.get("productos", [])
+        
+        # 3. FILTRAR: SOLO PRODUCTOS CON CÓDIGO EAN VÁLIDO
+        productos_validos = []
+        for prod in productos_detectados:
+            codigo = prod.get("codigo", "").strip()
+            
+            # Validar código: debe ser numérico y tener al menos 8 dígitos
+            if codigo and len(codigo) >= 8 and codigo.isdigit():
+                productos_validos.append(prod)
+            else:
+                print(f"⚠️ Descartado (sin código válido): {prod.get('nombre', 'Sin nombre')}")
+        
+        productos_guardados = len(productos_validos)
+        productos_totales = len(productos_detectados)
+        porcentaje = (productos_guardados / productos_totales * 100) if productos_totales > 0 else 0
+        
+        print(f"📊 Productos válidos: {productos_guardados}/{productos_totales} ({porcentaje:.1f}%)")
+        
+        # 4. GUARDAR EN BASE DE DATOS COLABORATIVA
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cadena = detectar_cadena(result['establecimiento'])
-        
         # Actualizar factura
-        cursor.execute(
-            """UPDATE facturas 
-               SET establecimiento = %s, cadena = %s, estado = %s, 
-                   metodo_procesamiento = %s, tiempo_procesamiento = %s,
-                   productos_detectados = %s
-               WHERE id = %s""",
-            (result['establecimiento'], cadena, "completado",
-             result['metadatos']['metodo'], result['metadatos']['tiempo_segundos'],
-             result['metadatos']['productos_finales'], factura_id)
-        )
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                UPDATE facturas 
+                SET establecimiento = %s, 
+                    cadena = %s,
+                    total_factura = %s,
+                    productos_detectados = %s,
+                    productos_guardados = %s,
+                    porcentaje_lectura = %s,
+                    estado = %s
+                WHERE id = %s
+            """, (establecimiento, cadena, total_factura, productos_totales, 
+                  productos_guardados, porcentaje, "completado", factura_id))
+        else:
+            cursor.execute("""
+                UPDATE facturas 
+                SET establecimiento = ?, 
+                    total_factura = ?,
+                    productos_detectados = ?,
+                    productos_guardados = ?,
+                    estado = ?
+                WHERE id = ?
+            """, (establecimiento, total_factura, productos_totales,
+                  productos_guardados, "completado", factura_id))
         
-        # Guardar productos
-        for i, producto in enumerate(result['productos']):
-            codigo = producto.get('codigo')
-            nombre = producto.get('nombre')
-            valor = producto.get('valor', 0)
+        # 5. PROCESAR CADA PRODUCTO VÁLIDO
+        for prod in productos_validos:
+            codigo_ean = prod["codigo"]
+            nombre = prod.get("nombre", "Sin nombre")
+            precio = prod.get("precio", 0)
             
-            if not codigo:
-                codigo = generar_codigo_unico(nombre, factura_id, i)
-            
-            es_fresco = len(codigo) < 7 or codigo.startswith('PLU_')
-            
-            if es_fresco:
-                producto_id = manejar_producto_fresco(cursor, codigo, nombre, cadena)
-            else:
-                producto_id = manejar_producto_ean(cursor, codigo, nombre)
-            
-            # Registrar precio
-            cursor.execute(
-                """INSERT INTO precios_productos 
-                   (producto_id, establecimiento, cadena, precio, usuario_id, factura_id, fecha_reporte)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (producto_id, result['establecimiento'], cadena, valor, usuario_id, factura_id, datetime.now())
+            # Buscar o crear en catálogo maestro
+            producto_id = buscar_o_crear_producto(
+                cursor, codigo_ean, nombre, precio, es_fresco=False
             )
+            
+            # Registrar precio histórico
+            registrar_precio_historico(
+                cursor, producto_id, establecimiento, cadena, 
+                precio, usuario_id, factura_id
+            )
+        
+        # 6. ACTUALIZAR ESTADÍSTICAS DEL USUARIO
+        actualizar_estadisticas_usuario(cursor, usuario_id, productos_guardados)
         
         conn.commit()
         conn.close()
         
-        # Limpiar archivo temporal
-        os.unlink(file_path)
+        print(f"✅ Factura {factura_id}: {productos_guardados} productos agregados al catálogo")
         
     except Exception as e:
-        print(f"Error en background: {e}")
+        print(f"❌ Error: {e}")
+        import traceback
         traceback.print_exc()
-        actualizar_estado_factura(factura_id, "error")
+        actualizar_estado_factura(factura_id, "error", str(e))
+    finally:
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+
+
+def extraer_cadena(establecimiento: str) -> str:
+    """Extrae la cadena principal del nombre del establecimiento"""
+    cadenas_conocidas = {
+        "JUMBO": "JUMBO",
+        "EXITO": "EXITO", 
+        "CARREFOUR": "CARREFOUR",
+        "OLIMPICA": "OLIMPICA",
+        "D1": "D1",
+        "ARA": "ARA",
+        "CAMACHO": "CAMACHO"
+    }
+    
+    establecimiento_upper = establecimiento.upper()
+    for cadena in cadenas_conocidas:
+        if cadena in establecimiento_upper:
+            return cadenas_conocidas[cadena]
+    
+    return "OTRO"
+
+
+def actualizar_estado_factura(factura_id: int, estado: str, mensaje: str = ""):
+    """Actualiza el estado de una factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                "UPDATE facturas SET estado = %s, establecimiento = %s WHERE id = %s",
+                (estado, mensaje or estado, factura_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE facturas SET estado = ? WHERE id = ?",
+                (estado, factura_id)
+            )
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error actualizando estado: {e}")
 
 def actualizar_estado_factura(factura_id, estado):
     conn = get_db_connection()
@@ -1272,6 +1356,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
