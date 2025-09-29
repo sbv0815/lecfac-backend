@@ -207,10 +207,46 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 6. HISTORIAL DE COMPRAS PERSONAL (para recordatorios)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historial_compras_usuario (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
+            fecha_compra TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            precio_pagado INTEGER NOT NULL,
+            establecimiento TEXT,
+            cadena VARCHAR(50),
+            factura_id INTEGER REFERENCES facturas(id)
+        )
+        ''')
+        
+        # 7. RECORDATORIOS Y PATRONES DE COMPRA
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS patrones_compra (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
+            frecuencia_dias INTEGER,
+            ultima_compra TIMESTAMP,
+            proxima_compra_estimada TIMESTAMP,
+            veces_comprado INTEGER DEFAULT 1,
+            recordatorio_activo BOOLEAN DEFAULT TRUE,
+            UNIQUE(usuario_id, producto_id)
+        )
+        ''')
+        
         # ÍNDICES PARA BÚSQUEDAS RÁPIDAS
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_cadena ON facturas(cadena)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado)')
+        
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_historial_usuario ON historial_compras_usuario(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_historial_producto ON historial_compras_usuario(producto_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_historial_fecha ON historial_compras_usuario(fecha_compra DESC)')
+        
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_proxima ON patrones_compra(proxima_compra_estimada)')
         
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos_maestro USING GIN (to_tsvector(\'spanish\', nombre))')
