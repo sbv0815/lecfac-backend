@@ -112,7 +112,7 @@ def create_tables():
         create_sqlite_tables()
 
 def create_postgresql_tables():
-    """Crear tablas en PostgreSQL - Catálogo colaborativo"""
+    """Crear tablas en PostgreSQL - Catálogo colaborativo con productos frescos"""
     if not POSTGRESQL_AVAILABLE:
         print("❌ PostgreSQL no disponible, creando tablas SQLite")
         create_sqlite_tables()
@@ -152,11 +152,13 @@ def create_postgresql_tables():
         )
         ''')
         
-        # CATÁLOGO ÚNICO DE PRODUCTOS (llave global)
+        # CATÁLOGO ÚNICO DE PRODUCTOS (ID interno como llave)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_catalogo (
-            codigo VARCHAR(13) PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
+            codigo_ean VARCHAR(13) UNIQUE,
             nombre_producto TEXT NOT NULL,
+            es_producto_fresco BOOLEAN DEFAULT FALSE,
             marca VARCHAR(100),
             categoria VARCHAR(50),
             presentacion VARCHAR(50),
@@ -166,11 +168,23 @@ def create_postgresql_tables():
         )
         ''')
         
+        # CÓDIGOS LOCALES para productos frescos (PLU)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS codigos_locales (
+            id SERIAL PRIMARY KEY,
+            producto_id INTEGER NOT NULL REFERENCES productos_catalogo(id) ON DELETE CASCADE,
+            cadena VARCHAR(50) NOT NULL,
+            codigo_local VARCHAR(20) NOT NULL,
+            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(cadena, codigo_local)
+        )
+        ''')
+        
         # PRECIOS POR SUPERMERCADO (histórico colaborativo)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_productos (
             id SERIAL PRIMARY KEY,
-            codigo_producto VARCHAR(13) NOT NULL REFERENCES productos_catalogo(codigo),
+            producto_id INTEGER NOT NULL REFERENCES productos_catalogo(id),
             establecimiento TEXT NOT NULL,
             cadena VARCHAR(50),
             precio INTEGER NOT NULL,
@@ -200,12 +214,19 @@ def create_postgresql_tables():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)')
         
         # Índices catálogo colaborativo
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_ean ON productos_catalogo(codigo_ean) WHERE codigo_ean IS NOT NULL')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_nombre ON productos_catalogo USING GIN (to_tsvector(\'spanish\', nombre_producto))')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_marca ON productos_catalogo(marca)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_categoria ON productos_catalogo(categoria)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_fresco ON productos_catalogo(es_producto_fresco)')
+        
+        # Índices códigos locales
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_producto ON codigos_locales(producto_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_cadena ON codigos_locales(cadena)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_local ON codigos_locales(codigo_local)')
         
         # Índices precios
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_codigo ON precios_productos(codigo_producto)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto ON precios_productos(producto_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_cadena ON precios_productos(cadena)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_productos(fecha_reporte DESC)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento)')
@@ -216,7 +237,7 @@ def create_postgresql_tables():
         
         conn.commit()
         conn.close()
-        print("✅ Tablas PostgreSQL creadas (catálogo colaborativo)")
+        print("✅ Tablas PostgreSQL creadas (catálogo colaborativo con productos frescos)")
         
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
