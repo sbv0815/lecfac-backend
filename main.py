@@ -1306,19 +1306,69 @@ def procesar_factura_background(temp_file_path: str, factura_id: int, usuario_id
 def extraer_cadena(establecimiento: str) -> str:
     """Extrae la cadena principal del nombre del establecimiento"""
     cadenas_conocidas = {
+        # SUPERMERCADOS
         "JUMBO": "JUMBO",
-        "EXITO": "EXITO", 
+        "EXITO": "EXITO",
         "CARREFOUR": "CARREFOUR",
         "OLIMPICA": "OLIMPICA",
+        "MAKRO": "MAKRO",
+        "METRO": "METRO",
+        "ALKOSTO": "ALKOSTO",
+        "PRICESMART": "PRICESMART",
+        
+        # TIENDAS DE DESCUENTO
         "D1": "D1",
         "ARA": "ARA",
-        "CAMACHO": "CAMACHO"
+        "JUSTO Y BUENO": "JUSTO_Y_BUENO",
+        "JUSTO & BUENO": "JUSTO_Y_BUENO",
+        
+        # DROGUERÍAS
+        "CRUZ VERDE": "CRUZ_VERDE",
+        "CRUZVERDE": "CRUZ_VERDE",
+        "DROGAS LA REBAJA": "LA_REBAJA",
+        "LA REBAJA": "LA_REBAJA",
+        "CAFAM": "CAFAM",
+        "LOCATEL": "LOCATEL",
+        "DROGUERIA COLSUBSIDIO": "COLSUBSIDIO",
+        "COLSUBSIDIO": "COLSUBSIDIO",
+        "FARMATODO": "FARMATODO",
+        "DROGAS COMFENALCO": "COMFENALCO",
+        "COMFENALCO": "COMFENALCO",
+        
+        # TIENDAS ESPECIALIZADAS
+        "HOME CENTER": "HOME_CENTER",
+        "HOMECENTER": "HOME_CENTER",
+        "FALABELLA": "FALABELLA",
+        "CONSTRUCTOR": "CONSTRUCTOR",
+        "EPA": "EPA",
+        
+        # TIENDAS ONLINE/DELIVERY
+        "MERQUEO": "MERQUEO",
+        "RAPPI": "RAPPI",
+        "DOMICILIOS.COM": "DOMICILIOS",
+        
+        # TIENDAS REGIONALES
+        "COLSUBSIDIO": "COLSUBSIDIO",
+        "LA 14": "LA_14",
+        "SUPERINTER": "SUPERINTER",
+        "CAÑAVERAL": "CAÑAVERAL",
+        "SURTIMAX": "SURTIMAX"
     }
     
-    establecimiento_upper = establecimiento.upper()
-    for cadena in cadenas_conocidas:
+    establecimiento_upper = establecimiento.upper().strip()
+    
+    # Buscar coincidencias
+    for cadena, nombre_normalizado in cadenas_conocidas.items():
         if cadena in establecimiento_upper:
-            return cadenas_conocidas[cadena]
+            return nombre_normalizado
+    
+    # Si no encuentra coincidencia, intentar extraer primera palabra significativa
+    palabras = establecimiento_upper.split()
+    if palabras:
+        primera_palabra = palabras[0]
+        # Excluir palabras genéricas
+        if primera_palabra not in ["DROGUERIA", "DROGUERIAS", "SUPERMERCADO", "TIENDA", "ALMACEN"]:
+            return primera_palabra
     
     return "OTRO"
 
@@ -1356,6 +1406,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
