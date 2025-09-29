@@ -501,9 +501,9 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
-    """Guardar factura con productos - Maneja código NULL"""
+    """Guardar factura con productos en catálogo colaborativo"""
     try:
-        print(f"=== GUARDANDO FACTURA ===")
+        print(f"=== GUARDANDO FACTURA EN CATÁLOGO COLABORATIVO ===")
         print(f"Usuario ID: {invoice.usuario_id}")
         print(f"Establecimiento: {invoice.establecimiento}")
         print(f"Productos recibidos: {len(invoice.productos)}")
@@ -512,97 +512,158 @@ async def save_invoice(invoice: SaveInvoice):
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Detectar cadena (éxito, carulla, olímpica, etc)
+        cadena = detectar_cadena(invoice.establecimiento)
+        print(f"Cadena detectada: {cadena}")
+        
         # Insertar factura
         if database_type == "postgresql":
             cursor.execute(
-                "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (%s, %s, %s) RETURNING id",
-                (invoice.usuario_id, invoice.establecimiento, datetime.now().isoformat())
+                """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
             )
             factura_id = cursor.fetchone()[0]
         else:
             cursor.execute(
                 "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (?, ?, ?)",
-                (invoice.usuario_id, invoice.establecimiento, datetime.now().isoformat())
+                (invoice.usuario_id, invoice.establecimiento, datetime.now())
             )
             factura_id = cursor.lastrowid
         
-        print(f"Factura ID generado: {factura_id}")
+        print(f"Factura ID: {factura_id}")
         
-        # Insertar productos con logging detallado
         productos_guardados = 0
-        productos_fallidos = []
+        productos_nuevos = 0
+        productos_actualizados = 0
         
         for i, producto in enumerate(invoice.productos):
-            print(f"\nProducto {i+1}: {producto}")
+            print(f"\n--- Producto {i+1}/{len(invoice.productos)} ---")
             
-            # Extraer y validar campos
             codigo = producto.get('codigo')
             nombre = producto.get('nombre')
             valor = producto.get('valor')
             
-            # GENERAR CÓDIGO AUTOMÁTICO SI FALTA
-            if not codigo or codigo == '' or codigo == 'None':
+            # Generar código si falta
+            if not codigo or codigo == 'None':
                 codigo = f"AUTO_{factura_id}_{i+1}"
-                print(f"⚠️ Código faltante, generado: {codigo}")
+                print(f"⚠️ Código auto-generado: {codigo}")
             
             # Validar nombre
             if not nombre or len(str(nombre).strip()) < 2:
                 nombre = "Producto sin descripción"
-                print(f"⚠️ Nombre faltante, usando genérico")
             
             # Validar valor
             if valor is None or valor == '':
                 valor = 0
-                print(f"⚠️ Valor faltante, usando 0")
             
             try:
-                # Convertir valor a entero
                 valor_int = int(valor)
                 
                 if database_type == "postgresql":
+                    # 1. Verificar si el producto existe en catálogo
+                    cursor.execute(
+                        "SELECT codigo, nombre_producto, total_reportes FROM productos_catalogo WHERE codigo = %s",
+                        (codigo,)
+                    )
+                    producto_existente = cursor.fetchone()
+                    
+                    if producto_existente:
+                        # Producto ya existe - actualizar contadores
+                        print(f"✓ Producto existente en catálogo: {codigo}")
+                        cursor.execute(
+                            """UPDATE productos_catalogo 
+                               SET total_reportes = total_reportes + 1,
+                                   ultimo_reporte = %s
+                               WHERE codigo = %s""",
+                            (datetime.now(), codigo)
+                        )
+                        productos_actualizados += 1
+                    else:
+                        # Producto nuevo - agregar a catálogo
+                        print(f"✓ Producto NUEVO en catálogo: {codigo}")
+                        cursor.execute(
+                            """INSERT INTO productos_catalogo 
+                               (codigo, nombre_producto, primera_fecha_reporte, total_reportes, ultimo_reporte)
+                               VALUES (%s, %s, %s, 1, %s)""",
+                            (codigo, nombre, datetime.now(), datetime.now())
+                        )
+                        productos_nuevos += 1
+                    
+                    # 2. Registrar precio en el supermercado
+                    cursor.execute(
+                        """INSERT INTO precios_productos 
+                           (codigo_producto, establecimiento, cadena, precio, usuario_id, factura_id, fecha_reporte)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                        (codigo, invoice.establecimiento, cadena, valor_int, invoice.usuario_id, factura_id, datetime.now())
+                    )
+                    
+                    # 3. También guardar en tabla legacy (temporal)
                     cursor.execute(
                         "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
                         (factura_id, codigo, nombre, valor_int)
                     )
+                    
                 else:
+                    # SQLite fallback
                     cursor.execute(
                         "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
                         (factura_id, codigo, nombre, valor_int)
                     )
                 
                 productos_guardados += 1
-                print(f"✅ Producto guardado: {codigo} - {nombre} - ${valor_int}")
+                print(f"✓ Guardado: {codigo} - {nombre} - ${valor_int} en {cadena}")
                 
             except Exception as e:
                 print(f"❌ Error guardando producto {i+1}: {e}")
-                productos_fallidos.append({
-                    "posicion": i+1,
-                    "error": str(e),
-                    "datos": producto
-                })
         
         conn.commit()
         conn.close()
         
         print(f"\n=== RESULTADO ===")
         print(f"Productos guardados: {productos_guardados}/{len(invoice.productos)}")
-        if productos_fallidos:
-            print(f"Productos fallidos: {len(productos_fallidos)}")
+        print(f"Productos nuevos en catálogo: {productos_nuevos}")
+        print(f"Productos actualizados: {productos_actualizados}")
         
         return {
             "success": True, 
             "factura_id": factura_id,
             "productos_guardados": productos_guardados,
             "total_productos": len(invoice.productos),
-            "productos_fallidos": len(productos_fallidos),
-            "message": f"Factura guardada: {productos_guardados} de {len(invoice.productos)} productos"
+            "productos_nuevos": productos_nuevos,
+            "productos_actualizados": productos_actualizados,
+            "message": f"Factura guardada: {productos_guardados} productos ({productos_nuevos} nuevos, {productos_actualizados} actualizados)"
         }
         
     except Exception as e:
-        print(f"❌ ERROR GUARDANDO FACTURA: {str(e)}")
+        print(f"❌ ERROR: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
+
+def detectar_cadena(establecimiento: str) -> str:
+    """Detecta la cadena de supermercado del establecimiento"""
+    establecimiento_lower = establecimiento.lower()
+    
+    cadenas = {
+        'exito': ['exito', 'éxito', 'almacenes'],
+        'carulla': ['carulla'],
+        'olimpica': ['olimpica', 'olímpica'],
+        'd1': ['d1', 'tiendas d1'],
+        'jumbo': ['jumbo'],
+        'alkosto': ['alkosto'],
+        'metro': ['metro', 'makro'],
+        'ara': ['ara'],
+        'surtimax': ['surtimax'],
+        'falabella': ['falabella']
+    }
+    
+    for cadena, palabras in cadenas.items():
+        for palabra in palabras:
+            if palabra in establecimiento_lower:
+                return cadena
+    
+    return 'otro'
 
 @app.get("/users/{user_id}/invoices")
 async def get_user_invoices(user_id: int):
@@ -834,5 +895,6 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
