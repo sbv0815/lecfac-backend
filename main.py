@@ -1196,6 +1196,147 @@ async def process_invoice_async(
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
+# ENDPOINT 1: Recordatorios personales
+@app.get("/recordatorios/{usuario_id}")
+async def obtener_recordatorios(usuario_id: int):
+    """Obtiene productos que el usuario debe comprar pronto"""
+    recordatorios = obtener_recordatorios_pendientes(usuario_id)
+    
+    return {
+        "usuario_id": usuario_id,
+        "recordatorios": [
+            {
+                "codigo": r[0],
+                "nombre": r[1],
+                "frecuencia_dias": r[2],
+                "ultima_compra": str(r[3]),
+                "proxima_compra": str(r[4]),
+                "dias_restantes": int(r[5])
+            } for r in recordatorios
+        ]
+    }
+
+# ENDPOINT 2: Comparar precios
+@app.get("/comparar-precios/{codigo_ean}")
+async def comparar_precios(codigo_ean: str):
+    """Compara precios del producto en diferentes establecimientos"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Obtener producto
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT nombre, precio_promedio FROM productos_maestro WHERE codigo_ean = %s
+        """, (codigo_ean,))
+    else:
+        cursor.execute("""
+            SELECT nombre, precio_promedio FROM productos_maestro WHERE codigo_ean = ?
+        """, (codigo_ean,))
+    
+    producto = cursor.fetchone()
+    if not producto:
+        conn.close()
+        raise HTTPException(404, "Producto no encontrado")
+    
+    # Obtener precios por cadena (últimos 30 días)
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT 
+                cadena,
+                AVG(precio)::INTEGER as precio_promedio,
+                MIN(precio) as precio_minimo,
+                COUNT(*) as reportes
+            FROM precios_historicos ph
+            JOIN productos_maestro pm ON ph.producto_id = pm.id
+            WHERE pm.codigo_ean = %s 
+                AND ph.fecha_reporte >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY cadena
+            ORDER BY precio_promedio ASC
+        """, (codigo_ean,))
+    else:
+        cursor.execute("""
+            SELECT 
+                'GENERAL' as cadena,
+                AVG(precio) as precio_promedio,
+                MIN(precio) as precio_minimo,
+                COUNT(*) as reportes
+            FROM precios_historicos ph
+            JOIN productos_maestro pm ON ph.producto_id = pm.id
+            WHERE pm.codigo_ean = ?
+                AND julianday('now') - julianday(ph.fecha_reporte) <= 30
+        """, (codigo_ean,))
+    
+    precios = cursor.fetchall()
+    conn.close()
+    
+    return {
+        "codigo": codigo_ean,
+        "nombre": producto[0],
+        "precio_promedio_general": producto[1],
+        "comparacion": [
+            {
+                "cadena": p[0],
+                "precio_promedio": p[1],
+                "precio_minimo": p[2],
+                "reportes": p[3]
+            } for p in precios
+        ]
+    }
+
+# ENDPOINT 3: Historial personal
+@app.get("/mi-historial/{usuario_id}")
+async def obtener_historial_personal(usuario_id: int, limit: int = 50):
+    """Obtiene el historial de compras del usuario"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                h.precio_pagado,
+                h.establecimiento,
+                h.cadena,
+                h.fecha_compra
+            FROM historial_compras_usuario h
+            JOIN productos_maestro pm ON h.producto_id = pm.id
+            WHERE h.usuario_id = %s
+            ORDER BY h.fecha_compra DESC
+            LIMIT %s
+        """, (usuario_id, limit))
+    else:
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                h.precio_pagado,
+                h.establecimiento,
+                h.fecha_compra
+            FROM historial_compras_usuario h
+            JOIN productos_maestro pm ON h.producto_id = pm.id
+            WHERE h.usuario_id = ?
+            ORDER BY h.fecha_compra DESC
+            LIMIT ?
+        """, (usuario_id, limit))
+    
+    historial = cursor.fetchall()
+    conn.close()
+    
+    return {
+        "usuario_id": usuario_id,
+        "compras": [
+            {
+                "codigo": h[0],
+                "nombre": h[1],
+                "precio": h[2],
+                "establecimiento": h[3],
+                "cadena": h[4] if len(h) > 4 else None,
+                "fecha": str(h[5] if len(h) > 5 else h[4])
+            } for h in historial
+        ]
+    }
+
 from database import (
     buscar_o_crear_producto, 
     registrar_precio_historico,
@@ -1411,6 +1552,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
