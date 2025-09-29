@@ -102,41 +102,6 @@ def get_sqlite_connection():
         print(f"❌ Error conectando a SQLite: {e}")
         return None
 
-
-def migrar_esquema():
-    """Migra el esquema existente a la nueva estructura"""
-    conn = get_postgresql_connection()
-    if not conn:
-        return
-    
-    try:
-        cursor = conn.cursor()
-        
-        # Agregar columna cadena si no existe
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS cadena VARCHAR(50)
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS fecha_factura DATE
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS total_factura INTEGER
-        """)
-        
-        conn.commit()
-        conn.close()
-        print("✅ Migración de esquema completada")
-        
-    except Exception as e:
-        print(f"⚠️ Error en migración: {e}")
-        if conn:
-            conn.close()
-
 def create_tables():
     """Crear tablas según el tipo de base de datos"""
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
@@ -147,7 +112,7 @@ def create_tables():
         create_sqlite_tables()
 
 def create_postgresql_tables():
-    """Crear tablas en PostgreSQL - Catálogo colaborativo con productos frescos"""
+    """Crear tablas en PostgreSQL - Sistema colaborativo tipo Waze"""
     if not POSTGRESQL_AVAILABLE:
         print("❌ PostgreSQL no disponible, creando tablas SQLite")
         create_sqlite_tables()
@@ -162,131 +127,117 @@ def create_postgresql_tables():
     try:
         cursor = conn.cursor()
         
-        # PRIMERO: Migrar esquema existente
-        print("🔄 Migrando esquema existente...")
-        migrar_esquema()
-        
-        # Luego continúa con el resto del código...
-        
-        # Tabla usuarios (sin cambios)
+        # 1. TABLA USUARIOS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id SERIAL PRIMARY KEY,
             email VARCHAR(255) UNIQUE NOT NULL,
             password_hash VARCHAR(255) NOT NULL,
             nombre VARCHAR(255),
+            facturas_aportadas INTEGER DEFAULT 0,
+            productos_aportados INTEGER DEFAULT 0,
+            puntos_contribucion INTEGER DEFAULT 0,
             fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         
-        # Tabla facturas (simplificada - solo metadatos)
+        # 2. TABLA FACTURAS (metadata + validaciones)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS facturas (
             id SERIAL PRIMARY KEY,
             usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
             establecimiento TEXT NOT NULL,
             cadena VARCHAR(50),
+            total_factura INTEGER NOT NULL,
             fecha_factura DATE,
-            total_factura INTEGER,
-            datos_completos JSONB DEFAULT '{}',
-            fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            estado VARCHAR(20) DEFAULT 'procesando',
+            productos_detectados INTEGER DEFAULT 0,
+            productos_guardados INTEGER DEFAULT 0,
+            porcentaje_lectura DECIMAL(5,2),
+            CHECK (total_factura > 0)
         )
         ''')
         
-        # CATÁLOGO ÚNICO DE PRODUCTOS (ID interno como llave)
+        # 3. CATÁLOGO MAESTRO DE PRODUCTOS (unificado)
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS productos_catalogo (
+        CREATE TABLE IF NOT EXISTS productos_maestro (
             id SERIAL PRIMARY KEY,
-            codigo_ean VARCHAR(13) UNIQUE,
-            nombre_producto TEXT NOT NULL,
-            es_producto_fresco BOOLEAN DEFAULT FALSE,
+            codigo_ean VARCHAR(13) UNIQUE NOT NULL,
+            nombre TEXT NOT NULL,
             marca VARCHAR(100),
             categoria VARCHAR(50),
-            presentacion VARCHAR(50),
-            primera_fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            total_reportes INTEGER DEFAULT 0,
-            ultimo_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            es_fresco BOOLEAN DEFAULT FALSE,
+            precio_promedio INTEGER,
+            veces_reportado INTEGER DEFAULT 1,
+            primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CHECK (LENGTH(codigo_ean) >= 8)
         )
         ''')
         
-        # CÓDIGOS LOCALES para productos frescos (PLU)
+        # 4. CÓDIGOS LOCALES (para productos frescos/PLU por cadena)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS codigos_locales (
             id SERIAL PRIMARY KEY,
-            producto_id INTEGER NOT NULL REFERENCES productos_catalogo(id) ON DELETE CASCADE,
+            producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestro(id) ON DELETE CASCADE,
             cadena VARCHAR(50) NOT NULL,
             codigo_local VARCHAR(20) NOT NULL,
+            descripcion_local TEXT,
+            activo BOOLEAN DEFAULT TRUE,
             fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(cadena, codigo_local)
         )
         ''')
         
-        # PRECIOS POR SUPERMERCADO (histórico colaborativo)
+        # 5. PRECIOS HISTÓRICOS (crowdsourcing)
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS precios_productos (
+        CREATE TABLE IF NOT EXISTS precios_historicos (
             id SERIAL PRIMARY KEY,
-            producto_id INTEGER NOT NULL REFERENCES productos_catalogo(id),
+            producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestro(id),
             establecimiento TEXT NOT NULL,
             cadena VARCHAR(50),
             precio INTEGER NOT NULL,
             usuario_id INTEGER REFERENCES usuarios(id),
             factura_id INTEGER REFERENCES facturas(id),
             fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            verificado BOOLEAN DEFAULT FALSE
+            verificado BOOLEAN DEFAULT FALSE,
+            outlier BOOLEAN DEFAULT FALSE,
+            CHECK (precio > 0)
         )
         ''')
         
-        # Tabla legacy productos (mantener para compatibilidad temporal)
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS productos (
-            id SERIAL PRIMARY KEY,
-            factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
-            codigo TEXT NOT NULL,
-            nombre TEXT NOT NULL,
-            valor INTEGER NOT NULL,
-            datos_adicionales JSONB DEFAULT '{}',
-            fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # Índices para búsquedas rápidas
+        # ÍNDICES PARA BÚSQUEDAS RÁPIDAS
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_cadena ON facturas(cadena)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado)')
         
-        # Índices catálogo colaborativo
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_ean ON productos_catalogo(codigo_ean) WHERE codigo_ean IS NOT NULL')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_nombre ON productos_catalogo USING GIN (to_tsvector(\'spanish\', nombre_producto))')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_marca ON productos_catalogo(marca)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_categoria ON productos_catalogo(categoria)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_fresco ON productos_catalogo(es_producto_fresco)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos_maestro USING GIN (to_tsvector(\'spanish\', nombre))')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos_maestro(categoria)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_fresco ON productos_maestro(es_fresco)')
         
-        # Índices códigos locales
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_producto ON codigos_locales(producto_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_cadena ON codigos_locales(cadena)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_local ON codigos_locales(codigo_local)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_producto ON codigos_locales(producto_maestro_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigos_cadena_codigo ON codigos_locales(cadena, codigo_local)')
         
-        # Índices precios
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto ON precios_productos(producto_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_cadena ON precios_productos(cadena)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_productos(fecha_reporte DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento)')
-        
-        # Índice legacy
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_factura ON productos(factura_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto ON precios_historicos(producto_maestro_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_cadena ON precios_historicos(cadena)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_historicos(establecimiento)')
         
         conn.commit()
         conn.close()
-        print("✅ Tablas PostgreSQL creadas (catálogo colaborativo con productos frescos)")
+        print("✅ Tablas PostgreSQL creadas (sistema colaborativo tipo Waze)")
         
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
+        import traceback
+        traceback.print_exc()
         if conn:
             conn.close()
 
 def create_sqlite_tables():
-    """Crear tablas en SQLite (fallback)"""
+    """Crear tablas en SQLite (fallback simplificado)"""
     conn = get_sqlite_connection()
     if not conn:
         print("❌ No se pudo crear conexión SQLite")
@@ -310,20 +261,38 @@ def create_sqlite_tables():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             usuario_id INTEGER NOT NULL,
             establecimiento TEXT NOT NULL,
+            total_factura INTEGER NOT NULL,
+            estado TEXT DEFAULT 'procesando',
+            productos_detectados INTEGER DEFAULT 0,
+            productos_guardados INTEGER DEFAULT 0,
             fecha_cargue DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
         )
         ''')
         
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS productos (
+        CREATE TABLE IF NOT EXISTS productos_maestro (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            factura_id INTEGER NOT NULL,
-            codigo TEXT NOT NULL,
+            codigo_ean TEXT UNIQUE NOT NULL,
             nombre TEXT NOT NULL,
-            valor INTEGER NOT NULL,
-            fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE CASCADE
+            precio_promedio INTEGER,
+            veces_reportado INTEGER DEFAULT 1,
+            fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS precios_historicos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_maestro_id INTEGER NOT NULL,
+            establecimiento TEXT NOT NULL,
+            precio INTEGER NOT NULL,
+            usuario_id INTEGER,
+            factura_id INTEGER,
+            fecha_reporte DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestro (id) ON DELETE CASCADE,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios (id),
+            FOREIGN KEY (factura_id) REFERENCES facturas (id)
         )
         ''')
         
@@ -335,6 +304,111 @@ def create_sqlite_tables():
         print(f"❌ Error creando tablas SQLite: {e}")
         if conn:
             conn.close()
+
+# ============================================
+# FUNCIONES AUXILIARES PARA SISTEMA COLABORATIVO
+# ============================================
+
+def buscar_o_crear_producto(cursor, codigo_ean: str, nombre: str, precio: int, es_fresco: bool = False):
+    """
+    Busca producto en catálogo maestro o lo crea.
+    Retorna el ID del producto maestro.
+    """
+    # Normalizar código
+    codigo_ean = codigo_ean.strip()
+    
+    # Buscar producto existente
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute(
+            "SELECT id, veces_reportado, precio_promedio FROM productos_maestro WHERE codigo_ean = %s",
+            (codigo_ean,)
+        )
+    else:
+        cursor.execute(
+            "SELECT id, veces_reportado, precio_promedio FROM productos_maestro WHERE codigo_ean = ?",
+            (codigo_ean,)
+        )
+    
+    resultado = cursor.fetchone()
+    
+    if resultado:
+        # Producto existe - actualizar estadísticas
+        producto_id = resultado[0]
+        veces = resultado[1] + 1
+        precio_anterior = resultado[2] or 0
+        nuevo_promedio = ((precio_anterior * (veces - 1)) + precio) / veces
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                UPDATE productos_maestro 
+                SET precio_promedio = %s, 
+                    veces_reportado = %s,
+                    ultima_actualizacion = CURRENT_TIMESTAMP,
+                    nombre = %s
+                WHERE id = %s
+            """, (int(nuevo_promedio), veces, nombre, producto_id))
+        else:
+            cursor.execute("""
+                UPDATE productos_maestro 
+                SET precio_promedio = ?, veces_reportado = ?, nombre = ?
+                WHERE id = ?
+            """, (int(nuevo_promedio), veces, nombre, producto_id))
+        
+        return producto_id
+    else:
+        # Producto nuevo - crear
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO productos_maestro 
+                (codigo_ean, nombre, precio_promedio, veces_reportado, es_fresco)
+                VALUES (%s, %s, %s, 1, %s)
+                RETURNING id
+            """, (codigo_ean, nombre, precio, es_fresco))
+            return cursor.fetchone()[0]
+        else:
+            cursor.execute("""
+                INSERT INTO productos_maestro 
+                (codigo_ean, nombre, precio_promedio, veces_reportado)
+                VALUES (?, ?, ?, 1)
+            """, (codigo_ean, nombre, precio))
+            return cursor.lastrowid
+
+def registrar_precio_historico(cursor, producto_id: int, establecimiento: str, cadena: str, 
+                               precio: int, usuario_id: int, factura_id: int):
+    """Registra un precio en el histórico colaborativo"""
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            INSERT INTO precios_historicos 
+            (producto_maestro_id, establecimiento, cadena, precio, usuario_id, factura_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (producto_id, establecimiento, cadena, precio, usuario_id, factura_id))
+    else:
+        cursor.execute("""
+            INSERT INTO precios_historicos 
+            (producto_maestro_id, establecimiento, precio, usuario_id, factura_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (producto_id, establecimiento, precio, usuario_id, factura_id))
+
+def actualizar_estadisticas_usuario(cursor, usuario_id: int, productos_aportados: int):
+    """Actualiza las estadísticas de contribución del usuario"""
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            UPDATE usuarios 
+            SET facturas_aportadas = facturas_aportadas + 1,
+                productos_aportados = productos_aportados + %s,
+                puntos_contribucion = puntos_contribucion + %s
+            WHERE id = %s
+        """, (productos_aportados, productos_aportados * 10, usuario_id))
+    else:
+        cursor.execute("""
+            UPDATE usuarios 
+            SET facturas_aportadas = facturas_aportadas + 1
+            WHERE id = ?
+        """, (usuario_id,))
+
+# ============================================
+# FUNCIONES ORIGINALES
+# ============================================
 
 def hash_password(password: str) -> str:
     """Hashea una contraseña usando bcrypt"""
@@ -377,58 +451,6 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
-
-def migrar_esquema():
-    """Migra el esquema existente a la nueva estructura"""
-    conn = get_postgresql_connection()
-    if not conn:
-        return
-    
-    try:
-        cursor = conn.cursor()
-        
-        # Agregar columnas faltantes en facturas
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS cadena VARCHAR(50)
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS fecha_factura DATE
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS total_factura INTEGER
-        """)
-        
-        # NUEVO: Campo estado para procesamiento asíncrono
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completado'
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS metodo_procesamiento VARCHAR(50)
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS tiempo_procesamiento INTEGER
-        """)
-        
-        cursor.execute("""
-            ALTER TABLE facturas 
-            ADD COLUMN IF NOT EXISTS productos_detectados INTEGER DEFAULT 0
-        """)
-        
-        conn.commit()
-        conn.close()
-        print("✅ Migración de esquema completada")
-        
-    except Exception as e:
         print(f"⚠️ Error en migración: {e}")
         if conn:
             conn.close()
