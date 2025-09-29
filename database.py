@@ -377,3 +377,58 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
+
+def migrar_esquema():
+    """Migra el esquema existente a la nueva estructura"""
+    conn = get_postgresql_connection()
+    if not conn:
+        return
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Agregar columnas faltantes en facturas
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS cadena VARCHAR(50)
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS fecha_factura DATE
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS total_factura INTEGER
+        """)
+        
+        # NUEVO: Campo estado para procesamiento asíncrono
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completado'
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS metodo_procesamiento VARCHAR(50)
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS tiempo_procesamiento INTEGER
+        """)
+        
+        cursor.execute("""
+            ALTER TABLE facturas 
+            ADD COLUMN IF NOT EXISTS productos_detectados INTEGER DEFAULT 0
+        """)
+        
+        conn.commit()
+        conn.close()
+        print("✅ Migración de esquema completada")
+        
+    except Exception as e:
+        print(f"⚠️ Error en migración: {e}")
+        if conn:
+            conn.close()
