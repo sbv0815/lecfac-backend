@@ -645,7 +645,160 @@ async def delete_invoice(factura_id: int, usuario_id: int):
     except Exception as e:
         raise HTTPException(500, f"Error eliminando factura: {str(e)}")
 
+@app.get("/admin/verify-database")
+async def verify_database():
+    """
+    Verifica que las tablas existan y muestra información
+    """
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return {
+                "success": False,
+                "error": "No se pudo conectar a la base de datos"
+            }
+        
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+        
+        info = {
+            "database_type": database_type,
+            "connection": "OK",
+            "tables": {}
+        }
+        
+        if database_type == "postgresql":
+            # Verificar tablas en PostgreSQL
+            cursor.execute("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public'
+                ORDER BY table_name
+            """)
+            tables = [row[0] for row in cursor.fetchall()]
+            info["tables_list"] = tables
+            
+            # Contar registros en cada tabla
+            for table in tables:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
+                
+                # Obtener columnas
+                cursor.execute(f"""
+                    SELECT column_name, data_type 
+                    FROM information_schema.columns 
+                    WHERE table_name = '{table}'
+                    ORDER BY ordinal_position
+                """)
+                columns = [{"name": row[0], "type": row[1]} for row in cursor.fetchall()]
+                
+                info["tables"][table] = {
+                    "exists": True,
+                    "rows": count,
+                    "columns": columns
+                }
+        else:
+            # Verificar tablas en SQLite
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
+            info["tables_list"] = tables
+            
+            for table in tables:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
+                
+                cursor.execute(f"PRAGMA table_info({table})")
+                columns = [{"name": row[1], "type": row[2]} for row in cursor.fetchall()]
+                
+                info["tables"][table] = {
+                    "exists": True,
+                    "rows": count,
+                    "columns": columns
+                }
+        
+        conn.close()
+        
+        return {
+            "success": True,
+            "data": info
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/admin/database-stats")
+async def database_stats():
+    """
+    Estadísticas rápidas de la base de datos
+    """
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(500, "Error de conexión")
+        
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+        
+        stats = {
+            "database_type": database_type,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Contar usuarios
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        stats["total_usuarios"] = cursor.fetchone()[0]
+        
+        # Contar facturas
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        stats["total_facturas"] = cursor.fetchone()[0]
+        
+        # Contar productos
+        cursor.execute("SELECT COUNT(*) FROM productos")
+        stats["total_productos"] = cursor.fetchone()[0]
+        
+        # Últimas 5 facturas
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT id, establecimiento, fecha_cargue 
+                FROM facturas 
+                ORDER BY fecha_cargue DESC 
+                LIMIT 5
+            """)
+        else:
+            cursor.execute("""
+                SELECT id, establecimiento, fecha_cargue 
+                FROM facturas 
+                ORDER BY fecha_cargue DESC 
+                LIMIT 5
+            """)
+        
+        ultimas_facturas = []
+        for row in cursor.fetchall():
+            ultimas_facturas.append({
+                "id": row[0],
+                "establecimiento": row[1],
+                "fecha": str(row[2])
+            })
+        
+        stats["ultimas_facturas"] = ultimas_facturas
+        
+        conn.close()
+        
+        return {
+            "success": True,
+            "stats": stats
+        }
+        
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
