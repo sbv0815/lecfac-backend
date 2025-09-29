@@ -142,6 +142,26 @@ def _is_discount_or_note(line: str) -> bool:
         return True
     return False
 
+def _is_weight_only_or_fragment(text: str) -> bool:
+    """True si la 'descripcion' es solo peso/cantidad o texto basura corto."""
+    if not text:
+        return True
+    s = re.sub(r'[;,:]', ' ', text).upper().strip()
+
+    # Líneas de peso/cantidad típicas
+    if re.match(r'^\d+(?:[.,]\d+)?\s*KG\b', s):
+        return True
+    if re.match(r'^\d+\s*X\s*\d{3,6}\b', s):  # "2 X 4200", etc.
+        return True
+    if re.match(r'^\d{1,3}[.,]\d{3}\b', s) and not re.search(r'[A-ZÀ-Ÿ]', s):
+        return True
+
+    # Si solo quedan palabras "débiles"
+    tokens = re.findall(r'[A-ZÀ-Ÿ]{2,}', s)
+    weak = {'KG','X','N','H','A','E','BA','C','DE','DEL','LA','EL','AL','POR'}
+    strong = [t for t in tokens if t not in weak]
+    return not any(len(t) >= 4 for t in strong)
+
 
 # =====================
 # Parsers por texto (Document AI / Tesseract)
@@ -210,8 +230,13 @@ def _parse_text_products(raw_text: str) -> list[dict]:
         if not nombre or len(nombre) < 3:
             continue
         # si no hay código, exige que el nombre tenga letras (evita líneas solo numéricas/pesos)
-        if not codigo and not re.search(r"[A-Za-zÀ-ÿ]", nombre):
+       # si no hay código, y la descripción es solo peso/fragmento, descártalo
+        if not codigo and _is_weight_only_or_fragment(nombre):
             continue
+# si es nota/descuento, descártalo
+        if _is_discount_or_note(l):
+            continue
+
 
         uid = hashlib.md5(f"col:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
         by_cols.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio or 0, "fuente": "text_columns"})
@@ -398,6 +423,19 @@ def extract_products_document_ai(document):
 
     return final
 
+    # filtros de no-ítem
+    if _is_discount_or_note(name):
+        continue
+    if not code and _is_weight_only_or_fragment(name):
+        continue
+
+# si alguna propiedad viene negativa (descuento), descartar
+    has_negative = any('-' in (getattr(prop, 'mention_text', '') or '') 
+                   for prop in getattr(e, 'properties', []))
+    if has_negative:
+        continue
+
+
 
 def extract_products_tesseract_aggressive(image_path):
     """Solo se usa si Tesseract está disponible. En Render normalmente NO lo está."""
@@ -428,6 +466,13 @@ def extract_products_tesseract_aggressive(image_path):
         print(f"⚠️ Error Tesseract: {e}")
         traceback.print_exc()
         return []
+
+
+def _has_two_real_words(name: str) -> bool:
+    toks = re.findall(r'[A-Za-zÀ-ÿ]{4,}', name)
+    return len(toks) >= 2
+
+
 
 
 # =====================
@@ -512,7 +557,7 @@ def process_invoice_complete(file_path):
         print(f"📦 Productos únicos: {len(productos_finales)}")
         print(f"   ├─ DA + Texto: {len(productos_ai)}")
         print(f"   ├─ Tesseract: {len(productos_tesseract)}")
-        print(f"   └─ Finales: {len(productos_finales)}")
+        print(f"   └F─ Finales: {len(productos_finales)}")
         print(f"⏱️ Tiempo: {tiempo_total}s")
         print("=" * 70 + "\n")
 
