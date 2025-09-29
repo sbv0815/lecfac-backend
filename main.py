@@ -699,10 +699,11 @@ def manejar_producto_fresco(cursor, codigo_local: str, nombre: str, cadena: str)
         return producto_id
 
 def detectar_cadena(establecimiento: str) -> str:
-    """Detecta la cadena de supermercado"""
+    """Detecta la cadena de supermercado o droguería"""
     establecimiento_lower = establecimiento.lower()
     
     cadenas = {
+        # Supermercados
         'exito': ['exito', 'éxito', 'almacenes'],
         'carulla': ['carulla'],
         'olimpica': ['olimpica', 'olímpica'],
@@ -712,7 +713,19 @@ def detectar_cadena(establecimiento: str) -> str:
         'metro': ['metro', 'makro'],
         'ara': ['ara'],
         'surtimax': ['surtimax'],
-        'falabella': ['falabella']
+        'falabella': ['falabella'],
+        'la14': ['la 14'],
+        
+        # Droguerías
+        'cruzverde': ['cruz verde'],
+        'larebaja': ['la rebaja', 'drogas la rebaja'],
+        'cafam': ['cafam'],
+        'colsubsidio': ['colsubsidio'],
+        'locatel': ['locatel'],
+        
+        # Ferreterías
+        'homecenter': ['homecenter'],
+        'epa': ['epa'],
     }
     
     for cadena, palabras in cadenas.items():
@@ -976,6 +989,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
