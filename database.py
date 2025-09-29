@@ -156,7 +156,7 @@ def create_postgresql_tables():
             factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
             codigo TEXT NOT NULL,
             nombre TEXT NOT NULL,
-            valor DECIMAL(10,2) NOT NULL,
+            valor INTEGER NOT NULL,
             datos_adicionales JSONB DEFAULT '{}',
             fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -218,7 +218,7 @@ def create_sqlite_tables():
             factura_id INTEGER NOT NULL,
             codigo TEXT NOT NULL,
             nombre TEXT NOT NULL,
-            valor REAL NOT NULL,
+            valor INTEGER NOT NULL,
             fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE CASCADE
         )
@@ -274,6 +274,3 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
-        print("  python database.py test     - Probar conexión")
-        print("  python database.py create   - Crear tablas")
-        print("  python database.py type     - Ver tipo de BD")
