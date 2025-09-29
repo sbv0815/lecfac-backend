@@ -1,11 +1,10 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import os
 import tempfile
 from datetime import datetime
-
 # Importar el procesador y database
 from invoice_processor import process_invoice_products
 from database import create_tables, get_db_connection, hash_password, verify_password, test_database_connection
@@ -1273,6 +1272,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
