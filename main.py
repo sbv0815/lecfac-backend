@@ -741,6 +741,103 @@ def detectar_cadena(establecimiento: str) -> str:
     
     return 'otro'
 
+def manejar_producto_ean(cursor, codigo_ean: str, nombre: str) -> int:
+    """Maneja producto con código EAN (único global)"""
+    # Buscar por EAN
+    cursor.execute(
+        "SELECT id FROM productos_catalogo WHERE codigo_ean = %s",
+        (codigo_ean,)
+    )
+    resultado = cursor.fetchone()
+    
+    if resultado:
+        producto_id = resultado[0]
+        # Actualizar contadores
+        cursor.execute(
+            """UPDATE productos_catalogo 
+               SET total_reportes = total_reportes + 1,
+                   ultimo_reporte = %s
+               WHERE id = %s""",
+            (datetime.now(), producto_id)
+        )
+        print(f"  ✓ Producto EAN existente: {codigo_ean}")
+        return producto_id
+    else:
+        # Crear nuevo producto
+        cursor.execute(
+            """INSERT INTO productos_catalogo 
+               (codigo_ean, nombre_producto, es_producto_fresco, primera_fecha_reporte, total_reportes, ultimo_reporte)
+               VALUES (%s, %s, FALSE, %s, 1, %s) RETURNING id""",
+            (codigo_ean, nombre, datetime.now(), datetime.now())
+        )
+        producto_id = cursor.fetchone()[0]
+        print(f"  ✓ Producto EAN NUEVO: {codigo_ean}")
+        return producto_id
+
+def manejar_producto_fresco(cursor, codigo_local: str, nombre: str, cadena: str) -> int:
+    """Maneja producto fresco (código local por cadena)"""
+    # Buscar si existe código local para esta cadena
+    cursor.execute(
+        "SELECT producto_id FROM codigos_locales WHERE cadena = %s AND codigo_local = %s",
+        (cadena, codigo_local)
+    )
+    resultado = cursor.fetchone()
+    
+    if resultado:
+        producto_id = resultado[0]
+        # Actualizar contadores
+        cursor.execute(
+            """UPDATE productos_catalogo 
+               SET total_reportes = total_reportes + 1,
+                   ultimo_reporte = %s
+               WHERE id = %s""",
+            (datetime.now(), producto_id)
+        )
+        print(f"  ✓ Producto fresco existente: {codigo_local} en {cadena}")
+        return producto_id
+    else:
+        # Crear nuevo producto fresco
+        cursor.execute(
+            """INSERT INTO productos_catalogo 
+               (nombre_producto, es_producto_fresco, primera_fecha_reporte, total_reportes, ultimo_reporte)
+               VALUES (%s, TRUE, %s, 1, %s) RETURNING id""",
+            (nombre, datetime.now(), datetime.now())
+        )
+        producto_id = cursor.fetchone()[0]
+        
+        # Crear código local
+        cursor.execute(
+            """INSERT INTO codigos_locales (producto_id, cadena, codigo_local)
+               VALUES (%s, %s, %s)""",
+            (producto_id, cadena, codigo_local)
+        )
+        print(f"  ✓ Producto fresco NUEVO: {codigo_local} en {cadena}")
+        return producto_id
+
+def detectar_cadena(establecimiento: str) -> str:
+    """Detecta la cadena de supermercado"""
+    establecimiento_lower = establecimiento.lower()
+    
+    cadenas = {
+        'exito': ['exito', 'éxito', 'almacenes'],
+        'carulla': ['carulla'],
+        'olimpica': ['olimpica', 'olímpica'],
+        'd1': ['d1', 'tiendas d1'],
+        'jumbo': ['jumbo'],
+        'alkosto': ['alkosto'],
+        'metro': ['metro', 'makro'],
+        'ara': ['ara'],
+        'surtimax': ['surtimax'],
+        'falabella': ['falabella']
+    }
+    
+    for cadena, palabras in cadenas.items():
+        for palabra in palabras:
+            if palabra in establecimiento_lower:
+                return cadena
+    
+    return 'otro'
+
 def detectar_cadena(establecimiento: str) -> str:
     """Detecta la cadena de supermercado del establecimiento"""
     establecimiento_lower = establecimiento.lower()
@@ -1022,6 +1119,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
