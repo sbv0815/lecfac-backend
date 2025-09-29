@@ -4,19 +4,24 @@ import json
 import tempfile
 import time
 import hashlib
+import shutil
 from datetime import datetime
 from google.cloud import documentai
 import traceback
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
-# Intentar importar Tesseract (opcional)
+# ===== Tesseract (opcional) =====
 try:
-    import pytesseract
-    TESSERACT_AVAILABLE = True
-    print("✅ Tesseract OCR disponible")
+    import pytesseract  # paquete python
+    if shutil.which("tesseract"):
+        TESSERACT_AVAILABLE = True
+        print("✅ Tesseract OCR disponible")
+    else:
+        TESSERACT_AVAILABLE = False
+        print("⚠️ Tesseract no instalado en el sistema - se usará Document AI")
 except ImportError:
     TESSERACT_AVAILABLE = False
-    print("⚠️ Tesseract no disponible - solo Document AI")
+    print("⚠️ Tesseract no disponible (paquete Python no instalado) - se usará Document AI")
 
 
 # =====================
@@ -124,6 +129,20 @@ def _is_variable_weight_ean(code: str) -> bool:
     return bool(code) and len(code) in (12, 13) and code[:2] in ("20", "28", "29")
 
 
+def _is_discount_or_note(line: str) -> bool:
+    """Detecta descuentos/ajustes/notas que no son ítems"""
+    U = line.upper()
+    # monto negativo tipo  -3,278   -12,500
+    if re.search(r'-\s*\d{1,3}(?:[.,]\d{3})+', line):
+        return True
+    # códigos de promo/desc: 344xxxDF.20%REF ...
+    if re.search(r'\bDF\.', U):
+        return True
+    if '%REF' in U or (re.search(r'\bREF\b', U) and '%' in U):
+        return True
+    return False
+
+
 # =====================
 # Parsers por texto (Document AI / Tesseract)
 # =====================
@@ -146,20 +165,27 @@ def _detect_columns(lines: list[str]):
     return code_idx, total_idx
 
 
-def _parse_by_columns(lines: list[str]) -> list[dict]:
-    productos = []
+def _parse_text_products(raw_text: str) -> list[dict]:
+    """Devuelve lista [{codigo,nombre,valor,fuente}] parseando el texto crudo."""
+    lines = _join_item_blocks(raw_text or "")
+    print(f"📄 Bloques tras normalizar: {len(lines)}")
+
     code_idx, total_idx = _detect_columns(lines)
 
+    # 1) Parser por columnas
+    matched_idx = set()
+    by_cols = []
     for i, l in enumerate(lines):
         if len(l) < 10:
             continue
         U = l.upper()
-        # saltar cabeceras y totales
         if "RESOLUCION DIAN" in U or "RESPONSABLE DE IVA" in U or "AGENTE RETENEDOR" in U:
             continue
         if "****" in U or "SUBTOTAL/TOTAL" in U:
             continue
-        if ("CODIGO" in U and "TOTAL" in U) or U.startswith("NRO. CUENTA") or "TARJ CRE/DEB" in U or U.startswith("VISA"):
+        if ("CODIGO" in U and "TOTAL" in U) or U.startswith("NRO. CUENTA") or "TARJ CRE/DEB" in U or U.startswith("VISA") or "ITEMS COMPRADOS" in U or "RESUMEN DE IVA" in U:
+            continue
+        if _is_discount_or_note(l):
             continue
 
         codigo_zone = l[: max(0, code_idx + 15)].strip()
@@ -181,63 +207,52 @@ def _parse_by_columns(lines: list[str]) -> list[dict]:
         nombre = re.sub(r"^\d{3,}\s*", "", nombre)
         nombre = nombre[:80]
 
-        if nombre and len(nombre) >= 3:
-            # uid por línea para no colapsar compras repetidas reales
-            uid = hashlib.md5(f"col:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
-            productos.append(
-                {"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio or 0, "fuente": "text_columns"}
-            )
-    return productos
+        if not nombre or len(nombre) < 3:
+            continue
+        # si no hay código, exige que el nombre tenga letras (evita líneas solo numéricas/pesos)
+        if not codigo and not re.search(r"[A-Za-zÀ-ÿ]", nombre):
+            continue
 
+        uid = hashlib.md5(f"col:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
+        by_cols.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio or 0, "fuente": "text_columns"})
+        matched_idx.add(i)
 
-def _parse_with_regex(lines: list[str]) -> list[dict]:
-    productos = []
-    patterns = [
-        # código + nombre + precio
-        re.compile(rf"(\d{{6,13}})\s+(.+?)\s+{PRICE_RE}", re.IGNORECASE),
-        # nombre en mayúsculas + precio (sin código)
-        re.compile(rf"([A-ZÀ-Ÿ]{{3}}[A-ZÀ-Ÿ\s/\-\.]{{3,60}}?)\s+{PRICE_RE}(?:\s*[NXAEH])?", re.IGNORECASE),
-    ]
+    # 2) Regex SOLO como fallback en líneas no cubiertas por columnas
+    by_rx = []
+    rx1 = re.compile(rf"(\d{{6,13}})\s+(.+?)\s+{PRICE_RE}", re.IGNORECASE)
+    rx2 = re.compile(rf"([A-ZÀ-Ÿ]{{3}}[A-ZÀ-Ÿ\s/\-\.]{{3,60}}?)\s+{PRICE_RE}(?:\s*[NXAEH])?", re.IGNORECASE)
 
     for i, linea in enumerate(lines):
+        if i in matched_idx:
+            continue
+        if _is_discount_or_note(linea):
+            continue
         U = linea.upper()
         if "SUBTOTAL/TOTAL" in U or "****" in U:
             continue
 
-        for pat in patterns:
-            m = pat.search(linea)
-            if not m:
-                continue
+        m = rx1.search(linea) or rx2.search(linea)
+        if not m:
+            continue
 
-            if len(m.groups()) == 3:
-                g1, g2, g3 = m.groups()
-                if g1.isdigit():
-                    codigo, nombre, precio_str = g1, g2, g3
-                else:
-                    codigo, nombre, precio_str = None, g1, g2
+        if len(m.groups()) == 3:
+            g1, g2, g3 = m.groups()
+            if g1.isdigit():
+                codigo, nombre, precio_s = g1, g2, g3
             else:
-                continue
+                codigo, nombre, precio_s = None, g1, g2
+        else:
+            continue
 
-            precio = clean_amount(precio_str) or 0
-            nombre = re.sub(r"\s+", " ", nombre).strip()[:80]
-            if not nombre or len(nombre) < 3:
-                continue
+        precio = clean_amount(precio_s) or 0
+        nombre = re.sub(r"\s+", " ", nombre).strip()[:80]
+        if not nombre or len(nombre) < 3:
+            continue
 
-            uid = hashlib.md5(f"rx:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
-            productos.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
-            break  # evita sobre-extraer la misma línea
+        uid = hashlib.md5(f"rx:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
+        by_rx.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
 
-    return productos
-
-
-def _parse_text_products(raw_text: str) -> list[dict]:
-    """Devuelve lista [{codigo,nombre,valor,fuente}] parseando el texto crudo."""
-    lines = _join_item_blocks(raw_text or "")
-    print(f"📄 Bloques tras normalizar: {len(lines)}")
-    by_cols = _parse_by_columns(lines)
-    by_rx = _parse_with_regex(lines)
-
-    # merge por uid (no colapsa compras reales)
+    # 3) merge por uid (no colapsa compras repetidas)
     seen = set()
     out = []
     for src in (by_cols, by_rx):
