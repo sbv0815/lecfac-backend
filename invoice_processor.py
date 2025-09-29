@@ -135,40 +135,667 @@ def clean_product_name(text, product_code=None):
     if not text:
         return None
     
-    # Remover código
+    # Remover código si existe
     if product_code:
         text = re.sub(rf'^{re.escape(product_code)}\s*', '', text)
     else:
         text = re.sub(r'^\d{6,}\s*', '', text)
     
-    # Remover prefijos comunes de sistemas POS
-    text = re.sub(r'^\d+DF\.[A-Z]{2}\.', '', text)  # Quita "343718DF.VD."
-    text = re.sub(r'^DF\.[A-Z]{2}\.', '', text)     # Quita "DF.VD."
+    # Remover prefijos comunes de sistemas POS (Jumbo, Éxito, etc)
+    text = re.sub(r'^\d+DF\.[A-Z]{2}\.', '', text)  # 343718DF.VD.
+    text = re.sub(r'^DF\.[A-Z]{2}\.', '', text)     # DF.VD.
+    text = re.sub(r'^\d{4,8}DF\.', '', text)         # 343718DF.
     
-    # Remover precios
+    # Remover precios y cantidades
     text = re.sub(r'\d+[,\.]\d{3}', '', text)
     text = re.sub(r'\$\d+', '', text)
+    text = re.sub(r'\d+\s*[xX]\s*\d+', '', text)
     
-    # Remover sufijos
-    text = re.sub(r'[XNH]\s*$', '', text)
+    # Remover sufijos y códigos internos
+    text = re.sub(r'[XNH]\s*
+
+def extract_unit_price_from_text(text):
+    """Extrae precio unitario del texto"""
+    if not text:
+        return None
+    
+    price_patterns = [
+        r'\$\s*(\d{1,3}[,\.]\d{3})',
+        r'(\d{1,3}[,\.]\d{3})\s*$',
+        r'\$\s*(\d{1,6})',
+        r'(\d{4,6})\s*$',
+    ]
+    
+    prices = []
+    for pattern in price_patterns:
+        matches = re.findall(pattern, text)
+        for match in matches:
+            price = clean_amount(match)
+            if price and 50 <= price <= 500000:
+                prices.append(price)
+    
+    if prices:
+        prices.sort()
+        return prices[len(prices)//2]
+    
+    return None
+
+def extract_products_with_prices(document):
+    """Extrae productos - Document AI + Fallback regex"""
+    
+    raw_text = document.text
+    
+    invoice_data = {
+        "establecimiento": extract_vendor_name(raw_text),
+        "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "productos": []
+    }
+    
+    print(f"\n=== ANÁLISIS DE ENTIDADES ===")
+    print(f"Total entidades: {len(document.entities)}")
+    
+    line_items = [e for e in document.entities if e.type_ == "line_item" and e.confidence > 0.35]
+    print(f"Line items válidos: {len(line_items)}")
+    
+    productos_finales = []
+    i = 0
+    
+    while i < len(line_items):
+        entity = line_items[i]
+        
+        raw_item_text = entity.mention_text
+        product_code = extract_product_code(raw_item_text)
+        product_name = clean_product_name(raw_item_text, product_code)
+        
+        unit_price = None
+        
+        for prop in entity.properties:
+            if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                price_candidate = clean_amount(prop.mention_text)
+                if price_candidate:
+                    unit_price = price_candidate
+        
+        if not unit_price:
+            unit_price = extract_unit_price_from_text(raw_item_text)
+        
+        if (product_code or (product_name and len(product_name) > 2)) and not unit_price:
+            if i + 1 < len(line_items):
+                next_entity = line_items[i + 1]
+                for prop in next_entity.properties:
+                    if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                        price_candidate = clean_amount(prop.mention_text)
+                        if price_candidate:
+                            unit_price = price_candidate
+                            i += 1
+                            break
+        
+        if product_code or (product_name and len(product_name) > 2):
+            producto = {
+                "codigo": product_code,
+                "nombre": product_name or "Producto sin descripción",
+                "valor": unit_price or 0
+            }
+            productos_finales.append(producto)
+        
+        i += 1
+    
+    print(f"Document AI: {len(productos_finales)} productos")
+    
+    # FALLBACK REGEX
+    print(f"Activando fallback regex...")
+    productos_regex = extract_products_from_text_aggressive(raw_text)
+    print(f"Regex: {len(productos_regex)} productos")
+    
+    codigos_existentes = {p['codigo'] for p in productos_finales if p['codigo']}
+    
+    for prod_regex in productos_regex:
+        if prod_regex['codigo'] not in codigos_existentes:
+            productos_finales.append(prod_regex)
+            codigos_existentes.add(prod_regex['codigo'])
+    
+    invoice_data["productos"] = productos_finales
+    
+    print(f"TOTAL: {len(productos_finales)} productos")
+    
+    return invoice_data
+
+def extract_products_from_text_aggressive(text):
+    """Fallback: Extrae productos con regex"""
+    productos = []
+    
+    patterns = [
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-]{3,50}?)(?:\n|\s+).*?(\d{1,3}[,\.]\d{3})',
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/\-]+?)\s+.*?(\d{1,3}[,\.]\d{3})',
+        r'(\d{2,5})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s]{4,30}?)\s+.*?(\d{1,3}[,\.]\d{3})'
+    ]
+    
+    for pattern in patterns:
+        matches = re.finditer(pattern, text, re.MULTILINE)
+        
+        for match in matches:
+            codigo = match.group(1).strip()
+            nombre_raw = match.group(2).strip()
+            precio_raw = match.group(3).strip()
+            
+            nombre = re.sub(r'\d+', '', nombre_raw)
+            nombre = re.sub(r'\s+', ' ', nombre)
+            nombre = nombre.strip()
+            
+            precio = clean_amount(precio_raw)
+            
+            if codigo and len(nombre) > 3 and precio and precio > 0:
+                producto = {
+                    "codigo": codigo,
+                    "nombre": nombre[:50],
+                    "valor": precio
+                }
+                
+                if not any(p['codigo'] == codigo for p in productos):
+                    productos.append(producto)
+    
+    return productos
+
+def process_invoice_products(file_path):
+    """Función principal que procesa una factura"""
+    
+    try:
+        print("=== INICIANDO PROCESAMIENTO ===")
+        
+        setup_environment()
+        
+        project_id = os.environ['GCP_PROJECT_ID']
+        location = os.environ['DOC_AI_LOCATION']
+        processor_id = os.environ['DOC_AI_PROCESSOR_ID']
+        
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{project_id}/locations/{location}/processors/{processor_id}"
+        
+        with open(file_path, "rb") as image:
+            image_content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        raw_document = documentai.RawDocument(
+            content=image_content,
+            mime_type=mime_type
+        )
+        
+        request = documentai.ProcessRequest(
+            name=name,
+            raw_document=raw_document
+        )
+        
+        print("Enviando a Document AI...")
+        result = client.process_document(request=request)
+        document = result.document
+        
+        print(f"Texto: {len(document.text)} caracteres")
+        print(f"Entidades: {len(document.entities)}")
+        
+        invoice_data = extract_products_with_prices(document)
+        
+        print(f"Establecimiento: {invoice_data['establecimiento']}")
+        print(f"Productos: {len(invoice_data['productos'])}")
+        
+        return invoice_data
+        
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        traceback.print_exc()
+        return None
+, '', text)
     text = re.sub(r'\s+DF\.[A-Z\.%\s]*', '', text)
+    text = re.sub(r'-\d+,\d+', '', text)
+    text = re.sub(r'\s+\d+
+
+def extract_unit_price_from_text(text):
+    """Extrae precio unitario del texto"""
+    if not text:
+        return None
     
-    # Normalizar espacios
-    text = re.sub(r'\s+', ' ', text).strip()
+    price_patterns = [
+        r'\$\s*(\d{1,3}[,\.]\d{3})',
+        r'(\d{1,3}[,\.]\d{3})\s*$',
+        r'\$\s*(\d{1,6})',
+        r'(\d{4,6})\s*$',
+    ]
     
-    # Extraer solo palabras válidas
+    prices = []
+    for pattern in price_patterns:
+        matches = re.findall(pattern, text)
+        for match in matches:
+            price = clean_amount(match)
+            if price and 50 <= price <= 500000:
+                prices.append(price)
+    
+    if prices:
+        prices.sort()
+        return prices[len(prices)//2]
+    
+    return None
+
+def extract_products_with_prices(document):
+    """Extrae productos - Document AI + Fallback regex"""
+    
+    raw_text = document.text
+    
+    invoice_data = {
+        "establecimiento": extract_vendor_name(raw_text),
+        "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "productos": []
+    }
+    
+    print(f"\n=== ANÁLISIS DE ENTIDADES ===")
+    print(f"Total entidades: {len(document.entities)}")
+    
+    line_items = [e for e in document.entities if e.type_ == "line_item" and e.confidence > 0.35]
+    print(f"Line items válidos: {len(line_items)}")
+    
+    productos_finales = []
+    i = 0
+    
+    while i < len(line_items):
+        entity = line_items[i]
+        
+        raw_item_text = entity.mention_text
+        product_code = extract_product_code(raw_item_text)
+        product_name = clean_product_name(raw_item_text, product_code)
+        
+        unit_price = None
+        
+        for prop in entity.properties:
+            if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                price_candidate = clean_amount(prop.mention_text)
+                if price_candidate:
+                    unit_price = price_candidate
+        
+        if not unit_price:
+            unit_price = extract_unit_price_from_text(raw_item_text)
+        
+        if (product_code or (product_name and len(product_name) > 2)) and not unit_price:
+            if i + 1 < len(line_items):
+                next_entity = line_items[i + 1]
+                for prop in next_entity.properties:
+                    if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                        price_candidate = clean_amount(prop.mention_text)
+                        if price_candidate:
+                            unit_price = price_candidate
+                            i += 1
+                            break
+        
+        if product_code or (product_name and len(product_name) > 2):
+            producto = {
+                "codigo": product_code,
+                "nombre": product_name or "Producto sin descripción",
+                "valor": unit_price or 0
+            }
+            productos_finales.append(producto)
+        
+        i += 1
+    
+    print(f"Document AI: {len(productos_finales)} productos")
+    
+    # FALLBACK REGEX
+    print(f"Activando fallback regex...")
+    productos_regex = extract_products_from_text_aggressive(raw_text)
+    print(f"Regex: {len(productos_regex)} productos")
+    
+    codigos_existentes = {p['codigo'] for p in productos_finales if p['codigo']}
+    
+    for prod_regex in productos_regex:
+        if prod_regex['codigo'] not in codigos_existentes:
+            productos_finales.append(prod_regex)
+            codigos_existentes.add(prod_regex['codigo'])
+    
+    invoice_data["productos"] = productos_finales
+    
+    print(f"TOTAL: {len(productos_finales)} productos")
+    
+    return invoice_data
+
+def extract_products_from_text_aggressive(text):
+    """Fallback: Extrae productos con regex"""
+    productos = []
+    
+    patterns = [
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-]{3,50}?)(?:\n|\s+).*?(\d{1,3}[,\.]\d{3})',
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/\-]+?)\s+.*?(\d{1,3}[,\.]\d{3})',
+        r'(\d{2,5})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s]{4,30}?)\s+.*?(\d{1,3}[,\.]\d{3})'
+    ]
+    
+    for pattern in patterns:
+        matches = re.finditer(pattern, text, re.MULTILINE)
+        
+        for match in matches:
+            codigo = match.group(1).strip()
+            nombre_raw = match.group(2).strip()
+            precio_raw = match.group(3).strip()
+            
+            nombre = re.sub(r'\d+', '', nombre_raw)
+            nombre = re.sub(r'\s+', ' ', nombre)
+            nombre = nombre.strip()
+            
+            precio = clean_amount(precio_raw)
+            
+            if codigo and len(nombre) > 3 and precio and precio > 0:
+                producto = {
+                    "codigo": codigo,
+                    "nombre": nombre[:50],
+                    "valor": precio
+                }
+                
+                if not any(p['codigo'] == codigo for p in productos):
+                    productos.append(producto)
+    
+    return productos
+
+def process_invoice_products(file_path):
+    """Función principal que procesa una factura"""
+    
+    try:
+        print("=== INICIANDO PROCESAMIENTO ===")
+        
+        setup_environment()
+        
+        project_id = os.environ['GCP_PROJECT_ID']
+        location = os.environ['DOC_AI_LOCATION']
+        processor_id = os.environ['DOC_AI_PROCESSOR_ID']
+        
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{project_id}/locations/{location}/processors/{processor_id}"
+        
+        with open(file_path, "rb") as image:
+            image_content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        raw_document = documentai.RawDocument(
+            content=image_content,
+            mime_type=mime_type
+        )
+        
+        request = documentai.ProcessRequest(
+            name=name,
+            raw_document=raw_document
+        )
+        
+        print("Enviando a Document AI...")
+        result = client.process_document(request=request)
+        document = result.document
+        
+        print(f"Texto: {len(document.text)} caracteres")
+        print(f"Entidades: {len(document.entities)}")
+        
+        invoice_data = extract_products_with_prices(document)
+        
+        print(f"Establecimiento: {invoice_data['establecimiento']}")
+        print(f"Productos: {len(invoice_data['productos'])}")
+        
+        return invoice_data
+        
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        traceback.print_exc()
+        return None
+, '', text)  # números al final
+    
+    # Normalizar espacios y líneas
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\n+', ' ', text)
+    text = text.strip()
+    
+    # Extraer solo palabras válidas (al menos 2 letras)
     words = []
     for word in text.split():
+        # Debe tener al menos 2 letras consecutivas
         if re.search(r'[A-Za-zÀ-ÿ]{2,}', word):
-            word = re.sub(r'[^\w\sÀ-ÿ]+$', '', word)
-            if len(word) >= 2:
+            # Limpiar caracteres especiales al final
+            word = re.sub(r'[^\w\sÀ-ÿ]+
+
+def extract_unit_price_from_text(text):
+    """Extrae precio unitario del texto"""
+    if not text:
+        return None
+    
+    price_patterns = [
+        r'\$\s*(\d{1,3}[,\.]\d{3})',
+        r'(\d{1,3}[,\.]\d{3})\s*$',
+        r'\$\s*(\d{1,6})',
+        r'(\d{4,6})\s*$',
+    ]
+    
+    prices = []
+    for pattern in price_patterns:
+        matches = re.findall(pattern, text)
+        for match in matches:
+            price = clean_amount(match)
+            if price and 50 <= price <= 500000:
+                prices.append(price)
+    
+    if prices:
+        prices.sort()
+        return prices[len(prices)//2]
+    
+    return None
+
+def extract_products_with_prices(document):
+    """Extrae productos - Document AI + Fallback regex"""
+    
+    raw_text = document.text
+    
+    invoice_data = {
+        "establecimiento": extract_vendor_name(raw_text),
+        "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "productos": []
+    }
+    
+    print(f"\n=== ANÁLISIS DE ENTIDADES ===")
+    print(f"Total entidades: {len(document.entities)}")
+    
+    line_items = [e for e in document.entities if e.type_ == "line_item" and e.confidence > 0.35]
+    print(f"Line items válidos: {len(line_items)}")
+    
+    productos_finales = []
+    i = 0
+    
+    while i < len(line_items):
+        entity = line_items[i]
+        
+        raw_item_text = entity.mention_text
+        product_code = extract_product_code(raw_item_text)
+        product_name = clean_product_name(raw_item_text, product_code)
+        
+        unit_price = None
+        
+        for prop in entity.properties:
+            if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                price_candidate = clean_amount(prop.mention_text)
+                if price_candidate:
+                    unit_price = price_candidate
+        
+        if not unit_price:
+            unit_price = extract_unit_price_from_text(raw_item_text)
+        
+        if (product_code or (product_name and len(product_name) > 2)) and not unit_price:
+            if i + 1 < len(line_items):
+                next_entity = line_items[i + 1]
+                for prop in next_entity.properties:
+                    if prop.type_ == "line_item/amount" and prop.confidence > 0.3:
+                        price_candidate = clean_amount(prop.mention_text)
+                        if price_candidate:
+                            unit_price = price_candidate
+                            i += 1
+                            break
+        
+        if product_code or (product_name and len(product_name) > 2):
+            producto = {
+                "codigo": product_code,
+                "nombre": product_name or "Producto sin descripción",
+                "valor": unit_price or 0
+            }
+            productos_finales.append(producto)
+        
+        i += 1
+    
+    print(f"Document AI: {len(productos_finales)} productos")
+    
+    # FALLBACK REGEX
+    print(f"Activando fallback regex...")
+    productos_regex = extract_products_from_text_aggressive(raw_text)
+    print(f"Regex: {len(productos_regex)} productos")
+    
+    codigos_existentes = {p['codigo'] for p in productos_finales if p['codigo']}
+    
+    for prod_regex in productos_regex:
+        if prod_regex['codigo'] not in codigos_existentes:
+            productos_finales.append(prod_regex)
+            codigos_existentes.add(prod_regex['codigo'])
+    
+    invoice_data["productos"] = productos_finales
+    
+    print(f"TOTAL: {len(productos_finales)} productos")
+    
+    return invoice_data
+
+def extract_products_from_text_aggressive(text):
+    """Fallback: Extrae productos con regex"""
+    productos = []
+    
+    patterns = [
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-]{3,50}?)(?:\n|\s+).*?(\d{1,3}[,\.]\d{3})',
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/\-]+?)\s+.*?(\d{1,3}[,\.]\d{3})',
+        r'(\d{2,5})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s]{4,30}?)\s+.*?(\d{1,3}[,\.]\d{3})'
+    ]
+    
+    for pattern in patterns:
+        matches = re.finditer(pattern, text, re.MULTILINE)
+        
+        for match in matches:
+            codigo = match.group(1).strip()
+            nombre_raw = match.group(2).strip()
+            precio_raw = match.group(3).strip()
+            
+            nombre = re.sub(r'\d+', '', nombre_raw)
+            nombre = re.sub(r'\s+', ' ', nombre)
+            nombre = nombre.strip()
+            
+            precio = clean_amount(precio_raw)
+            
+            if codigo and len(nombre) > 3 and precio and precio > 0:
+                producto = {
+                    "codigo": codigo,
+                    "nombre": nombre[:50],
+                    "valor": precio
+                }
+                
+                if not any(p['codigo'] == codigo for p in productos):
+                    productos.append(producto)
+    
+    return productos
+
+def process_invoice_products(file_path):
+    """Función principal que procesa una factura"""
+    
+    try:
+        print("=== INICIANDO PROCESAMIENTO ===")
+        
+        setup_environment()
+        
+        project_id = os.environ['GCP_PROJECT_ID']
+        location = os.environ['DOC_AI_LOCATION']
+        processor_id = os.environ['DOC_AI_PROCESSOR_ID']
+        
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{project_id}/locations/{location}/processors/{processor_id}"
+        
+        with open(file_path, "rb") as image:
+            image_content = image.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        elif file_path.lower().endswith('.pdf'):
+            mime_type = "application/pdf"
+        
+        raw_document = documentai.RawDocument(
+            content=image_content,
+            mime_type=mime_type
+        )
+        
+        request = documentai.ProcessRequest(
+            name=name,
+            raw_document=raw_document
+        )
+        
+        print("Enviando a Document AI...")
+        result = client.process_document(request=request)
+        document = result.document
+        
+        print(f"Texto: {len(document.text)} caracteres")
+        print(f"Entidades: {len(document.entities)}")
+        
+        invoice_data = extract_products_with_prices(document)
+        
+        print(f"Establecimiento: {invoice_data['establecimiento']}")
+        print(f"Productos: {len(invoice_data['productos'])}")
+        
+        return invoice_data
+        
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        traceback.print_exc()
+        return None
+, '', word)
+            # Evitar palabras muy cortas o que son solo números
+            if len(word) >= 2 and not word.isdigit():
                 words.append(word)
     
     if words:
+        # Tomar máximo 5 palabras significativas
         name = ' '.join(words[:5])
         return name[:50] if len(name) > 0 else None
     
     return None
+
+def es_codigo_peso_variable(codigo):
+    """Detecta si es código de peso variable o PLU temporal"""
+    if not codigo or len(codigo) < 6:
+        return False
+    
+    # Códigos de peso variable usualmente:
+    # - Empiezan con 2 o 29 (sistema PLU)
+    # - Tienen 13 dígitos pero los últimos son variables
+    if codigo.startswith('29') and len(codigo) >= 12:
+        return True
+    
+    if codigo.startswith('2') and len(codigo) == 13:
+        # Verificar si parece peso variable (muchos ceros o patrón repetitivo)
+        if codigo.count('0') > 5:
+            return True
+    
+    return False
+
+def generar_codigo_unico(nombre, factura_id, posicion):
+    """Genera código único basado en el nombre del producto"""
+    import hashlib
+    
+    if not nombre or len(nombre) < 3:
+        return f"AUTO_{factura_id}_{posicion}"
+    
+    # Crear hash del nombre normalizado
+    nombre_norm = nombre.upper().strip()
+    hash_obj = hashlib.md5(nombre_norm.encode())
+    hash_hex = hash_obj.hexdigest()[:8].upper()
+    
+    return f"PLU_{hash_hex}"
 
 def extract_unit_price_from_text(text):
     """Extrae precio unitario del texto"""
