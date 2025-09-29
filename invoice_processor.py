@@ -299,11 +299,44 @@ def extract_products_from_text_aggressive(text):
     # Patrones múltiples para diferentes formatos de factura
     patterns = [
         # Patrón 1: CODIGO NOMBRE ... PRECIO (múltiples líneas)
-        # Ejemplo: 1183777 AREPA EL CARRIEL\n01 un 5.290
         r'(\d{6,13})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s/\-]{3,50}?)(?:\n|\s+).*?(\d{1,3}[,\.]\d{3})',
         
         # Patrón 2: CODIGO NOMBRE PRECIO en una sola línea
-        r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/\-]+?)\s+.*?(\d{1,3}[,\.]\d{3})\s*
+        r'(\d{6,13})\s+([A-ZÀ-Ÿ\s/\-]+?)\s+.*?(\d{1,3}[,\.]\d{3})\s*$',
+        
+        # Patrón 3: Productos cortos (frescos)
+        r'(\d{2,5})\s+([A-ZÀ-Ÿ][A-ZÀ-Ÿ\s]{4,30}?)\s+.*?(\d{1,3}[,\.]\d{3})',
+    ]
+    
+    for pattern in patterns:
+        matches = re.finditer(pattern, text, re.MULTILINE)
+        
+        for match in matches:
+            codigo = match.group(1).strip()
+            nombre_raw = match.group(2).strip()
+            precio_raw = match.group(3).strip()
+            
+            # Limpiar nombre
+            nombre = re.sub(r'\d+', '', nombre_raw)
+            nombre = re.sub(r'\s+', ' ', nombre)
+            nombre = nombre.strip()
+            
+            # Limpiar precio
+            precio = clean_amount(precio_raw)
+            
+            # Validar producto válido
+            if codigo and len(nombre) > 3 and precio and precio > 0:
+                producto = {
+                    "codigo": codigo,
+                    "nombre": nombre[:50],
+                    "valor": precio
+                }
+                
+                # Evitar duplicados
+                if not any(p['codigo'] == codigo for p in productos):
+                    productos.append(producto)
+    
+    return productos
 
 def process_invoice_products(file_path):
     """Función principal que procesa una factura"""
