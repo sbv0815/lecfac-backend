@@ -543,28 +543,47 @@ async def save_invoice(invoice: SaveInvoice):
             nombre = producto.get('nombre')
             valor = producto.get('valor')
             
-            if not codigo or codigo == 'None':
-                codigo = f"AUTO_{factura_id}_{i+1}"
-                print(f"⚠️ Código auto-generado: {codigo}")
-            
+            # Validar y limpiar nombre
             if not nombre or len(str(nombre).strip()) < 2:
                 nombre = "Producto sin descripción"
+            else:
+                nombre = str(nombre).strip()
             
+            # Validar valor
             if valor is None or valor == '':
                 valor = 0
             
             try:
                 valor_int = int(valor)
                 
+                # Determinar si es código válido
+                codigo_valido = codigo and codigo != 'None' and len(codigo) >= 6
+                
+                # Detectar si es peso variable
+                if codigo_valido and es_codigo_peso_variable(codigo):
+                    print(f"⚠️ Código peso variable detectado: {codigo}")
+                    codigo = generar_codigo_unico(nombre, factura_id, i)
+                    print(f"   Generado código único: {codigo}")
+                
+                # Si no hay código válido, generar
+                if not codigo_valido:
+                    codigo = generar_codigo_unico(nombre, factura_id, i)
+                    print(f"⚠️ Código generado: {codigo}")
+                
                 if database_type == "postgresql":
                     # Detectar si es producto fresco (código corto < 7 dígitos)
-                    es_fresco = len(codigo) < 7 and codigo.isdigit()
+                    # O si es código generado por nosotros (empieza con PLU_ o AUTO_)
+                    es_fresco = (
+                        (len(codigo) < 7 and codigo.isdigit()) or 
+                        codigo.startswith('PLU_') or 
+                        codigo.startswith('AUTO_')
+                    )
                     
                     if es_fresco:
-                        print(f"🥬 Producto FRESCO detectado: {codigo}")
+                        print(f"🥬 Producto FRESCO/VARIABLE: {codigo}")
                         producto_id = manejar_producto_fresco(cursor, codigo, nombre, cadena)
                     else:
-                        print(f"📦 Producto EAN detectado: {codigo}")
+                        print(f"📦 Producto EAN: {codigo}")
                         producto_id = manejar_producto_ean(cursor, codigo, nombre)
                     
                     # Registrar precio
@@ -575,7 +594,7 @@ async def save_invoice(invoice: SaveInvoice):
                         (producto_id, invoice.establecimiento, cadena, valor_int, invoice.usuario_id, factura_id, datetime.now())
                     )
                     
-                    # También guardar en legacy
+                    # Legacy
                     cursor.execute(
                         "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
                         (factura_id, codigo, nombre, valor_int)
@@ -699,11 +718,10 @@ def manejar_producto_fresco(cursor, codigo_local: str, nombre: str, cadena: str)
         return producto_id
 
 def detectar_cadena(establecimiento: str) -> str:
-    """Detecta la cadena de supermercado o droguería"""
+    """Detecta la cadena de supermercado"""
     establecimiento_lower = establecimiento.lower()
     
     cadenas = {
-        # Supermercados
         'exito': ['exito', 'éxito', 'almacenes'],
         'carulla': ['carulla'],
         'olimpica': ['olimpica', 'olímpica'],
@@ -713,19 +731,7 @@ def detectar_cadena(establecimiento: str) -> str:
         'metro': ['metro', 'makro'],
         'ara': ['ara'],
         'surtimax': ['surtimax'],
-        'falabella': ['falabella'],
-        'la14': ['la 14'],
-        
-        # Droguerías
-        'cruzverde': ['cruz verde'],
-        'larebaja': ['la rebaja', 'drogas la rebaja'],
-        'cafam': ['cafam'],
-        'colsubsidio': ['colsubsidio'],
-        'locatel': ['locatel'],
-        
-        # Ferreterías
-        'homecenter': ['homecenter'],
-        'epa': ['epa'],
+        'falabella': ['falabella']
     }
     
     for cadena, palabras in cadenas.items():
@@ -989,6 +995,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
