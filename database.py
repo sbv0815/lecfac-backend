@@ -112,7 +112,7 @@ def create_tables():
         create_sqlite_tables()
 
 def create_postgresql_tables():
-    """Crear tablas en PostgreSQL"""
+    """Crear tablas en PostgreSQL - Catálogo colaborativo"""
     if not POSTGRESQL_AVAILABLE:
         print("❌ PostgreSQL no disponible, creando tablas SQLite")
         create_sqlite_tables()
@@ -127,7 +127,7 @@ def create_postgresql_tables():
     try:
         cursor = conn.cursor()
         
-        # Tabla usuarios
+        # Tabla usuarios (sin cambios)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id SERIAL PRIMARY KEY,
@@ -138,18 +138,50 @@ def create_postgresql_tables():
         )
         ''')
         
-        # Tabla facturas - Esquema flexible
+        # Tabla facturas (simplificada - solo metadatos)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS facturas (
             id SERIAL PRIMARY KEY,
             usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
             establecimiento TEXT NOT NULL,
-            datos_completos JSONB NOT NULL DEFAULT '{}',
+            cadena VARCHAR(50),
+            fecha_factura DATE,
+            total_factura INTEGER,
+            datos_completos JSONB DEFAULT '{}',
             fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         
-        # Tabla productos - Campos esenciales + JSON
+        # CATÁLOGO ÚNICO DE PRODUCTOS (llave global)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS productos_catalogo (
+            codigo VARCHAR(13) PRIMARY KEY,
+            nombre_producto TEXT NOT NULL,
+            marca VARCHAR(100),
+            categoria VARCHAR(50),
+            presentacion VARCHAR(50),
+            primera_fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            total_reportes INTEGER DEFAULT 0,
+            ultimo_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # PRECIOS POR SUPERMERCADO (histórico colaborativo)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS precios_productos (
+            id SERIAL PRIMARY KEY,
+            codigo_producto VARCHAR(13) NOT NULL REFERENCES productos_catalogo(codigo),
+            establecimiento TEXT NOT NULL,
+            cadena VARCHAR(50),
+            precio INTEGER NOT NULL,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            factura_id INTEGER REFERENCES facturas(id),
+            fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            verificado BOOLEAN DEFAULT FALSE
+        )
+        ''')
+        
+        # Tabla legacy productos (mantener para compatibilidad temporal)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos (
             id SERIAL PRIMARY KEY,
@@ -162,23 +194,32 @@ def create_postgresql_tables():
         )
         ''')
         
-        # Índices
+        # Índices para búsquedas rápidas
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_datos_gin ON facturas USING GIN (datos_completos)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_cadena ON facturas(cadena)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)')
+        
+        # Índices catálogo colaborativo
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_nombre ON productos_catalogo USING GIN (to_tsvector(\'spanish\', nombre_producto))')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_marca ON productos_catalogo(marca)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_catalogo_categoria ON productos_catalogo(categoria)')
+        
+        # Índices precios
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_codigo ON precios_productos(codigo_producto)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_cadena ON precios_productos(cadena)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_productos(fecha_reporte DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento)')
+        
+        # Índice legacy
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_factura ON productos(factura_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_datos_gin ON productos USING GIN (datos_adicionales)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)')
         
         conn.commit()
         conn.close()
-        print("✅ Tablas PostgreSQL creadas (esquema flexible con JSON)")
+        print("✅ Tablas PostgreSQL creadas (catálogo colaborativo)")
         
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
-        print("🔄 Fallback a SQLite")
-        create_sqlite_tables()
         if conn:
             conn.close()
 
