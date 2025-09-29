@@ -286,6 +286,7 @@ def _parse_text_products(raw_text: str) -> list[dict]:
         by_rx.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
 
     # 3) Merge por uid (no colapsa compras repetidas reales)
+        # 3) merge por uid (no colapsa compras repetidas reales)
     seen = set()
     out = []
     for src in (by_cols, by_rx):
@@ -296,6 +297,7 @@ def _parse_text_products(raw_text: str) -> list[dict]:
             out.append({k: v for k, v in p.items() if k != "uid"})
 
     return out
+
 
 
 
