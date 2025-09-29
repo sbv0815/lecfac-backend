@@ -393,31 +393,45 @@ def clean_product_name(text, product_code=None):
 
 
 def extract_products_document_ai(document):
-    """Fusiona entidades de DA con el parser por texto crudo."""
+    """Fusiona entidades de DA con el parser por texto crudo, filtrando descuentos y líneas débiles."""
     productos = []
 
-    # 1) Entidades si existen
-    line_items = [e for e in (document.entities or []) if e.type_ == "line_item" and e.confidence > 0.25]
+    # 1) Entidades de Document AI (con filtros)
+    line_items = [e for e in getattr(document, "entities", []) if e.type_ == "line_item" and e.confidence > 0.25]
     for e in line_items:
+        raw = (e.mention_text or "").strip()
+        name = re.sub(r"\s+", " ", raw)[:80] or "Sin descripción"
+
+        # descarta descuentos/notas
+        if _is_discount_or_note(raw) or _is_discount_or_note(name):
+            continue
+
+        # EAN si existe
         code = None
-        mm = re.search(EAN_LONG_RE, e.mention_text or "")
+        mm = re.search(EAN_LONG_RE, raw)
         if mm:
             code = mm.group(0)
 
+        # si no hay código, exige nombre "fuerte"
+        if not code and (_is_weight_only_or_fragment(name) or not _has_two_real_words(name)):
+            continue
+
+        # precio; si alguna propiedad viene negativa, descartar
         price = 0
+        has_negative = False
         for prop in getattr(e, "properties", []):
+            txt = (getattr(prop, "mention_text", "") or "")
+            if "-" in txt:
+                has_negative = True
             if prop.type_ == "line_item/amount" and prop.confidence > 0.2:
-                price = clean_amount(prop.mention_text) or price
+                price = clean_amount(txt) or price
+        if has_negative:
+            continue
 
-        name = (e.mention_text or "").strip()
-        name = re.sub(r"\s+", " ", name)[:80] or "Sin descripción"
-
-        productos.append(
-            {"codigo": code, "nombre": name, "valor": price, "fuente": "document_ai"}
-        )
+        productos.append({"codigo": code, "nombre": name, "valor": price, "fuente": "document_ai"})
 
     # 2) Texto crudo SIEMPRE (agrega lo que falte)
-    productos_texto = _parse_text_products(document.text or "")
+    productos_texto = _parse_text_products(getattr(document, "text", "") or "")
 
     # 3) Merge simple (evita duplicados exactos, mantiene compras repetidas reales)
     seen = set()
@@ -438,15 +452,6 @@ def extract_products_document_ai(document):
             final.append(p)
 
     return final
-
-    # filtros de no-ítem
-    if _is_discount_or_note(name):
-        continue
-    if not code and _is_weight_only_or_fragment(name):
-        continue
-
-
-
 
 
 def extract_products_tesseract_aggressive(image_path):
@@ -481,7 +486,7 @@ def extract_products_tesseract_aggressive(image_path):
 
 
 def _has_two_real_words(name: str) -> bool:
-    toks = re.findall(r'[A-Za-zÀ-ÿ]{4,}', name)
+    toks = re.findall(r'[A-Za-zÀ-ÿ]{4,}', name or "")
     return len(toks) >= 2
 
 
