@@ -501,7 +501,7 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
-    """Guardar factura con productos en catálogo colaborativo"""
+    """Guardar factura con productos en catálogo colaborativo (frescos + EAN)"""
     try:
         print(f"=== GUARDANDO FACTURA EN CATÁLOGO COLABORATIVO ===")
         print(f"Usuario ID: {invoice.usuario_id}")
@@ -512,7 +512,6 @@ async def save_invoice(invoice: SaveInvoice):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Detectar cadena (éxito, carulla, olímpica, etc)
         cadena = detectar_cadena(invoice.establecimiento)
         print(f"Cadena detectada: {cadena}")
         
@@ -544,16 +543,13 @@ async def save_invoice(invoice: SaveInvoice):
             nombre = producto.get('nombre')
             valor = producto.get('valor')
             
-            # Generar código si falta
             if not codigo or codigo == 'None':
                 codigo = f"AUTO_{factura_id}_{i+1}"
                 print(f"⚠️ Código auto-generado: {codigo}")
             
-            # Validar nombre
             if not nombre or len(str(nombre).strip()) < 2:
                 nombre = "Producto sin descripción"
             
-            # Validar valor
             if valor is None or valor == '':
                 valor = 0
             
@@ -561,48 +557,35 @@ async def save_invoice(invoice: SaveInvoice):
                 valor_int = int(valor)
                 
                 if database_type == "postgresql":
-                    # 1. Verificar si el producto existe en catálogo
-                    cursor.execute(
-                        "SELECT codigo, nombre_producto, total_reportes FROM productos_catalogo WHERE codigo = %s",
-                        (codigo,)
-                    )
-                    producto_existente = cursor.fetchone()
+                    # Detectar si es producto fresco (código corto < 7 dígitos)
+                    es_fresco = len(codigo) < 7 and codigo.isdigit()
                     
-                    if producto_existente:
-                        # Producto ya existe - actualizar contadores
-                        print(f"✓ Producto existente en catálogo: {codigo}")
-                        cursor.execute(
-                            """UPDATE productos_catalogo 
-                               SET total_reportes = total_reportes + 1,
-                                   ultimo_reporte = %s
-                               WHERE codigo = %s""",
-                            (datetime.now(), codigo)
-                        )
-                        productos_actualizados += 1
+                    if es_fresco:
+                        print(f"🥬 Producto FRESCO detectado: {codigo}")
+                        producto_id = manejar_producto_fresco(cursor, codigo, nombre, cadena)
                     else:
-                        # Producto nuevo - agregar a catálogo
-                        print(f"✓ Producto NUEVO en catálogo: {codigo}")
-                        cursor.execute(
-                            """INSERT INTO productos_catalogo 
-                               (codigo, nombre_producto, primera_fecha_reporte, total_reportes, ultimo_reporte)
-                               VALUES (%s, %s, %s, 1, %s)""",
-                            (codigo, nombre, datetime.now(), datetime.now())
-                        )
-                        productos_nuevos += 1
+                        print(f"📦 Producto EAN detectado: {codigo}")
+                        producto_id = manejar_producto_ean(cursor, codigo, nombre)
                     
-                    # 2. Registrar precio en el supermercado
+                    # Registrar precio
                     cursor.execute(
                         """INSERT INTO precios_productos 
-                           (codigo_producto, establecimiento, cadena, precio, usuario_id, factura_id, fecha_reporte)
+                           (producto_id, establecimiento, cadena, precio, usuario_id, factura_id, fecha_reporte)
                            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                        (codigo, invoice.establecimiento, cadena, valor_int, invoice.usuario_id, factura_id, datetime.now())
+                        (producto_id, invoice.establecimiento, cadena, valor_int, invoice.usuario_id, factura_id, datetime.now())
                     )
                     
-                    # 3. También guardar en tabla legacy (temporal)
+                    # También guardar en legacy
                     cursor.execute(
                         "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
                         (factura_id, codigo, nombre, valor_int)
                     )
+                    
+                    productos_guardados += 1
+                    if producto_id:
+                        productos_actualizados += 1
+                    else:
+                        productos_nuevos += 1
                     
                 else:
                     # SQLite fallback
@@ -610,20 +593,21 @@ async def save_invoice(invoice: SaveInvoice):
                         "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
                         (factura_id, codigo, nombre, valor_int)
                     )
+                    productos_guardados += 1
                 
-                productos_guardados += 1
-                print(f"✓ Guardado: {codigo} - {nombre} - ${valor_int} en {cadena}")
+                print(f"✓ Guardado: {codigo} - {nombre} - ${valor_int}")
                 
             except Exception as e:
                 print(f"❌ Error guardando producto {i+1}: {e}")
+                import traceback
+                traceback.print_exc()
         
         conn.commit()
         conn.close()
         
         print(f"\n=== RESULTADO ===")
         print(f"Productos guardados: {productos_guardados}/{len(invoice.productos)}")
-        print(f"Productos nuevos en catálogo: {productos_nuevos}")
-        print(f"Productos actualizados: {productos_actualizados}")
+        print(f"Nuevos: {productos_nuevos}, Actualizados: {productos_actualizados}")
         
         return {
             "success": True, 
@@ -632,7 +616,7 @@ async def save_invoice(invoice: SaveInvoice):
             "total_productos": len(invoice.productos),
             "productos_nuevos": productos_nuevos,
             "productos_actualizados": productos_actualizados,
-            "message": f"Factura guardada: {productos_guardados} productos ({productos_nuevos} nuevos, {productos_actualizados} actualizados)"
+            "message": f"Factura guardada: {productos_guardados} productos"
         }
         
     except Exception as e:
@@ -640,6 +624,103 @@ async def save_invoice(invoice: SaveInvoice):
         import traceback
         traceback.print_exc()
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
+
+def manejar_producto_ean(cursor, codigo_ean: str, nombre: str) -> int:
+    """Maneja producto con código EAN (único global)"""
+    # Buscar por EAN
+    cursor.execute(
+        "SELECT id FROM productos_catalogo WHERE codigo_ean = %s",
+        (codigo_ean,)
+    )
+    resultado = cursor.fetchone()
+    
+    if resultado:
+        producto_id = resultado[0]
+        # Actualizar contadores
+        cursor.execute(
+            """UPDATE productos_catalogo 
+               SET total_reportes = total_reportes + 1,
+                   ultimo_reporte = %s
+               WHERE id = %s""",
+            (datetime.now(), producto_id)
+        )
+        print(f"  ✓ Producto EAN existente: {codigo_ean}")
+        return producto_id
+    else:
+        # Crear nuevo producto
+        cursor.execute(
+            """INSERT INTO productos_catalogo 
+               (codigo_ean, nombre_producto, es_producto_fresco, primera_fecha_reporte, total_reportes, ultimo_reporte)
+               VALUES (%s, %s, FALSE, %s, 1, %s) RETURNING id""",
+            (codigo_ean, nombre, datetime.now(), datetime.now())
+        )
+        producto_id = cursor.fetchone()[0]
+        print(f"  ✓ Producto EAN NUEVO: {codigo_ean}")
+        return producto_id
+
+def manejar_producto_fresco(cursor, codigo_local: str, nombre: str, cadena: str) -> int:
+    """Maneja producto fresco (código local por cadena)"""
+    # Buscar si existe código local para esta cadena
+    cursor.execute(
+        "SELECT producto_id FROM codigos_locales WHERE cadena = %s AND codigo_local = %s",
+        (cadena, codigo_local)
+    )
+    resultado = cursor.fetchone()
+    
+    if resultado:
+        producto_id = resultado[0]
+        # Actualizar contadores
+        cursor.execute(
+            """UPDATE productos_catalogo 
+               SET total_reportes = total_reportes + 1,
+                   ultimo_reporte = %s
+               WHERE id = %s""",
+            (datetime.now(), producto_id)
+        )
+        print(f"  ✓ Producto fresco existente: {codigo_local} en {cadena}")
+        return producto_id
+    else:
+        # Crear nuevo producto fresco
+        cursor.execute(
+            """INSERT INTO productos_catalogo 
+               (nombre_producto, es_producto_fresco, primera_fecha_reporte, total_reportes, ultimo_reporte)
+               VALUES (%s, TRUE, %s, 1, %s) RETURNING id""",
+            (nombre, datetime.now(), datetime.now())
+        )
+        producto_id = cursor.fetchone()[0]
+        
+        # Crear código local
+        cursor.execute(
+            """INSERT INTO codigos_locales (producto_id, cadena, codigo_local)
+               VALUES (%s, %s, %s)""",
+            (producto_id, cadena, codigo_local)
+        )
+        print(f"  ✓ Producto fresco NUEVO: {codigo_local} en {cadena}")
+        return producto_id
+
+def detectar_cadena(establecimiento: str) -> str:
+    """Detecta la cadena de supermercado"""
+    establecimiento_lower = establecimiento.lower()
+    
+    cadenas = {
+        'exito': ['exito', 'éxito', 'almacenes'],
+        'carulla': ['carulla'],
+        'olimpica': ['olimpica', 'olímpica'],
+        'd1': ['d1', 'tiendas d1'],
+        'jumbo': ['jumbo'],
+        'alkosto': ['alkosto'],
+        'metro': ['metro', 'makro'],
+        'ara': ['ara'],
+        'surtimax': ['surtimax'],
+        'falabella': ['falabella']
+    }
+    
+    for cadena, palabras in cadenas.items():
+        for palabra in palabras:
+            if palabra in establecimiento_lower:
+                return cadena
+    
+    return 'otro'
 
 def detectar_cadena(establecimiento: str) -> str:
     """Detecta la cadena de supermercado del establecimiento"""
@@ -895,6 +976,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
