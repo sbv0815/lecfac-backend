@@ -1115,10 +1115,24 @@ def generar_codigo_unico(nombre, factura_id, posicion):
     
     return f"PLU_{hash_hex}"
 
+def generar_codigo_unico(nombre, factura_id, posicion):
+    """Genera código único basado en el nombre"""
+    import hashlib
+    
+    if not nombre or len(nombre) < 3:
+        return f"AUTO_{factura_id}_{posicion}"
+    
+    nombre_norm = nombre.upper().strip()
+    hash_obj = hashlib.md5(nombre_norm.encode())
+    hash_hex = hash_obj.hexdigest()[:8].upper()
+    
+    return f"PLU_{hash_hex}"
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
