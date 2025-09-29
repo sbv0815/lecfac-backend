@@ -501,7 +501,7 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
-    """Guardar factura con productos"""
+    """Guardar factura con productos - Maneja código NULL"""
     try:
         print(f"=== GUARDANDO FACTURA ===")
         print(f"Usuario ID: {invoice.usuario_id}")
@@ -530,45 +530,78 @@ async def save_invoice(invoice: SaveInvoice):
         
         # Insertar productos con logging detallado
         productos_guardados = 0
+        productos_fallidos = []
+        
         for i, producto in enumerate(invoice.productos):
-            print(f"Producto {i+1}: {producto}")
+            print(f"\nProducto {i+1}: {producto}")
             
-            # Verificar que el producto tenga datos válidos
-            if producto.get('codigo') or (producto.get('nombre') and len(str(producto.get('nombre'))) > 1):
-                try:
-                    if database_type == "postgresql":
-                        cursor.execute(
-                            "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
-                            (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
-                        )
-                    else:
-                        cursor.execute(
-                            "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
-                            (factura_id, producto.get('codigo'), producto.get('nombre'), producto.get('valor'))
-                        )
-                    productos_guardados += 1
-                    print(f"✅ Producto {i+1} guardado exitosamente")
-                except Exception as e:
-                    print(f"❌ Error guardando producto {i+1}: {e}")
-            else:
-                print(f"⚠️ Producto {i+1} omitido (sin código ni nombre válido)")
+            # Extraer y validar campos
+            codigo = producto.get('codigo')
+            nombre = producto.get('nombre')
+            valor = producto.get('valor')
+            
+            # GENERAR CÓDIGO AUTOMÁTICO SI FALTA
+            if not codigo or codigo == '' or codigo == 'None':
+                codigo = f"AUTO_{factura_id}_{i+1}"
+                print(f"⚠️ Código faltante, generado: {codigo}")
+            
+            # Validar nombre
+            if not nombre or len(str(nombre).strip()) < 2:
+                nombre = "Producto sin descripción"
+                print(f"⚠️ Nombre faltante, usando genérico")
+            
+            # Validar valor
+            if valor is None or valor == '':
+                valor = 0
+                print(f"⚠️ Valor faltante, usando 0")
+            
+            try:
+                # Convertir valor a entero
+                valor_int = int(valor)
+                
+                if database_type == "postgresql":
+                    cursor.execute(
+                        "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
+                        (factura_id, codigo, nombre, valor_int)
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (?, ?, ?, ?)",
+                        (factura_id, codigo, nombre, valor_int)
+                    )
+                
+                productos_guardados += 1
+                print(f"✅ Producto guardado: {codigo} - {nombre} - ${valor_int}")
+                
+            except Exception as e:
+                print(f"❌ Error guardando producto {i+1}: {e}")
+                productos_fallidos.append({
+                    "posicion": i+1,
+                    "error": str(e),
+                    "datos": producto
+                })
         
         conn.commit()
         conn.close()
         
-        print(f"=== RESULTADO ===")
+        print(f"\n=== RESULTADO ===")
         print(f"Productos guardados: {productos_guardados}/{len(invoice.productos)}")
+        if productos_fallidos:
+            print(f"Productos fallidos: {len(productos_fallidos)}")
         
         return {
             "success": True, 
             "factura_id": factura_id,
             "productos_guardados": productos_guardados,
             "total_productos": len(invoice.productos),
-            "message": f"Factura guardada con {productos_guardados} de {len(invoice.productos)} productos"
+            "productos_fallidos": len(productos_fallidos),
+            "message": f"Factura guardada: {productos_guardados} de {len(invoice.productos)} productos"
         }
         
     except Exception as e:
         print(f"❌ ERROR GUARDANDO FACTURA: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
 
 @app.get("/users/{user_id}/invoices")
@@ -801,4 +834,5 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
