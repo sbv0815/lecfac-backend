@@ -1199,11 +1199,14 @@ async def process_invoice_async(
 from database import (
     buscar_o_crear_producto, 
     registrar_precio_historico,
-    actualizar_estadisticas_usuario
+    registrar_compra_personal,
+    calcular_patron_compra,
+    actualizar_estadisticas_usuario,
+    obtener_recordatorios_pendientes
 )
 
 def procesar_factura_background(temp_file_path: str, factura_id: int, usuario_id: int):
-    """Procesa factura con validaciones estrictas tipo Waze"""
+    """Procesa factura con sistema colaborativo completo"""
     try:
         print(f"🔄 Procesando factura {factura_id}")
         
@@ -1213,32 +1216,30 @@ def procesar_factura_background(temp_file_path: str, factura_id: int, usuario_id
         # 2. VALIDAR TOTAL (OBLIGATORIO)
         total_factura = resultado.get("total", 0)
         if not total_factura or total_factura <= 0:
-            print(f"❌ Factura {factura_id}: Total no detectado")
+            print(f"❌ Total no detectado")
             actualizar_estado_factura(factura_id, "error", "Total de factura no detectado")
             return
         
         establecimiento = resultado.get("establecimiento", "Desconocido")
-        cadena = extraer_cadena(establecimiento)  # Ej: "JUMBO" de "JUMBO BULEVAR"
+        cadena = extraer_cadena(establecimiento)
         productos_detectados = resultado.get("productos", [])
         
-        # 3. FILTRAR: SOLO PRODUCTOS CON CÓDIGO EAN VÁLIDO
+        # 3. FILTRAR: SOLO CÓDIGOS EAN VÁLIDOS (8+ dígitos)
         productos_validos = []
         for prod in productos_detectados:
             codigo = prod.get("codigo", "").strip()
-            
-            # Validar código: debe ser numérico y tener al menos 8 dígitos
             if codigo and len(codigo) >= 8 and codigo.isdigit():
                 productos_validos.append(prod)
             else:
-                print(f"⚠️ Descartado (sin código válido): {prod.get('nombre', 'Sin nombre')}")
+                print(f"⚠️ Descartado: {prod.get('nombre', 'Sin nombre')}")
         
         productos_guardados = len(productos_validos)
         productos_totales = len(productos_detectados)
         porcentaje = (productos_guardados / productos_totales * 100) if productos_totales > 0 else 0
         
-        print(f"📊 Productos válidos: {productos_guardados}/{productos_totales} ({porcentaje:.1f}%)")
+        print(f"📊 Válidos: {productos_guardados}/{productos_totales} ({porcentaje:.1f}%)")
         
-        # 4. GUARDAR EN BASE DE DATOS COLABORATIVA
+        # 4. GUARDAR EN BASE DE DATOS
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -1246,44 +1247,48 @@ def procesar_factura_background(temp_file_path: str, factura_id: int, usuario_id
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute("""
                 UPDATE facturas 
-                SET establecimiento = %s, 
-                    cadena = %s,
-                    total_factura = %s,
-                    productos_detectados = %s,
-                    productos_guardados = %s,
-                    porcentaje_lectura = %s,
-                    estado = %s
+                SET establecimiento = %s, cadena = %s, total_factura = %s,
+                    productos_detectados = %s, productos_guardados = %s,
+                    porcentaje_lectura = %s, estado = %s
                 WHERE id = %s
             """, (establecimiento, cadena, total_factura, productos_totales, 
                   productos_guardados, porcentaje, "completado", factura_id))
         else:
             cursor.execute("""
                 UPDATE facturas 
-                SET establecimiento = ?, 
-                    total_factura = ?,
-                    productos_detectados = ?,
-                    productos_guardados = ?,
-                    estado = ?
+                SET establecimiento = ?, total_factura = ?,
+                    productos_detectados = ?, productos_guardados = ?, estado = ?
                 WHERE id = ?
             """, (establecimiento, total_factura, productos_totales,
                   productos_guardados, "completado", factura_id))
         
-        # 5. PROCESAR CADA PRODUCTO VÁLIDO
+        # 5. PROCESAR CADA PRODUCTO
         for prod in productos_validos:
             codigo_ean = prod["codigo"]
             nombre = prod.get("nombre", "Sin nombre")
             precio = prod.get("precio", 0)
             
-            # Buscar o crear en catálogo maestro
+            # A. Agregar al catálogo maestro (colaborativo)
             producto_id = buscar_o_crear_producto(
                 cursor, codigo_ean, nombre, precio, es_fresco=False
             )
             
-            # Registrar precio histórico
+            # B. Registrar precio histórico (para comparar)
             registrar_precio_historico(
                 cursor, producto_id, establecimiento, cadena, 
                 precio, usuario_id, factura_id
             )
+            
+            # C. Registrar compra personal (para recordatorios)
+            registrar_compra_personal(
+                cursor, usuario_id, producto_id, precio,
+                establecimiento, cadena, factura_id
+            )
+            
+            # D. Calcular patrón de compra
+            patron = calcular_patron_compra(cursor, usuario_id, producto_id)
+            if patron:
+                print(f"📅 Patrón detectado: {nombre} cada {patron['frecuencia_dias']} días")
         
         # 6. ACTUALIZAR ESTADÍSTICAS DEL USUARIO
         actualizar_estadisticas_usuario(cursor, usuario_id, productos_guardados)
@@ -1291,7 +1296,7 @@ def procesar_factura_background(temp_file_path: str, factura_id: int, usuario_id
         conn.commit()
         conn.close()
         
-        print(f"✅ Factura {factura_id}: {productos_guardados} productos agregados al catálogo")
+        print(f"✅ Factura {factura_id} completada: {productos_guardados} productos")
         
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -1406,6 +1411,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
