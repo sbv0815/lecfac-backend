@@ -1128,10 +1128,135 @@ def generar_codigo_unico(nombre, factura_id, posicion):
     
     return f"PLU_{hash_hex}"
 
+@app.post("/invoices/process-async")
+async def process_invoice_async(
+    file: UploadFile = File(...),
+    usuario_id: int = Form(...)
+):
+    """Procesamiento asíncrono - retorna inmediatamente"""
+    try:
+        # Guardar archivo temporal
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        # Crear factura con estado "procesando"
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                """INSERT INTO facturas (usuario_id, establecimiento, estado, fecha_cargue) 
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                (usuario_id, "Procesando...", "procesando", datetime.now())
+            )
+            factura_id = cursor.fetchone()[0]
+        else:
+            cursor.execute(
+                "INSERT INTO facturas (usuario_id, establecimiento, fecha_cargue) VALUES (?, ?, ?)",
+                (usuario_id, "Procesando...", datetime.now())
+            )
+            factura_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        
+        # Procesar en background
+        import threading
+        thread = threading.Thread(
+            target=procesar_factura_background,
+            args=(temp_file_path, factura_id, usuario_id)
+        )
+        thread.start()
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "estado": "procesando",
+            "mensaje": "Factura en proceso. Consulta el estado en 30-60 segundos"
+        }
+        
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+def procesar_factura_background(file_path, factura_id, usuario_id):
+    """Procesa factura en background con triple método"""
+    try:
+        from invoice_processor import process_invoice_complete
+        
+        # Procesar con triple método
+        result = process_invoice_complete(file_path)
+        
+        if not result:
+            actualizar_estado_factura(factura_id, "error")
+            return
+        
+        # Guardar productos en catálogo
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cadena = detectar_cadena(result['establecimiento'])
+        
+        # Actualizar factura
+        cursor.execute(
+            """UPDATE facturas 
+               SET establecimiento = %s, cadena = %s, estado = %s, 
+                   metodo_procesamiento = %s, tiempo_procesamiento = %s,
+                   productos_detectados = %s
+               WHERE id = %s""",
+            (result['establecimiento'], cadena, "completado",
+             result['metadatos']['metodo'], result['metadatos']['tiempo_segundos'],
+             result['metadatos']['productos_finales'], factura_id)
+        )
+        
+        # Guardar productos
+        for i, producto in enumerate(result['productos']):
+            codigo = producto.get('codigo')
+            nombre = producto.get('nombre')
+            valor = producto.get('valor', 0)
+            
+            if not codigo:
+                codigo = generar_codigo_unico(nombre, factura_id, i)
+            
+            es_fresco = len(codigo) < 7 or codigo.startswith('PLU_')
+            
+            if es_fresco:
+                producto_id = manejar_producto_fresco(cursor, codigo, nombre, cadena)
+            else:
+                producto_id = manejar_producto_ean(cursor, codigo, nombre)
+            
+            # Registrar precio
+            cursor.execute(
+                """INSERT INTO precios_productos 
+                   (producto_id, establecimiento, cadena, precio, usuario_id, factura_id, fecha_reporte)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (producto_id, result['establecimiento'], cadena, valor, usuario_id, factura_id, datetime.now())
+            )
+        
+        conn.commit()
+        conn.close()
+        
+        # Limpiar archivo temporal
+        os.unlink(file_path)
+        
+    except Exception as e:
+        print(f"Error en background: {e}")
+        traceback.print_exc()
+        actualizar_estado_factura(factura_id, "error")
+
+def actualizar_estado_factura(factura_id, estado):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE facturas SET estado = %s WHERE id = %s", (estado, factura_id))
+    conn.commit()
+    conn.close()
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
