@@ -49,43 +49,32 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
         "fuente": "openai"
     }
 
-_PROMPT = """Analiza esta factura de supermercado colombiano y extrae la información en formato JSON.
+_PROMPT = """Analiza esta factura de supermercado y extrae la información en JSON.
 
-ESTRUCTURA de productos en facturas colombianas:
-- Línea 1: CÓDIGO (13 dígitos EAN, o 3-6 dígitos PLU)
-- Línea 2: NOMBRE del producto
-- Línea 3: PRECIO
-- Líneas adicionales pueden tener peso/cantidad (ignorar)
+IMPORTANTE: Extrae cada producto UNA SOLA VEZ. NO repitas productos.
+
+ESTRUCTURA típica:
+- CÓDIGO (13 dígitos EAN o 3-6 dígitos PLU)
+- NOMBRE del producto  
+- PRECIO
 
 REGLAS:
-1. Lee secuencialmente: cuando veas un CÓDIGO, el NOMBRE está en la línea siguiente
-2. El PRECIO está después del nombre
-3. Ignora descuentos (negativos), subtotales, "IVA", totales parciales
-4. Extrae TODOS los productos
+1. Lee de arriba hacia abajo, extrae cada producto UNA VEZ
+2. NO repitas productos que ya extrajiste
+3. Ignora descuentos (negativos), subtotales, "IVA"
+4. Si un código aparece dos veces en la factura, repórtalo dos veces (son compras diferentes)
 
-Responde SOLO con este JSON (sin texto adicional):
+JSON (sin repetir productos):
 {
   "establecimiento": "nombre del supermercado",
-  "total": numero_entero_o_null,
+  "total": numero_total,
   "items": [
-    {"codigo": "código", "nombre": "nombre producto", "valor": precio_entero}
+    {"codigo": "código", "nombre": "nombre", "valor": precio}
   ]
-}
-
-Ejemplo:
-Si ves:
-505
-Limón Tahití  
-$8.801
-
-Devuelve:
-{"codigo": "505", "nombre": "Limón Tahití", "valor": 8801}"""
+}"""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
-    """
-    Procesa factura con OpenAI Vision.
-    Retorna: {establecimiento, total, productos, metadatos}
-    """
+    """Procesa factura con OpenAI Vision"""
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     
     if not os.environ.get("OPENAI_API_KEY"):
@@ -96,7 +85,6 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     print("Enviando imagen a OpenAI...")
     
     try:
-        # SIN schema estricto - más flexible
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
@@ -108,41 +96,82 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
                     ]
                 }
             ],
-            response_format={"type": "json_object"},  # Solo pedir JSON, sin schema estricto
+            response_format={"type": "json_object"},
             temperature=0,
-            max_tokens=4000
+            max_tokens=16000  # Aumentar límite
         )
         
         content = response.choices[0].message.content
-        print(f"Respuesta recibida: {content[:200]}...")
+        print(f"Longitud respuesta: {len(content)} caracteres")
+        
+        # Intentar reparar JSON truncado
+        if not content.rstrip().endswith('}'):
+            print("JSON truncado detectado, intentando reparar...")
+            # Buscar el último item completo
+            last_complete = content.rfind('}, ')
+            if last_complete > 0:
+                content = content[:last_complete + 1] + ']}}'
         
         data = json.loads(content)
         
     except json.JSONDecodeError as e:
         print(f"Error parseando JSON: {e}")
-        print(f"Contenido recibido: {content}")
-        data = {"items": []}
+        # Intentar extraer lo que se pueda
+        try:
+            # Buscar hasta donde llegó bien
+            items_start = content.find('"items": [')
+            if items_start > 0:
+                items_end = content.rfind('},')
+                if items_end > items_start:
+                    partial = content[:items_end + 1] + ']}}'
+                    data = json.loads(partial)
+                else:
+                    data = {"items": []}
+            else:
+                data = {"items": []}
+        except:
+            data = {"items": []}
     
     except Exception as e:
         print(f"Error OpenAI: {e}")
         data = {"items": []}
     
-    # Procesar resultados
+    # Procesar y deduplicar
     items_raw = (data or {}).get("items") or []
-    print(f"Items crudos recibidos: {len(items_raw)}")
+    print(f"Items crudos: {len(items_raw)}")
     
+    seen = {}  # Para deduplicar por código
     items = []
-    for p in items_raw:
-        if isinstance(p, dict):
-            try:
-                item = _canonicalize_item(p)
-                if item.get("nombre") and item.get("valor", 0) > 0:
-                    items.append(item)
-            except Exception as e:
-                print(f"Error procesando item: {e}")
-                continue
     
-    print(f"Items procesados: {len(items)}")
+    for p in items_raw:
+        if not isinstance(p, dict):
+            continue
+            
+        try:
+            item = _canonicalize_item(p)
+            codigo = item.get("codigo")
+            nombre = item.get("nombre", "")
+            valor = item.get("valor", 0)
+            
+            # Validar que tenga datos mínimos
+            if not nombre or valor <= 0:
+                continue
+            
+            # Deduplicar por código+nombre+valor
+            key = f"{codigo}|{nombre}|{valor}"
+            
+            if key in seen:
+                seen[key] += 1  # Contar repeticiones
+            else:
+                seen[key] = 1
+                items.append(item)
+                
+        except Exception as e:
+            print(f"Error procesando item: {e}")
+            continue
+    
+    print(f"Items únicos procesados: {len(items)}")
+    print(f"Items repetidos eliminados: {len(items_raw) - len(items)}")
     
     establecimiento = (data or {}).get("establecimiento") or "Establecimiento no identificado"
     
