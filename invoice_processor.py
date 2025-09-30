@@ -26,20 +26,17 @@ except Exception:
     PIL_AVAILABLE = False
 
 # ===== Tesseract (opcional) =====
+import os, shutil
 try:
     import pytesseract
-    # Permite override por ENV o usa /usr/bin/tesseract si existe
-    TESSERACT_CMD = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
-    if TESSERACT_CMD and os.path.exists(TESSERACT_CMD):
-        pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
-        TESSERACT_AVAILABLE = True
-        print(f"✅ Tesseract OCR disponible en: {TESSERACT_CMD}")
-    else:
-        TESSERACT_AVAILABLE = False
-        print("⚠️ Tesseract no encontrado en el sistema - usando solo Document AI")
-except Exception:
+    tcmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
+    pytesseract.pytesseract.tesseract_cmd = tcmd
+    TESSERACT_AVAILABLE = os.path.exists(tcmd)
+    print(f"✅ Tesseract OCR {'disponible' if TESSERACT_AVAILABLE else 'NO disponible'} en: {tcmd}")
+except Exception as e:
     TESSERACT_AVAILABLE = False
-    print("⚠️ pytesseract no disponible - usando solo Document AI")
+    print(f"⚠️ pytesseract no disponible ({e})")
+
 
 
 # =============================
