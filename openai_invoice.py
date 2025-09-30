@@ -96,87 +96,97 @@ Mantén el orden de arriba hacia abajo. Solo texto, sin interpretación."""
     return response.choices[0].message.content
 
 def parse_products_from_text(text: str) -> List[Dict]:
-    """Parsea productos del texto OCR usando patrones"""
+    """Parsea productos del texto OCR - versión mejorada"""
     lines = [l.strip() for l in text.split('\n') if l.strip()]
     productos = []
+    
+    # Primero, identificar bloques de productos
+    # Un producto típico tiene: CÓDIGO, NOMBRE, posiblemente info adicional, PRECIO
     
     i = 0
     while i < len(lines):
         line = lines[i]
-        
-        # Saltar líneas no relevantes
         upper = line.upper()
-        if any(x in upper for x in ['SUBTOTAL', 'TOTAL A PAGAR', 'IVA', 'TARJETA', 'EFECTIVO', 'ITEMS COMPRADOS', 'RESOLUCION', 'NIT', 'DIAN']):
+        
+        # Saltar encabezados y totales
+        if any(x in upper for x in ['CODIGO', 'DESCRIPCION', 'VALOR', 'SUBTOTAL', 'TOTAL A PAGAR', 'ITEMS COMPRADOS', 'TARJETA', 'EFECTIVO', 'CAMBIO', 'NIT', 'RESOLUCION', 'DIAN', 'IVA']):
             i += 1
             continue
         
-        # Buscar código (3-13 dígitos)
-        codigo_match = re.search(r'\b(\d{3,13})\b', line)
-        if not codigo_match:
+        # Buscar código (solo números, 3-13 dígitos)
+        if not re.match(r'^\d{3,13}$', line):
             i += 1
             continue
         
-        codigo = codigo_match.group(1)
+        codigo = line
         
-        # Saltar si es una línea que tiene código + nombre + precio en la misma línea
-        if re.search(r'\d{6,}.*[A-Z]{3,}.*\$?\d{1,3}[.,]\d{3}', line):
-            # Parsear todo en una línea
-            nombre_match = re.search(r'\d{6,}\s+([A-Za-zÀ-ÿ\s]{3,40}?)\s+\$?\d', line)
-            precio_match = re.search(r'\$?\s*(\d{1,3}[.,]\d{3}(?:[.,]\d{3})?)', line)
-            
-            if nombre_match and precio_match:
-                nombre = nombre_match.group(1).strip()
-                precio_str = precio_match.group(1).replace('.', '').replace(',', '')
-                try:
-                    precio = int(precio_str)
-                    if precio > 100 and len(nombre) > 2:
-                        productos.append({"codigo": codigo, "nombre": nombre[:80], "valor": precio, "fuente": "docai"})
-                except:
-                    pass
-            i += 1
-            continue
-        
-        # Buscar nombre en siguiente línea
+        # El nombre debe estar en la siguiente línea
         if i + 1 >= len(lines):
             break
         
-        nombre_line = lines[i + 1]
+        i += 1
+        nombre_line = lines[i]
         
-        # Validar que no sea otro código o precio
-        if re.match(r'^\d+$', nombre_line) or re.match(r'^\$?\d{1,3}[.,]\d{3}', nombre_line):
-            i += 1
+        # Validar que el nombre no sea un número puro ni un precio
+        if re.match(r'^\d+$', nombre_line) or re.match(r'^\$?\s*\d{1,3}[.,]\d{3}', nombre_line):
             continue
         
-        # Limpiar nombre (remover códigos internos, referencias)
-        nombre = re.sub(r'\d{6,}', '', nombre_line)
-        nombre = re.sub(r'[A-Z]\.\s*[A-Z]{2}\.[^A-Z]*', '', nombre)
+        # Limpiar el nombre
+        nombre = nombre_line
+        # Remover códigos extras que pueden estar en el nombre
+        nombre = re.sub(r'\b\d{10,}\b', '', nombre)
+        # Remover referencias tipo "C.15%" o "DF.20%"
+        nombre = re.sub(r'[A-Z]\.\s*\d+%', '', nombre)
+        # Remover sufijos tipo ".VD." ".FD."
+        nombre = re.sub(r'\.[A-Z]{2}\.', '', nombre)
         nombre = nombre.strip()
         
         if len(nombre) < 3:
-            i += 1
             continue
         
-        # Buscar precio en las siguientes 2-4 líneas
+        # Buscar el precio en las siguientes 3-5 líneas
         precio = None
-        for j in range(i + 2, min(i + 6, len(lines))):
-            # Saltar líneas de peso/cantidad
-            if re.match(r'^\d+[.,]?\d*\s*(KG|GR|ML|UN|X)', lines[j].upper()):
+        j = i + 1
+        while j < min(i + 6, len(lines)):
+            test_line = lines[j]
+            
+            # Saltar líneas que claramente son info adicional
+            if re.match(r'^\d+[.,]?\d*\s*(KG|GR|ML|UN|X|N|H|A|E)$', test_line.upper()):
+                j += 1
                 continue
             
-            precio_match = re.search(r'\$?\s*(\d{1,3}[.,]\d{3}(?:[.,]\d{3})?)', lines[j])
+            # Saltar líneas con descuentos o referencias
+            if test_line.startswith('-') or '%REF' in test_line.upper() or 'DF.' in test_line or 'C.' in test_line:
+                j += 1
+                continue
+            
+            # Buscar precio (formato: $12.345 o 12.345 o 12,345)
+            precio_match = re.search(r'\$?\s*(\d{1,3}(?:[.,]\d{3})+)', test_line)
             if precio_match:
                 precio_str = precio_match.group(1).replace('.', '').replace(',', '')
                 try:
-                    precio = int(precio_str)
-                    if precio > 100:
+                    precio_candidato = int(precio_str)
+                    # Validar que sea un precio razonable (entre 100 y 1.000.000)
+                    if 100 <= precio_candidato <= 1000000:
+                        precio = precio_candidato
                         break
                 except:
                     pass
+            
+            j += 1
         
-        if precio:
-            productos.append({"codigo": codigo, "nombre": nombre[:80], "valor": precio, "fuente": "docai"})
-        
-        i += 1
+        # Solo agregar si tenemos código, nombre y precio válidos
+        if codigo and nombre and precio:
+            productos.append({
+                "codigo": codigo,
+                "nombre": nombre[:80],
+                "valor": precio,
+                "fuente": "docai"
+            })
+            # Saltar hasta después del precio encontrado
+            i = j
+        else:
+            i += 1
     
     return productos
 
