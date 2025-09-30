@@ -4,190 +4,164 @@ import json
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from openai import OpenAI
 
 OPENAI_MODEL = os.getenv("OPENAI_INVOICE_MODEL", "gpt-4o")
 
 def _b64_data_url(image_path: str) -> str:
-    """Convierte imagen a data URL base64"""
     mime = "image/jpeg"
-    low = image_path.lower()
-    if low.endswith(".png"):
+    if image_path.lower().endswith(".png"):
         mime = "image/png"
-    
     with open(image_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
     return f"data:{mime};base64,{b64}"
 
-def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
-    """Normaliza valores para la API"""
-    codigo = p.get("codigo")
-    nombre = (p.get("nombre") or "").strip()
-    valor = p.get("valor")
+def extract_text_from_invoice(image_path: str) -> str:
+    """Extrae texto plano de la factura usando OpenAI Vision"""
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    img_url = _b64_data_url(image_path)
     
-    # Limpiar código
-    if codigo:
-        codigo = str(codigo).strip()
-        if codigo == "None" or len(codigo) < 3:
-            codigo = None
+    prompt = """Extrae TODO el texto de esta factura exactamente como aparece, línea por línea.
+Mantén el orden original de arriba hacia abajo.
+NO interpretes ni estructures, solo transcribe el texto tal cual lo ves."""
     
-    # Limpia precios
-    if isinstance(valor, str):
-        num = re.sub(r"[^\d]", "", valor)
-        valor = int(num) if num.isdigit() else 0
-    if isinstance(valor, float):
-        valor = int(round(valor))
-    if not isinstance(valor, int):
-        valor = 0
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": img_url}}
+            ]
+        }],
+        temperature=0,
+        max_tokens=16000
+    )
     
-    return {
-        "codigo": codigo,
-        "nombre": nombre[:80] if nombre else "Sin nombre",
-        "valor": valor,
-        "fuente": "openai"
-    }
+    return response.choices[0].message.content
 
-_PROMPT = """Analiza esta factura de supermercado y extrae la información en JSON.
+def parse_products_from_text(text: str) -> List[Dict]:
+    """Parsea productos del texto usando patrones"""
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    productos = []
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # Saltar líneas de encabezado, totales, etc
+        if any(x in line.upper() for x in ['SUBTOTAL', 'TOTAL', 'IVA', 'TARJETA', 'EFECTIVO', 'CAMBIO', 'ITEMS COMPRADOS']):
+            i += 1
+            continue
+        
+        # Buscar código (número de 3-13 dígitos)
+        codigo_match = re.search(r'\b(\d{3,13})\b', line)
+        if not codigo_match:
+            i += 1
+            continue
+        
+        codigo = codigo_match.group(1)
+        
+        # El nombre debería estar en la siguiente línea
+        if i + 1 >= len(lines):
+            break
+        
+        nombre_line = lines[i + 1]
+        
+        # Saltar si la siguiente línea parece ser otro código o precio
+        if re.match(r'^\d+$', nombre_line.strip()) or re.match(r'^\$?\d{1,3}[.,]\d{3}', nombre_line):
+            i += 1
+            continue
+        
+        nombre = nombre_line.strip()
+        
+        # Buscar precio en las siguientes 2-3 líneas
+        precio = None
+        for j in range(i + 2, min(i + 5, len(lines))):
+            precio_match = re.search(r'\$?\s*(\d{1,3}[.,]\d{3}(?:[.,]\d{3})?)', lines[j])
+            if precio_match:
+                precio_str = precio_match.group(1).replace('.', '').replace(',', '')
+                try:
+                    precio = int(precio_str)
+                    break
+                except:
+                    pass
+        
+        if nombre and precio and precio > 100:
+            productos.append({
+                "codigo": codigo,
+                "nombre": nombre[:80],
+                "valor": precio,
+                "fuente": "openai"
+            })
+        
+        i += 1
+    
+    return productos
 
-IMPORTANTE: Extrae cada producto UNA SOLA VEZ. NO repitas productos.
-
-ESTRUCTURA típica:
-- CÓDIGO (13 dígitos EAN o 3-6 dígitos PLU)
-- NOMBRE del producto  
-- PRECIO
-
-REGLAS:
-1. Lee de arriba hacia abajo, extrae cada producto UNA VEZ
-2. NO repitas productos que ya extrajiste
-3. Ignora descuentos (negativos), subtotales, "IVA"
-4. Si un código aparece dos veces en la factura, repórtalo dos veces (son compras diferentes)
-
-JSON (sin repetir productos):
-{
-  "establecimiento": "nombre del supermercado",
-  "total": numero_total,
-  "items": [
-    {"codigo": "código", "nombre": "nombre", "valor": precio}
-  ]
-}"""
+def extract_metadata(text: str) -> Dict:
+    """Extrae establecimiento y total"""
+    lines = text.split('\n')
+    
+    # Buscar establecimiento en las primeras líneas
+    establecimiento = "Establecimiento no identificado"
+    for line in lines[:15]:
+        if any(x in line.upper() for x in ['JUMBO', 'EXITO', 'CARULLA', 'OLIMPICA', 'D1', 'ALKOSTO']):
+            establecimiento = line.strip()
+            break
+    
+    # Buscar total
+    total = None
+    for line in reversed(lines[-30:]):
+        if 'TOTAL' in line.upper() and not 'SUBTOTAL' in line.upper():
+            match = re.search(r'\$?\s*(\d{1,3}[.,]\d{3}(?:[.,]\d{3})?)', line)
+            if match:
+                total_str = match.group(1).replace('.', '').replace(',', '')
+                try:
+                    total = int(total_str)
+                    break
+                except:
+                    pass
+    
+    return {"establecimiento": establecimiento, "total": total}
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
-    """Procesa factura con OpenAI Vision"""
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    """Procesa factura: extrae texto con OpenAI, parsea con regex"""
     
     if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("OPENAI_API_KEY no configurada")
     
-    img_url = _b64_data_url(image_path)
+    print("Extrayendo texto de la factura...")
+    text = extract_text_from_invoice(image_path)
+    print(f"Texto extraído: {len(text)} caracteres")
     
-    print("Enviando imagen a OpenAI...")
+    print("Parseando productos...")
+    productos = parse_products_from_text(text)
+    print(f"Productos detectados: {len(productos)}")
     
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": _PROMPT},
-                        {"type": "image_url", "image_url": {"url": img_url}}
-                    ]
-                }
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=16000  # Aumentar límite
-        )
-        
-        content = response.choices[0].message.content
-        print(f"Longitud respuesta: {len(content)} caracteres")
-        
-        # Intentar reparar JSON truncado
-        if not content.rstrip().endswith('}'):
-            print("JSON truncado detectado, intentando reparar...")
-            # Buscar el último item completo
-            last_complete = content.rfind('}, ')
-            if last_complete > 0:
-                content = content[:last_complete + 1] + ']}}'
-        
-        data = json.loads(content)
-        
-    except json.JSONDecodeError as e:
-        print(f"Error parseando JSON: {e}")
-        # Intentar extraer lo que se pueda
-        try:
-            # Buscar hasta donde llegó bien
-            items_start = content.find('"items": [')
-            if items_start > 0:
-                items_end = content.rfind('},')
-                if items_end > items_start:
-                    partial = content[:items_end + 1] + ']}}'
-                    data = json.loads(partial)
-                else:
-                    data = {"items": []}
-            else:
-                data = {"items": []}
-        except:
-            data = {"items": []}
+    metadata = extract_metadata(text)
     
-    except Exception as e:
-        print(f"Error OpenAI: {e}")
-        data = {"items": []}
+    # Deduplicar
+    seen = {}
+    productos_unicos = []
+    for p in productos:
+        key = f"{p['codigo']}|{p['nombre']}|{p['valor']}"
+        if key not in seen:
+            seen[key] = True
+            productos_unicos.append(p)
     
-    # Procesar y deduplicar
-    items_raw = (data or {}).get("items") or []
-    print(f"Items crudos: {len(items_raw)}")
-    
-    seen = {}  # Para deduplicar por código
-    items = []
-    
-    for p in items_raw:
-        if not isinstance(p, dict):
-            continue
-            
-        try:
-            item = _canonicalize_item(p)
-            codigo = item.get("codigo")
-            nombre = item.get("nombre", "")
-            valor = item.get("valor", 0)
-            
-            # Validar que tenga datos mínimos
-            if not nombre or valor <= 0:
-                continue
-            
-            # Deduplicar por código+nombre+valor
-            key = f"{codigo}|{nombre}|{valor}"
-            
-            if key in seen:
-                seen[key] += 1  # Contar repeticiones
-            else:
-                seen[key] = 1
-                items.append(item)
-                
-        except Exception as e:
-            print(f"Error procesando item: {e}")
-            continue
-    
-    print(f"Items únicos procesados: {len(items)}")
-    print(f"Items repetidos eliminados: {len(items_raw) - len(items)}")
-    
-    establecimiento = (data or {}).get("establecimiento") or "Establecimiento no identificado"
-    
-    total = (data or {}).get("total")
-    if isinstance(total, str):
-        num = re.sub(r"[^\d]", "", total)
-        total = int(num) if num.isdigit() else None
+    print(f"Productos únicos: {len(productos_unicos)}")
     
     return {
-        "establecimiento": establecimiento,
-        "total": total,
+        "establecimiento": metadata["establecimiento"],
+        "total": metadata["total"],
         "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "productos": items,
+        "productos": productos_unicos,
         "metadatos": {
-            "metodo": "openai-vision",
+            "metodo": "openai-vision-text+regex",
             "model": OPENAI_MODEL,
-            "items_detectados": len(items),
+            "items_detectados": len(productos_unicos),
         },
     }
