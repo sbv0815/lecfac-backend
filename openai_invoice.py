@@ -136,37 +136,55 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     print("PROCESANDO FACTURA")
     print("="*70)
     
-    document = extract_document_with_docai(image_path)
-    
-    if not document:
+    try:
+        document = extract_document_with_docai(image_path)
+        
+        if not document:
+            print("ERROR: Document AI no devolvió documento")
+            return {
+                "establecimiento": "Error: Document AI no configurado",
+                "total": None,
+                "productos": [],
+                "metadatos": {"metodo": "error", "items_detectados": 0}
+            }
+        
+        print("Parseando productos con layout...")
+        productos = parse_products_from_docai_layout(document)
+        print(f"Productos parseados: {len(productos)}")
+        
+        print("Extrayendo metadata...")
+        metadata = extract_metadata(document.text)
+        
+        seen = set()
+        unicos = []
+        for p in productos:
+            key = f"{p['codigo']}|{p['nombre']}|{p['valor']}"
+            if key not in seen:
+                seen.add(key)
+                unicos.append(p)
+        
+        print(f"Productos únicos: {len(unicos)}")
+        print("="*70)
+        
         return {
-            "establecimiento": "Error: Document AI no configurado",
-            "total": None,
-            "productos": [],
-            "metadatos": {"metodo": "error", "items_detectados": 0}
+            "establecimiento": metadata["establecimiento"],
+            "total": metadata["total"],
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": unicos,
+            "metadatos": {
+                "metodo": "document-ai-layout",
+                "items_detectados": len(unicos)
+            },
         }
     
-    productos = parse_products_from_docai_layout(document)
-    metadata = extract_metadata(document.text)
-    
-    seen = set()
-    unicos = []
-    for p in productos:
-        key = f"{p['codigo']}|{p['nombre']}|{p['valor']}"
-        if key not in seen:
-            seen.add(key)
-            unicos.append(p)
-    
-    print(f"Productos: {len(unicos)}")
-    print("="*70)
-    
-    return {
-        "establecimiento": metadata["establecimiento"],
-        "total": metadata["total"],
-        "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "productos": unicos,
-        "metadatos": {
-            "metodo": "document-ai-layout",
-            "items_detectados": len(unicos)
-        },
-    }
+    except Exception as e:
+        print(f"ERROR CRÍTICO: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            "establecimiento": f"Error: {str(e)[:50]}",
+            "total": None,
+            "productos": [],
+            "metadatos": {"metodo": "error", "error": str(e)}
+        }
