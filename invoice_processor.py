@@ -3,10 +3,12 @@ import re
 import json
 import time
 import hashlib
-import shutil
 import tempfile
 import traceback
 from datetime import datetime
+import os, shutil, pytesseract
+pytesseract.pytesseract.tesseract_cmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
+
 
 # =============================
 # Disponibilidad de librerías
