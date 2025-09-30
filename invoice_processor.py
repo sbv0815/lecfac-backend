@@ -23,6 +23,28 @@ except ImportError:
     TESSERACT_AVAILABLE = False
     print("⚠️ Tesseract no disponible (paquete Python no instalado) - se usará Document AI")
 
+# Reemplaza/añade cerca de tus regex de precio
+PRICE_RE_ANY = r"(\d{1,3}(?:[.,]\d{3})+|\d{4,6})"  # 16,390 o 16390
+
+def _looks_like_price_only(s: str) -> bool:
+    s = (s or "").strip()
+    # 16,390 / 16390 con opcional N/H al final
+    if re.fullmatch(r'-?\s*\d{1,3}(?:[.,]\d{3})+\s*[NH]?', s, re.IGNORECASE):
+        return True
+    if re.fullmatch(r'-?\s*\d{4,6}\s*[NH]?', s, re.IGNORECASE):
+        return True
+    return False
+
+def _looks_like_continuation(line: str) -> bool:
+    U = line.upper()
+    return (
+        bool(re.search(r"\bKG\b", U))
+        or bool(re.search(r"\bX\b", U))
+        or bool(re.search(r"^\d+\s*X\s*\d+", U))
+        or bool(re.search(r"^\d+[.,]\d+\s*KG", U))
+        or _looks_like_price_only(line)            # <— NUEVO
+    )
+
 
 # =====================
 # Helpers
@@ -96,14 +118,7 @@ def _pick_best_price(nums):
     return max(cand) if cand else 0
 
 
-def _looks_like_continuation(line: str) -> bool:
-    U = line.upper()
-    return (
-        bool(re.search(r"\bKG\b", U))
-        or bool(re.search(r"\bX\b", U))
-        or bool(re.search(r"^\d+\s*X\s*\d+", U))
-        or bool(re.search(r"^\d+[.,]\d+\s*KG", U))
-    )
+
 
 
 def _join_item_blocks(texto: str) -> list[str]:
@@ -324,25 +339,23 @@ def extract_vendor_name(raw_text):
 
 
 def extract_total_invoice(raw_text):
-    """Busca el total del pie; si falla, el mayor número en las últimas líneas."""
     if not raw_text:
         return None
     lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
 
-    # primero “SUBTOTAL/TOTAL” desde el final
     for l in reversed(lines[-80:]):
         U = l.upper()
         if "SUBTOTAL/TOTAL" in U or re.search(r"\bTOTAL\b", U):
-            nums = re.findall(PRICE_RE, l)
+            nums = re.findall(PRICE_RE_ANY, l)   # <- aquí
             val = _pick_best_price(nums)
             if val:
                 return val
 
-    # fallback: mayor número en últimas 40 líneas
     cand = []
     for l in lines[-40:]:
-        cand += re.findall(PRICE_RE, l)
+        cand += re.findall(PRICE_RE_ANY, l)      # <- y aquí
     return _pick_best_price(cand) if cand else None
+
 
 
 def extract_product_code(text):
