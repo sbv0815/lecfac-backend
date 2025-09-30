@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from openai import OpenAI
 
-OPENAI_MODEL = os.getenv("OPENAI_INVOICE_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_INVOICE_MODEL", "gpt-4o")
 
 def _b64_data_url(image_path: str) -> str:
     """Convierte imagen a data URL base64"""
@@ -30,7 +30,6 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
     # Limpiar código
     if codigo:
         codigo = str(codigo).strip()
-        # Si es muy corto o None, dejarlo como está
         if codigo == "None" or len(codigo) < 3:
             codigo = None
     
@@ -45,101 +44,42 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
     
     return {
         "codigo": codigo,
-        "nombre": nombre[:80],
+        "nombre": nombre[:80] if nombre else "Sin nombre",
         "valor": valor,
         "fuente": "openai"
     }
 
-def _schema() -> Dict[str, Any]:
-    """JSON Schema para Structured Outputs"""
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "invoice_schema",
-            "strict": True,
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "establecimiento": {"type": "string"},
-                    "total": {
-                        "anyOf": [
-                            {"type": "integer"},
-                            {"type": "null"}
-                        ]
-                    },
-                    "moneda": {"type": "string"},
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "codigo": {
-                                    "anyOf": [
-                                        {"type": "string"},
-                                        {"type": "null"}
-                                    ]
-                                },
-                                "nombre": {"type": "string"},
-                                "valor": {"type": "integer"},
-                                "cantidad": {
-                                    "anyOf": [
-                                        {"type": "number"},
-                                        {"type": "null"}
-                                    ]
-                                }
-                            },
-                            "required": ["codigo", "nombre", "valor", "cantidad"],
-                            "additionalProperties": False
-                        }
-                    }
-                },
-                "required": ["establecimiento", "total", "moneda", "items"],
-                "additionalProperties": False
-            }
-        }
-    }
+_PROMPT = """Analiza esta factura de supermercado colombiano y extrae la información en formato JSON.
 
-_PROMPT = """Eres un extractor de facturas de supermercados colombianos.
+ESTRUCTURA de productos en facturas colombianas:
+- Línea 1: CÓDIGO (13 dígitos EAN, o 3-6 dígitos PLU)
+- Línea 2: NOMBRE del producto
+- Línea 3: PRECIO
+- Líneas adicionales pueden tener peso/cantidad (ignorar)
 
-ESTRUCTURA UNIVERSAL de productos en facturas:
-1. CÓDIGO (línea 1): EAN de 13 dígitos, PLU de 3-6 dígitos, o código de peso variable
-2. NOMBRE (línea 2): Descripción del producto
-3. PRECIO (línea 3): Valor en pesos colombianos
-4. [Opcional] Información adicional: peso, cantidad, unidades (IGNORAR)
+REGLAS:
+1. Lee secuencialmente: cuando veas un CÓDIGO, el NOMBRE está en la línea siguiente
+2. El PRECIO está después del nombre
+3. Ignora descuentos (negativos), subtotales, "IVA", totales parciales
+4. Extrae TODOS los productos
 
-REGLAS DE EXTRACCIÓN:
-- Cada bloque de 3 líneas consecutivas forma un producto: código → nombre → precio
-- El código SIEMPRE va con el nombre que está INMEDIATAMENTE después
-- Ignora líneas adicionales entre productos (peso, kg, unidades)
-- NO asocies códigos con nombres que no sean el siguiente inmediato
-- Ignora: descuentos (valores negativos), subtotales, "RESUMEN DE IVA", totales parciales
-
-FORMATO DE SALIDA:
+Responde SOLO con este JSON (sin texto adicional):
 {
   "establecimiento": "nombre del supermercado",
-  "total": monto_total_entero,
-  "moneda": "COP",
+  "total": numero_entero_o_null,
   "items": [
-    {
-      "codigo": "código del producto",
-      "nombre": "nombre del producto",
-      "valor": precio_entero_sin_puntos,
-      "cantidad": null
-    }
+    {"codigo": "código", "nombre": "nombre producto", "valor": precio_entero}
   ]
 }
 
-EJEMPLO:
-Entrada:
-  7622202171758
-  Galletas CLUB SOCIAL
-  $7.080
-  160g
+Ejemplo:
+Si ves:
+505
+Limón Tahití  
+$8.801
 
-Salida:
-  {"codigo": "7622202171758", "nombre": "Galletas CLUB SOCIAL", "valor": 7080, "cantidad": null}
-
-Procesa TODOS los productos de la factura siguiendo este patrón."""
+Devuelve:
+{"codigo": "505", "nombre": "Limón Tahití", "valor": 8801}"""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     """
@@ -153,8 +93,10 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     
     img_url = _b64_data_url(image_path)
     
+    print("Enviando imagen a OpenAI...")
+    
     try:
-        # API CORRECTA: chat.completions.create
+        # SIN schema estricto - más flexible
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
@@ -166,35 +108,20 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
                     ]
                 }
             ],
-            response_format=_schema(),
+            response_format={"type": "json_object"},  # Solo pedir JSON, sin schema estricto
             temperature=0,
             max_tokens=4000
         )
         
         content = response.choices[0].message.content
+        print(f"Respuesta recibida: {content[:200]}...")
+        
         data = json.loads(content)
         
-    except json.JSONDecodeError:
-        # Reintento sin schema
-        try:
-            response = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": _PROMPT + "\n\nJSON puro."},
-                            {"type": "image_url", "image_url": {"url": img_url}}
-                        ]
-                    }
-                ],
-                temperature=0,
-                max_tokens=4000
-            )
-            content = response.choices[0].message.content
-            data = json.loads(content)
-        except Exception:
-            data = {"items": []}
+    except json.JSONDecodeError as e:
+        print(f"Error parseando JSON: {e}")
+        print(f"Contenido recibido: {content}")
+        data = {"items": []}
     
     except Exception as e:
         print(f"Error OpenAI: {e}")
@@ -202,7 +129,20 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     
     # Procesar resultados
     items_raw = (data or {}).get("items") or []
-    items = [_canonicalize_item(p) for p in items_raw if isinstance(p, dict)]
+    print(f"Items crudos recibidos: {len(items_raw)}")
+    
+    items = []
+    for p in items_raw:
+        if isinstance(p, dict):
+            try:
+                item = _canonicalize_item(p)
+                if item.get("nombre") and item.get("valor", 0) > 0:
+                    items.append(item)
+            except Exception as e:
+                print(f"Error procesando item: {e}")
+                continue
+    
+    print(f"Items procesados: {len(items)}")
     
     establecimiento = (data or {}).get("establecimiento") or "Establecimiento no identificado"
     
