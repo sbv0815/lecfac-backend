@@ -23,10 +23,18 @@ def _b64_data_url(image_path: str) -> str:
 
 def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
     """Normaliza valores para la API"""
+    codigo = p.get("codigo")
     nombre = (p.get("nombre") or "").strip()
-    codigo = p.get("codigo") or None
     valor = p.get("valor")
     
+    # Limpiar código
+    if codigo:
+        codigo = str(codigo).strip()
+        # Si es muy corto o None, dejarlo como está
+        if codigo == "None" or len(codigo) < 3:
+            codigo = None
+    
+    # Limpia precios
     if isinstance(valor, str):
         num = re.sub(r"[^\d]", "", valor)
         valor = int(num) if num.isdigit() else 0
@@ -34,9 +42,6 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
         valor = int(round(valor))
     if not isinstance(valor, int):
         valor = 0
-    
-    if codigo:
-        codigo = str(codigo).strip()
     
     return {
         "codigo": codigo,
