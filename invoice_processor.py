@@ -189,61 +189,52 @@ def _detect_columns(lines: list[str]):
 
 
 def _parse_text_products(raw_text: str) -> list[dict]:
-    """Devuelve lista [{codigo,nombre,valor,fuente}] parseando el texto crudo."""
     lines = _join_item_blocks(raw_text or "")
     print(f"📄 Bloques tras normalizar: {len(lines)}")
 
     code_idx, total_idx = _detect_columns(lines)
 
-    # 1) Parser por columnas
     matched_idx = set()
     by_cols = []
     for i, l in enumerate(lines):
         if len(l) < 10:
             continue
         U = l.upper()
-        # Cabeceras y secciones no relevantes
-        if (
-            "RESOLUCION DIAN" in U
-            or "RESPONSABLE DE IVA" in U
-            or "AGENTE RETENEDOR" in U
-            or "****" in U
-            or "SUBTOTAL/TOTAL" in U
-            or ("CODIGO" in U and "TOTAL" in U)
-            or U.startswith("NRO. CUENTA")
-            or "TARJ CRE/DEB" in U
-            or U.startswith("VISA")
-            or "ITEMS COMPRADOS" in U
-            or "RESUMEN DE IVA" in U
-        ):
+        if "RESOLUCION DIAN" in U or "RESPONSABLE DE IVA" in U or "AGENTE RETENEDOR" in U:
+            continue
+        if "****" in U or "SUBTOTAL/TOTAL" in U:
+            continue
+        if ("CODIGO" in U and "TOTAL" in U) or U.startswith("NRO. CUENTA") or "TARJ CRE/DEB" in U or U.startswith("VISA") or "ITEMS COMPRADOS" in U or "RESUMEN DE IVA" in U:
             continue
         if _is_discount_or_note(l):
             continue
 
-        # Particiones aproximadas por columnas
         codigo_zone = l[: max(0, code_idx + 15)].strip()
         total_zone = l[total_idx:].strip() if total_idx < len(l) else ""
         descr_zone = l[len(codigo_zone): total_idx].strip() if total_idx > len(codigo_zone) else l.strip()
 
-        # Código (prioriza EAN largo)
+        # código (prioriza EAN largo)
         codigo = None
         m = re.findall(EAN_LONG_RE, codigo_zone)
         if m:
             codigo = m[0]
 
-        # Precio (elige el mayor en la zona TOTAL; si no, en la línea)
-        nums = re.findall(PRICE_RE, total_zone) or re.findall(PRICE_RE, l)
+        # precio — ahora también sin separador
+        nums = (
+            re.findall(PRICE_RE_ANY, total_zone)
+            or re.findall(PRICE_RE_ANY, l)
+        )
         precio = _pick_best_price(nums)
 
-        # Nombre/descripcion
+        # nombre
         nombre = re.sub(r"\s+", " ", descr_zone).strip()
         nombre = re.sub(r"^\d{3,}\s*", "", nombre)
         nombre = nombre[:80]
 
         if not nombre or len(nombre) < 3:
             continue
-        # Si no hay código, exige texto real (no solo peso/cantidades) y ≥2 palabras reales
-        if not codigo and (_is_weight_only_or_fragment(nombre) or not _has_two_real_words(nombre)):
+        # si no hay código y la descripción es “débil”, descartar
+        if not codigo and _is_weight_only_or_fragment(nombre):
             continue
 
         uid = hashlib.md5(f"col:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
@@ -252,8 +243,9 @@ def _parse_text_products(raw_text: str) -> list[dict]:
 
     # 2) Regex SOLO como fallback en líneas no cubiertas por columnas
     by_rx = []
-    rx1 = re.compile(rf"(\d{{6,13}})\s+(.+?)\s+{PRICE_RE}", re.IGNORECASE)  # codigo + nombre + precio
-    rx2 = re.compile(rf"([A-ZÀ-Ÿ]{{3}}[A-ZÀ-Ÿ\s/\-\.]{{3,60}}?)\s+{PRICE_RE}(?:\s*[NXAEH])?", re.IGNORECASE)  # nombre + precio
+    rx1 = re.compile(rf"(\d{{6,13}})\s+(.+?)\s+{PRICE_RE_ANY}", re.IGNORECASE)
+    # ¡OJO!: letras minúsculas permitidas y dígitos dentro del nombre
+    rx2 = re.compile(rf"([A-Za-zÀ-ÿ]{{2}}[A-Za-zÀ-ÿ0-9\s/\-\.]{{3,80}}?)\s+{PRICE_RE_ANY}(?:\s*[NXAEH])?", re.IGNORECASE)
 
     for i, linea in enumerate(lines):
         if i in matched_idx:
@@ -281,15 +273,13 @@ def _parse_text_products(raw_text: str) -> list[dict]:
         nombre = re.sub(r"\s+", " ", nombre).strip()[:80]
         if not nombre or len(nombre) < 3:
             continue
-        # Mismo filtro de calidad cuando no hay EAN
-        if not codigo and (_is_weight_only_or_fragment(nombre) or not _has_two_real_words(nombre)):
+        if not codigo and _is_weight_only_or_fragment(nombre):
             continue
 
         uid = hashlib.md5(f"rx:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
         by_rx.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
 
-    # 3) Merge por uid (no colapsa compras repetidas reales)
-        # 3) merge por uid (no colapsa compras repetidas reales)
+    # 3) merge por uid (no colapsa compras repetidas)
     seen = set()
     out = []
     for src in (by_cols, by_rx):
@@ -298,8 +288,8 @@ def _parse_text_products(raw_text: str) -> list[dict]:
                 continue
             seen.add(p["uid"])
             out.append({k: v for k, v in p.items() if k != "uid"})
-
     return out
+
 
 
 
