@@ -3,24 +3,9 @@ import re
 import json
 import tempfile
 import time
-import hashlib
 from datetime import datetime
 from google.cloud import documentai
 import traceback
-
-# Tesseract opcional (generalmente NO disponible en Render)
-try:
-    import pytesseract
-    import shutil
-    if shutil.which("tesseract"):
-        TESSERACT_AVAILABLE = True
-        print("✅ Tesseract OCR disponible")
-    else:
-        TESSERACT_AVAILABLE = False
-        print("⚠️ Tesseract no instalado - solo Document AI")
-except ImportError:
-    TESSERACT_AVAILABLE = False
-    print("⚠️ pytesseract no disponible - solo Document AI")
 
 # ========================================
 # CONFIGURACIÓN
@@ -49,115 +34,78 @@ def setup_environment():
         raise Exception("JSON inválido")
 
 # ========================================
-# UTILIDADES DE LIMPIEZA
+# UTILIDADES
 # ========================================
 
 def clean_price(text):
-    """Convierte string de precio a entero. Ej: '16,390' -> 16390"""
+    """Convierte texto de precio a entero. Ej: '16,390 N' -> 16390"""
     if not text:
         return None
     
-    # Remover símbolos y espacios
-    cleaned = str(text).replace("$", "").replace(" ", "")
-    cleaned = cleaned.replace(".", "").replace(",", "")
-    
-    # Solo dígitos
-    cleaned = re.sub(r"[^\d-]", "", cleaned)
-    
-    if not cleaned or cleaned == "-":
+    # Tomar solo la parte numérica
+    match = re.search(r'(\d{1,3}(?:[,\.]\d{3})+|\d{3,7})', str(text))
+    if not match:
         return None
+    
+    cleaned = match.group(1).replace(",", "").replace(".", "")
     
     try:
         amount = int(cleaned)
-        # Validar rango razonable
-        if -50000 < amount < 10000000:
-            return abs(amount)  # Tomar valor absoluto
+        if 50 < amount < 10000000:
+            return amount
     except:
         pass
     
     return None
 
 def is_valid_ean(code):
-    """Valida que sea un código EAN de 8-13 dígitos"""
+    """Valida código EAN de 8-13 dígitos"""
     if not code:
         return False
     code = str(code).strip()
     return code.isdigit() and 8 <= len(code) <= 13
 
-def is_noise_line(text):
-    """Detecta líneas que NO son productos"""
-    if not text:
-        return True
-    
-    text_upper = text.upper()
-    
-    # Encabezados y separadores
-    noise_patterns = [
-        "RESOLUCION DIAN",
-        "RESPONSABLE DE IVA",
-        "AGENTE RETENEDOR",
-        "****",
-        "====",
-        "----",
-        "SUBTOTAL",
-        "TOTAL A PAGAR",
-        "NRO. CUENTA",
-        "TARJ CRE/DEB",
-        "VISA",
-        "ITEMS COMPRADOS",
-        "RESUMEN DE IVA",
-        "IVA-TARIFA",
-        "CUOTAS",
-        "CAMBIO"
+def is_noise_keyword(text):
+    """Detecta palabras clave de líneas no-producto"""
+    noise = [
+        "RESOLUCION", "DIAN", "RESPONSABLE", "IVA", "AGENTE",
+        "RETENEDOR", "****", "====", "----", "SUBTOTAL", 
+        "ITEMS COMPRADOS", "NRO", "CUENTA", "TARJ", "VISA",
+        "CUOTAS", "CAMBIO", "RESUMEN"
     ]
-    
-    for pattern in noise_patterns:
-        if pattern in text_upper:
-            return True
-    
-    # Líneas de descuento (empiezan con -)
-    if text.strip().startswith("-"):
-        return True
-    
-    # Líneas muy cortas
-    if len(text.strip()) < 8:
-        return True
-    
-    return False
+    upper = text.upper()
+    return any(kw in upper for kw in noise)
 
-def clean_product_name(text):
-    """Limpia el nombre del producto"""
+def clean_description(text):
+    """Limpia la descripción del producto"""
     if not text:
         return None
     
-    # Remover prefijos comunes
-    text = re.sub(r'^\d+DF\.[A-Z]{2}\.', '', text)
-    text = re.sub(r'^DF\.[A-Z]{2}\.', '', text)
+    # Remover números iniciales sueltos
+    text = re.sub(r'^\d{1,3}\s+', '', text)
     
-    # Remover números al inicio (códigos mal parseados)
-    text = re.sub(r'^\d{3,}\s*', '', text)
+    # Remover precios mezclados
+    text = re.sub(r'\d{1,3}[,\.]\d{3}', '', text)
     
-    # Remover precios al final
-    text = re.sub(r'\d{1,3}[,\.]\d{3}.*$', '', text)
-    
-    # Normalizar espacios
+    # Remover símbolos y limpiar espacios
+    text = re.sub(r'[;:]+', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     
-    # Validar que tenga al menos 2 palabras reales
-    words = re.findall(r'[A-Za-zÀ-ÿ]{2,}', text)
+    # Validar que tenga contenido real
+    words = re.findall(r'[A-Za-zÀ-ÿ]{3,}', text)
     if len(words) < 2:
         return None
     
-    return text[:80] if text else None
+    return text[:60]
 
 # ========================================
 # EXTRACCIÓN DE INFORMACIÓN
 # ========================================
 
 def extract_vendor_name(text):
-    """Extrae el nombre del establecimiento"""
+    """Extrae nombre del establecimiento"""
     patterns = [
-        r"(JUMBO[^\n]*)",
+        r"(JUMBO\s+[A-Z\s]+)",
         r"(ALMACENES\s+(?:EXITO|ÉXITO)[^\n]*)",
         r"(CARULLA[^\n]*)",
         r"(OLIMPICA[^\n]*)",
@@ -166,14 +114,15 @@ def extract_vendor_name(text):
         r"(CRUZ\s+VERDE[^\n]*)",
         r"(LA\s+REBAJA[^\n]*)",
         r"(CAFAM[^\n]*)",
-        r"(MAKRO[^\n]*)",
-        r"(ARA[^\n]*)",
     ]
     
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return re.sub(r'\s+', ' ', match.group(1).strip())[:50]
+            name = match.group(1).strip()
+            # Tomar solo primera línea si hay saltos
+            name = name.split('\n')[0]
+            return re.sub(r'\s+', ' ', name)[:50]
     
     return "Establecimiento no identificado"
 
@@ -181,163 +130,187 @@ def extract_total(text):
     """Extrae el total de la factura"""
     lines = text.split('\n')
     
-    # Buscar en las últimas 50 líneas
+    # Buscar "****SUBTOTAL/TOTAL" en últimas líneas
     for line in reversed(lines[-50:]):
         upper = line.upper()
-        if "SUBTOTAL/TOTAL" in upper or (upper.startswith("TOTAL") and len(upper) < 40):
-            # Extraer número
+        if "SUBTOTAL/TOTAL" in upper or (upper.strip().startswith("TOTAL") and ":" not in upper):
             numbers = re.findall(r'\d{1,3}(?:[,\.]\d{3})+', line)
             if numbers:
-                total = clean_price(numbers[-1])  # Último número de la línea
-                if total and total > 1000:
+                # Tomar el último número (más a la derecha)
+                total = clean_price(numbers[-1])
+                if total and total > 5000:
                     return total
     
     return None
 
 # ========================================
-# PARSER PRINCIPAL
+# PARSER POR COLUMNAS
 # ========================================
 
-def parse_products_from_text(text):
+def detect_price_column(lines):
+    """Detecta la posición de la columna de precios"""
+    for line in lines[:40]:
+        upper = line.upper()
+        if 'CODIGO' in upper and 'TOTAL' in upper:
+            # Buscar posición de TOTAL
+            idx = upper.rfind('TOTAL')
+            if idx > 40:
+                return idx
+    
+    # Fallback: asumir columna estándar
+    return 58
+
+def parse_products_by_columns(text):
     """
-    Parser conservador: solo extrae líneas con estructura clara.
-    Formato esperado: [CODIGO] NOMBRE PRECIO [LETRA]
+    Parser principal: usa posiciones de columnas fijas.
+    Formato típico de factura colombiana:
+    [0-15] CÓDIGO | [15-58] DESCRIPCIÓN | [58+] PRECIO
+    """
+    if not text:
+        return []
+    
+    lines = text.split('\n')
+    price_col = detect_price_column(lines)
+    
+    print(f"Columna de precio detectada: posición {price_col}")
+    print(f"Analizando {len(lines)} líneas...")
+    
+    products = []
+    seen_codes = set()
+    valid_count = 0
+    
+    for i, line in enumerate(lines):
+        # Saltar líneas cortas
+        if len(line) < 20:
+            continue
+        
+        # Saltar ruido conocido
+        if is_noise_keyword(line):
+            continue
+        
+        # Si la línea tiene "****", "TOTAL", etc al inicio, saltar
+        if line.strip().startswith(('*', '=', '-', 'TOTAL')):
+            continue
+        
+        # Extraer zonas por columna
+        code_zone = line[:15].strip()
+        desc_zone = line[15:price_col].strip()
+        price_zone = line[price_col:].strip()
+        
+        # 1. CÓDIGO: debe empezar con EAN de 8-13 dígitos
+        code_match = re.match(r'^(\d{8,13})\b', code_zone)
+        if not code_match:
+            continue
+        
+        code = code_match.group(1)
+        
+        # Evitar duplicados exactos
+        if code in seen_codes:
+            continue
+        
+        # 2. DESCRIPCIÓN: limpiar
+        desc = clean_description(desc_zone)
+        if not desc or len(desc) < 4:
+            continue
+        
+        # 3. PRECIO: buscar primer número válido
+        price = 0
+        price_match = re.search(r'(\d{1,3}(?:[,\.]\d{3})+)', price_zone)
+        if price_match:
+            price = clean_price(price_match.group(1)) or 0
+        
+        # Agregar producto
+        products.append({
+            "codigo": code,
+            "nombre": desc,
+            "valor": price,
+            "fuente": "columns",
+            "linea": i + 1
+        })
+        
+        seen_codes.add(code)
+        valid_count += 1
+    
+    print(f"Productos extraídos: {valid_count}")
+    return products
+
+# ========================================
+# PARSER COMPLEMENTARIO (REGEX)
+# ========================================
+
+def parse_products_by_regex(text, existing_codes):
+    """
+    Parser secundario: usa regex para capturar productos
+    que el parser de columnas pudo haber omitido.
     """
     if not text:
         return []
     
     lines = text.split('\n')
     products = []
-    seen_codes = set()
     
-    print(f"\n📄 Analizando {len(lines)} líneas...")
+    # Patrón: CÓDIGO (espacio) TEXTO (espacio) PRECIO
+    pattern = r'^(\d{8,13})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[A-Z]?\s*$'
     
     for i, line in enumerate(lines):
         line = line.strip()
         
-        # Filtrar ruido
-        if is_noise_line(line):
+        if len(line) < 20:
             continue
         
-        # Buscar patrón: código (6-13 dígitos) + texto + precio
-        # Ejemplos:
-        # 7702007084542 Chocolate CO 16,390 N
-        # 2905669005107 Molida de re 18,539 E
-        pattern = r'(\d{6,13})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[A-Z]?\s*$'
-        match = re.search(pattern, line)
-        
-        if match:
-            code = match.group(1)
-            name_raw = match.group(2)
-            price_raw = match.group(3)
-            
-            # Validar código EAN
-            if not is_valid_ean(code):
-                continue
-            
-            # Evitar duplicados
-            if code in seen_codes:
-                continue
-            
-            # Limpiar nombre
-            name = clean_product_name(name_raw)
-            if not name:
-                continue
-            
-            # Limpiar precio
-            price = clean_price(price_raw)
-            if not price:
-                price = 0  # Permitir precio 0 si todo lo demás es válido
-            
-            products.append({
-                "codigo": code,
-                "nombre": name,
-                "valor": price,
-                "fuente": "text_parser",
-                "linea": i + 1
-            })
-            
-            seen_codes.add(code)
-    
-    print(f"✓ Productos extraídos: {len(products)}")
-    return products
-
-# ========================================
-# DOCUMENT AI
-# ========================================
-
-def extract_products_document_ai(document):
-    """Extrae productos de Document AI con validaciones estrictas"""
-    products = []
-    
-    # Primero parsear el texto crudo (más confiable)
-    text_products = parse_products_from_text(document.text or "")
-    
-    # Agregar entidades de Document AI como complemento
-    line_items = [e for e in document.entities 
-                  if e.type_ == "line_item" and e.confidence > 0.3]
-    
-    seen_codes = {p["codigo"] for p in text_products}
-    
-    for entity in line_items:
-        text = entity.mention_text.strip()
-        
-        if is_noise_line(text):
+        if is_noise_keyword(line):
             continue
         
-        # Buscar código EAN en el texto
-        ean_match = re.search(r'\b(\d{8,13})\b', text)
-        code = ean_match.group(1) if ean_match else None
-        
-        if not code or not is_valid_ean(code):
+        match = re.match(pattern, line)
+        if not match:
             continue
         
-        if code in seen_codes:
+        code, desc_raw, price_raw = match.groups()
+        
+        # Saltar si ya está capturado
+        if code in existing_codes:
             continue
         
-        # Extraer precio
-        price = 0
-        for prop in entity.properties:
-            if prop.type_ == "line_item/amount":
-                price = clean_price(prop.mention_text) or 0
-                break
-        
-        # Limpiar nombre
-        name = clean_product_name(text)
-        if not name:
+        # Validar y limpiar
+        if not is_valid_ean(code):
             continue
+        
+        desc = clean_description(desc_raw)
+        if not desc:
+            continue
+        
+        price = clean_price(price_raw) or 0
         
         products.append({
             "codigo": code,
-            "nombre": name,
+            "nombre": desc,
             "valor": price,
-            "fuente": "document_ai"
+            "fuente": "regex",
+            "linea": i + 1
         })
         
-        seen_codes.add(code)
+        existing_codes.add(code)
     
-    # Combinar ambas fuentes
-    all_products = text_products + products
-    
-    return all_products
+    print(f"Productos adicionales (regex): {len(products)}")
+    return products
 
 # ========================================
 # PROCESAMIENTO PRINCIPAL
 # ========================================
 
 def process_invoice_complete(file_path):
-    """Procesamiento completo de factura"""
+    """Procesamiento completo usando Document AI + parsers duales"""
     inicio = time.time()
     
     try:
         print("\n" + "="*70)
-        print("🔍 PROCESAMIENTO DE FACTURA - MODO PRECISO")
+        print("PROCESAMIENTO DE FACTURA - PARSER DE COLUMNAS")
         print("="*70)
         
         setup_environment()
         
         # Document AI
-        print("\n[1/2] 📄 Procesando con Document AI...")
+        print("\n[1/3] Procesando con Document AI...")
         client = documentai.DocumentProcessorServiceClient()
         name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
         
@@ -362,30 +335,41 @@ def process_invoice_complete(file_path):
         
         raw_text = result.document.text
         
-        # Extraer información básica
+        # Extraer metadata
         establecimiento = extract_vendor_name(raw_text)
         total = extract_total(raw_text)
         
-        # Extraer productos
-        print("\n[2/2] 📦 Extrayendo productos...")
-        productos = extract_products_document_ai(result.document)
+        # [2/3] Parser por columnas (principal)
+        print("\n[2/3] Extrayendo productos (parser de columnas)...")
+        productos_cols = parse_products_by_columns(raw_text)
+        
+        # [3/3] Parser regex (complementario)
+        print("\n[3/3] Buscando productos adicionales (regex)...")
+        existing_codes = {p["codigo"] for p in productos_cols}
+        productos_regex = parse_products_by_regex(raw_text, existing_codes)
+        
+        # Combinar
+        productos = productos_cols + productos_regex
         
         tiempo_total = int(time.time() - inicio)
         
         print("\n" + "="*70)
-        print("✅ RESULTADO FINAL")
+        print("RESULTADO FINAL")
         print("="*70)
-        print(f"📍 Establecimiento: {establecimiento}")
-        print(f"💰 Total: ${total:,}" if total else "💰 Total: No detectado")
-        print(f"📦 Productos detectados: {len(productos)}")
-        print(f"⏱️  Tiempo: {tiempo_total}s")
+        print(f"Establecimiento: {establecimiento}")
+        print(f"Total: ${total:,}" if total else "Total: No detectado")
+        print(f"Productos detectados: {len(productos)}")
+        print(f"  - Por columnas: {len(productos_cols)}")
+        print(f"  - Por regex: {len(productos_regex)}")
+        print(f"Tiempo: {tiempo_total}s")
         print("="*70 + "\n")
         
-        # Mostrar primeros 5 productos
+        # Mostrar primeros 5
         if productos:
             print("Primeros 5 productos:")
             for p in productos[:5]:
-                print(f"  • {p['codigo']}: {p['nombre']} - ${p['valor']:,}")
+                precio_str = f"${p['valor']:,}" if p['valor'] else "Sin precio"
+                print(f"  {p['codigo']}: {p['nombre']} - {precio_str}")
         
         return {
             "establecimiento": establecimiento,
@@ -393,20 +377,21 @@ def process_invoice_complete(file_path):
             "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "productos": productos,
             "metadatos": {
-                "metodo": "document_ai_precise",
-                "productos_detectados": len(productos),
+                "metodo": "columns_dual_parser",
+                "productos_columnas": len(productos_cols),
+                "productos_regex": len(productos_regex),
+                "productos_totales": len(productos),
                 "tiempo_segundos": tiempo_total
             }
         }
         
     except Exception as e:
-        print(f"❌ ERROR: {str(e)}")
+        print(f"ERROR: {str(e)}")
         traceback.print_exc()
         return None
 
-# Mantener compatibilidad
+# Alias para compatibilidad
 def process_invoice_products(file_path):
-    """Alias para compatibilidad"""
     return process_invoice_complete(file_path)
 def process_invoice_products(file_path):
     """Versión legacy - redirige al nuevo procesador"""
