@@ -79,12 +79,21 @@ Responde JSON:
 }"""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
-    if not os.environ.get("OPENAI_API_KEY"):
+    print(f"=== INICIANDO PROCESAMIENTO ===")
+    print(f"Archivo: {image_path}")
+    print(f"Existe archivo: {os.path.exists(image_path)}")
+    
+    api_key = os.environ.get("OPENAI_API_KEY")
+    print(f"API Key configurada: {bool(api_key)}")
+    print(f"API Key comienza con: {api_key[:10] if api_key else 'N/A'}...")
+    
+    if not api_key:
         raise ValueError("OPENAI_API_KEY no configurada")
     
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    client = OpenAI(api_key=api_key)
     img_url = _b64_data_url(image_path)
     
+    print(f"Imagen codificada: {len(img_url)} caracteres")
     print("Enviando a OpenAI Vision...")
     
     try:
@@ -103,16 +112,19 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         )
         
         content = response.choices[0].message.content
-        print(f"Respuesta: {len(content)} chars")
+        print(f"✓ Respuesta recibida: {len(content)} chars")
+        print(f"Primeros 200 chars: {content[:200]}")
         
         data = json.loads(content)
+        print(f"JSON parseado correctamente")
         
-    except json.JSONDecodeError as e:
-        print(f"Error JSON: {e}")
-        data = {"items": []}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ ERROR COMPLETO: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         data = {"items": []}
+    
+    # ... resto del código
     
     items_raw = (data or {}).get("items") or []
     print(f"Items: {len(items_raw)}")
