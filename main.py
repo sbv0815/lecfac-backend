@@ -326,18 +326,11 @@ async def parse_invoice(file: UploadFile = File(...)):
     """Procesa factura con OpenAI Vision"""
     allowed_extensions = ('.jpg', '.jpeg', '.png', '.pdf')
     file_extension = (file.filename or "").lower()
-
-    try:
-        import asyncio
-        # Timeout de 60 segundos para todo el proceso
-        result = await asyncio.wait_for(
-            asyncio.to_thread(parse_invoice_with_openai, temp_file_path),
-            timeout=60.0
-        )
     
     if not any(file_extension.endswith(ext) for ext in allowed_extensions):
         raise HTTPException(400, f"Tipo de archivo no soportado. Use: {', '.join(allowed_extensions)}")
     
+    temp_file_path = None
     try:
         suffix = ".png"
         if file_extension.endswith(('.jpg', '.jpeg')):
@@ -350,8 +343,11 @@ async def parse_invoice(file: UploadFile = File(...)):
             temp_file.write(content)
             temp_file_path = temp_file.name
         
+        # Llamada directa, sin asyncio wrapper
         result = parse_invoice_with_openai(temp_file_path)
-        os.unlink(temp_file_path)
+        
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
         
         if not result:
             raise HTTPException(500, "Error procesando factura")
@@ -359,14 +355,12 @@ async def parse_invoice(file: UploadFile = File(...)):
         return {"success": True, "data": result}
         
     except Exception as e:
-        if 'temp_file_path' in locals():
+        if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.unlink(temp_file_path)
             except:
                 pass
         raise HTTPException(500, f"Error: {str(e)}")
-    except asyncio.TimeoutError:
-        raise HTTPException(504, "Timeout: La factura es muy grande")
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
@@ -468,4 +462,5 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
