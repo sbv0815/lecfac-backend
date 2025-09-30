@@ -1,11 +1,10 @@
-pytesseract>=0.3.10
-Pillow>=10.0.0
-google-cloud-documentai
-psycopg[binary]
-bcrypt
-fastapi
-uvicorn[standard]
-python-multipart
-
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pytesseract==0.3.10
+Pillow==10.1.0
+google-cloud-documentai==2.20.0
+psycopg[binary]==3.1.12
+bcrypt==4.1.1
 
 
