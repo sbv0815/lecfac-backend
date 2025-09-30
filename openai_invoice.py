@@ -43,22 +43,38 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
         "fuente": "openai"
     }
 
-_PROMPT = """Extrae productos de esta factura de supermercado colombiano.
+_PROMPT = """Eres un experto en facturas de supermercados y droguerias colombianos.
 
-Lee HORIZONTALMENTE: CÓDIGO | NOMBRE | PRECIO
+FORMATO DE LECTURA - MUY IMPORTANTE:
+Cada producto está en UNA FILA HORIZONTAL con 3 columnas:
 
-Reglas:
-1. Extraer código, nombre y precio de cada producto
-2. IGNORAR: descuentos (-), subtotales, "IVA", "%REF"
-3. Si código incompleto: usar nombre + precio
-4. Prioridad: CÓDIGO > PRECIO > NOMBRE
+CÓDIGO          | DESCRIPCIÓN        | PRECIO
+7702993047842   | Chocolate BISO     | 2.190
+116             | Banano Uraba       | 5.425
+505             | Limón Tahití       | 8.801
 
-JSON (sin texto extra):
+REGLAS CRÍTICAS:
+1. Lee HORIZONTALMENTE (izquierda a derecha)
+2. En la MISMA fila encuentras: código + nombre + precio
+3. NO tomes código de una fila y nombre de otra fila
+4. IGNORA líneas como "2 X 4200" o "0.510kg X 34980" (son detalles de peso/cantidad)
+5. IGNORA descuentos (-), subtotales, "%REF", "DF."
+
+EJEMPLO CORRECTO:
+Fila: "7702993047842  Chocolate BISO  2.190"
+JSON: {"codigo": "7702993047842", "nombre": "Chocolate BISO", "valor": 2190}
+
+EJEMPLO INCORRECTO:
+❌ NO tomar código de línea 1 y nombre de línea 2
+
+Extrae TODOS los productos (~50).
+
+Responde JSON:
 {
-  "establecimiento": "nombre",
-  "total": numero_entero,
+  "establecimiento": "JUMBO BULEVAR",
+  "total": 512352,
   "items": [
-    {"codigo": "123", "nombre": "Producto", "valor": 2500}
+    {"codigo": "7702993047842", "nombre": "Chocolate BISO", "valor": 2190}
   ]
 }"""
 
