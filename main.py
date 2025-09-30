@@ -326,6 +326,14 @@ async def parse_invoice(file: UploadFile = File(...)):
     """Procesa factura con OpenAI Vision"""
     allowed_extensions = ('.jpg', '.jpeg', '.png', '.pdf')
     file_extension = (file.filename or "").lower()
+
+    try:
+        import asyncio
+        # Timeout de 60 segundos para todo el proceso
+        result = await asyncio.wait_for(
+            asyncio.to_thread(parse_invoice_with_openai, temp_file_path),
+            timeout=60.0
+        )
     
     if not any(file_extension.endswith(ext) for ext in allowed_extensions):
         raise HTTPException(400, f"Tipo de archivo no soportado. Use: {', '.join(allowed_extensions)}")
@@ -357,6 +365,8 @@ async def parse_invoice(file: UploadFile = File(...)):
             except:
                 pass
         raise HTTPException(500, f"Error: {str(e)}")
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "Timeout: La factura es muy grande")
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
@@ -458,3 +468,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
