@@ -1,13 +1,13 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
+python-multipart==0.0.12
 pillow==10.4.0
 pytesseract==0.3.13
 google-cloud-documentai==2.29.0
 psycopg[binary]==3.2.2
-python-multipart==0.0.12
-# Auth
 bcrypt==4.1.3
+
 
 
 
