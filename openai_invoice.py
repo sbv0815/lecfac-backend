@@ -62,7 +62,6 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
             y_coord = token.layout.bounding_poly.normalized_vertices[0].y
             line_key = round(y_coord * 100)
             
-            # CORREGIDO: usar text_anchor en lugar de symbols
             text = ""
             if hasattr(token.layout, 'text_anchor') and token.layout.text_anchor.text_segments:
                 for segment in token.layout.text_anchor.text_segments:
@@ -72,7 +71,7 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
             
             x_coord = token.layout.bounding_poly.normalized_vertices[0].x
             
-            if text:  # Solo agregar si hay texto
+            if text:
                 lines[line_key].append((x_coord, text))
     
     for line_key in lines:
@@ -85,19 +84,38 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
     for line_key, tokens in sorted_lines:
         line_text = " ".join([t[1] for t in tokens])
         
-        codigo_match = re.search(r'^(\d{3,13})', line_text)
-        precio_match = re.search(r'(\d{1,3}[.,]\d{3})$', line_text)
+        # Ignorar líneas administrativas
+        upper = line_text.upper()
+        if any(x in upper for x in ['CODIGO', 'SUBTOTAL', 'TOTAL', 'TARJETA', 'NIT', 'DIAN', 'ITEMS COMPRADOS']):
+            continue
+        
+        # Ignorar descuentos y referencias
+        if 'DF.' in line_text or 'C.' in line_text or '%REF' in upper or line_text.startswith('-'):
+            continue
+        
+        # Buscar código (puede estar en cualquier parte de la línea)
+        codigo_match = re.search(r'\b(\d{3,13})\b', line_text)
+        # Buscar precio (al final o cerca del final)
+        precio_match = re.search(r'(\d{1,3}[.,]\d{3})', line_text)
         
         if codigo_match and precio_match:
             codigo = codigo_match.group(1)
             precio_str = precio_match.group(1).replace('.', '').replace(',', '')
             
-            nombre_start = codigo_match.end()
-            nombre_end = precio_match.start()
-            nombre = line_text[nombre_start:nombre_end].strip()
+            # Nombre: todo entre código y precio
+            codigo_pos = codigo_match.start()
+            precio_pos = precio_match.start()
             
-            nombre = re.sub(r'\d{10,}', '', nombre)
-            nombre = re.sub(r'[.,]\d+\s*(KG|X|N)', '', nombre)
+            if precio_pos > codigo_pos + len(codigo):
+                nombre = line_text[codigo_pos + len(codigo):precio_pos].strip()
+            else:
+                # Si precio está antes que código, tomar después del código
+                nombre = line_text[codigo_match.end():].strip()
+                nombre = re.sub(r'\d{1,3}[.,]\d{3}', '', nombre).strip()
+            
+            # Limpiar nombre
+            nombre = re.sub(r'\b\d{10,}\b', '', nombre)
+            nombre = re.sub(r'[.,]\d+\s*(KG|X|N|H|A|E)', '', nombre, flags=re.IGNORECASE)
             nombre = nombre.strip()
             
             try:
