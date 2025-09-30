@@ -6,6 +6,9 @@ services:
     region: oregon
     plan: starter
     envVars:
+        
+      - key: TESSERACT_CMD
+        value: /usr/bin/tesseract
       - key: DATABASE_TYPE
         value: postgresql
       - key: DATABASE_URL
@@ -28,5 +31,6 @@ databases:
     plan: free
     databaseName: lecfac
     user: lecfac_user
+
 
 
