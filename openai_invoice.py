@@ -96,25 +96,50 @@ def _schema() -> Dict[str, Any]:
 
 _PROMPT = """Eres un extractor especializado en facturas de supermercados colombianos.
 
-Analiza la imagen y extrae:
+IMPORTANTE: Cada producto tiene su información en UNA SOLA línea o en líneas consecutivas.
+Formato típico en facturas:
+- Línea 1: CÓDIGO (13 dígitos EAN o 3-6 dígitos PLU)
+- Línea 2: NOMBRE DEL PRODUCTO
+- Línea 3: PRECIO
 
-1. **items**: Lista de productos con:
-   - 'nombre': descripción del producto
-   - 'valor': precio en números enteros (COP)
-   - 'codigo': código EAN/PLU si está visible
-   - 'cantidad': cantidad si está visible
+O también:
+CÓDIGO  NOMBRE DEL PRODUCTO  PRECIO
 
-2. **Reglas**:
-   - Une descripciones en múltiples líneas
-   - Ignora descuentos, subtotales, "RESUMEN DE IVA"
-   - Códigos de peso variable (20/28/29 con 12-13 dígitos) inclúyelos
-   - Total es el "TOTAL" o "TOTAL A PAGAR"
+REGLAS CRÍTICAS:
+1. El CÓDIGO siempre pertenece al NOMBRE que está en la MISMA línea o en la línea INMEDIATAMENTE SIGUIENTE
+2. NUNCA asocies un código con el producto de 2 líneas más abajo
+3. Si ves un número de 13 dígitos (EAN) seguido de un nombre, ESE código va con ESE nombre
+4. Si ves un número corto (3-6 dígitos) seguido de un nombre, ESE código va con ESE nombre
 
-3. **establecimiento**: nombre del supermercado
+Extrae en JSON:
 
-4. **total**: monto total (número entero)
+{
+  "establecimiento": "nombre del supermercado",
+  "total": monto_total_entero,
+  "moneda": "COP",
+  "items": [
+    {
+      "codigo": "código EAN o PLU que está JUNTO al producto",
+      "nombre": "nombre del producto",
+      "valor": precio_entero,
+      "cantidad": cantidad_si_visible
+    }
+  ]
+}
 
-Devuelve SOLO JSON."""
+Ejemplo correcto:
+Si ves:
+  505
+  Limón Tahití
+  $8.801
+
+El resultado debe ser:
+  {"codigo": "505", "nombre": "Limón Tahití", "valor": 8801}
+
+NO:
+  {"codigo": "505", "nombre": "Bimbolajdres", "valor": ...}  ← INCORRECTO
+
+Ignora: descuentos, subtotales, "RESUMEN DE IVA", totales parciales."""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     """
