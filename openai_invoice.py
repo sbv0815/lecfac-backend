@@ -94,52 +94,47 @@ def _schema() -> Dict[str, Any]:
         }
     }
 
-_PROMPT = """Eres un extractor especializado en facturas de supermercados colombianos.
+_PROMPT = """Eres un extractor de facturas de supermercados colombianos.
 
-IMPORTANTE: Cada producto tiene su información en UNA SOLA línea o en líneas consecutivas.
-Formato típico en facturas:
-- Línea 1: CÓDIGO (13 dígitos EAN o 3-6 dígitos PLU)
-- Línea 2: NOMBRE DEL PRODUCTO
-- Línea 3: PRECIO
+ESTRUCTURA UNIVERSAL de productos en facturas:
+1. CÓDIGO (línea 1): EAN de 13 dígitos, PLU de 3-6 dígitos, o código de peso variable
+2. NOMBRE (línea 2): Descripción del producto
+3. PRECIO (línea 3): Valor en pesos colombianos
+4. [Opcional] Información adicional: peso, cantidad, unidades (IGNORAR)
 
-O también:
-CÓDIGO  NOMBRE DEL PRODUCTO  PRECIO
+REGLAS DE EXTRACCIÓN:
+- Cada bloque de 3 líneas consecutivas forma un producto: código → nombre → precio
+- El código SIEMPRE va con el nombre que está INMEDIATAMENTE después
+- Ignora líneas adicionales entre productos (peso, kg, unidades)
+- NO asocies códigos con nombres que no sean el siguiente inmediato
+- Ignora: descuentos (valores negativos), subtotales, "RESUMEN DE IVA", totales parciales
 
-REGLAS CRÍTICAS:
-1. El CÓDIGO siempre pertenece al NOMBRE que está en la MISMA línea o en la línea INMEDIATAMENTE SIGUIENTE
-2. NUNCA asocies un código con el producto de 2 líneas más abajo
-3. Si ves un número de 13 dígitos (EAN) seguido de un nombre, ESE código va con ESE nombre
-4. Si ves un número corto (3-6 dígitos) seguido de un nombre, ESE código va con ESE nombre
-
-Extrae en JSON:
-
+FORMATO DE SALIDA:
 {
   "establecimiento": "nombre del supermercado",
   "total": monto_total_entero,
   "moneda": "COP",
   "items": [
     {
-      "codigo": "código EAN o PLU que está JUNTO al producto",
+      "codigo": "código del producto",
       "nombre": "nombre del producto",
-      "valor": precio_entero,
-      "cantidad": cantidad_si_visible
+      "valor": precio_entero_sin_puntos,
+      "cantidad": null
     }
   ]
 }
 
-Ejemplo correcto:
-Si ves:
-  505
-  Limón Tahití
-  $8.801
+EJEMPLO:
+Entrada:
+  7622202171758
+  Galletas CLUB SOCIAL
+  $7.080
+  160g
 
-El resultado debe ser:
-  {"codigo": "505", "nombre": "Limón Tahití", "valor": 8801}
+Salida:
+  {"codigo": "7622202171758", "nombre": "Galletas CLUB SOCIAL", "valor": 7080, "cantidad": null}
 
-NO:
-  {"codigo": "505", "nombre": "Bimbolajdres", "valor": ...}  ← INCORRECTO
-
-Ignora: descuentos, subtotales, "RESUMEN DE IVA", totales parciales."""
+Procesa TODOS los productos de la factura siguiendo este patrón."""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     """
