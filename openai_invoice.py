@@ -43,37 +43,24 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
         "fuente": "openai"
     }
 
-_PROMPT = """Eres un extractor experto de facturas de supermercados colombianos.
+_PROMPT = """Extrae productos de esta factura de supermercado colombiano.
 
-Lee esta factura cuidadosamente y extrae TODOS los productos que compraron.
+Lee HORIZONTALMENTE: CÓDIGO | NOMBRE | PRECIO
 
-INSTRUCCIONES:
-1. Busca las columnas: CÓDIGO | DESCRIPCIÓN | VALOR
-2. Lee línea por línea de arriba hacia abajo
-3. Para cada producto extrae:
-   - codigo: el número de 3-13 dígitos (EAN o PLU)
-   - nombre: el nombre/descripción del producto
-   - valor: el precio en pesos (número entero sin puntos ni comas)
+Reglas:
+1. Extraer código, nombre y precio de cada producto
+2. IGNORAR: descuentos (-), subtotales, "IVA", "%REF"
+3. Si código incompleto: usar nombre + precio
+4. Prioridad: CÓDIGO > PRECIO > NOMBRE
 
-4. IGNORA:
-   - Líneas con descuentos (montos negativos con -)
-   - Referencias como "%REF", "DF.", "C.15%"
-   - Subtotales, totales parciales
-   - Líneas que digan "RESUMEN DE IVA"
-
-5. Si la factura tiene ~50 productos, debes extraer ~50 items
-
-Responde SOLO con JSON válido:
+JSON (sin texto extra):
 {
-  "establecimiento": "NOMBRE SUPERMERCADO",
-  "total": 512352,
+  "establecimiento": "nombre",
+  "total": numero_entero,
   "items": [
-    {"codigo": "7702993047842", "nombre": "Chocolate BISO", "valor": 2190},
-    {"codigo": "116", "nombre": "Banano Uraba", "valor": 5425}
+    {"codigo": "123", "nombre": "Producto", "valor": 2500}
   ]
-}
-
-CRÍTICO: Asegúrate de que el código corresponda exactamente al producto correcto."""
+}"""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     if not os.environ.get("OPENAI_API_KEY"):
@@ -82,9 +69,7 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     img_url = _b64_data_url(image_path)
     
-    print("\n" + "="*70)
-    print("PROCESANDO FACTURA CON OPENAI VISION")
-    print("="*70)
+    print("Enviando a OpenAI...")
     
     try:
         response = client.chat.completions.create(
@@ -98,14 +83,24 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
             }],
             response_format={"type": "json_object"},
             temperature=0,
-            max_tokens=16000
+            max_tokens=8000,  # Reducido para evitar timeouts
+            timeout=45  # Timeout explícito de 45 segundos
         )
         
         content = response.choices[0].message.content
-        print(f"Respuesta recibida: {len(content)} caracteres")
+        print(f"Respuesta: {len(content)} chars")
         
         data = json.loads(content)
         
+    except TimeoutError:
+        print("Timeout de OpenAI")
+        return {
+            "establecimiento": "Error: Timeout",
+            "total": None,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": [],
+            "metadatos": {"metodo": "error-timeout", "items_detectados": 0}
+        }
     except json.JSONDecodeError as e:
         print(f"Error JSON: {e}")
         data = {"items": []}
@@ -114,9 +109,8 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         data = {"items": []}
     
     items_raw = (data or {}).get("items") or []
-    print(f"Items extraídos: {len(items_raw)}")
+    print(f"Items: {len(items_raw)}")
     
-    # Procesar y deduplicar
     seen = {}
     items = []
     
@@ -126,22 +120,17 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         
         try:
             item = _canonicalize_item(p)
-            nombre = item.get("nombre", "")
-            valor = item.get("valor", 0)
-            
-            if not nombre or valor <= 0:
+            if not item.get("nombre") or item.get("valor", 0) <= 0:
                 continue
             
-            key = f"{item.get('codigo')}|{nombre}|{valor}"
-            
+            key = f"{item.get('codigo')}|{item['nombre']}|{item['valor']}"
             if key not in seen:
                 seen[key] = True
                 items.append(item)
-        except Exception as e:
-            print(f"Error procesando item: {e}")
+        except:
+            continue
     
-    print(f"Productos únicos: {len(items)}")
-    print("="*70 + "\n")
+    print(f"Únicos: {len(items)}")
     
     establecimiento = (data or {}).get("establecimiento") or "Establecimiento no identificado"
     total = (data or {}).get("total")
