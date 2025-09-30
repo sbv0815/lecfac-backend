@@ -88,65 +88,60 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         content = response.choices[0].message.content
         print(f"Respuesta: {len(content)} chars")
         
-        # LOGGING: Ver respuesta completa
-        print("=" * 70)
-        print("RESPUESTA COMPLETA DE OPENAI:")
-        print(content)
-        print("=" * 70)
-        
-        # Intentar parsear
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as je:
-            print(f"Error JSON en posición {je.pos}: {je.msg}")
-            print(f"Contexto: ...{content[max(0, je.pos-50):je.pos+50]}...")
-            
-            # Intentar reparar: buscar último item completo
-            try:
-                last_valid = content[:je.pos].rfind('"}')
-                if last_valid > 0:
-                    repaired = content[:last_valid + 2] + ']}'
-                    data = json.loads(repaired)
-                    print(f"✓ JSON reparado: {len(data.get('items', []))} items")
-                else:
-                    raise
-            except:
-                print("No se pudo reparar el JSON")
-                data = {"items": []}
+        data = json.loads(content)
         
     except Exception as e:
         print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-        data = {"items": []}
+        data = {}
     
-    items_raw = (data or {}).get("items") or []
-    print(f"Items: {len(items_raw)}")
+    # Manejar ambos formatos: "items" o "productos"
+    items_raw = data.get("items") or data.get("productos") or []
+    print(f"Items raw: {len(items_raw)}")
     
-    seen = {}
     items = []
     
-    for p in items_raw:
-        if not isinstance(p, dict):
-            continue
-        
+    for item in items_raw:
         try:
-            item = _canonicalize_item(p)
-            if not item.get("nombre") or item.get("valor", 0) <= 0:
-                continue
+            # Si es string con formato "codigo | nombre | precio"
+            if isinstance(item, str):
+                parts = [p.strip() for p in item.split('|')]
+                if len(parts) >= 3:
+                    codigo = parts[0] if parts[0].isdigit() else None
+                    nombre = parts[1]
+                    valor_str = re.sub(r'[^\d]', '', parts[2])
+                    valor = int(valor_str) if valor_str else 0
+                    
+                    if nombre and valor > 0:
+                        items.append({
+                            "codigo": codigo,
+                            "nombre": nombre[:80],
+                            "valor": valor,
+                            "fuente": "openai"
+                        })
             
-            key = f"{item.get('codigo')}|{item['nombre']}|{item['valor']}"
-            if key not in seen:
-                seen[key] = True
-                items.append(item)
+            # Si es objeto (formato esperado)
+            elif isinstance(item, dict):
+                processed = _canonicalize_item(item)
+                if processed.get("nombre") and processed.get("valor", 0) > 0:
+                    items.append(processed)
+                    
         except Exception as e:
             print(f"Error procesando item: {e}")
             continue
     
-    print(f"Únicos: {len(items)}")
+    # Deduplicar
+    seen = {}
+    items_unicos = []
+    for item in items:
+        key = f"{item.get('codigo')}|{item['nombre']}|{item['valor']}"
+        if key not in seen:
+            seen[key] = True
+            items_unicos.append(item)
     
-    establecimiento = (data or {}).get("establecimiento") or "Establecimiento no identificado"
-    total = (data or {}).get("total")
+    print(f"Únicos: {len(items_unicos)}")
+    
+    establecimiento = data.get("establecimiento") or "Establecimiento no identificado"
+    total = data.get("total")
     
     if isinstance(total, str):
         num = re.sub(r"[^\d]", "", total)
@@ -156,10 +151,10 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         "establecimiento": establecimiento,
         "total": total,
         "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "productos": items,
+        "productos": items_unicos,
         "metadatos": {
             "metodo": "openai-vision",
             "model": OPENAI_MODEL,
-            "items_detectados": len(items),
+            "items_detectados": len(items_unicos),
         },
     }
