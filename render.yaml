@@ -2,8 +2,6 @@ services:
   - type: web
     name: lecfac-api
     env: docker
-    plan: starter
-    autoDeploy: true
     healthCheckPath: /verify-tesseract
     envVars:
       - key: DATABASE_TYPE
@@ -19,11 +17,13 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
         sync: false
 
+
 databases:
   - name: lecfac-db
     plan: free
     databaseName: lecfac
     user: lecfac_user
+
 
 
 
