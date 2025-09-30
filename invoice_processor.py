@@ -391,25 +391,18 @@ def extract_products_document_ai(document):
     # 1) Entidades de Document AI (con filtros)
     line_items = [e for e in getattr(document, "entities", []) if e.type_ == "line_item" and e.confidence > 0.25]
     for e in line_items:
+        # inicializa SIEMPRE
+        code = None
+        name = ""
+        price = 0
+
         raw = (e.mention_text or "").strip()
-        base = f"{code or ''}|{name}|{price}"
-        uid = "da:" + hashlib.md5(base.encode()).hexdigest()[:10]
-
-        productos.append({
-        "uid": uid,
-        "codigo": code,
-        "nombre": name,
-        "valor": price,
-        "fuente": "document_ai"
-        })
-
-
-        # descarta descuentos/notas
-        if _is_discount_or_note(raw) or _is_discount_or_note(name):
+        if _is_discount_or_note(raw):
             continue
 
+        name = re.sub(r"\s+", " ", raw)[:80] or "Sin descripción"
+
         # EAN si existe
-        code = None
         mm = re.search(EAN_LONG_RE, raw)
         if mm:
             code = mm.group(0)
@@ -419,7 +412,6 @@ def extract_products_document_ai(document):
             continue
 
         # precio; si alguna propiedad viene negativa, descartar
-        price = 0
         has_negative = False
         for prop in getattr(e, "properties", []):
             txt = (getattr(prop, "mention_text", "") or "")
@@ -439,21 +431,21 @@ def extract_products_document_ai(document):
     seen = set()
     final = []
 
-    def key(p):
-        code = p.get("codigo")
-        if code and re.fullmatch(EAN_LONG_RE, code):
-            return ("ean", code)
-        return ("nv", p.get("nombre", "").lower(), p.get("valor", 0))
+    def kkey(p):
+        c = p.get("codigo")
+        if c and re.fullmatch(EAN_LONG_RE, c):
+            return ("ean", c)
+        return ("nv", (p.get("nombre") or "").lower(), p.get("valor", 0))
 
-    for src in (productos, productos_texto):
-        for p in src:
-            k = key(p)
-            if k in seen:
-                continue
-            seen.add(k)
-            final.append(p)
+    for p in productos + productos_texto:
+        k = kkey(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        final.append(p)
 
     return final
+
 
 
 def extract_products_tesseract_aggressive(image_path):
