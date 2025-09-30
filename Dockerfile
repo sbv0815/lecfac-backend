@@ -1,25 +1,29 @@
 FROM python:3.11-slim
 
-# Instalar Tesseract y dependencias
-RUN apt-get update && apt-get install -y \
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar Tesseract + español (+ inglés de respaldo)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-spa \
+    tesseract-ocr-eng \
     libtesseract-dev \
     libleptonica-dev \
-    && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# Verificar instalación
-RUN tesseract --version
+# A veces ayuda declarar estas variables
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+ENV PATH="/usr/bin:${PATH}"
+
+# Verificar instalación en build
+RUN tesseract --version && tesseract --list-langs
 
 WORKDIR /app
 
-# Instalar dependencias Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar aplicación
 COPY . .
 
 EXPOSE 10000
-
 CMD ["python", "main.py"]
