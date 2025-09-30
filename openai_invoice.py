@@ -86,30 +86,35 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
         
         # Ignorar líneas administrativas
         upper = line_text.upper()
-        if any(x in upper for x in ['CODIGO', 'SUBTOTAL', 'TOTAL', 'TARJETA', 'NIT', 'DIAN', 'ITEMS COMPRADOS']):
+        if any(x in upper for x in ['CODIGO', 'SUBTOTAL', 'TOTAL', 'TARJETA', 'NIT', 'DIAN', 'ITEMS COMPRADOS', 'RESOLUCION']):
             continue
         
         # Ignorar descuentos y referencias
         if 'DF.' in line_text or 'C.' in line_text or '%REF' in upper or line_text.startswith('-'):
             continue
         
-        # Buscar código (puede estar en cualquier parte de la línea)
+        # NUEVO: Ignorar líneas que son solo peso/cantidad
+        # Formato: "XXX KG X PRECIO" o "KG X PRECIO"
+        if re.match(r'^(\d{1,4}\s*)?(KG|GR|ML)\s*X\s*\d+', upper):
+            continue
+        
+        # NUEVO: Ignorar si nombre resulta ser solo "KG", "X", "N", etc.
+        if re.match(r'^(KG|X|N|H|A|E|LLAN)\s*(X|KG)?$', upper):
+            continue
+        
         codigo_match = re.search(r'\b(\d{3,13})\b', line_text)
-        # Buscar precio (al final o cerca del final)
         precio_match = re.search(r'(\d{1,3}[.,]\d{3})', line_text)
         
         if codigo_match and precio_match:
             codigo = codigo_match.group(1)
             precio_str = precio_match.group(1).replace('.', '').replace(',', '')
             
-            # Nombre: todo entre código y precio
             codigo_pos = codigo_match.start()
             precio_pos = precio_match.start()
             
             if precio_pos > codigo_pos + len(codigo):
                 nombre = line_text[codigo_pos + len(codigo):precio_pos].strip()
             else:
-                # Si precio está antes que código, tomar después del código
                 nombre = line_text[codigo_match.end():].strip()
                 nombre = re.sub(r'\d{1,3}[.,]\d{3}', '', nombre).strip()
             
@@ -118,9 +123,18 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
             nombre = re.sub(r'[.,]\d+\s*(KG|X|N|H|A|E)', '', nombre, flags=re.IGNORECASE)
             nombre = nombre.strip()
             
+            # NUEVO: Validar que el nombre tenga contenido real
+            if not nombre or len(nombre) < 3:
+                continue
+            
+            # NUEVO: Rechazar si nombre es solo fragmentos
+            if re.match(r'^(KG|X|N|H|A|E|LLAN|URABA)\s*(X|KG)?$', nombre.upper()):
+                continue
+            
             try:
                 precio = int(precio_str)
-                if len(nombre) >= 3 and 100 <= precio <= 1000000:
+                # NUEVO: Validar que el precio no sea absurdamente grande (como 512352)
+                if len(nombre) >= 3 and 100 <= precio <= 200000:
                     productos.append({
                         "codigo": codigo,
                         "nombre": nombre[:80],
