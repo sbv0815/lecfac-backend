@@ -10,6 +10,12 @@ from openai import OpenAI
 # - "gpt-4o-mini" (rápido/barato) o "gpt-4o" (más potente)
 OPENAI_MODEL = os.getenv("OPENAI_INVOICE_MODEL", "gpt-4o-mini")
 
+try:
+    from openai import OpenAI
+except Exception as e:
+    raise RuntimeError("OpenAI SDK no instalado. Agrega 'openai>=1.40.0' a requirements.txt") from e
+
+
 def _b64_data_url(image_path: str) -> str:
     mime = "image/jpeg"
     low = image_path.lower()
