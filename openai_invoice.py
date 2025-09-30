@@ -18,46 +18,16 @@ def _b64_data_url(image_path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("ascii")
     return f"data:{mime};base64,{b64}"
 
-def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
-    codigo = p.get("codigo")
-    nombre = (p.get("nombre") or "").strip()
-    valor = p.get("valor")
-    
-    if codigo:
-        codigo = str(codigo).strip()
-        if codigo == "None" or len(codigo) < 3:
-            codigo = None
-    
-    if isinstance(valor, str):
-        num = re.sub(r"[^\d]", "", valor)
-        valor = int(num) if num.isdigit() else 0
-    if isinstance(valor, float):
-        valor = int(round(valor))
-    if not isinstance(valor, int):
-        valor = 0
-    
-    return {
-        "codigo": codigo,
-        "nombre": nombre[:80] if nombre else "Sin nombre",
-        "valor": valor,
-        "fuente": "openai"
-    }
+_PROMPT = """Extrae productos de factura (CÓDIGO | NOMBRE | PRECIO horizontal).
 
-_PROMPT = """Extrae productos de esta factura (formato: CÓDIGO | NOMBRE | PRECIO en cada fila).
-
-IMPORTANTE: Usa nombres CORTOS (máximo 20 caracteres).
-
-Reglas:
-- Lee horizontalmente
-- Ignora descuentos (-), "IVA", "%REF"
-- Nombres cortos y claros
+Nombres cortos (max 20 chars). Ignora descuentos (-), IVA, %REF.
 
 JSON:
 {
   "establecimiento": "nombre",
   "total": 512352,
   "items": [
-    {"codigo": "123", "nombre": "Choco BISO", "valor": 2190}
+    {"codigo": "123", "nombre": "Choco", "valor": 2190}
   ]
 }"""
 
@@ -87,14 +57,13 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         
         content = response.choices[0].message.content
         print(f"Respuesta: {len(content)} chars")
-        
         data = json.loads(content)
         
     except Exception as e:
         print(f"Error: {e}")
         data = {}
     
-    # Manejar ambos formatos: "items" o "productos"
+    # Manejar "items" o "productos"
     items_raw = data.get("items") or data.get("productos") or []
     print(f"Items raw: {len(items_raw)}")
     
@@ -102,40 +71,56 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     
     for item in items_raw:
         try:
-            # Si es string con formato "codigo | nombre | precio"
+            codigo = None
+            nombre = None
+            valor = 0
+            
+            # Formato string: "codigo | nombre | precio"
             if isinstance(item, str):
                 parts = [p.strip() for p in item.split('|')]
                 if len(parts) >= 3:
-                    codigo = parts[0] if parts[0].isdigit() else None
+                    codigo = parts[0] if parts[0] and len(parts[0]) >= 3 else None
                     nombre = parts[1]
                     valor_str = re.sub(r'[^\d]', '', parts[2])
                     valor = int(valor_str) if valor_str else 0
-                    
-                    if nombre and valor > 0:
-                        items.append({
-                            "codigo": codigo,
-                            "nombre": nombre[:80],
-                            "valor": valor,
-                            "fuente": "openai"
-                        })
             
-            # Si es objeto (formato esperado)
+            # Formato objeto
             elif isinstance(item, dict):
-                processed = _canonicalize_item(item)
-                if processed.get("nombre") and processed.get("valor", 0) > 0:
-                    items.append(processed)
-                    
+                codigo = item.get("codigo")
+                nombre = item.get("nombre")
+                valor = item.get("valor")
+                
+                # Limpiar valor si es string
+                if isinstance(valor, str):
+                    valor_str = re.sub(r'[^\d]', '', valor)
+                    valor = int(valor_str) if valor_str else 0
+                elif isinstance(valor, float):
+                    valor = int(valor)
+            
+            # Validar y agregar
+            if nombre and len(nombre) >= 2 and valor > 0:
+                items.append({
+                    "codigo": codigo,
+                    "nombre": nombre[:80],
+                    "valor": valor,
+                    "fuente": "openai"
+                })
+            else:
+                print(f"Descartado: nombre='{nombre}', valor={valor}")
+                
         except Exception as e:
-            print(f"Error procesando item: {e}")
+            print(f"Error procesando: {e}")
             continue
     
+    print(f"Items válidos: {len(items)}")
+    
     # Deduplicar
-    seen = {}
+    seen = set()
     items_unicos = []
     for item in items:
         key = f"{item.get('codigo')}|{item['nombre']}|{item['valor']}"
         if key not in seen:
-            seen[key] = True
+            seen.add(key)
             items_unicos.append(item)
     
     print(f"Únicos: {len(items_unicos)}")
