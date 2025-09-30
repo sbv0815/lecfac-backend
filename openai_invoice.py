@@ -56,24 +56,39 @@ def _schema() -> Dict[str, Any]:
                 "type": "object",
                 "properties": {
                     "establecimiento": {"type": "string"},
-                    "total": {"type": ["integer", "null"]},
+                    "total": {
+                        "anyOf": [
+                            {"type": "integer"},
+                            {"type": "null"}
+                        ]
+                    },
                     "moneda": {"type": "string"},
                     "items": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "codigo": {"type": ["string", "null"]},
+                                "codigo": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {"type": "null"}
+                                    ]
+                                },
                                 "nombre": {"type": "string"},
                                 "valor": {"type": "integer"},
-                                "cantidad": {"type": ["number", "null"]}
+                                "cantidad": {
+                                    "anyOf": [
+                                        {"type": "number"},
+                                        {"type": "null"}
+                                    ]
+                                }
                             },
-                            "required": ["nombre", "valor"],
+                            "required": ["codigo", "nombre", "valor", "cantidad"],
                             "additionalProperties": False
                         }
                     }
                 },
-                "required": ["establecimiento", "items"],
+                "required": ["establecimiento", "total", "moneda", "items"],
                 "additionalProperties": False
             }
         }
