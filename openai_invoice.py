@@ -71,21 +71,20 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     
     print("Enviando a OpenAI...")
     
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": _PROMPT},
-                    {"type": "image_url", "image_url": {"url": img_url, "detail": "high"}}
-                ]
-            }],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=8000,  # Reducido para evitar timeouts
-            timeout=45  # Timeout explícito de 45 segundos
-        )
+   response = client.chat.completions.create(
+    model=OPENAI_MODEL,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": _PROMPT},
+            {"type": "image_url", "image_url": {"url": img_url, "detail": "high"}}
+        ]
+    }],
+    response_format={"type": "json_object"},
+    temperature=0,
+    max_tokens=8000  # Sin timeout parameter
+)
+           
         
         content = response.choices[0].message.content
         print(f"Respuesta: {len(content)} chars")
