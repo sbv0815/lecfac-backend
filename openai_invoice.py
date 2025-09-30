@@ -83,69 +83,74 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
     
     for line_key, tokens in sorted_lines:
         line_text = " ".join([t[1] for t in tokens])
-        
-        # Ignorar líneas administrativas
         upper = line_text.upper()
-        if any(x in upper for x in ['CODIGO', 'SUBTOTAL', 'TOTAL', 'TARJETA', 'NIT', 'DIAN', 'ITEMS COMPRADOS', 'RESOLUCION']):
+        
+        # CRÍTICO: Saltar líneas que son SOLO información de peso
+        # Formato: "0.135 KG X 4780" o "195 KG X 5980"
+        if re.search(r'\d+[.,]?\d*\s*KG\s*X\s*\d+', upper):
             continue
         
-        # Ignorar descuentos y referencias
+        # Saltar si la línea entera es peso/cantidad
+        if re.match(r'^\d+[.,]?\d*\s*(KG|GR|ML|X)\b', upper):
+            continue
+        
+        # Ignorar administrativas
+        if any(x in upper for x in ['CODIGO', 'SUBTOTAL', 'TOTAL', 'TARJETA', 'NIT', 'DIAN', 'ITEMS', 'RESOLUCION']):
+            continue
+        
+        # Ignorar descuentos
         if 'DF.' in line_text or 'C.' in line_text or '%REF' in upper or line_text.startswith('-'):
-            continue
-        
-        # NUEVO: Ignorar líneas que son solo peso/cantidad
-        # Formato: "XXX KG X PRECIO" o "KG X PRECIO"
-        if re.match(r'^(\d{1,4}\s*)?(KG|GR|ML)\s*X\s*\d+', upper):
-            continue
-        
-        # NUEVO: Ignorar si nombre resulta ser solo "KG", "X", "N", etc.
-        if re.match(r'^(KG|X|N|H|A|E|LLAN)\s*(X|KG)?$', upper):
             continue
         
         codigo_match = re.search(r'\b(\d{3,13})\b', line_text)
         precio_match = re.search(r'(\d{1,3}[.,]\d{3})', line_text)
         
-        if codigo_match and precio_match:
-            codigo = codigo_match.group(1)
-            precio_str = precio_match.group(1).replace('.', '').replace(',', '')
-            
-            codigo_pos = codigo_match.start()
-            precio_pos = precio_match.start()
-            
-            if precio_pos > codigo_pos + len(codigo):
-                nombre = line_text[codigo_pos + len(codigo):precio_pos].strip()
-            else:
-                nombre = line_text[codigo_match.end():].strip()
-                nombre = re.sub(r'\d{1,3}[.,]\d{3}', '', nombre).strip()
-            
-            # Limpiar nombre
-            nombre = re.sub(r'\b\d{10,}\b', '', nombre)
-            nombre = re.sub(r'[.,]\d+\s*(KG|X|N|H|A|E)', '', nombre, flags=re.IGNORECASE)
-            nombre = nombre.strip()
-            
-            # NUEVO: Validar que el nombre tenga contenido real
-            if not nombre or len(nombre) < 3:
-                continue
-            
-            # NUEVO: Rechazar si nombre es solo fragmentos
-            if re.match(r'^(KG|X|N|H|A|E|LLAN|URABA)\s*(X|KG)?$', nombre.upper()):
-                continue
-            
-            try:
-                precio = int(precio_str)
-                # NUEVO: Validar que el precio no sea absurdamente grande (como 512352)
-                if len(nombre) >= 3 and 100 <= precio <= 200000:
-                    productos.append({
-                        "codigo": codigo,
-                        "nombre": nombre[:80],
-                        "valor": precio,
-                        "fuente": "document-ai-layout"
-                    })
-            except:
-                pass
+        if not (codigo_match and precio_match):
+            continue
+        
+        codigo = codigo_match.group(1)
+        precio_str = precio_match.group(1).replace('.', '').replace(',', '')
+        
+        # Extraer nombre
+        codigo_pos = codigo_match.start()
+        precio_pos = precio_match.start()
+        
+        if precio_pos > codigo_pos + len(codigo):
+            nombre = line_text[codigo_pos + len(codigo):precio_pos].strip()
+        else:
+            nombre = line_text[codigo_match.end():].strip()
+            nombre = re.sub(r'\d{1,3}[.,]\d{3}', '', nombre).strip()
+        
+        # Limpiar nombre agresivamente
+        nombre = re.sub(r'\b\d{10,}\b', '', nombre)  # Códigos largos
+        nombre = re.sub(r'\d+[.,]?\d*\s*(KG|GR|ML|X|N|H|A|E)\b', '', nombre, flags=re.IGNORECASE)  # Peso
+        nombre = nombre.strip()
+        
+        # Validar nombre
+        if not nombre or len(nombre) < 3:
+            continue
+        
+        # Rechazar si nombre es basura
+        if re.match(r'^(KG|X|N|H|A|E|LLAN|URABA|PVC)\s*(X|KG)?$', nombre.upper()):
+            continue
+        
+        # Validar que tenga al menos 2 letras
+        if len(re.findall(r'[A-Za-zÀ-ÿ]', nombre)) < 2:
+            continue
+        
+        try:
+            precio = int(precio_str)
+            if 100 <= precio <= 200000:
+                productos.append({
+                    "codigo": codigo,
+                    "nombre": nombre[:80],
+                    "valor": precio,
+                    "fuente": "document-ai-layout"
+                })
+        except:
+            pass
     
     return productos
-
 def extract_metadata(text: str) -> Dict:
     lines = text.split('\n')
     
