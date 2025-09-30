@@ -201,11 +201,13 @@ def _detect_columns(lines: list[str]):
 
 
 def _parse_text_products(raw_text: str) -> list[dict]:
+    """Devuelve lista [{codigo,nombre,valor,fuente}] parseando el texto crudo."""
     lines = _join_item_blocks(raw_text or "")
     print(f"📄 Bloques tras normalizar: {len(lines)}")
 
     code_idx, total_idx = _detect_columns(lines)
 
+    # 1) Parser por columnas
     matched_idx = set()
     by_cols = []
     for i, l in enumerate(lines):
@@ -231,11 +233,8 @@ def _parse_text_products(raw_text: str) -> list[dict]:
         if m:
             codigo = m[0]
 
-        # precio — ahora también sin separador
-        nums = (
-            re.findall(PRICE_RE_ANY, total_zone)
-            or re.findall(PRICE_RE_ANY, l)
-        )
+        # precio — permite con o sin separador
+        nums = re.findall(PRICE_RE_ANY, total_zone) or re.findall(PRICE_RE_ANY, l)
         precio = _pick_best_price(nums)
 
         # nombre
@@ -245,7 +244,6 @@ def _parse_text_products(raw_text: str) -> list[dict]:
 
         if not nombre or len(nombre) < 3:
             continue
-        # si no hay código y la descripción es “débil”, descartar
         if not codigo and _is_weight_only_or_fragment(nombre):
             continue
 
@@ -256,7 +254,6 @@ def _parse_text_products(raw_text: str) -> list[dict]:
     # 2) Regex SOLO como fallback en líneas no cubiertas por columnas
     by_rx = []
     rx1 = re.compile(rf"(\d{{6,13}})\s+(.+?)\s+{PRICE_RE_ANY}", re.IGNORECASE)
-    # ¡OJO!: letras minúsculas permitidas y dígitos dentro del nombre
     rx2 = re.compile(rf"([A-Za-zÀ-ÿ]{{2}}[A-Za-zÀ-ÿ0-9\s/\-\.]{{3,80}}?)\s+{PRICE_RE_ANY}(?:\s*[NXAEH])?", re.IGNORECASE)
 
     for i, linea in enumerate(lines):
@@ -292,24 +289,16 @@ def _parse_text_products(raw_text: str) -> list[dict]:
         by_rx.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
 
     # 3) merge por uid (no colapsa compras repetidas)
-    # 3) merge por uid (no colapsa compras repetidas)
-seen = set()
-out = []
-for src in (by_cols, by_rx):
-    for p in src:
-        if p["uid"] in seen:
-            continue
-        seen.add(p["uid"])
-        out.append(p)  # <-- conserva el uid
-return out
-pend({k: v for k, v in p.items() if k != "uid"})
+    seen = set()
+    out = []
+    for src in (by_cols, by_rx):
+        for p in src:
+            if p["uid"] in seen:
+                continue
+            seen.add(p["uid"])
+            out.append(p)  # conservar uid
+
     return out
-
-
-
-
-
-
 # =====================
 # Extractors
 # =====================
