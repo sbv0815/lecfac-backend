@@ -667,3 +667,178 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
+
+def obtener_productos_frecuentes_faltantes(usuario_id: int, codigos_detectados: set, limite: int = 3):
+    """
+    Identifica productos que el usuario compra frecuentemente pero no están en la factura actual.
+    Incluye medicamentos para personas que los necesitan (adultos mayores, crónicos).
+    """
+    from datetime import datetime, timedelta
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                pm.categoria,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.veces_comprado,
+                pm.precio_promedio,
+                EXTRACT(DAY FROM (CURRENT_TIMESTAMP - pc.ultima_compra)) as dias_sin_comprar
+            FROM patrones_compra pc
+            JOIN productos_maestro pm ON pc.producto_id = pm.id
+            WHERE pc.usuario_id = %s 
+              AND pc.veces_comprado >= 3
+              AND pc.recordatorio_activo = TRUE
+              AND EXTRACT(DAY FROM (CURRENT_TIMESTAMP - pc.ultima_compra)) >= (pc.frecuencia_dias * 0.7)
+            ORDER BY 
+                CASE WHEN pm.categoria = 'MEDICAMENTOS' THEN 0 ELSE 1 END,
+                pc.veces_comprado DESC, 
+                dias_sin_comprar DESC
+            LIMIT 10
+        """, (usuario_id,))
+    else:
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.veces_comprado,
+                pm.precio_promedio,
+                julianday('now') - julianday(pc.ultima_compra) as dias_sin_comprar
+            FROM patrones_compra pc
+            JOIN productos_maestro pm ON pc.producto_id = pm.id
+            WHERE pc.usuario_id = ? 
+              AND pc.veces_comprado >= 3
+              AND julianday('now') - julianday(pc.ultima_compra) >= (pc.frecuencia_dias * 0.7)
+            ORDER BY pc.veces_comprado DESC, dias_sin_comprar DESC
+            LIMIT 10
+        """, (usuario_id,))
+    
+    candidatos = cursor.fetchall()
+    conn.close()
+    
+    # Filtrar productos que no están en la factura actual
+    productos_sugeridos = []
+    medicamentos_sugeridos = []
+    
+    for prod in candidatos:
+        codigo = prod[0]
+        nombre = prod[1]
+        categoria = prod[2] if os.environ.get("DATABASE_TYPE") == "postgresql" else None
+        frecuencia = prod[3] if os.environ.get("DATABASE_TYPE") == "postgresql" else prod[2]
+        veces_comprado = prod[5] if os.environ.get("DATABASE_TYPE") == "postgresql" else prod[4]
+        precio_promedio = prod[6] if os.environ.get("DATABASE_TYPE") == "postgresql" else prod[5]
+        dias_sin_comprar = int(prod[7]) if os.environ.get("DATABASE_TYPE") == "postgresql" else int(prod[6])
+        
+        # Solo si NO está en factura actual
+        if codigo not in codigos_detectados:
+            # Calcular relevancia
+            relevancia = min(100, int((dias_sin_comprar / frecuencia) * 100))
+            
+            sugerencia = {
+                "codigo": codigo,
+                "nombre": nombre,
+                "precio_estimado": precio_promedio or 0,
+                "compras_anteriores": veces_comprado,
+                "relevancia": relevancia,
+                "es_medicamento": categoria == 'MEDICAMENTOS' if categoria else False,
+                "mensaje": f"Normalmente compras este producto cada {frecuencia} días"
+            }
+            
+            # Separar medicamentos de otros productos
+            if sugerencia["es_medicamento"]:
+                medicamentos_sugeridos.append(sugerencia)
+            else:
+                productos_sugeridos.append(sugerencia)
+    
+    # Priorizar medicamentos (hasta 2) + productos básicos (hasta 2)
+    resultado = []
+    
+    # Agregar medicamentos primero (máximo 2)
+    medicamentos_sugeridos.sort(key=lambda x: x['relevancia'], reverse=True)
+    resultado.extend(medicamentos_sugeridos[:2])
+    
+    # Completar con productos básicos
+    productos_sugeridos.sort(key=lambda x: x['relevancia'], reverse=True)
+    espacios_restantes = limite - len(resultado)
+    resultado.extend(productos_sugeridos[:espacios_restantes])
+    
+    return resultado
+
+
+def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usuario_id: int):
+    """Agrega un producto confirmado manualmente por el usuario"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Buscar producto_id
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("SELECT id FROM productos_maestro WHERE codigo_ean = %s", (codigo_ean,))
+        else:
+            cursor.execute("SELECT id FROM productos_maestro WHERE codigo_ean = ?", (codigo_ean,))
+        
+        resultado = cursor.fetchone()
+        if not resultado:
+            conn.close()
+            return False
+        
+        producto_id = resultado[0]
+        
+        # Obtener establecimiento de la factura
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("SELECT establecimiento, cadena FROM facturas WHERE id = %s", (factura_id,))
+        else:
+            cursor.execute("SELECT establecimiento FROM facturas WHERE id = ?", (factura_id,))
+        
+        factura_info = cursor.fetchone()
+        establecimiento = factura_info[0]
+        cadena = factura_info[1] if len(factura_info) > 1 else None
+        
+        # Insertar en historial de compras
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO historial_compras_usuario 
+                (usuario_id, producto_id, precio_pagado, establecimiento, cadena, factura_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (usuario_id, producto_id, precio, establecimiento, cadena, factura_id))
+        else:
+            cursor.execute("""
+                INSERT INTO historial_compras_usuario 
+                (usuario_id, producto_id, precio_pagado, establecimiento, factura_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (usuario_id, producto_id, precio, establecimiento, factura_id))
+        
+        # Registrar en precios históricos
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO precios_historicos 
+                (producto_id, establecimiento, cadena, precio, usuario_id, factura_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (producto_id, establecimiento, cadena, precio, usuario_id, factura_id))
+        else:
+            cursor.execute("""
+                INSERT INTO precios_historicos 
+                (producto_id, establecimiento, precio, usuario_id, factura_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (producto_id, establecimiento, precio, usuario_id, factura_id))
+        
+        # Recalcular patrón de compra
+        from database import calcular_patron_compra
+        calcular_patron_compra(cursor, usuario_id, producto_id)
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Error confirmando producto: {e}")
+        conn.rollback()
+        conn.close()
+        return False
