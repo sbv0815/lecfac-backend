@@ -1548,10 +1548,248 @@ def actualizar_estado_factura(factura_id, estado):
     conn.commit()
     conn.close()
 
+from database import (
+    obtener_productos_frecuentes_faltantes,
+    confirmar_producto_manual
+)
+
+@app.get("/facturas/{factura_id}/sugerencias-faltantes")
+async def obtener_sugerencias_productos(factura_id: int):
+    """
+    Después de procesar factura, retorna máximo 3 sugerencias de productos
+    que el usuario probablemente compró pero no se detectaron.
+    
+    Totalmente opcional - el usuario puede omitir.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Obtener info de la factura
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT usuario_id, productos_guardados, establecimiento
+            FROM facturas 
+            WHERE id = %s
+        """, (factura_id,))
+    else:
+        cursor.execute("""
+            SELECT usuario_id, productos_guardados, establecimiento
+            FROM facturas 
+            WHERE id = ?
+        """, (factura_id,))
+    
+    factura_data = cursor.fetchone()
+    if not factura_data:
+        conn.close()
+        raise HTTPException(404, "Factura no encontrada")
+    
+    usuario_id = factura_data[0]
+    productos_detectados_count = factura_data[1]
+    
+    # Obtener códigos detectados
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT pm.codigo_ean 
+            FROM historial_compras_usuario hc
+            JOIN productos_maestro pm ON hc.producto_id = pm.id
+            WHERE hc.factura_id = %s
+        """, (factura_id,))
+    else:
+        cursor.execute("""
+            SELECT pm.codigo_ean 
+            FROM historial_compras_usuario hc
+            JOIN productos_maestro pm ON hc.producto_id = pm.id
+            WHERE hc.factura_id = ?
+        """, (factura_id,))
+    
+    codigos_detectados = {r[0] for r in cursor.fetchall()}
+    conn.close()
+    
+    # Obtener sugerencias (máximo 3)
+    sugerencias = obtener_productos_frecuentes_faltantes(
+        usuario_id, 
+        codigos_detectados,
+        limite=3
+    )
+    
+    return {
+        "factura_id": factura_id,
+        "productos_detectados": productos_detectados_count,
+        "tiene_sugerencias": len(sugerencias) > 0,
+        "sugerencias": sugerencias,
+        "mensaje_ayuda": "Estos son productos que sueles comprar. ¿Los compraste en esta factura?" if sugerencias else None
+    }
+
+
+@app.post("/facturas/{factura_id}/confirmar-producto-faltante")
+async def confirmar_producto_faltante(
+    factura_id: int,
+    codigo_ean: str = Form(...),
+    precio: int = Form(...)
+):
+    """
+    Usuario confirma que SÍ compró un producto que no se detectó.
+    Lo agrega manualmente a la factura.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Obtener usuario_id
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("SELECT usuario_id FROM facturas WHERE id = %s", (factura_id,))
+    else:
+        cursor.execute("SELECT usuario_id FROM facturas WHERE id = ?", (factura_id,))
+    
+    resultado = cursor.fetchone()
+    conn.close()
+    
+    if not resultado:
+        raise HTTPException(404, "Factura no encontrada")
+    
+    usuario_id = resultado[0]
+    
+    # Confirmar producto
+    exito = confirmar_producto_manual(factura_id, codigo_ean, precio, usuario_id)
+    
+    if exito:
+        return {
+            "success": True,
+            "mensaje": "Producto agregado correctamente"
+        }
+    else:
+        raise HTTPException(500, "Error agregando producto")
+
+
+@app.get("/usuarios/{usuario_id}/recordatorios-medicamentos")
+async def obtener_recordatorios_medicamentos(usuario_id: int):
+    """
+    Endpoint especial para recordatorios de medicamentos.
+    Crítico para adultos mayores y personas con tratamientos crónicos.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    from datetime import datetime, timedelta
+    hoy = datetime.now()
+    ventana = hoy + timedelta(days=3)  # Alertar 3 días antes
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.proxima_compra_estimada,
+                EXTRACT(DAY FROM (pc.proxima_compra_estimada - CURRENT_TIMESTAMP)) as dias_restantes,
+                pm.precio_promedio
+            FROM patrones_compra pc
+            JOIN productos_maestro pm ON pc.producto_id = pm.id
+            WHERE pc.usuario_id = %s 
+                AND pm.categoria = 'MEDICAMENTOS'
+                AND pc.recordatorio_activo = TRUE
+                AND pc.proxima_compra_estimada <= %s
+                AND pc.veces_comprado >= 2
+            ORDER BY pc.proxima_compra_estimada ASC
+        """, (usuario_id, ventana))
+    else:
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.proxima_compra_estimada,
+                julianday(pc.proxima_compra_estimada) - julianday('now') as dias_restantes
+            FROM patrones_compra pc
+            JOIN productos_maestro pm ON pc.producto_id = pm.id
+            WHERE pc.usuario_id = ?
+                AND pc.proxima_compra_estimada <= datetime('now', '+3 days')
+                AND pc.veces_comprado >= 2
+            ORDER BY pc.proxima_compra_estimada ASC
+        """, (usuario_id,))
+    
+    recordatorios = cursor.fetchall()
+    conn.close()
+    
+    # Clasificar por urgencia
+    criticos = []  # < 1 día
+    proximos = []  # 1-3 días
+    
+    for r in recordatorios:
+        codigo = r[0]
+        nombre = r[1]
+        frecuencia = r[2]
+        dias_restantes = int(r[5])
+        precio_promedio = r[6] if len(r) > 6 else 0
+        
+        recordatorio = {
+            "codigo": codigo,
+            "nombre": nombre,
+            "frecuencia_dias": frecuencia,
+            "dias_restantes": dias_restantes,
+            "precio_estimado": precio_promedio,
+            "urgente": dias_restantes <= 0
+        }
+        
+        if dias_restantes <= 1:
+            criticos.append(recordatorio)
+        else:
+            proximos.append(recordatorio)
+    
+    return {
+        "usuario_id": usuario_id,
+        "medicamentos_criticos": criticos,
+        "medicamentos_proximos": proximos,
+        "total_recordatorios": len(criticos) + len(proximos),
+        "mensaje": "Recordatorios de medicamentos activos"
+    }
+
+
+@app.post("/usuarios/{usuario_id}/desactivar-recordatorio-medicamento")
+async def desactivar_recordatorio_medicamento(
+    usuario_id: int,
+    codigo_ean: str = Form(...)
+):
+    """
+    Permite al usuario desactivar recordatorios de un medicamento específico.
+    Útil cuando cambian de tratamiento.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            UPDATE patrones_compra
+            SET recordatorio_activo = FALSE
+            WHERE usuario_id = %s 
+                AND producto_id = (
+                    SELECT id FROM productos_maestro WHERE codigo_ean = %s
+                )
+        """, (usuario_id, codigo_ean))
+    else:
+        cursor.execute("""
+            UPDATE patrones_compra
+            SET recordatorio_activo = 0
+            WHERE usuario_id = ? 
+                AND producto_id = (
+                    SELECT id FROM productos_maestro WHERE codigo_ean = ?
+                )
+        """, (usuario_id, codigo_ean))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "mensaje": "Recordatorio desactivado"
+    }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
