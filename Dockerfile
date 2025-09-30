@@ -1,6 +1,8 @@
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TESSERACT_CMD=/usr/bin/tesseract
+
 
 # Instalar Tesseract + español (+ inglés de respaldo)
 RUN apt-get update && apt-get install -y --no-install-recommends \
