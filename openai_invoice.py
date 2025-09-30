@@ -43,57 +43,31 @@ def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
         "fuente": "openai"
     }
 
-_PROMPT = """Eres un experto en facturas de supermercados y droguerias colombianos.
+_PROMPT = """Extrae productos de esta factura (formato: CÓDIGO | NOMBRE | PRECIO en cada fila).
 
-FORMATO DE LECTURA - MUY IMPORTANTE:
-Cada producto está en UNA FILA HORIZONTAL con 3 columnas:
+IMPORTANTE: Usa nombres CORTOS (máximo 20 caracteres).
 
-CÓDIGO          | DESCRIPCIÓN        | PRECIO
-7702993047842   | Chocolate BISO     | 2.190
-116             | Banano Uraba       | 5.425
-505             | Limón Tahití       | 8.801
+Reglas:
+- Lee horizontalmente
+- Ignora descuentos (-), "IVA", "%REF"
+- Nombres cortos y claros
 
-REGLAS CRÍTICAS:
-1. Lee HORIZONTALMENTE (izquierda a derecha)
-2. En la MISMA fila encuentras: código + nombre + precio
-3. NO tomes código de una fila y nombre de otra fila
-4. IGNORA líneas como "2 X 4200" o "0.510kg X 34980" (son detalles de peso/cantidad)
-5. IGNORA descuentos (-), subtotales, "%REF", "DF."
-
-EJEMPLO CORRECTO:
-Fila: "7702993047842  Chocolate BISO  2.190"
-JSON: {"codigo": "7702993047842", "nombre": "Chocolate BISO", "valor": 2190}
-
-EJEMPLO INCORRECTO:
-❌ NO tomar código de línea 1 y nombre de línea 2
-
-Extrae TODOS los productos (~50).
-
-Responde JSON:
+JSON:
 {
-  "establecimiento": "JUMBO BULEVAR",
+  "establecimiento": "nombre",
   "total": 512352,
   "items": [
-    {"codigo": "7702993047842", "nombre": "Chocolate BISO", "valor": 2190}
+    {"codigo": "123", "nombre": "Choco BISO", "valor": 2190}
   ]
 }"""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
-    print(f"=== INICIANDO PROCESAMIENTO ===")
-    print(f"Archivo: {image_path}")
-    print(f"Existe archivo: {os.path.exists(image_path)}")
-    
-    api_key = os.environ.get("OPENAI_API_KEY")
-    print(f"API Key configurada: {bool(api_key)}")
-    print(f"API Key comienza con: {api_key[:10] if api_key else 'N/A'}...")
-    
-    if not api_key:
+    if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("OPENAI_API_KEY no configurada")
     
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     img_url = _b64_data_url(image_path)
     
-    print(f"Imagen codificada: {len(img_url)} caracteres")
     print("Enviando a OpenAI Vision...")
     
     try:
@@ -112,19 +86,33 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         )
         
         content = response.choices[0].message.content
-        print(f"✓ Respuesta recibida: {len(content)} chars")
-        print(f"Primeros 200 chars: {content[:200]}")
+        print(f"Respuesta: {len(content)} chars")
         
-        data = json.loads(content)
-        print(f"JSON parseado correctamente")
+        # Intentar parsear
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as je:
+            print(f"Error JSON en posición {je.pos}: {je.msg}")
+            print(f"Contexto: ...{content[max(0, je.pos-50):je.pos+50]}...")
+            
+            # Intentar reparar: buscar último item completo
+            try:
+                # Buscar el último cierre de objeto válido antes del error
+                last_valid = content[:je.pos].rfind('"}')
+                if last_valid > 0:
+                    # Cortar hasta ahí y cerrar el JSON
+                    repaired = content[:last_valid + 2] + ']}'
+                    data = json.loads(repaired)
+                    print(f"✓ JSON reparado: {len(data.get('items', []))} items")
+                else:
+                    raise
+            except:
+                print("No se pudo reparar el JSON")
+                data = {"items": []}
         
     except Exception as e:
-        print(f"❌ ERROR COMPLETO: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error: {e}")
         data = {"items": []}
-    
-    # ... resto del código
     
     items_raw = (data or {}).get("items") or []
     print(f"Items: {len(items_raw)}")
@@ -145,7 +133,8 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
             if key not in seen:
                 seen[key] = True
                 items.append(item)
-        except:
+        except Exception as e:
+            print(f"Error procesando item: {e}")
             continue
     
     print(f"Únicos: {len(items)}")
