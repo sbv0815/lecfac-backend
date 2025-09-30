@@ -3,83 +3,52 @@ import re
 import json
 import tempfile
 import time
-import shutil
 from datetime import datetime
-from PIL import Image, ImageEnhance, ImageFilter
 import traceback
 
-# Verificar disponibilidad de Tesseract
-TESSERACT_AVAILABLE = False
-try:
-    import pytesseract
-    if shutil.which("tesseract"):
-        TESSERACT_AVAILABLE = True
-        print("✅ Tesseract OCR disponible")
-    else:
-        print("⚠️ Tesseract no instalado en sistema")
-except ImportError:
-    print("⚠️ pytesseract no instalado")
-
-# Document AI como fallback
+# Document AI
 try:
     from google.cloud import documentai
     DOCUMENT_AI_AVAILABLE = True
-    print("✅ Document AI disponible como fallback")
+    print("✅ Document AI disponible")
 except:
     DOCUMENT_AI_AVAILABLE = False
-    print("⚠️ Document AI no disponible")
+    print("❌ Document AI no disponible")
 
 # ========================================
-# PREPROCESAMIENTO DE IMAGEN
+# CONFIGURACIÓN
 # ========================================
 
-def preprocess_for_ocr(image_path):
-    """Preprocesamiento agresivo para maximizar precisión de OCR"""
+def setup_document_ai():
+    """Configura credenciales de Document AI"""
+    required_vars = [
+        "GCP_PROJECT_ID",
+        "DOC_AI_LOCATION", 
+        "DOC_AI_PROCESSOR_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON"
+    ]
+    
+    for var in required_vars:
+        if not os.environ.get(var):
+            raise Exception(f"Variable requerida: {var}")
+    
+    credentials_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
     try:
-        img = Image.open(image_path)
-        
-        # Convertir a escala de grises
-        if img.mode != 'L':
-            img = img.convert('L')
-        
-        # Redimensionar si es muy pequeña (mínimo 2000px de ancho)
-        width, height = img.size
-        if width < 2000:
-            scale = 2000 / width
-            new_size = (int(width * scale), int(height * scale))
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-        
-        # Aumentar contraste agresivamente
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(3.0)
-        
-        # Aumentar nitidez
-        enhancer = ImageEnhance.Sharpness(img)
-        img = enhancer.enhance(2.0)
-        
-        # Reducir ruido
-        img = img.filter(ImageFilter.MedianFilter(size=3))
-        
-        # Binarización (umbral adaptativo)
-        img = img.point(lambda x: 255 if x > 140 else 0, mode='1')
-        
-        # Guardar procesada
-        processed_path = image_path.replace('.jpg', '_proc.png').replace('.png', '_proc.png')
-        img.save(processed_path, 'PNG')
-        
-        print(f"✓ Imagen preprocesada: {width}x{height} -> {img.size[0]}x{img.size[1]}")
-        return processed_path
-        
-    except Exception as e:
-        print(f"⚠️ Error en preprocesamiento: {e}")
-        return image_path
+        json.loads(credentials_json)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(credentials_json)
+            temp_path = f.name
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+        return True
+    except:
+        raise Exception("Credenciales JSON inválidas")
 
 # ========================================
 # UTILIDADES
 # ========================================
 
 def clean_price(text):
-    """Extrae precio de texto. Ej: '16,390 N' -> 16390"""
+    """Convierte texto de precio a entero"""
     if not text:
         return None
     
@@ -91,7 +60,7 @@ def clean_price(text):
     
     try:
         amount = int(cleaned)
-        if 50 < amount < 10000000:
+        if 100 < amount < 10000000:
             return amount
     except:
         pass
@@ -99,160 +68,103 @@ def clean_price(text):
     return None
 
 def is_valid_ean(code):
-    """Valida código EAN 8-13 dígitos"""
+    """Valida código EAN"""
     if not code:
         return False
     code = str(code).strip()
     return code.isdigit() and 8 <= len(code) <= 13
 
-def clean_description(text):
-    """Limpia nombre de producto"""
-    if not text:
-        return None
-    
-    # Remover códigos al inicio
-    text = re.sub(r'^\d{6,13}\s*', '', text)
-    
-    # Remover números sueltos al inicio
-    text = re.sub(r'^\d{1,3}\s+', '', text)
-    
-    # Remover precios
-    text = re.sub(r'\d{1,3}[,\.]\d{3}', '', text)
-    
-    # Limpiar símbolos
-    text = re.sub(r'[;:]+', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Validar que tenga contenido real
-    words = re.findall(r'[A-Za-zÀ-ÿ]{3,}', text)
-    if len(words) < 2:
-        return None
-    
-    return text[:70]
-
 # ========================================
-# EXTRACCIÓN CON TESSERACT
+# EXTRACCIÓN MEJORADA DE DOCUMENT AI
 # ========================================
 
-def extract_text_tesseract(image_path):
-    """Extrae texto usando Tesseract con múltiples configuraciones"""
-    if not TESSERACT_AVAILABLE:
-        print("❌ Tesseract no disponible")
-        return ""
-    
-    processed_path = preprocess_for_ocr(image_path)
-    
-    try:
-        img = Image.open(processed_path)
-        
-        print(f"Procesando imagen: {img.size[0]}x{img.size[1]} px")
-        
-        # Configuración 1: PSM 6 (bloque uniforme de texto)
-        config1 = '--psm 6 --oem 3 -l spa'
-        text1 = pytesseract.image_to_string(img, config=config1)
-        print(f"  PSM 6: {len(text1)} caracteres")
-        
-        # Configuración 2: PSM 4 (columna de texto)
-        config2 = '--psm 4 --oem 3 -l spa'
-        text2 = pytesseract.image_to_string(img, config=config2)
-        print(f"  PSM 4: {len(text2)} caracteres")
-        
-        # Combinar resultados
-        combined = text1 + "\n" + text2
-        
-        # Limpiar archivo temporal
-        if processed_path != image_path:
-            try:
-                os.remove(processed_path)
-            except:
-                pass
-        
-        print(f"✓ Texto total extraído: {len(combined)} caracteres")
-        
-        # Mostrar primeras líneas para debug
-        if combined:
-            preview = '\n'.join(combined.split('\n')[:5])
-            print(f"Vista previa:\n{preview}")
-        
-        return combined
-        
-    except Exception as e:
-        print(f"❌ Error en Tesseract: {e}")
-        traceback.print_exc()
-        return ""
-
-# ========================================
-# PARSER POR COLUMNAS
-# ========================================
-
-def detect_price_column(lines):
-    """Detecta posición de columna de precios"""
-    for line in lines[:40]:
-        upper = line.upper()
-        if 'CODIGO' in upper and 'TOTAL' in upper:
-            idx = upper.rfind('TOTAL')
-            if idx > 30:
-                return idx
-    return 55
-
-def is_noise_line(text):
-    """Detecta líneas que no son productos"""
-    if not text or len(text.strip()) < 10:
-        return True
-    
-    upper = text.upper()
-    noise = [
-        'RESOLUCION', 'DIAN', 'RESPONSABLE', 'IVA', 'AGENTE',
-        'RETENEDOR', '****', '====', '----', 'SUBTOTAL',
-        'ITEMS COMPRADOS', 'NRO', 'CUENTA', 'TARJ', 'VISA',
-        'CUOTAS', 'CAMBIO', 'RESUMEN', 'TOTAL A PAGAR'
-    ]
-    
-    return any(kw in upper for kw in noise)
-
-def parse_products_from_text(text):
-    """Parser optimizado por columnas"""
-    if not text:
-        return []
-    
-    lines = text.split('\n')
-    price_col = detect_price_column(lines)
-    
-    print(f"Analizando {len(lines)} líneas (columna precio: {price_col})...")
-    
+def extract_products_from_entities(document):
+    """Extrae productos directamente de las entidades de Document AI"""
     products = []
     seen_codes = set()
     
-    for i, line in enumerate(lines):
-        if len(line) < 20:
+    # Obtener line_items
+    line_items = [e for e in document.entities 
+                  if e.type_ == "line_item" and e.confidence > 0.25]
+    
+    print(f"Entidades line_item encontradas: {len(line_items)}")
+    
+    for entity in line_items:
+        text = entity.mention_text.strip()
+        
+        # Buscar código EAN en el texto
+        ean_match = re.search(r'\b(\d{8,13})\b', text)
+        if not ean_match:
             continue
         
-        if is_noise_line(line):
+        code = ean_match.group(1)
+        
+        if not is_valid_ean(code) or code in seen_codes:
             continue
         
-        # Extraer por columnas
-        code_zone = line[:18].strip()
-        desc_zone = line[18:price_col].strip()
-        price_zone = line[price_col:].strip()
+        # Extraer nombre (después del código)
+        name = re.sub(r'^\d{8,13}\s*', '', text)
+        name = re.sub(r'\d{1,3}[,\.]\d{3}.*$', '', name)  # Remover precio
+        name = re.sub(r'\s+', ' ', name).strip()[:60]
         
-        # Buscar código EAN
-        code_match = re.search(r'\b(\d{8,13})\b', code_zone)
-        if not code_match:
+        if not name or len(name) < 3:
+            name = "Producto sin descripción"
+        
+        # Extraer precio de propiedades
+        price = 0
+        for prop in entity.properties:
+            if prop.type_ == "line_item/amount" and prop.confidence > 0.2:
+                price = clean_price(prop.mention_text) or 0
+                break
+        
+        products.append({
+            "codigo": code,
+            "nombre": name,
+            "valor": price
+        })
+        
+        seen_codes.add(code)
+    
+    return products
+
+def parse_text_line_by_line(text):
+    """Parser línea por línea del texto crudo"""
+    lines = text.split('\n')
+    products = []
+    seen_codes = set()
+    
+    print(f"Analizando {len(lines)} líneas de texto...")
+    
+    for line in lines:
+        line = line.strip()
+        
+        if len(line) < 15:
             continue
         
-        code = code_match.group(1)
+        # Saltar líneas de encabezado/total
+        upper = line.upper()
+        if any(x in upper for x in ['RESOLUCION', 'TOTAL', 'IVA', 'SUBTOTAL', '****', 'ITEMS']):
+            continue
         
-        if code in seen_codes:
+        # Buscar patrón: CÓDIGO (inicio) + texto + precio (final)
+        # Ej: "7702007084542 Chocolate CORONA 16,390 N"
+        match = re.match(r'^(\d{8,13})\s+(.+?)\s+(\d{1,3}[,\.]\d{3})\s*[A-Z]?\s*$', line)
+        
+        if not match:
+            continue
+        
+        code, desc, price_str = match.groups()
+        
+        if not is_valid_ean(code) or code in seen_codes:
             continue
         
         # Limpiar descripción
-        desc = clean_description(desc_zone)
-        if not desc:
+        desc = re.sub(r'\s+', ' ', desc).strip()[:60]
+        
+        if len(desc) < 3:
             continue
         
-        # Extraer precio
-        price_match = re.search(r'(\d{1,3}[,\.]\d{3})', price_zone)
-        price = clean_price(price_match.group(1)) if price_match else 0
+        price = clean_price(price_str) or 0
         
         products.append({
             "codigo": code,
@@ -262,7 +174,6 @@ def parse_products_from_text(text):
         
         seen_codes.add(code)
     
-    print(f"✓ Productos extraídos: {len(products)}")
     return products
 
 # ========================================
@@ -278,6 +189,7 @@ def extract_vendor(text):
         r'(OLIMPICA[^\n]*)',
         r'(D1[^\n]*)',
         r'(CRUZ\s+VERDE[^\n]*)',
+        r'(ALKOSTO[^\n]*)',
     ]
     
     for pattern in patterns:
@@ -289,12 +201,12 @@ def extract_vendor(text):
     return "Establecimiento no identificado"
 
 def extract_total(text):
-    """Extrae total de factura"""
+    """Extrae total"""
     lines = text.split('\n')
     
-    for line in reversed(lines[-50:]):
+    for line in reversed(lines[-60:]):
         upper = line.upper()
-        if 'SUBTOTAL/TOTAL' in upper or (upper.strip().startswith('TOTAL') and len(upper) < 50):
+        if 'SUBTOTAL/TOTAL' in upper or (upper.strip().startswith('TOTAL') and ':' not in upper):
             numbers = re.findall(r'\d{1,3}(?:[,\.]\d{3})+', line)
             if numbers:
                 total = clean_price(numbers[-1])
@@ -308,34 +220,69 @@ def extract_total(text):
 # ========================================
 
 def process_invoice_products(file_path):
-    """Procesamiento principal con Tesseract"""
+    """Procesamiento principal optimizado con Document AI"""
     inicio = time.time()
     
     try:
         print("\n" + "="*70)
-        print("PROCESAMIENTO CON TESSERACT OCR")
+        print("PROCESAMIENTO DE FACTURA - DOCUMENT AI OPTIMIZADO")
         print("="*70)
         
-        # Extraer texto con Tesseract
-        print("\n[1/3] Extrayendo texto con Tesseract...")
-        text = extract_text_tesseract(file_path)
+        if not DOCUMENT_AI_AVAILABLE:
+            raise Exception("Document AI no disponible")
         
-        if not text or len(text) < 100:
-            print("⚠️ Poco texto extraído, intentando con Document AI...")
-            # Fallback a Document AI si está disponible
-            if DOCUMENT_AI_AVAILABLE:
-                return process_with_document_ai(file_path)
-            else:
-                raise Exception("No se pudo extraer texto de la imagen")
+        setup_document_ai()
+        
+        # Llamar a Document AI
+        print("\n[1/3] Procesando con Document AI...")
+        from google.cloud import documentai
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as f:
+            content = f.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(
+                    content=content,
+                    mime_type=mime_type
+                )
+            )
+        )
+        
+        text = result.document.text
         
         # Extraer metadata
-        print("\n[2/3] Extrayendo información básica...")
+        print("\n[2/3] Extrayendo metadata...")
         establecimiento = extract_vendor(text)
         total = extract_total(text)
         
-        # Parsear productos
-        print("\n[3/3] Parseando productos...")
-        productos = parse_products_from_text(text)
+        # Extraer productos con DOBLE estrategia
+        print("\n[3/3] Extrayendo productos (estrategia dual)...")
+        
+        # Estrategia 1: Entidades de Document AI
+        productos_entities = extract_products_from_entities(result.document)
+        print(f"  • Desde entidades: {len(productos_entities)}")
+        
+        # Estrategia 2: Texto línea por línea
+        productos_text = parse_text_line_by_line(text)
+        print(f"  • Desde texto: {len(productos_text)}")
+        
+        # Combinar sin duplicados
+        all_codes = set()
+        productos = []
+        
+        for p in productos_entities + productos_text:
+            code = p['codigo']
+            if code not in all_codes:
+                productos.append(p)
+                all_codes.add(code)
         
         tiempo = int(time.time() - inicio)
         
@@ -360,8 +307,10 @@ def process_invoice_products(file_path):
             "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "productos": productos,
             "metadatos": {
-                "metodo": "tesseract_optimized",
-                "productos_detectados": len(productos),
+                "metodo": "document_ai_dual_strategy",
+                "productos_entities": len(productos_entities),
+                "productos_text": len(productos_text),
+                "productos_totales": len(productos),
                 "tiempo_segundos": tiempo
             }
         }
@@ -370,84 +319,6 @@ def process_invoice_products(file_path):
         print(f"ERROR: {str(e)}")
         traceback.print_exc()
         return None
-
-def setup_document_ai():
-    """Configura Document AI"""
-    required_vars = [
-        "GCP_PROJECT_ID",
-        "DOC_AI_LOCATION", 
-        "DOC_AI_PROCESSOR_ID",
-        "GOOGLE_APPLICATION_CREDENTIALS_JSON"
-    ]
-    for var in required_vars:
-        if not os.environ.get(var):
-            return False
-    
-    credentials_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-    try:
-        json.loads(credentials_json)
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write(credentials_json)
-            temp_path = f.name
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
-        return True
-    except:
-        return False
-
-def process_with_document_ai(file_path):
-    """Fallback: usar Document AI si Tesseract falla"""
-    if not DOCUMENT_AI_AVAILABLE:
-        raise Exception("Document AI no disponible")
-    
-    print("Usando Document AI como fallback...")
-    
-    try:
-        setup_document_ai()
-        
-        from google.cloud import documentai
-        client = documentai.DocumentProcessorServiceClient()
-        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
-        
-        with open(file_path, "rb") as f:
-            content = f.read()
-        
-        mime_type = "image/jpeg"
-        if file_path.lower().endswith('.png'):
-            mime_type = "image/png"
-        
-        result = client.process_document(
-            request=documentai.ProcessRequest(
-                name=name,
-                raw_document=documentai.RawDocument(
-                    content=content,
-                    mime_type=mime_type
-                )
-            )
-        )
-        
-        text = result.document.text
-        establecimiento = extract_vendor(text)
-        total = extract_total(text)
-        productos = parse_products_from_text(text)
-        
-        print(f"✓ Document AI extrajo {len(productos)} productos")
-        
-        return {
-            "establecimiento": establecimiento,
-            "total": total,
-            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "productos": productos,
-            "metadatos": {
-                "metodo": "document_ai_fallback",
-                "productos_detectados": len(productos),
-                "tiempo_segundos": 0
-            }
-        }
-        
-    except Exception as e:
-        print(f"❌ Error en Document AI: {e}")
-        traceback.print_exc()
-        raise Exception(f"Fallback a Document AI falló: {str(e)}")
 
 # Alias
 process_invoice_complete = process_invoice_products
