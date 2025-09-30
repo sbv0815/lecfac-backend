@@ -1,37 +1,145 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
     <title>Test LecFac API</title>
     <style>
-        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
-        #result { margin-top: 20px; padding: 20px; background: #f5f5f5; border-radius: 8px; }
-        .producto { padding: 8px; border-bottom: 1px solid #ddd; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #0056b3; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+        .container { 
+            max-width: 900px; 
+            margin: 0 auto; 
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1a73e8; margin-bottom: 30px; }
+        .upload-section {
+            border: 2px dashed #ddd;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: #fafafa;
+        }
+        input[type="file"] {
+            margin: 15px 0;
+            padding: 10px;
+        }
+        button {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background: #1557b0; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        .resultado-header {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .resultado-header h3 { color: #2e7d32; margin-bottom: 10px; }
+        .info-row { margin: 8px 0; }
+        .info-row strong { color: #555; }
+        .productos-list { margin-top: 20px; }
+        .producto {
+            padding: 12px;
+            border-left: 3px solid #1a73e8;
+            background: white;
+            margin: 8px 0;
+            border-radius: 4px;
+        }
+        .producto-codigo { 
+            color: #666; 
+            font-family: monospace; 
+            font-size: 12px;
+        }
+        .producto-precio { 
+            color: #2e7d32; 
+            font-weight: bold;
+            float: right;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #c62828;
+        }
+        .loading {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #1a73e8;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
-    <h1>Test LecFac API</h1>
-    
-    <input type="file" id="fileInput" accept="image/*,.pdf">
-    <button onclick="uploadFile()">Procesar Factura</button>
-    
-    <div id="result"></div>
+    <div class="container">
+        <h1>Test LecFac API - Procesador de Facturas</h1>
+        
+        <div class="upload-section">
+            <p>Selecciona una imagen de factura (JPG, PNG o PDF)</p>
+            <input type="file" id="fileInput" accept="image/*,.pdf">
+            <br>
+            <button id="uploadBtn" onclick="uploadFile()">Procesar Factura</button>
+        </div>
+        
+        <div id="result"></div>
+    </div>
 
     <script>
-        // Cambia esta URL por tu URL de Render
-        const API_URL = 'https://tu-app.onrender.com';
+        const API_URL = 'https://lecfac-api.onrender.com';
 
         async function uploadFile() {
             const fileInput = document.getElementById('fileInput');
             const resultDiv = document.getElementById('result');
+            const uploadBtn = document.getElementById('uploadBtn');
             
             if (!fileInput.files[0]) {
                 alert('Selecciona una imagen primero');
                 return;
             }
 
-            resultDiv.innerHTML = '⏳ Procesando...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Procesando factura con OpenAI Vision...</p>
+                    <p style="font-size: 12px; color: #999;">Esto puede tardar 5-15 segundos</p>
+                </div>
+            `;
+            uploadBtn.disabled = true;
 
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
@@ -46,28 +154,57 @@
 
                 if (data.success) {
                     const invoice = data.data;
+                    const totalFormateado = invoice.total 
+                        ? `$${invoice.total.toLocaleString('es-CO')}` 
+                        : 'No detectado';
+                    
                     let html = `
-                        <h3>✅ Procesamiento Exitoso</h3>
-                        <p><strong>Establecimiento:</strong> ${invoice.establecimiento}</p>
-                        <p><strong>Total:</strong> $${invoice.total?.toLocaleString() || 'No detectado'}</p>
-                        <p><strong>Productos:</strong> ${invoice.productos.length}</p>
-                        <h4>Productos detectados:</h4>
+                        <div class="resultado-header">
+                            <h3>✅ Factura Procesada Exitosamente</h3>
+                            <div class="info-row"><strong>Establecimiento:</strong> ${invoice.establecimiento}</div>
+                            <div class="info-row"><strong>Total:</strong> ${totalFormateado}</div>
+                            <div class="info-row"><strong>Productos detectados:</strong> ${invoice.productos.length}</div>
+                            <div class="info-row"><strong>Método:</strong> ${invoice.metadatos.metodo}</div>
+                        </div>
+                        
+                        <div class="productos-list">
+                            <h4>Productos:</h4>
                     `;
 
                     invoice.productos.forEach((prod, i) => {
+                        const codigo = prod.codigo || 'Sin código';
+                        const precio = `$${prod.valor.toLocaleString('es-CO')}`;
                         html += `
                             <div class="producto">
-                                ${i + 1}. [${prod.codigo || 'Sin código'}] ${prod.nombre} - $${prod.valor.toLocaleString()}
+                                <span class="producto-precio">${precio}</span>
+                                <strong>${i + 1}. ${prod.nombre}</strong>
+                                <div class="producto-codigo">${codigo}</div>
                             </div>
                         `;
                     });
 
+                    html += '</div>';
                     resultDiv.innerHTML = html;
                 } else {
-                    resultDiv.innerHTML = `<p style="color: red;">❌ Error: ${data.message}</p>`;
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <strong>❌ Error en el procesamiento</strong>
+                            <p>${data.message || 'Error desconocido'}</p>
+                        </div>
+                    `;
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <strong>❌ Error de conexión</strong>
+                        <p>${error.message}</p>
+                        <p style="font-size: 12px; margin-top: 10px;">
+                            Verifica que la API esté activa en: ${API_URL}
+                        </p>
+                    </div>
+                `;
+            } finally {
+                uploadBtn.disabled = false;
             }
         }
     </script>
