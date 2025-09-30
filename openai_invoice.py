@@ -4,7 +4,7 @@ import json
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from openai import OpenAI
 
@@ -18,150 +18,144 @@ def _b64_data_url(image_path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("ascii")
     return f"data:{mime};base64,{b64}"
 
-def extract_text_from_invoice(image_path: str) -> str:
-    """Extrae texto plano de la factura usando OpenAI Vision"""
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    img_url = _b64_data_url(image_path)
+def _canonicalize_item(p: Dict[str, Any]) -> Dict[str, Any]:
+    codigo = p.get("codigo")
+    nombre = (p.get("nombre") or "").strip()
+    valor = p.get("valor")
     
-    prompt = """Extrae TODO el texto de esta factura exactamente como aparece, línea por línea.
-Mantén el orden original de arriba hacia abajo.
-NO interpretes ni estructures, solo transcribe el texto tal cual lo ves."""
+    if codigo:
+        codigo = str(codigo).strip()
+        if codigo == "None" or len(codigo) < 3:
+            codigo = None
     
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": img_url}}
-            ]
-        }],
-        temperature=0,
-        max_tokens=16000
-    )
+    if isinstance(valor, str):
+        num = re.sub(r"[^\d]", "", valor)
+        valor = int(num) if num.isdigit() else 0
+    if isinstance(valor, float):
+        valor = int(round(valor))
+    if not isinstance(valor, int):
+        valor = 0
     
-    return response.choices[0].message.content
+    return {
+        "codigo": codigo,
+        "nombre": nombre[:80] if nombre else "Sin nombre",
+        "valor": valor,
+        "fuente": "openai"
+    }
 
-def parse_products_from_text(text: str) -> List[Dict]:
-    """Parsea productos del texto usando patrones"""
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
-    productos = []
-    
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        
-        # Saltar líneas de encabezado, totales, etc
-        if any(x in line.upper() for x in ['SUBTOTAL', 'TOTAL', 'IVA', 'TARJETA', 'EFECTIVO', 'CAMBIO', 'ITEMS COMPRADOS']):
-            i += 1
-            continue
-        
-        # Buscar código (número de 3-13 dígitos)
-        codigo_match = re.search(r'\b(\d{3,13})\b', line)
-        if not codigo_match:
-            i += 1
-            continue
-        
-        codigo = codigo_match.group(1)
-        
-        # El nombre debería estar en la siguiente línea
-        if i + 1 >= len(lines):
-            break
-        
-        nombre_line = lines[i + 1]
-        
-        # Saltar si la siguiente línea parece ser otro código o precio
-        if re.match(r'^\d+$', nombre_line.strip()) or re.match(r'^\$?\d{1,3}[.,]\d{3}', nombre_line):
-            i += 1
-            continue
-        
-        nombre = nombre_line.strip()
-        
-        # Buscar precio en las siguientes 2-3 líneas
-        precio = None
-        for j in range(i + 2, min(i + 5, len(lines))):
-            precio_match = re.search(r'\$?\s*(\d{1,3}[.,]\d{3}(?:[.,]\d{3})?)', lines[j])
-            if precio_match:
-                precio_str = precio_match.group(1).replace('.', '').replace(',', '')
-                try:
-                    precio = int(precio_str)
-                    break
-                except:
-                    pass
-        
-        if nombre and precio and precio > 100:
-            productos.append({
-                "codigo": codigo,
-                "nombre": nombre[:80],
-                "valor": precio,
-                "fuente": "openai"
-            })
-        
-        i += 1
-    
-    return productos
+_PROMPT = """Eres un experto extractor de facturas de supermercados colombianos.
 
-def extract_metadata(text: str) -> Dict:
-    """Extrae establecimiento y total"""
-    lines = text.split('\n')
-    
-    # Buscar establecimiento en las primeras líneas
-    establecimiento = "Establecimiento no identificado"
-    for line in lines[:15]:
-        if any(x in line.upper() for x in ['JUMBO', 'EXITO', 'CARULLA', 'OLIMPICA', 'D1', 'ALKOSTO']):
-            establecimiento = line.strip()
-            break
-    
-    # Buscar total
-    total = None
-    for line in reversed(lines[-30:]):
-        if 'TOTAL' in line.upper() and not 'SUBTOTAL' in line.upper():
-            match = re.search(r'\$?\s*(\d{1,3}[.,]\d{3}(?:[.,]\d{3})?)', line)
-            if match:
-                total_str = match.group(1).replace('.', '').replace(',', '')
-                try:
-                    total = int(total_str)
-                    break
-                except:
-                    pass
-    
-    return {"establecimiento": establecimiento, "total": total}
+FORMATO VISUAL de productos en facturas colombianas:
+┌─────────────────┐
+│ 7702993047842   │ ← CÓDIGO (línea 1)
+│ Chocolate BISO  │ ← NOMBRE (línea 2)
+│ $2.190          │ ← PRECIO (línea 3)
+├─────────────────┤
+│ 505             │ ← CÓDIGO (línea 1)
+│ Limón Tahití    │ ← NOMBRE (línea 2)
+│ $8.801          │ ← PRECIO (línea 3)
+└─────────────────┘
+
+REGLAS CRÍTICAS:
+1. Lee SECUENCIALMENTE de arriba hacia abajo
+2. CADA producto ocupa exactamente 3 líneas: código, nombre, precio
+3. Entre productos puede haber líneas con peso/cantidad (IGNÓRALAS)
+4. NO repitas productos
+5. Ignora líneas con: descuentos (-$), subtotales, "IVA", referencias "%REF"
+
+EXTRAE TODOS LOS PRODUCTOS (aproximadamente 50 en esta factura).
+
+Responde en JSON:
+{
+  "establecimiento": "NOMBRE DEL SUPERMERCADO",
+  "total": numero_entero,
+  "items": [
+    {"codigo": "7702993047842", "nombre": "Chocolate BISO", "valor": 2190},
+    {"codigo": "505", "nombre": "Limón Tahití", "valor": 8801}
+  ]
+}
+
+IMPORTANTE: Si la factura tiene 50 productos, el array "items" debe tener ~50 objetos."""
 
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
-    """Procesa factura: extrae texto con OpenAI, parsea con regex"""
-    
     if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("OPENAI_API_KEY no configurada")
     
-    print("Extrayendo texto de la factura...")
-    text = extract_text_from_invoice(image_path)
-    print(f"Texto extraído: {len(text)} caracteres")
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    img_url = _b64_data_url(image_path)
     
-    print("Parseando productos...")
-    productos = parse_products_from_text(text)
-    print(f"Productos detectados: {len(productos)}")
+    print("Enviando imagen a OpenAI...")
     
-    metadata = extract_metadata(text)
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _PROMPT},
+                    {"type": "image_url", "image_url": {"url": img_url}}
+                ]
+            }],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=16000
+        )
+        
+        content = response.choices[0].message.content
+        print(f"Longitud respuesta: {len(content)} caracteres")
+        
+        data = json.loads(content)
+        
+    except json.JSONDecodeError as e:
+        print(f"Error parseando JSON: {e}")
+        data = {"items": []}
+    except Exception as e:
+        print(f"Error OpenAI: {e}")
+        data = {"items": []}
     
-    # Deduplicar
+    items_raw = (data or {}).get("items") or []
+    print(f"Items crudos: {len(items_raw)}")
+    
     seen = {}
-    productos_unicos = []
-    for p in productos:
-        key = f"{p['codigo']}|{p['nombre']}|{p['valor']}"
-        if key not in seen:
-            seen[key] = True
-            productos_unicos.append(p)
+    items = []
     
-    print(f"Productos únicos: {len(productos_unicos)}")
+    for p in items_raw:
+        if not isinstance(p, dict):
+            continue
+        
+        try:
+            item = _canonicalize_item(p)
+            nombre = item.get("nombre", "")
+            valor = item.get("valor", 0)
+            
+            if not nombre or valor <= 0:
+                continue
+            
+            key = f"{item.get('codigo')}|{nombre}|{valor}"
+            
+            if key not in seen:
+                seen[key] = True
+                items.append(item)
+        except Exception as e:
+            print(f"Error procesando item: {e}")
+    
+    print(f"Items únicos procesados: {len(items)}")
+    
+    establecimiento = (data or {}).get("establecimiento") or "Establecimiento no identificado"
+    total = (data or {}).get("total")
+    
+    if isinstance(total, str):
+        num = re.sub(r"[^\d]", "", total)
+        total = int(num) if num.isdigit() else None
     
     return {
-        "establecimiento": metadata["establecimiento"],
-        "total": metadata["total"],
+        "establecimiento": establecimiento,
+        "total": total,
         "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "productos": productos_unicos,
+        "productos": items,
         "metadatos": {
-            "metodo": "openai-vision-text+regex",
+            "metodo": "openai-vision",
             "model": OPENAI_MODEL,
-            "items_detectados": len(productos_unicos),
+            "items_detectados": len(items),
         },
     }
