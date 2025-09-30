@@ -62,10 +62,18 @@ def parse_products_from_docai_layout(document) -> List[Dict]:
             y_coord = token.layout.bounding_poly.normalized_vertices[0].y
             line_key = round(y_coord * 100)
             
-            text = "".join([symbol.text for symbol in token.symbols])
+            # CORREGIDO: usar text_anchor en lugar de symbols
+            text = ""
+            if hasattr(token.layout, 'text_anchor') and token.layout.text_anchor.text_segments:
+                for segment in token.layout.text_anchor.text_segments:
+                    start = segment.start_index
+                    end = segment.end_index
+                    text += document.text[start:end]
+            
             x_coord = token.layout.bounding_poly.normalized_vertices[0].x
             
-            lines[line_key].append((x_coord, text))
+            if text:  # Solo agregar si hay texto
+                lines[line_key].append((x_coord, text))
     
     for line_key in lines:
         lines[line_key].sort(key=lambda x: x[0])
