@@ -24,6 +24,48 @@ from database import (
     confirmar_producto_manual
 )
 
+# arriba de main.py, junto con otros imports
+from openai_invoice import parse_invoice_with_openai
+from fastapi import UploadFile, File, HTTPException
+import tempfile, os
+
+# ... (resto de tu código)
+
+@app.post("/invoices/parse-openai")
+async def parse_invoice_openai(file: UploadFile = File(...)):
+    """
+    Procesa una factura usando OpenAI (visión) en lugar de OCR local.
+    Devuelve productos estructurados.
+    """
+    try:
+        # Guardar temporalmente
+        suffix = ".png"
+        name = (file.filename or "").lower()
+        if name.endswith(".jpg") or name.endswith(".jpeg"): suffix = ".jpg"
+        elif name.endswith(".pdf"): suffix = ".pdf"  # también puedes enviar PDF (el modelo ve la primera página rasterizada por el cliente)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        result = parse_invoice_with_openai(tmp_path)
+        os.unlink(tmp_path)
+
+        if not result:
+            raise HTTPException(500, "No se pudo procesar la factura con OpenAI")
+
+        return {"success": True, "data": result}
+
+    except Exception as e:
+        # cleanup
+        try:
+            if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except:
+            pass
+        raise HTTPException(500, f"Error OpenAI: {e}")
+
+
 # ========================================
 # CONFIGURACIÓN DE LA APP
 # ========================================
@@ -642,6 +684,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
