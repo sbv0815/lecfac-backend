@@ -49,7 +49,7 @@ def extract_text_with_docai(image_path: str) -> str:
             )
         )
         
-        return response.document.text
+          return response.document
     except Exception as e:
         print(f"Error Document AI: {e}")
         return None
@@ -159,29 +159,85 @@ def extract_metadata(text: str) -> Dict:
     
     return {"establecimiento": establecimiento, "total": total}
 
+def parse_products_from_docai_layout(document) -> List[Dict]:
+    """Parser basado en coordenadas Y (filas horizontales)"""
+    from collections import defaultdict
+    
+    # Agrupar tokens por línea (coordenadas Y similares)
+    lines = defaultdict(list)
+    
+    for page in document.pages:
+        for token in page.tokens:
+            # Obtener coordenada Y (vertical)
+            y_coord = token.layout.bounding_poly.normalized_vertices[0].y
+            # Redondear para agrupar líneas (tolerancia de 1%)
+            line_key = round(y_coord * 100)
+            
+            text = "".join([symbol.text for symbol in token.symbols])
+            x_coord = token.layout.bounding_poly.normalized_vertices[0].x
+            
+            lines[line_key].append((x_coord, text))
+    
+    # Ordenar tokens en cada línea por X (izquierda a derecha)
+    for line_key in lines:
+        lines[line_key].sort(key=lambda x: x[0])
+    
+    # Ordenar líneas por Y (arriba a abajo)
+    sorted_lines = sorted(lines.items(), key=lambda x: x[0])
+    
+    productos = []
+    
+    for line_key, tokens in sorted_lines:
+        # Juntar texto de la línea
+        line_text = " ".join([t[1] for t in tokens])
+        
+        # Buscar patrón: código (inicio) + nombre (medio) + precio (final)
+        codigo_match = re.search(r'^(\d{3,13})', line_text)
+        precio_match = re.search(r'(\d{1,3}[.,]\d{3})$', line_text)
+        
+        if codigo_match and precio_match:
+            codigo = codigo_match.group(1)
+            precio_str = precio_match.group(1).replace('.', '').replace(',', '')
+            
+            # Nombre está entre código y precio
+            nombre_start = codigo_match.end()
+            nombre_end = precio_match.start()
+            nombre = line_text[nombre_start:nombre_end].strip()
+            
+            # Limpiar nombre
+            nombre = re.sub(r'\d{10,}', '', nombre)
+            nombre = re.sub(r'[.,]\d+\s*(KG|X|N)', '', nombre)
+            nombre = nombre.strip()
+            
+            try:
+                precio = int(precio_str)
+                if len(nombre) >= 3 and 100 <= precio <= 1000000:
+                    productos.append({
+                        "codigo": codigo,
+                        "nombre": nombre[:80],
+                        "valor": precio,
+                        "fuente": "document-ai-layout"
+                    })
+            except:
+                pass
+    
+    return productos
+
 def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
-    """Procesa con Document AI (OpenAI solo fallback)"""
     print("\n" + "="*70)
     print("PROCESANDO FACTURA")
     print("="*70)
     
-    # Intentar Document AI
-    text = extract_text_with_docai(image_path)
-    metodo = "document-ai"
+    document = extract_text_with_docai(image_path)
     
-    if text:
-        print(f"✓ Document AI: {len(text)} caracteres")
-    else:
-        print("✗ Document AI no disponible")
-        return {
-            "establecimiento": "Error: Document AI no configurado",
-            "total": None,
-            "productos": [],
-            "metadatos": {"metodo": "error"}
-        }
+    if not document:
+        return {"establecimiento": "Error", "total": None, "productos": [], "metadatos": {"metodo": "error"}}
     
-    # Parsear
-    productos = parse_products_from_text(text)
+    # Usar parser basado en layout
+    productos = parse_products_from_docai_layout(document)
+    
+    # Metadata del texto plano
+    text = document.text
     metadata = extract_metadata(text)
     
     # Deduplicar
@@ -193,7 +249,7 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
             seen.add(key)
             unicos.append(p)
     
-    print(f"Productos detectados: {len(unicos)}")
+    print(f"Productos: {len(unicos)}")
     print("="*70)
     
     return {
@@ -201,8 +257,5 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         "total": metadata["total"],
         "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "productos": unicos,
-        "metadatos": {
-            "metodo": metodo,
-            "items_detectados": len(unicos),
-        },
+        "metadatos": {"metodo": "document-ai-layout", "items_detectados": len(unicos)},
     }
