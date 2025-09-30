@@ -1,31 +1,27 @@
+# Dockerfile
 FROM python:3.11-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
+# Evita prompts
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Paquetes del sistema + Tesseract (incluye español e inglés)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
+# Variables para pytesseract
 ENV TESSERACT_CMD=/usr/bin/tesseract
 
-
-# Instalar Tesseract + español (+ inglés de respaldo)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-spa \
-    tesseract-ocr-eng \
-    libtesseract-dev \
-    libleptonica-dev \
-  && rm -rf /var/lib/apt/lists/*
-
-# A veces ayuda declarar estas variables
-ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
-ENV PATH="/usr/bin:${PATH}"
-
-# Verificar instalación en build
-RUN tesseract --version && tesseract --list-langs
-
+# App
 WORKDIR /app
-
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . .
 
-EXPOSE 10000
-CMD ["python", "main.py"]
+# Render usa $PORT; uvicorn escuchará en ese puerto
+ENV PORT=10000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
