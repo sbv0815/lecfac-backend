@@ -622,52 +622,6 @@ def obtener_recordatorios_pendientes(usuario_id: int):
     
     return recordatorios
 
-# ============================================
-# FUNCIONES ORIGINALES
-# ============================================
-
-def hash_password(password: str) -> str:
-    """Hashea una contraseña usando bcrypt"""
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
-
-def verify_password(password: str, hashed: str) -> bool:
-    """Verifica una contraseña contra su hash"""
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
-
-def test_database_connection():
-    """Función para probar la conexión a la base de datos"""
-    print("🔧 Probando conexión a base de datos...")
-    
-    conn = get_db_connection()
-    if not conn:
-        return False
-    
-    try:
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute("SELECT version()")
-            version = cursor.fetchone()[0]
-            print(f"✅ PostgreSQL conectado: {version}")
-        except:
-            try:
-                cursor.execute("SELECT sqlite_version()")
-                version = cursor.fetchone()[0]
-                print(f"✅ SQLite conectado: {version}")
-            except:
-                print("❌ No se pudo identificar el tipo de base de datos")
-        
-        conn.close()
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error probando conexión: {e}")
-        if conn:
-            conn.close()
-        return False
-
 def obtener_productos_frecuentes_faltantes(usuario_id: int, codigos_detectados: set, limite: int = 3):
     """
     Identifica productos que el usuario compra frecuentemente pero no están en la factura actual.
@@ -842,3 +796,50 @@ def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usu
         conn.rollback()
         conn.close()
         return False
+
+# ============================================
+# FUNCIONES ORIGINALES
+# ============================================
+
+def hash_password(password: str) -> str:
+    """Hashea una contraseña usando bcrypt"""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verifica una contraseña contra su hash"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def test_database_connection():
+    """Función para probar la conexión a la base de datos"""
+    print("🔧 Probando conexión a base de datos...")
+    
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
+    try:
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("SELECT version()")
+            version = cursor.fetchone()[0]
+            print(f"✅ PostgreSQL conectado: {version}")
+        except:
+            try:
+                cursor.execute("SELECT sqlite_version()")
+                version = cursor.fetchone()[0]
+                print(f"✅ SQLite conectado: {version}")
+            except:
+                print("❌ No se pudo identificar el tipo de base de datos")
+        
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error probando conexión: {e}")
+        if conn:
+            conn.close()
+        return False
+
