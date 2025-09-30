@@ -6,7 +6,89 @@ import time
 from datetime import datetime
 import traceback
 
-# Document AI
+# ========================================
+# PREPROCESAMIENTO DE IMAGEN AGRESIVO
+# ========================================
+
+def preprocess_for_document_ai(image_path):
+    """Preprocesamiento agresivo para maximizar precisión de Document AI"""
+    try:
+        from PIL import Image, ImageEnhance, ImageFilter
+        
+        img = Image.open(image_path)
+        original_size = img.size
+        
+        # Convertir a RGB si es necesario (Document AI prefiere RGB)
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        
+        # CRÍTICO: Escalar a mínimo 3000px de ancho
+        # Document AI funciona mucho mejor con imágenes de alta resolución
+        width, height = img.size
+        min_width = 3000
+        
+        if width < min_width:
+            scale = min_width / width
+            new_size = (int(width * scale), int(height * scale))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            print(f"Imagen escalada: {original_size} -> {new_size}")
+        
+        # Mejorar contraste
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.8)
+        
+        # Mejorar nitidez
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(1.5)
+        
+        # Guardar en máxima calidad
+        processed_path = image_path.replace('.jpg', '_optimized.jpg').replace('.png', '_optimized.jpg')
+        img.save(processed_path, 'JPEG', quality=95, optimize=False, subsampling=0)
+        
+        print(f"Imagen optimizada guardada: {processed_path}")
+        return processed_path
+        
+    except Exception as e:
+        print(f"Error en preprocesamiento: {e}")
+        return image_path
+
+def split_long_invoice(image_path):
+    """Divide facturas muy largas en secciones para mejor OCR"""
+    try:
+        from PIL import Image
+        
+        img = Image.open(image_path)
+        width, height = img.size
+        
+        # Si la factura es muy larga (ratio > 4:1), dividir
+        if height > width * 4 or height > 5000:
+            print(f"Factura larga detectada ({width}x{height}), dividiendo...")
+            
+            sections = []
+            num_sections = 2 if height < 8000 else 3
+            section_height = height // num_sections
+            overlap = 300  # Pixeles de sobreposición para no perder productos
+            
+            for i in range(num_sections):
+                start_y = max(0, i * section_height - overlap)
+                end_y = min(height, (i + 1) * section_height + overlap)
+                
+                section = img.crop((0, start_y, width, end_y))
+                
+                # Guardar sección
+                section_path = image_path.replace('.jpg', f'_section{i+1}.jpg').replace('.png', f'_section{i+1}.jpg')
+                section.save(section_path, 'JPEG', quality=95)
+                sections.append(section_path)
+                
+                print(f"  Sección {i+1}: {start_y} -> {end_y}")
+            
+            return sections
+        
+        return [image_path]
+        
+    except Exception as e:
+        print(f"Error dividiendo imagen: {e}")
+        return [image_path]
 try:
     from google.cloud import documentai
     DOCUMENT_AI_AVAILABLE = True
