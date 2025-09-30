@@ -118,9 +118,6 @@ def _pick_best_price(nums):
     return max(cand) if cand else 0
 
 
-
-
-
 def _join_item_blocks(texto: str) -> list[str]:
     """Une líneas de continuación (peso, X, etc.) a su línea principal."""
     raw = [l.strip() for l in texto.splitlines() if l.strip()]
@@ -295,14 +292,17 @@ def _parse_text_products(raw_text: str) -> list[dict]:
         by_rx.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
 
     # 3) merge por uid (no colapsa compras repetidas)
-    seen = set()
-    out = []
-    for src in (by_cols, by_rx):
-        for p in src:
-            if p["uid"] in seen:
-                continue
-            seen.add(p["uid"])
-            out.append({k: v for k, v in p.items() if k != "uid"})
+    # 3) merge por uid (no colapsa compras repetidas)
+seen = set()
+out = []
+for src in (by_cols, by_rx):
+    for p in src:
+        if p["uid"] in seen:
+            continue
+        seen.add(p["uid"])
+        out.append(p)  # <-- conserva el uid
+return out
+pend({k: v for k, v in p.items() if k != "uid"})
     return out
 
 
@@ -403,7 +403,17 @@ def extract_products_document_ai(document):
     line_items = [e for e in getattr(document, "entities", []) if e.type_ == "line_item" and e.confidence > 0.25]
     for e in line_items:
         raw = (e.mention_text or "").strip()
-        name = re.sub(r"\s+", " ", raw)[:80] or "Sin descripción"
+        base = f"{code or ''}|{name}|{price}"
+        uid = "da:" + hashlib.md5(base.encode()).hexdigest()[:10]
+
+        productos.append({
+        "uid": uid,
+        "codigo": code,
+        "nombre": name,
+        "valor": price,
+        "fuente": "document_ai"
+        })
+
 
         # descarta descuentos/notas
         if _is_discount_or_note(raw) or _is_discount_or_note(name):
@@ -500,34 +510,59 @@ def _has_two_real_words(name: str) -> bool:
 # =====================
 
 def combinar_y_deduplicar(productos_ai, productos_extra):
-    """Fusiona listas evitando duplicados obvios pero conservando compras repetidas reales."""
-    productos_finales = {}
+    """
+    Preserva líneas repetidas reales (usa uid).
+    Dedup solo si DA y Tesseract detectaron la MISMA línea (clave suave).
+    """
+    result = []
+    seen_uid = set()
+    # clave suave para evitar dobles (DA+Tess) de la misma línea
+    seen_soft = set()
 
-    for prod in productos_ai + productos_extra:
-        codigo = prod.get("codigo")
+    def soft_key(p):
+        return (
+            (p.get("codigo") or "").strip(),
+            (p.get("nombre") or "").strip().lower(),
+            int(p.get("valor") or 0),
+        )
 
-        # Si es EAN de balanza, convierte a PLU único por (code+valor+nombre)
-        if codigo and _is_variable_weight_ean(codigo):
-            h = hashlib.md5(f"{codigo}|{prod.get('valor',0)}|{prod.get('nombre','')[:20]}".encode()).hexdigest()[:8]
-            codigo = f"PLU_{h}"
-            prod["codigo"] = codigo
+    # Primero, todo lo de Document AI
+    for p in productos_ai:
+        uid = p.get("uid") or "ai:" + hashlib.md5(
+            f"{p.get('codigo','')}|{p.get('nombre','')}|{p.get('valor',0)}".encode()
+        ).hexdigest()[:10]
+        if uid in seen_uid:
+            continue
+        seen_uid.add(uid)
+        result.append(p)
+        seen_soft.add(soft_key(p))
 
-        if codigo:
-            if codigo not in productos_finales:
-                productos_finales[codigo] = prod
-            else:
-                # completa precio si el guardado estaba en 0
-                if productos_finales[codigo].get("valor", 0) == 0 and prod.get("valor", 0) > 0:
-                    productos_finales[codigo]["valor"] = prod["valor"]
-        else:
-            # sin código: usa nombre+valor como clave suave
-            key = ("nv", (prod.get("nombre") or "").lower(), prod.get("valor", 0))
-            if key not in productos_finales:
-                productos_finales[key] = prod
+    # Luego, Tesseract (solo si no duplica exacto a nivel de soft_key)
+    for p in productos_extra:
+        uid = p.get("uid") or "tx:" + hashlib.md5(
+            f"{p.get('codigo','')}|{p.get('nombre','')}|{p.get('valor',0)}".encode()
+        ).hexdigest()[:10]
+        if uid in seen_uid:
+            continue
+        sk = soft_key(p)
+        if sk in seen_soft:
+            # ya lo capturó DA, no lo dupliques
+            continue
+        seen_uid.add(uid)
+        seen_soft.add(sk)
+        result.append(p)
 
-    resultado = list(productos_finales.values())
-    resultado.sort(key=lambda x: (not bool(x.get("codigo")), x.get("codigo") or "", x.get("nombre", "")))
-    return resultado
+    # Convertir EAN de balanza a PLU único por línea (si aplica)
+    for p in result:
+        code = p.get("codigo")
+        if code and _is_variable_weight_ean(code):
+            h = hashlib.md5(f"{code}|{p.get('valor',0)}|{(p.get('nombre') or '')[:20]}".encode()).hexdigest()[:8]
+            p["codigo"] = f"PLU_{h}"
+
+    # Orden estable
+    result.sort(key=lambda x: (not bool(x.get("codigo")), x.get("codigo") or "", x.get("nombre","")))
+    return result
+
 
 
 def process_invoice_complete(file_path):
