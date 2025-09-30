@@ -10,7 +10,7 @@ import threading
 import traceback
 
 # Importar procesador y database
-from invoice_processor import process_invoice_products
+from invoice_processor import@router.get("/verify-tesseract") process_invoice_products
 from database import (
     create_tables, 
     get_db_connection, 
@@ -24,6 +24,45 @@ from database import (
 # ========================================
 # CONFIGURACIÓN DE LA APP
 # ========================================
+
+from fastapi import APIRouter
+import os, shutil, subprocess
+
+router = APIRouter()
+
+@router.get("/verify-tesseract")
+def verify_tesseract():
+    tcmd_env = os.getenv("TESSERACT_CMD")
+    tcmd_which = shutil.which("tesseract")
+    candidates = [tcmd_env, tcmd_which, "/usr/bin/tesseract", "/usr/local/bin/tesseract"]
+    candidates = [c for c in candidates if c]
+
+    found, version, langs = None, None, None
+    path_env = os.getenv("PATH")
+
+    for c in candidates:
+        if os.path.exists(c):
+            found = c
+            try:
+                version = subprocess.check_output([c, "--version"], text=True).strip()
+                try:
+                    langs = subprocess.check_output([c, "--list-langs"], text=True).strip()
+                except Exception:
+                    langs = "No pudo listar idiomas"
+            except Exception as e:
+                version = f"Error ejecutando --version: {e}"
+            break
+
+    return {
+        "tesseract_installed": bool(found),
+        "tesseract_cmd": found,
+        "path_env": path_env,
+        "which_tesseract": tcmd_which,
+        "env_TESSERACT_CMD": tcmd_env,
+        "version": version,
+        "langs": langs,
+        "note": "Si 'tesseract_installed' es false pero version muestra algo, revisa permisos/ejecución."
+    }
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -752,6 +791,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
