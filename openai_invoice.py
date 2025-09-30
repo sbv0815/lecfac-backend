@@ -88,6 +88,12 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         content = response.choices[0].message.content
         print(f"Respuesta: {len(content)} chars")
         
+        # LOGGING: Ver respuesta completa
+        print("=" * 70)
+        print("RESPUESTA COMPLETA DE OPENAI:")
+        print(content)
+        print("=" * 70)
+        
         # Intentar parsear
         try:
             data = json.loads(content)
@@ -97,10 +103,8 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
             
             # Intentar reparar: buscar último item completo
             try:
-                # Buscar el último cierre de objeto válido antes del error
                 last_valid = content[:je.pos].rfind('"}')
                 if last_valid > 0:
-                    # Cortar hasta ahí y cerrar el JSON
                     repaired = content[:last_valid + 2] + ']}'
                     data = json.loads(repaired)
                     print(f"✓ JSON reparado: {len(data.get('items', []))} items")
@@ -112,6 +116,8 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
         
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         data = {"items": []}
     
     items_raw = (data or {}).get("items") or []
