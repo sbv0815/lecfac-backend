@@ -1,3 +1,4 @@
+# invoice_processor.py
 import os
 import re
 import json
@@ -6,9 +7,7 @@ import hashlib
 import tempfile
 import traceback
 from datetime import datetime
-import os, shutil, pytesseract
-pytesseract.pytesseract.tesseract_cmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
-
+import shutil
 
 # =============================
 # Disponibilidad de librerías
@@ -28,17 +27,15 @@ except Exception:
     PIL_AVAILABLE = False
 
 # ===== Tesseract (opcional) =====
-import os, shutil
 try:
     import pytesseract
-    tcmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
-    pytesseract.pytesseract.tesseract_cmd = tcmd
-    TESSERACT_AVAILABLE = os.path.exists(tcmd)
-    print(f"✅ Tesseract OCR {'disponible' if TESSERACT_AVAILABLE else 'NO disponible'} en: {tcmd}")
+    _tcmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
+    pytesseract.pytesseract.tesseract_cmd = _tcmd
+    TESSERACT_AVAILABLE = bool(_tcmd and os.path.exists(_tcmd))
+    print(f"✅ Tesseract OCR {'disponible' if TESSERACT_AVAILABLE else 'NO disponible'} en: {_tcmd}")
 except Exception as e:
     TESSERACT_AVAILABLE = False
     print(f"⚠️ pytesseract no disponible ({e})")
-
 
 
 # =============================
@@ -253,12 +250,33 @@ def _detect_columns(lines: list):
         total_idx = max(30, longest - 8)
     return code_idx, total_idx
 
+def _join_name_with_next_price(lines: list) -> list:
+    """
+    Empareja una línea con nombre 'real' sin precio con la siguiente
+    si la siguiente es 'precio puro'. Mejora recall en tickets cortados.
+    """
+    out = []
+    i = 0
+    while i < len(lines):
+        cur = lines[i].strip()
+        nxt = lines[i+1].strip() if i+1 < len(lines) else ""
+        has_two_words = len(re.findall(r'[A-Za-zÀ-ÿ]{4,}', cur)) >= 2
+        has_price_cur = bool(re.search(PRICE_RE_ANY, cur))
+        if has_two_words and not has_price_cur and _looks_like_price_only(nxt):
+            out.append(f"{cur} {nxt}")
+            i += 2
+        else:
+            out.append(cur)
+            i += 1
+    return out
+
 
 # =============================
 # Parsers por texto crudo
 # =============================
 def _parse_text_products(raw_text: str) -> list:
     lines = _join_item_blocks(raw_text or "")
+    lines = _join_name_with_next_price(lines)
     print(f"📄 Bloques tras normalizar: {len(lines)}")
 
     code_idx, total_idx = _detect_columns(lines)
@@ -384,7 +402,7 @@ def extract_total(text):
 
 
 # =============================
-# Extractores de productos
+# Extractores de productos (DocAI + texto)
 # =============================
 def extract_products_document_ai(document) -> list:
     """
@@ -394,7 +412,7 @@ def extract_products_document_ai(document) -> list:
     productos = []
 
     # 1) Entities (line_item)
-    line_items = [e for e in getattr(document, "entities", []) if e.type_ == "line_item" and e.confidence > 0.20]
+    line_items = [e for e in getattr(document, "entities", []) if getattr(e, "type_", "") == "line_item" and getattr(e, "confidence", 0) > 0.20]
     for e in line_items:
         raw = (getattr(e, "mention_text", "") or "").strip()
         if not raw:
@@ -450,6 +468,9 @@ def extract_products_document_ai(document) -> list:
     return final
 
 
+# =============================
+# Tesseract (fallback/mejora)
+# =============================
 def extract_products_tesseract_aggressive(image_path) -> list:
     """
     Ejecuta pytesseract en varios modos y parsea con el mismo parser de texto crudo.
@@ -514,54 +535,80 @@ def combinar_y_deduplicar(prod_a, prod_b) -> list:
 # =============================
 # Pipeline principal
 # =============================
-def process_invoice_complete(file_path):
+def process_invoice_complete(file_path: str):
     inicio = time.time()
     try:
         print("\n" + "=" * 70)
-        print("🔍 PROCESAMIENTO MEJORADO - columnas + regex + DA (+tess opcional)")
+        print("🔍 PROCESAMIENTO MEJORADO - DocAI + columnas/regex (+Tess opcional)")
         print("=" * 70)
 
-        if not DOCUMENT_AI_AVAILABLE:
-            raise Exception("Document AI no disponible")
-
-        setup_document_ai()
-
-        # Preprocesado para DOCAI y split si es larga
-        optimized = preprocess_for_document_ai(file_path)
-        sections = split_long_invoice(optimized)
-
-        # Document AI por secciones
-        client = documentai.DocumentProcessorServiceClient()
-        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        is_pdf = file_path.lower().endswith(".pdf")
 
         all_products_docai = []
         all_text = []
-        for sec in sections:
-            with open(sec, "rb") as f:
-                content = f.read()
-            mime = "image/jpeg" if sec.lower().endswith((".jpg", ".jpeg")) else "image/png"
-            resp = client.process_document(
-                request=documentai.ProcessRequest(
-                    name=name,
-                    raw_document=documentai.RawDocument(content=content, mime_type=mime),
-                )
-            )
-            all_products_docai += extract_products_document_ai(resp.document)
-            all_text.append(resp.document.text or "")
+        establecimiento = None
+        total_factura = None
 
-        raw_text = "\n".join(all_text)
+        # ---------- [1] Intentar Document AI ----------
+        used_docai = False
+        if DOCUMENT_AI_AVAILABLE:
+            try:
+                setup_document_ai()
+                client = documentai.DocumentProcessorServiceClient()
+                name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
 
-        # Metadata
-        establecimiento = extract_vendor(raw_text)
-        total_factura = extract_total(raw_text)
+                if is_pdf:
+                    # PDF: no preprocesar/split, mandar tal cual
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+                    resp = client.process_document(
+                        request=documentai.ProcessRequest(
+                            name=name,
+                            raw_document=documentai.RawDocument(content=content, mime_type="application/pdf"),
+                        )
+                    )
+                    all_products_docai += extract_products_document_ai(resp.document)
+                    all_text.append(resp.document.text or "")
+                else:
+                    # Imagen: preprocesar + split
+                    optimized = preprocess_for_document_ai(file_path) if PIL_AVAILABLE else file_path
+                    sections = split_long_invoice(optimized) if PIL_AVAILABLE else [optimized]
+                    for sec in sections:
+                        with open(sec, "rb") as f:
+                            content = f.read()
+                        mime = "image/jpeg" if sec.lower().endswith((".jpg", ".jpeg")) else "image/png"
+                        resp = client.process_document(
+                            request=documentai.ProcessRequest(
+                                name=name,
+                                raw_document=documentai.RawDocument(content=content, mime_type=mime),
+                            )
+                        )
+                        all_products_docai += extract_products_document_ai(resp.document)
+                        all_text.append(resp.document.text or "")
 
-        print(f"   ✓ Productos (DOCAI+texto): {len(all_products_docai)}")
+                raw_text = "\n".join(all_text)
+                establecimiento = extract_vendor(raw_text)
+                total_factura = extract_total(raw_text)
+                used_docai = True
+                print(f"   ✓ Productos (DOCAI+texto): {len(all_products_docai)}")
 
-        # Tesseract opcional (sobre la imagen optimizada, no las secciones)
-        print("\n[2/3] 🔬 Tesseract (si está disponible)...")
-        productos_tess = extract_products_tesseract_aggressive(optimized) if TESSERACT_AVAILABLE else []
+            except Exception as de:
+                print(f"⚠️ Document AI no usable ahora: {de}")
+                traceback.print_exc()
+        else:
+            print("ℹ️ Saltando Document AI (no disponible)")
 
-        # Merge final
+        # ---------- [2] Tesseract opcional ----------
+        productos_tess = []
+        if TESSERACT_AVAILABLE and not is_pdf:
+            print("\n[2/3] 🔬 Tesseract (fallback/mejora)...")
+            optimized_for_tess = preprocess_for_document_ai(file_path) if PIL_AVAILABLE else file_path
+            productos_tess = extract_products_tesseract_aggressive(optimized_for_tess) or []
+        elif TESSERACT_AVAILABLE and is_pdf:
+            # (Opcional) podrías rasterizar PDF a imagen y luego pasar a Tess. Por ahora, lo omitimos.
+            print("\n[2/3] 🔬 Tesseract omitido (PDF sin rasterizar)")
+
+        # ---------- [3] Merge final ----------
         print("\n[3/3] 🔀 Combinando...")
         productos_finales = combinar_y_deduplicar(all_products_docai, productos_tess)
 
@@ -569,7 +616,8 @@ def process_invoice_complete(file_path):
         print("\n" + "=" * 70)
         print("✅ RESULTADO FINAL")
         print("=" * 70)
-        print(f"📍 Establecimiento: {establecimiento}")
+        if establecimiento:
+            print(f"📍 Establecimiento: {establecimiento}")
         print(f"💰 Total factura: {total_factura}" if total_factura else "💰 Total: No detectado")
         print(f"📦 Productos únicos: {len(productos_finales)}")
         print(f"   ├─ DOCAI+Texto: {len(all_products_docai)}")
@@ -578,7 +626,6 @@ def process_invoice_complete(file_path):
         print(f"⏱️ Tiempo: {tiempo}s")
         print("=" * 70 + "\n")
 
-        # Mostrar primeros 5 para depurar
         if productos_finales:
             print("Primeros 5 productos:")
             for p in productos_finales[:5]:
@@ -586,25 +633,45 @@ def process_invoice_complete(file_path):
                 print(f"  {p.get('codigo','(s/c)')}: {p.get('nombre')} - {precio}")
 
         return {
-            "establecimiento": establecimiento,
+            "establecimiento": establecimiento or "Establecimiento no identificado",
             "total": total_factura,
             "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "productos": productos_finales,
             "metadatos": {
-                "metodo": "docai_text_columns+regex(+tess)",
+                "metodo": f"{'docai+' if used_docai else ''}text_columns+regex{'+tess' if productos_tess else ''}",
                 "docai_text_items": len(all_products_docai),
                 "tesseract_items": len(productos_tess),
                 "productos_finales": len(productos_finales),
                 "tiempo_segundos": tiempo,
             },
         }
+
     except Exception as e:
         print(f"❌ ERROR CRÍTICO: {str(e)}")
         traceback.print_exc()
-        return None
+        # Devuelve estructura consistente aunque vacía
+        return {
+            "establecimiento": "Establecimiento no identificado",
+            "total": None,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": [],
+            "metadatos": {
+                "metodo": "error",
+                "error": str(e),
+                "tiempo_segundos": int(time.time() - inicio),
+            },
+        }
 
 
-# Alias legacy
+# =============================
+# Alias legacy para main.py
+# =============================
+def process_invoice_products(file_path: str):
+    """
+    Mantiene compatibilidad: main.py llama a process_invoice_products(path).
+    """
+    return process_invoice_complete(file_path)
+
 def process_invoice_products(file_path):
     return process_invoice_complete(file_path)
 
