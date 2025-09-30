@@ -712,10 +712,47 @@ async def test_page():
 # INICIO DEL SERVIDOR
 # ========================================
 
+
+@app.get("/verify-tesseract")
+async def verify_tesseract():
+    """Verifica si Tesseract está instalado"""
+    import shutil
+    import subprocess
+    
+    tesseract_path = shutil.which("tesseract")
+    
+    if tesseract_path:
+        try:
+            result = subprocess.run(
+                ["tesseract", "--version"], 
+                capture_output=True, 
+                text=True
+            )
+            version_info = result.stdout
+            
+            return {
+                "tesseract_installed": True,
+                "path": tesseract_path,
+                "version": version_info,
+                "pytesseract_available": True
+            }
+        except:
+            return {
+                "tesseract_installed": True,
+                "path": tesseract_path,
+                "error": "Instalado pero no se puede ejecutar"
+            }
+    else:
+        return {
+            "tesseract_installed": False,
+            "message": "Tesseract no encontrado en el sistema"
+        }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
