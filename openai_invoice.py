@@ -69,37 +69,28 @@ def parse_invoice_with_openai(image_path: str) -> Dict[str, Any]:
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     img_url = _b64_data_url(image_path)
     
-    print("Enviando a OpenAI...")
+    print("Enviando a OpenAI Vision...")
     
-   response = client.chat.completions.create(
-    model=OPENAI_MODEL,
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": _PROMPT},
-            {"type": "image_url", "image_url": {"url": img_url, "detail": "high"}}
-        ]
-    }],
-    response_format={"type": "json_object"},
-    temperature=0,
-    max_tokens=8000  # Sin timeout parameter
-)
-           
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _PROMPT},
+                    {"type": "image_url", "image_url": {"url": img_url, "detail": "high"}}
+                ]
+            }],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=8000
+        )
         
         content = response.choices[0].message.content
         print(f"Respuesta: {len(content)} chars")
         
         data = json.loads(content)
         
-    except TimeoutError:
-        print("Timeout de OpenAI")
-        return {
-            "establecimiento": "Error: Timeout",
-            "total": None,
-            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "productos": [],
-            "metadatos": {"metodo": "error-timeout", "items_detectados": 0}
-        }
     except json.JSONDecodeError as e:
         print(f"Error JSON: {e}")
         data = {"items": []}
