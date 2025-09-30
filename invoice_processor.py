@@ -137,6 +137,7 @@ def clean_description(text):
 def extract_text_tesseract(image_path):
     """Extrae texto usando Tesseract con múltiples configuraciones"""
     if not TESSERACT_AVAILABLE:
+        print("❌ Tesseract no disponible")
         return ""
     
     processed_path = preprocess_for_ocr(image_path)
@@ -144,13 +145,17 @@ def extract_text_tesseract(image_path):
     try:
         img = Image.open(processed_path)
         
+        print(f"Procesando imagen: {img.size[0]}x{img.size[1]} px")
+        
         # Configuración 1: PSM 6 (bloque uniforme de texto)
         config1 = '--psm 6 --oem 3 -l spa'
         text1 = pytesseract.image_to_string(img, config=config1)
+        print(f"  PSM 6: {len(text1)} caracteres")
         
         # Configuración 2: PSM 4 (columna de texto)
         config2 = '--psm 4 --oem 3 -l spa'
         text2 = pytesseract.image_to_string(img, config=config2)
+        print(f"  PSM 4: {len(text2)} caracteres")
         
         # Combinar resultados
         combined = text1 + "\n" + text2
@@ -162,11 +167,18 @@ def extract_text_tesseract(image_path):
             except:
                 pass
         
-        print(f"✓ Texto extraído: {len(combined)} caracteres")
+        print(f"✓ Texto total extraído: {len(combined)} caracteres")
+        
+        # Mostrar primeras líneas para debug
+        if combined:
+            preview = '\n'.join(combined.split('\n')[:5])
+            print(f"Vista previa:\n{preview}")
+        
         return combined
         
     except Exception as e:
-        print(f"⚠️ Error en Tesseract: {e}")
+        print(f"❌ Error en Tesseract: {e}")
+        traceback.print_exc()
         return ""
 
 # ========================================
@@ -359,11 +371,83 @@ def process_invoice_products(file_path):
         traceback.print_exc()
         return None
 
+def setup_document_ai():
+    """Configura Document AI"""
+    required_vars = [
+        "GCP_PROJECT_ID",
+        "DOC_AI_LOCATION", 
+        "DOC_AI_PROCESSOR_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON"
+    ]
+    for var in required_vars:
+        if not os.environ.get(var):
+            return False
+    
+    credentials_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    try:
+        json.loads(credentials_json)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(credentials_json)
+            temp_path = f.name
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+        return True
+    except:
+        return False
+
 def process_with_document_ai(file_path):
     """Fallback: usar Document AI si Tesseract falla"""
+    if not DOCUMENT_AI_AVAILABLE:
+        raise Exception("Document AI no disponible")
+    
     print("Usando Document AI como fallback...")
-    # Aquí iría tu código de Document AI actual
-    return None
+    
+    try:
+        setup_document_ai()
+        
+        from google.cloud import documentai
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
+        
+        with open(file_path, "rb") as f:
+            content = f.read()
+        
+        mime_type = "image/jpeg"
+        if file_path.lower().endswith('.png'):
+            mime_type = "image/png"
+        
+        result = client.process_document(
+            request=documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(
+                    content=content,
+                    mime_type=mime_type
+                )
+            )
+        )
+        
+        text = result.document.text
+        establecimiento = extract_vendor(text)
+        total = extract_total(text)
+        productos = parse_products_from_text(text)
+        
+        print(f"✓ Document AI extrajo {len(productos)} productos")
+        
+        return {
+            "establecimiento": establecimiento,
+            "total": total,
+            "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "productos": productos,
+            "metadatos": {
+                "metodo": "document_ai_fallback",
+                "productos_detectados": len(productos),
+                "tiempo_segundos": 0
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error en Document AI: {e}")
+        traceback.print_exc()
+        raise Exception(f"Fallback a Document AI falló: {str(e)}")
 
 # Alias
 process_invoice_complete = process_invoice_products
