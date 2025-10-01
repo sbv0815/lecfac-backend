@@ -724,12 +724,12 @@ async def save_invoice_with_image(
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
         print(f"✓ Imagen guardada en BD: {imagen_guardada}")
 
-# Eliminar archivo temporal
-try:
-    os.unlink(temp_file.name)
-    temp_file = None
-except Exception as _:
-    pass
+        # Eliminar archivo temporal
+        try:
+            os.unlink(temp_file.name)
+            temp_file = None
+        except Exception as _:
+            pass
 
         # Eliminar archivo temporal
         try:
@@ -813,7 +813,7 @@ except Exception as _:
         "alertas": alertas
         },
         "productos_guardados": productos_guardados,
-        "imagen_guardada": True,  # ← Cambiar de hardcoded a la variable
+        "imagen_guardada": imagen_guardada,  # ← usar la variable
         "mensaje": f"Factura guardada con {productos_guardados} productos"
         }
 
@@ -860,6 +860,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
