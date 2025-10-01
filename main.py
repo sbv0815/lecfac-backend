@@ -963,6 +963,38 @@ async def debug_factura(factura_id: int):
         "imagen_status": result[2] if result else None,
         "imagen_size_bytes": result[3] if result else None
     }
+
+@app.get("/admin/facturas/{factura_id}/check-image")
+async def check_image(factura_id: int):
+    """Debug: verificar si imagen existe"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT 
+            id,
+            imagen_mime,
+            CASE 
+                WHEN imagen_data IS NULL THEN 'NULL'
+                ELSE 'EXISTS'
+            END as status,
+            LENGTH(imagen_data) as size_bytes
+        FROM facturas 
+        WHERE id = %s
+    """, (factura_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        return {"error": "Factura no encontrada"}
+    
+    return {
+        "factura_id": result[0],
+        "imagen_mime": result[1],
+        "imagen_status": result[2],
+        "imagen_size": result[3]
+    }
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -971,6 +1003,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
