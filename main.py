@@ -562,8 +562,15 @@ async def upload_invoice(
         
         # Guardar imagen
         mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
-        save_image_to_db(factura_id, temp_file.name, mime)
-        print(f"✓ Imagen guardada")
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
+        print(f"✓ Imagen guardada en BD: {imagen_guardada}")
+
+# Eliminar archivo temporal
+try:
+    os.unlink(temp_file.name)
+    temp_file = None
+except Exception as _:
+    pass
         
         # Limpiar archivo temporal
         os.unlink(temp_file.name)
@@ -713,8 +720,15 @@ async def save_invoice_with_image(
             # Fallback simple por extensión desconocida
             mime = "image/jpeg"
 
-        save_image_to_db(factura_id, temp_file.name, mime)
-        print("✓ Imagen guardada en BD")
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
+        print(f"✓ Imagen guardada en BD: {imagen_guardada}")
+
+# Eliminar archivo temporal
+try:
+    os.unlink(temp_file.name)
+    temp_file = None
+except Exception as _:
+    pass
 
         # Eliminar archivo temporal
         try:
@@ -790,15 +804,16 @@ async def save_invoice_with_image(
         print("======================================================================")
 
         return {
-            "success": True,
-            "factura_id": factura_id,
-            "validacion": {
-                "puntaje": puntaje,
-                "estado": estado,
-                "alertas": alertas
-            },
-            "productos_guardados": productos_guardados,
-            "mensaje": f"Factura guardada con {productos_guardados} productos"
+        "success": True,
+        "factura_id": factura_id,
+        "validacion": {
+        "puntaje": puntaje,
+        "estado": estado,
+        "alertas": alertas
+        },
+        "productos_guardados": productos_guardados,
+        "imagen_guardada": True,  # ← Cambiar de hardcoded a la variable
+        "mensaje": f"Factura guardada con {productos_guardados} productos"
         }
 
     except HTTPException:
@@ -844,6 +859,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
