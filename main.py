@@ -20,6 +20,8 @@ from database import (
 from claude_invoice import parse_invoice_with_claude
 from fastapi.responses import Response
 from admin import router as admin_router
+from fastapi.responses import FileResponse
+import os
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -46,6 +48,11 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+@app.get("/editor.html")
+async def serve_editor():
+    """Servir el editor HTML"""
+    return FileResponse("editor.html")
 
 app.add_middleware(
     CORSMiddleware,
@@ -1173,10 +1180,7 @@ async def marcar_como_validada(factura_id: int):
     except Exception as e:
         raise HTTPException(500, str(e))
 
-@app.get("/editor.html")
-async def serve_editor():
-    """Servir el editor HTML"""
-    return FileResponse("editor.html")
+
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -1185,6 +1189,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
