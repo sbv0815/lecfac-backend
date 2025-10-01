@@ -426,12 +426,23 @@ async def save_invoice(invoice: SaveInvoice):
                 else:
                     producto_id = manejar_producto_ean(cursor, codigo, nombre)
                 
-                cursor.execute(
-                    """INSERT INTO precios_productos 
-                       (producto_id, establecimiento, cadena, precio, usuario_id, factura_id, fecha_reporte)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (producto_id, invoice.establecimiento, cadena, valor, invoice.usuario_id, factura_id, datetime.now())
+                    # ✅ CORRECTO (sin fecha_registro)
+                    cursor.execute("""
+                    INSERT INTO precios_productos (
+                    producto_id,
+                    factura_id,
+                    precio,
+                    establecimiento,
+                    cadena
                 )
+                    VALUES (%s, %s, %s, %s, %s)
+            """, (
+                producto_id,
+                factura_id,
+                precio,
+                establecimiento,
+                cadena
+                ))
                 
                 cursor.execute(
                     "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
@@ -835,6 +846,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
