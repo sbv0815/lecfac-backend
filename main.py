@@ -563,24 +563,28 @@ async def upload_invoice(
         # Guardar imagen
         mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
-        print(f"✓ Imagen guardada en BD: {imagen_guardada}")
-
-        # Eliminar archivo temporal
-        try:
-            os.unlink(temp_file.name)
-            temp_file = None
-        except Exception as _:
-            pass
+        print(f"✓ Imagen guardada: {imagen_guardada}")
         
         # Limpiar archivo temporal
-        os.unlink(temp_file.name)
+        try:
+            os.unlink(temp_file.name)
+        except Exception:
+            pass
         
         # Guardar productos
+        productos_guardados = 0
         for prod in productos:
+            codigo = prod.get("codigo", "")
+            nombre = prod.get("nombre", "")
+            precio = prod.get("precio", 0) or prod.get("valor", 0)
+            
+            if not codigo or not nombre:
+                continue
+            
             cursor.execute("""
                 SELECT id FROM productos_catalogo 
                 WHERE codigo_ean = %s
-            """, (prod["codigo"],))
+            """, (codigo,))
             
             producto = cursor.fetchone()
             
@@ -590,20 +594,18 @@ async def upload_invoice(
                 cursor.execute("""
                     INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
                     VALUES (%s, %s) RETURNING id
-                """, (prod["codigo"], prod["nombre"]))
+                """, (codigo, nombre))
                 producto_id = cursor.fetchone()[0]
             
-            # Guardar precio con establecimiento y cadena
+            # Guardar precio
             cursor.execute("""
-            INSERT INTO precios_productos (
-                producto_id, 
-                factura_id, 
-                precio, 
-                establecimiento, 
-                cadena
+                INSERT INTO precios_productos (
+                    producto_id, factura_id, precio, establecimiento, cadena
                 )
                 VALUES (%s, %s, %s, %s, %s)
-                """, (producto_id, factura_id, precio, establecimiento, cadena))
+            """, (producto_id, factura_id, precio, establecimiento, cadena))
+            
+            productos_guardados += 1
         
         conn.commit()
         cursor.close()
@@ -612,7 +614,8 @@ async def upload_invoice(
         return {
             "success": True,
             "factura_id": factura_id,
-            "productos": productos,
+            "productos_guardados": productos_guardados,
+            "imagen_guardada": imagen_guardada,
             "establecimiento": establecimiento
         }
         
@@ -622,8 +625,6 @@ async def upload_invoice(
         if 'temp_file' in locals() and os.path.exists(temp_file.name):
             os.unlink(temp_file.name)
         raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/invoices/save-with-image")
 async def save_invoice_with_image(
     file: UploadFile = File(...),
@@ -859,6 +860,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
