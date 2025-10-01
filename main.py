@@ -6,9 +6,8 @@ from datetime import datetime
 import os
 import tempfile
 import traceback
-from storage import save_image_to_db
-
-# Importar database
+from storage import save_image_to_db, get_image_from_db
+from validator import FacturaValidator  # ← AGREGAR ESTE
 from database import (
     create_tables, 
     get_db_connection, 
@@ -18,13 +17,9 @@ from database import (
     obtener_productos_frecuentes_faltantes,
     confirmar_producto_manual
 )
-
-# Importar procesador OpenAI
 from openai_invoice import parse_invoice_with_openai
 from fastapi.responses import Response
-from storage import save_image_to_db, get_image_from_db
 from admin import router as admin_router
-from validator import FacturaValidator
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -840,6 +835,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
