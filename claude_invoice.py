@@ -1,6 +1,5 @@
 """
 Procesador de facturas usando Claude Vision API
-Reemplaza a Document AI
 """
 
 import anthropic
@@ -10,9 +9,7 @@ import json
 from typing import Dict
 
 def parse_invoice_with_claude(image_path: str) -> Dict:
-    """
-    Procesa factura con Claude Vision API
-    """
+    """Procesa factura con Claude Vision API"""
     
     try:
         print("======================================================================")
@@ -27,7 +24,7 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         media_type = "image/png" if image_path.lower().endswith('.png') else "image/jpeg"
         
         # Cliente Anthropic
-       api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
         
