@@ -53,31 +53,3 @@ def get_image_from_db(factura_id: int):
     except Exception as e:
         print(f"Error recuperando imagen: {e}")
         return None, None
-
-def get_image_from_db(factura_id: int):
-    """Recupera imagen de BD"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT imagen_bytes, imagen_mime 
-            FROM facturas 
-            WHERE id = %s
-        """, (factura_id,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result and result[0]:
-            return result[0], result[1]
-        
-        return None, None
-        
-    except Exception as e:
-        print(f"Error recuperando imagen: {e}")
-        return None, None
-        
-    except Exception as e:
-        print(f"Error obteniendo imagen: {e}")
-        return None, None
