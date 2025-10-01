@@ -387,6 +387,14 @@ async def save_invoice(invoice: SaveInvoice):
         )
         factura_id = cursor.fetchone()[0]
         print(f"Factura ID: {factura_id}")
+
+        # Guardar imagen si viene
+        if invoice.temp_file_path and os.path.exists(invoice.temp_file_path):
+        from storage import save_image_to_db
+        mime = "image/jpeg" if invoice.temp_file_path.endswith(('.jpg', '.jpeg')) else "image/png"
+        save_image_to_db(factura_id, invoice.temp_file_path, mime)
+        os.unlink(invoice.temp_file_path)  # Limpiar temp
+        print(f"✓ Imagen guardada para factura {factura_id}")
         
         # Guardar productos
         productos_guardados = 0
@@ -501,6 +509,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
