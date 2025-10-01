@@ -381,9 +381,9 @@ async def save_invoice(invoice: SaveInvoice):
         cadena = detectar_cadena(invoice.establecimiento)
         
         cursor.execute(
-            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
+        """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
+       VALUES (%s, %s, %s, %s) RETURNING id""",
+        (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
         )
         factura_id = cursor.fetchone()[0]
         print(f"Factura ID: {factura_id}")
@@ -501,6 +501,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
