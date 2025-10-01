@@ -629,10 +629,10 @@ async def save_invoice_with_image(
     file: UploadFile = File(...),
     usuario_id: int = Form(...),
     establecimiento: str = Form(...),
-    total: float = Form(0),               # ← nuevo campo
+    total: float = Form(0),
     productos: str = Form(...)
 ):
-    """Guardar factura con imagen + validación de calidad y detalle de productos."""
+    """Guardar factura con imagen + validación de calidad"""
     import json
 
     temp_file = None
@@ -640,41 +640,34 @@ async def save_invoice_with_image(
     cursor = None
 
     try:
-        print("=== GUARDANDO FACTURA CON IMAGEN (v2 con validación) ===")
+        print("=== GUARDANDO FACTURA CON IMAGEN ===")
         print(f"Usuario: {usuario_id}")
         print(f"Establecimiento: {establecimiento}")
-        print(f"Archivo: {file.filename}")
-        print(f"Total declarado: {total}")
+        print(f"Total: {total}")
 
-        # --- Parseo de productos ---
-        try:
-            productos_list = json.loads(productos)
-            if not isinstance(productos_list, list):
-                raise ValueError("El campo 'productos' debe ser un JSON array.")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"JSON inválido en 'productos': {e}")
+        # Parsear productos
+        productos_list = json.loads(productos)
+        if not isinstance(productos_list, list):
+            raise ValueError("productos debe ser un array")
+        
+        print(f"Productos: {len(productos_list)}")
 
-        print(f"Productos recibidos: {len(productos_list)}")
-
-        # --- Guardar imagen temporalmente ---
+        # Guardar imagen temporalmente
         content = await file.read()
         if not content:
-            raise HTTPException(status_code=400, detail="La imagen está vacía.")
+            raise HTTPException(400, "Imagen vacía")
 
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         temp_file.write(content)
         temp_file.close()
-        print(f"Imagen temporal: {temp_file.name}")
 
-        # --- Conexión BD ---
+        # Conexión BD
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # --- Detectar cadena a partir del establecimiento ---
         cadena = detectar_cadena(establecimiento) or ""
-        print(f"Cadena detectada: '{cadena}'")
 
-        # --- VALIDACIÓN DE CALIDAD ---
+        # Validación
         puntaje, estado, alertas = FacturaValidator.validar_factura(
             establecimiento=establecimiento,
             total=total,
@@ -683,16 +676,11 @@ async def save_invoice_with_image(
             cadena=cadena
         )
 
-        print("=== VALIDACIÓN DE FACTURA ===")
-        print(f"Puntaje: {puntaje}/100")
-        print(f"Estado: {estado}")
-        if alertas:
-            for a in alertas:
-                print(f"- {a}")
-        else:
-            print("- Sin alertas")
+        print(f"Validación: {puntaje}/100 - {estado}")
+        for alerta in alertas:
+            print(f"  - {alerta}")
 
-        # --- Crear factura con campos de validación ---
+        # Crear factura
         cursor.execute("""
             INSERT INTO facturas (
                 usuario_id, establecimiento, cadena,
@@ -709,149 +697,116 @@ async def save_invoice_with_image(
         factura_id = cursor.fetchone()[0]
         print(f"✓ Factura ID: {factura_id}")
 
-        # --- Guardar imagen en BD ---
-        original = (file.filename or "").lower()
-        mime = "image/jpeg"
-        if original.endswith(".png"):
-            mime = "image/png"
-        elif original.endswith(".jpeg") or original.endswith(".jpg"):
-            mime = "image/jpeg"
-        else:
-            # Fallback simple por extensión desconocida
-            mime = "image/jpeg"
-
-        imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
-        print(f"✓ Imagen guardada en BD: {imagen_guardada}")
-
-        # Eliminar archivo temporal
-        try:
-            os.unlink(temp_file.name)
-            temp_file = None
-        except Exception as _:
-            pass
-
-        # Eliminar archivo temporal
-        try:
-            os.unlink(temp_file.name)
-            temp_file = None
-        except Exception as _:
-            pass
-
-        # --- Guardar productos y precios ---
+        # Guardar productos
         productos_guardados = 0
         for prod in productos_list:
-            # Extracción robusta de campos
             codigo = str(prod.get("codigo", "") or "").strip()
             nombre = str(prod.get("nombre", "") or "").strip()
-
-            # Precio: permitir str/float/int y normalizar
             precio_val = prod.get("precio", 0)
+            
             try:
-                # algunos OCR devuelven comas
                 if isinstance(precio_val, str):
                     precio_val = precio_val.replace(",", ".").strip()
                 precio = float(precio_val)
-            except Exception:
+            except:
                 precio = 0.0
 
-            # Saltar si faltan datos esenciales
             if not codigo or not nombre:
-                print(f"⚠ Producto omitido por datos insuficientes: codigo='{codigo}', nombre='{nombre}'")
                 continue
 
-            # Buscar o crear producto en catálogo
-            cursor.execute("""
-                SELECT id FROM productos_catalogo
-                WHERE codigo_ean = %s
-            """, (codigo,))
+            # Buscar o crear producto
+            cursor.execute("SELECT id FROM productos_catalogo WHERE codigo_ean = %s", (codigo,))
             row = cursor.fetchone()
 
             if row:
                 producto_id = row[0]
             else:
-                cursor.execute("""
-                    INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
-                    VALUES (%s, %s)
-                    RETURNING id
-                """, (codigo, nombre))
+                cursor.execute(
+                    "INSERT INTO productos_catalogo (codigo_ean, nombre_producto) VALUES (%s, %s) RETURNING id",
+                    (codigo, nombre)
+                )
                 producto_id = cursor.fetchone()[0]
 
-            # Insertar precio asociado a la factura, establecimiento y cadena
-            # (si tu tabla tiene más columnas como moneda, fecha_registro, etc., agrégalas aquí)
+            # Guardar precio
             cursor.execute("""
-                INSERT INTO precios_productos (
-                    producto_id,
-                    factura_id,
-                    precio,
-                    establecimiento,
-                    cadena
-                )
+                INSERT INTO precios_productos (producto_id, factura_id, precio, establecimiento, cadena)
                 VALUES (%s, %s, %s, %s, %s)
-            """, (
-                producto_id,
-                factura_id,
-                precio,
-                establecimiento,
-                cadena
-            ))
+            """, (producto_id, factura_id, precio, establecimiento, cadena))
 
             productos_guardados += 1
 
-        # --- Commit ---
+        # COMMIT PRIMERO
         conn.commit()
+        cursor.close()
+        conn.close()
+        conn = None
+        cursor = None
 
         print(f"✓ {productos_guardados} productos guardados")
+
+        # AHORA guardar imagen (después del commit)
+        mime = "image/jpeg"
+        if file.filename and file.filename.lower().endswith(".png"):
+            mime = "image/png"
+        
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
+
+        # Limpiar temporal
+        try:
+            os.unlink(temp_file.name)
+            temp_file = None
+        except:
+            pass
+
         print("======================================================================")
 
         return {
-        "success": True,
-        "factura_id": factura_id,
-        "validacion": {
-        "puntaje": puntaje,
-        "estado": estado,
-        "alertas": alertas
-        },
-        "productos_guardados": productos_guardados,
-        "imagen_guardada": imagen_guardada,  # ← usar la variable
-        "mensaje": f"Factura guardada con {productos_guardados} productos"
+            "success": True,
+            "factura_id": factura_id,
+            "validacion": {
+                "puntaje": puntaje,
+                "estado": estado,
+                "alertas": alertas
+            },
+            "productos_guardados": productos_guardados,
+            "imagen_guardada": imagen_guardada,
+            "mensaje": f"Factura guardada con {productos_guardados} productos"
         }
 
     except HTTPException:
-        # No reempaquetar si ya es HTTPException
         if conn:
             try:
                 conn.rollback()
-            except Exception:
+            except:
                 pass
         raise
+        
     except Exception as e:
-        print(f"❌ Error guardando factura: {e}")
+        print(f"❌ Error: {e}")
         traceback.print_exc()
         if conn:
             try:
                 conn.rollback()
-            except Exception:
+            except:
                 pass
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, str(e))
+        
     finally:
-        # Cierre de cursor/conexión
         if cursor:
             try:
                 cursor.close()
-            except Exception:
+            except:
                 pass
         if conn:
             try:
                 conn.close()
-            except Exception:
+            except:
                 pass
-        # Limpieza del temporal si sigue existiendo
         if temp_file and os.path.exists(temp_file.name):
             try:
                 os.unlink(temp_file.name)
-            except Exception:
+            except:
                 pass
-
 @app.get("/admin/facturas/{factura_id}")
 async def get_factura_detalle(factura_id: int):
     """Obtener factura completa con productos"""
@@ -1003,6 +958,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
