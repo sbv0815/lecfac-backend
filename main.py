@@ -606,24 +606,22 @@ async def upload_invoice(
 @app.post("/invoices/save-with-image")
 async def save_invoice_with_image(
     file: UploadFile = File(...),
-    invoice_data: str = Form(...)
+    usuario_id: int = Form(...),
+    establecimiento: str = Form(...),
+    productos: str = Form(...)  # JSON string
 ):
-    """Guardar factura con imagen - Recibe imagen + JSON de productos"""
+    """Guardar factura con imagen - Recibe imagen + datos del formulario"""
     import json
     
     try:
         print(f"=== GUARDANDO FACTURA CON IMAGEN ===")
-        
-        # Parsear datos JSON
-        data = json.loads(invoice_data)
-        usuario_id = data.get("usuario_id", 1)
-        establecimiento = data.get("establecimiento", "Desconocido")
-        productos = data.get("productos", [])
-        
         print(f"Usuario: {usuario_id}")
         print(f"Establecimiento: {establecimiento}")
-        print(f"Productos: {len(productos)}")
         print(f"Archivo: {file.filename}")
+        
+        # Parsear productos (viene como JSON string)
+        productos_list = json.loads(productos)
+        print(f"Productos: {len(productos_list)}")
         
         # Guardar imagen temporalmente
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
@@ -658,7 +656,7 @@ async def save_invoice_with_image(
         
         # Guardar productos
         productos_guardados = 0
-        for prod in productos:
+        for prod in productos_list:
             codigo = prod.get("codigo", "")
             nombre = prod.get("nombre", "")
             precio = prod.get("precio", 0)
@@ -722,6 +720,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
