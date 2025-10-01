@@ -30,19 +30,27 @@ def save_image_to_db(factura_id: int, image_path: str, mime_type: str = "image/j
         return False
 
 def get_image_from_db(factura_id: int):
-    """Obtiene imagen desde PostgreSQL"""
+    """Recupera imagen de BD"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s",
-            (factura_id,)
-        )
+        
+        cursor.execute("""
+            SELECT imagen_bytes, imagen_mime 
+            FROM facturas 
+            WHERE id = %s
+        """, (factura_id,))
+        
         result = cursor.fetchone()
         conn.close()
         
         if result and result[0]:
-            return result[0], result[1]  # (bytes, mime_type)
+            return result[0], result[1]
+        
+        return None, None
+        
+    except Exception as e:
+        print(f"Error recuperando imagen: {e}")
         return None, None
         
     except Exception as e:
