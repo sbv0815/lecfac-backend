@@ -1172,6 +1172,11 @@ async def marcar_como_validada(factura_id: int):
         return {"success": True, "message": "Factura validada"}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+@app.get("/editor.html")
+async def serve_editor():
+    """Servir el editor HTML"""
+    return FileResponse("editor.html")
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -1180,6 +1185,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
