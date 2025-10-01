@@ -51,7 +51,7 @@ app = FastAPI(
 
 @app.get("/editor.html")
 async def serve_editor():
-    """Servir el editor HTML"""
+    """Servir editor de facturas"""
     return FileResponse("editor.html")
 
 app.add_middleware(
@@ -1189,6 +1189,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
