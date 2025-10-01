@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import tempfile
 import traceback
+from storage import save_image_to_db
 
 # Importar database
 from database import (
@@ -381,12 +382,19 @@ async def save_invoice(invoice: SaveInvoice):
         cadena = detectar_cadena(invoice.establecimiento)
         
         cursor.execute(
-        """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
-       VALUES (%s, %s, %s, %s) RETURNING id""",
-        (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
+            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
         )
         factura_id = cursor.fetchone()[0]
         print(f"Factura ID: {factura_id}")
+        
+        # Guardar imagen si viene (4 espacios de indentación)
+        if invoice.temp_file_path and os.path.exists(invoice.temp_file_path):
+            mime = "image/jpeg" if invoice.temp_file_path.endswith(('.jpg', '.jpeg')) else "image/png"
+            save_image_to_db(factura_id, invoice.temp_file_path, mime)
+            os.unlink(invoice.temp_file_path)  # Limpiar temp
+            print(f"✓ Imagen guardada para factura {factura_id}")
 
         # Guardar imagen si viene
         if invoice.temp_file_path and os.path.exists(invoice.temp_file_path):
@@ -509,6 +517,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
