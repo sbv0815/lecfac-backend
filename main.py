@@ -434,15 +434,15 @@ async def save_invoice(invoice: SaveInvoice):
                     precio,
                     establecimiento,
                     cadena
-                )
+                        )
                     VALUES (%s, %s, %s, %s, %s)
-            """, (
-                producto_id,
-                factura_id,
-                precio,
-                establecimiento,
-                cadena
-                ))
+                    """, (
+                    producto_id,
+                    factura_id,
+                    precio,
+                    establecimiento,
+                    cadena
+                        ))
                 
                 cursor.execute(
                     "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
@@ -846,6 +846,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
