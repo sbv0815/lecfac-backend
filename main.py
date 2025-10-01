@@ -24,6 +24,7 @@ from openai_invoice import parse_invoice_with_openai
 from fastapi.responses import Response
 from storage import save_image_to_db, get_image_from_db
 from admin import router as admin_router
+from validator import FacturaValidator
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -615,115 +616,222 @@ async def save_invoice_with_image(
     file: UploadFile = File(...),
     usuario_id: int = Form(...),
     establecimiento: str = Form(...),
+    total: float = Form(0),               # ← nuevo campo
     productos: str = Form(...)
 ):
-    """Guardar factura con imagen"""
+    """Guardar factura con imagen + validación de calidad y detalle de productos."""
     import json
-    
+
+    temp_file = None
+    conn = None
+    cursor = None
+
     try:
-        print(f"=== GUARDANDO FACTURA CON IMAGEN ===")
+        print("=== GUARDANDO FACTURA CON IMAGEN (v2 con validación) ===")
         print(f"Usuario: {usuario_id}")
         print(f"Establecimiento: {establecimiento}")
         print(f"Archivo: {file.filename}")
-        
-        productos_list = json.loads(productos)
-        print(f"Productos: {len(productos_list)}")
-        
-        # Guardar imagen temporalmente
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        print(f"Total declarado: {total}")
+
+        # --- Parseo de productos ---
+        try:
+            productos_list = json.loads(productos)
+            if not isinstance(productos_list, list):
+                raise ValueError("El campo 'productos' debe ser un JSON array.")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"JSON inválido en 'productos': {e}")
+
+        print(f"Productos recibidos: {len(productos_list)}")
+
+        # --- Guardar imagen temporalmente ---
         content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="La imagen está vacía.")
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         temp_file.write(content)
         temp_file.close()
-        
         print(f"Imagen temporal: {temp_file.name}")
-        
-        # Conexión BD
+
+        # --- Conexión BD ---
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cadena = detectar_cadena(establecimiento)
-        
-        # Crear factura
-        cursor.execute(
-            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (usuario_id, establecimiento, cadena, datetime.now())
+
+        # --- Detectar cadena a partir del establecimiento ---
+        cadena = detectar_cadena(establecimiento) or ""
+        print(f"Cadena detectada: '{cadena}'")
+
+        # --- VALIDACIÓN DE CALIDAD ---
+        puntaje, estado, alertas = FacturaValidator.validar_factura(
+            establecimiento=establecimiento,
+            total=total,
+            tiene_imagen=True,
+            productos=productos_list,
+            cadena=cadena
         )
+
+        print("=== VALIDACIÓN DE FACTURA ===")
+        print(f"Puntaje: {puntaje}/100")
+        print(f"Estado: {estado}")
+        if alertas:
+            for a in alertas:
+                print(f"- {a}")
+        else:
+            print("- Sin alertas")
+
+        # --- Crear factura con campos de validación ---
+        cursor.execute("""
+            INSERT INTO facturas (
+                usuario_id, establecimiento, cadena,
+                fecha_cargue, total_factura, estado_validacion,
+                puntaje_calidad, tiene_imagen
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            usuario_id, establecimiento, cadena,
+            datetime.now(), total, estado,
+            puntaje, True
+        ))
         factura_id = cursor.fetchone()[0]
         print(f"✓ Factura ID: {factura_id}")
-        
-        # Guardar imagen
-        mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
+
+        # --- Guardar imagen en BD ---
+        original = (file.filename or "").lower()
+        mime = "image/jpeg"
+        if original.endswith(".png"):
+            mime = "image/png"
+        elif original.endswith(".jpeg") or original.endswith(".jpg"):
+            mime = "image/jpeg"
+        else:
+            # Fallback simple por extensión desconocida
+            mime = "image/jpeg"
+
         save_image_to_db(factura_id, temp_file.name, mime)
-        print(f"✓ Imagen guardada en BD")
-        
-        # Limpiar temp
-        os.unlink(temp_file.name)
-        
-        # Guardar productos
+        print("✓ Imagen guardada en BD")
+
+        # Eliminar archivo temporal
+        try:
+            os.unlink(temp_file.name)
+            temp_file = None
+        except Exception as _:
+            pass
+
+        # --- Guardar productos y precios ---
         productos_guardados = 0
         for prod in productos_list:
-            codigo = prod.get("codigo", "")
-            nombre = prod.get("nombre", "")
-            precio = prod.get("precio", 0)
-            
+            # Extracción robusta de campos
+            codigo = str(prod.get("codigo", "") or "").strip()
+            nombre = str(prod.get("nombre", "") or "").strip()
+
+            # Precio: permitir str/float/int y normalizar
+            precio_val = prod.get("precio", 0)
+            try:
+                # algunos OCR devuelven comas
+                if isinstance(precio_val, str):
+                    precio_val = precio_val.replace(",", ".").strip()
+                precio = float(precio_val)
+            except Exception:
+                precio = 0.0
+
+            # Saltar si faltan datos esenciales
             if not codigo or not nombre:
+                print(f"⚠ Producto omitido por datos insuficientes: codigo='{codigo}', nombre='{nombre}'")
                 continue
-            
-            # Buscar o crear producto
+
+            # Buscar o crear producto en catálogo
             cursor.execute("""
-                SELECT id FROM productos_catalogo 
+                SELECT id FROM productos_catalogo
                 WHERE codigo_ean = %s
             """, (codigo,))
-            
-            producto = cursor.fetchone()
-            
-            if producto:
-                producto_id = producto[0]
+            row = cursor.fetchone()
+
+            if row:
+                producto_id = row[0]
             else:
                 cursor.execute("""
                     INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
-                    VALUES (%s, %s) RETURNING id
+                    VALUES (%s, %s)
+                    RETURNING id
                 """, (codigo, nombre))
                 producto_id = cursor.fetchone()[0]
-            
-            # Guardar precio CON establecimiento y cadena
+
+            # Insertar precio asociado a la factura, establecimiento y cadena
+            # (si tu tabla tiene más columnas como moneda, fecha_registro, etc., agrégalas aquí)
             cursor.execute("""
                 INSERT INTO precios_productos (
-                    producto_id, 
-                    factura_id, 
-                    precio, 
-                    establecimiento, 
-                    cadena
+                    producto_id,
+                    factura_id,
+                    precio,
+                    establecimiento,
+                    cadena,
+                    fecha_registro
                 )
-                VALUES (%s, %s, %s, %s, %s)
-            """, (producto_id, factura_id, precio, establecimiento, cadena))
-            
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                producto_id,
+                factura_id,
+                precio,
+                establecimiento,
+                cadena,
+                datetime.now()
+            ))
+
             productos_guardados += 1
-        
+
+        # --- Commit ---
         conn.commit()
-        cursor.close()
-        conn.close()
-        
+
         print(f"✓ {productos_guardados} productos guardados")
-        print(f"======================================================================")
-        
+        print("======================================================================")
+
         return {
             "success": True,
             "factura_id": factura_id,
+            "validacion": {
+                "puntaje": puntaje,
+                "estado": estado,
+                "alertas": alertas
+            },
             "productos_guardados": productos_guardados,
             "mensaje": f"Factura guardada con {productos_guardados} productos"
         }
-        
+
+    except HTTPException:
+        # No reempaquetar si ya es HTTPException
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        raise
     except Exception as e:
         print(f"❌ Error guardando factura: {e}")
         traceback.print_exc()
-        if 'conn' in locals():
-            conn.rollback()
-            conn.close()
-        if 'temp_file' in locals() and os.path.exists(temp_file.name):
-            os.unlink(temp_file.name)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Cierre de cursor/conexión
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        # Limpieza del temporal si sigue existiendo
+        if temp_file and os.path.exists(temp_file.name):
+            try:
+                os.unlink(temp_file.name)
+            except Exception:
+                pass
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -732,6 +840,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
