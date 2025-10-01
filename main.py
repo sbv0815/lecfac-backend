@@ -75,7 +75,7 @@ class SaveInvoice(BaseModel):
     usuario_id: int
     establecimiento: str
     productos: list
-    temp_file_path: str = None  # Ruta temporal de la imagen
+    temp_file_path: str = None  # Agregar este campo
 
 # ========================================
 # FUNCIONES AUXILIARES
@@ -501,6 +501,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
