@@ -20,6 +20,8 @@ from database import (
 
 # Importar procesador OpenAI
 from openai_invoice import parse_invoice_with_openai
+from fastapi.responses import Response
+from storage import save_image_to_db, get_image_from_db
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -323,36 +325,32 @@ async def get_user_invoices(user_id: int):
 
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...)):
-    """Procesa factura con OpenAI Vision"""
+    """Procesa factura con Document AI"""
     allowed_extensions = ('.jpg', '.jpeg', '.png', '.pdf')
     file_extension = (file.filename or "").lower()
     
     if not any(file_extension.endswith(ext) for ext in allowed_extensions):
-        raise HTTPException(400, f"Tipo de archivo no soportado. Use: {', '.join(allowed_extensions)}")
+        raise HTTPException(400, f"Tipo no soportado")
     
     temp_file_path = None
     try:
-        suffix = ".png"
-        if file_extension.endswith(('.jpg', '.jpeg')):
-            suffix = ".jpg"
-        elif file_extension.endswith('.pdf'):
-            suffix = ".pdf"
+        suffix = ".jpg" if file_extension.endswith(('.jpg', '.jpeg')) else ".png"
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             content = await file.read()
             temp_file.write(content)
             temp_file_path = temp_file.name
         
-        # Llamada directa, sin asyncio wrapper
         result = parse_invoice_with_openai(temp_file_path)
         
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.unlink(temp_file_path)
+        # NO eliminar el archivo temporal aún
+        # Se eliminará después de guardar en /invoices/save
         
-        if not result:
-            raise HTTPException(500, "Error procesando factura")
-        
-        return {"success": True, "data": result}
+        return {
+            "success": True, 
+            "data": result,
+            "temp_file_path": temp_file_path  # Enviar al frontend
+        }
         
     except Exception as e:
         if temp_file_path and os.path.exists(temp_file_path):
@@ -454,6 +452,16 @@ async def delete_invoice(factura_id: int, usuario_id: int):
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
+
+ @app.get("/admin/facturas/{factura_id}/imagen")
+async def get_factura_image(factura_id: int):
+    """Devuelve la imagen de una factura"""
+    image_data, mime_type = get_image_from_db(factura_id)
+    
+    if not image_data:
+        raise HTTPException(404, "Imagen no encontrada")
+    
+    return Response(content=image_data, media_type=mime_type or "image/jpeg")
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -462,5 +470,6 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
