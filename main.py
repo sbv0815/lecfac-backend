@@ -74,6 +74,7 @@ class SaveInvoice(BaseModel):
     usuario_id: int
     establecimiento: str
     productos: list
+    temp_file_path: str = None  # Ruta temporal de la imagen
 
 # ========================================
 # FUNCIONES AUXILIARES
@@ -362,8 +363,14 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
-    """Guardar factura con productos"""
+    """Guardar factura con imagen en PostgreSQL"""
     try:
+        print(f"=== GUARDANDO FACTURA ===")
+        print(f"Usuario ID: {invoice.usuario_id}")
+        print(f"Establecimiento: {invoice.establecimiento}")
+        print(f"Productos: {len(invoice.productos)}")
+        print(f"Imagen temporal: {invoice.temp_file_path}")
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -375,7 +382,9 @@ async def save_invoice(invoice: SaveInvoice):
             (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
         )
         factura_id = cursor.fetchone()[0]
+        print(f"Factura ID: {factura_id}")
         
+        # Guardar productos
         productos_guardados = 0
         for i, producto in enumerate(invoice.productos):
             codigo = producto.get('codigo')
@@ -383,7 +392,7 @@ async def save_invoice(invoice: SaveInvoice):
             valor = int(producto.get('valor', 0))
             
             try:
-                codigo_valido = codigo and codigo != 'None' and len(codigo) >= 6
+                codigo_valido = codigo and codigo != 'None' and len(codigo) >= 3
                 
                 if codigo_valido and es_codigo_peso_variable(codigo):
                     codigo = generar_codigo_unico(nombre, factura_id, i)
@@ -417,22 +426,41 @@ async def save_invoice(invoice: SaveInvoice):
                 productos_guardados += 1
                 
             except Exception as e:
-                print(f"❌ Error guardando producto {i+1}: {e}")
+                print(f"Error producto {i+1}: {e}")
         
         conn.commit()
+        
+        # Guardar imagen
+        imagen_guardada = False
+        if invoice.temp_file_path and os.path.exists(invoice.temp_file_path):
+            mime = "image/jpeg" if invoice.temp_file_path.endswith(('.jpg', '.jpeg')) else "image/png"
+            imagen_guardada = save_image_to_db(factura_id, invoice.temp_file_path, mime)
+            
+            # Limpiar archivo temporal
+            try:
+                os.unlink(invoice.temp_file_path)
+                print("✓ Archivo temporal eliminado")
+            except:
+                pass
+        
         conn.close()
+        
+        print(f"Productos guardados: {productos_guardados}/{len(invoice.productos)}")
+        print(f"Imagen guardada: {imagen_guardada}")
         
         return {
             "success": True, 
             "factura_id": factura_id,
             "productos_guardados": productos_guardados,
-            "total_productos": len(invoice.productos),
-            "message": f"Factura guardada: {productos_guardados} productos"
+            "imagen_guardada": imagen_guardada,
+            "message": f"Factura guardada con {productos_guardados} productos"
         }
         
     except Exception as e:
+        print(f"ERROR: {str(e)}")
+        import traceback
         traceback.print_exc()
-        raise HTTPException(500, f"Error guardando factura: {str(e)}")
+        raise HTTPException(500, f"Error: {str(e)}")
 
 @app.delete("/invoices/{factura_id}")
 async def delete_invoice(factura_id: int, usuario_id: int):
@@ -470,6 +498,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
