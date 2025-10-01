@@ -327,32 +327,30 @@ async def get_user_invoices(user_id: int):
 
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...)):
-    """Procesa factura con Document AI"""
-    allowed_extensions = ('.jpg', '.jpeg', '.png', '.pdf')
-    file_extension = (file.filename or "").lower()
-    
-    if not any(file_extension.endswith(ext) for ext in allowed_extensions):
-        raise HTTPException(400, f"Tipo no soportado")
-    
-    temp_file_path = None
+    """Procesa factura con Claude Vision"""
     try:
-        suffix = ".jpg" if file_extension.endswith(('.jpg', '.jpeg')) else ".png"
+        # Guardar temporalmente
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close()
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
+        # Procesar con Claude
+        result = parse_invoice_with_claude(temp_file.name)
         
-        result = parse_invoice_with_claude(temp_file_path)
+        if not result["success"]:
+            os.unlink(temp_file.name)
+            return result
         
-        # NO eliminar el archivo temporal aún
-        # Se eliminará después de guardar en /invoices/save
-        
+        # NO eliminar el archivo aún
         return {
-            "success": True, 
-            "data": result,
-            "temp_file_path": temp_file_path  # Enviar al frontend
+            "success": True,
+            "data": result["data"],  # ← ASEGÚRATE QUE ESTO ESTÉ
+            "temp_file_path": temp_file.name
         }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
         
     except Exception as e:
         if temp_file_path and os.path.exists(temp_file_path):
@@ -950,6 +948,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
