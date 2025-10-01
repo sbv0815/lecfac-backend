@@ -480,8 +480,7 @@ async def delete_invoice(factura_id: int, usuario_id: int):
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
-
- @app.get("/admin/facturas/{factura_id}/imagen")
+@app.get("/admin/facturas/{factura_id}/imagen")
 async def get_factura_image(factura_id: int):
     """Devuelve la imagen de una factura"""
     image_data, mime_type = get_image_from_db(factura_id)
@@ -498,6 +497,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
