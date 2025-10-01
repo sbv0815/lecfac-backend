@@ -601,6 +601,119 @@ async def upload_invoice(
         if 'temp_file' in locals() and os.path.exists(temp_file.name):
             os.unlink(temp_file.name)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/invoices/save-with-image")
+async def save_invoice_with_image(
+    file: UploadFile = File(...),
+    invoice_data: str = Form(...)
+):
+    """Guardar factura con imagen - Recibe imagen + JSON de productos"""
+    import json
+    
+    try:
+        print(f"=== GUARDANDO FACTURA CON IMAGEN ===")
+        
+        # Parsear datos JSON
+        data = json.loads(invoice_data)
+        usuario_id = data.get("usuario_id", 1)
+        establecimiento = data.get("establecimiento", "Desconocido")
+        productos = data.get("productos", [])
+        
+        print(f"Usuario: {usuario_id}")
+        print(f"Establecimiento: {establecimiento}")
+        print(f"Productos: {len(productos)}")
+        print(f"Archivo: {file.filename}")
+        
+        # Guardar imagen temporalmente
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close()
+        
+        print(f"Imagen temporal: {temp_file.name}")
+        
+        # Guardar en BD
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cadena = detectar_cadena(establecimiento)
+        
+        # Crear factura
+        cursor.execute(
+            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (usuario_id, establecimiento, cadena, datetime.now())
+        )
+        factura_id = cursor.fetchone()[0]
+        print(f"✓ Factura ID: {factura_id}")
+        
+        # Guardar imagen en BD
+        mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
+        save_image_to_db(factura_id, temp_file.name, mime)
+        print(f"✓ Imagen guardada en BD")
+        
+        # Limpiar archivo temporal
+        os.unlink(temp_file.name)
+        
+        # Guardar productos
+        productos_guardados = 0
+        for prod in productos:
+            codigo = prod.get("codigo", "")
+            nombre = prod.get("nombre", "")
+            precio = prod.get("precio", 0)
+            
+            if not codigo or not nombre:
+                continue
+            
+            # Buscar o crear producto
+            cursor.execute("""
+                SELECT id FROM productos_catalogo 
+                WHERE codigo_ean = %s
+            """, (codigo,))
+            
+            producto = cursor.fetchone()
+            
+            if producto:
+                producto_id = producto[0]
+            else:
+                cursor.execute("""
+                    INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
+                    VALUES (%s, %s) RETURNING id
+                """, (codigo, nombre))
+                producto_id = cursor.fetchone()[0]
+            
+            # Guardar precio
+            cursor.execute("""
+                INSERT INTO precios_productos (producto_id, factura_id, precio)
+                VALUES (%s, %s, %s)
+            """, (producto_id, factura_id, precio))
+            
+            productos_guardados += 1
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"✓ {productos_guardados} productos guardados")
+        print(f"======================================================================")
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "productos_guardados": productos_guardados,
+            "mensaje": f"Factura guardada con {productos_guardados} productos"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error guardando factura: {e}")
+        traceback.print_exc()
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        if 'temp_file' in locals() and os.path.exists(temp_file.name):
+            os.unlink(temp_file.name)
+        raise HTTPException(status_code=500, detail=str(e))
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -609,6 +722,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
