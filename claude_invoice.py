@@ -27,7 +27,7 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         media_type = "image/png" if image_path.lower().endswith('.png') else "image/jpeg"
         
         # Cliente Anthropic
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+       api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
         
