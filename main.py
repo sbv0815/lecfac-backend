@@ -941,6 +941,28 @@ async def actualizar_factura(factura_id: int, datos: dict):
         return {"success": True}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+# En main.py, endpoint temporal de debug
+@app.get("/admin/facturas/{factura_id}/debug")
+async def debug_factura(factura_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, imagen_mime, 
+               CASE WHEN imagen_bytes IS NULL THEN 'NULL' ELSE 'EXISTS' END as imagen_status,
+               LENGTH(imagen_bytes) as imagen_size
+        FROM facturas WHERE id = %s
+    """, (factura_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    return {
+        "factura_id": result[0] if result else None,
+        "mime": result[1] if result else None,
+        "imagen_status": result[2] if result else None,
+        "imagen_size_bytes": result[3] if result else None
+    }
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -949,6 +971,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
