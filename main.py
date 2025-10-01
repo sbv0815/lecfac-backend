@@ -536,7 +536,7 @@ async def upload_invoice(
         print(f"Archivo temporal: {temp_file.name}")
         
         # Procesar con OCR
-        resultado = parse_invoice_with_openai(temp_file.name)
+        resultado = parse_invoice_with_claude(temp_file.name)
         
         if not resultado["success"]:
             os.unlink(temp_file.name)
@@ -950,6 +950,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
