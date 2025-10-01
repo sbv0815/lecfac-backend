@@ -23,7 +23,6 @@ from openai_invoice import parse_invoice_with_openai
 from fastapi.responses import Response
 from storage import save_image_to_db, get_image_from_db
 from admin import router as admin_router
-app.include_router(admin_router)
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -206,6 +205,9 @@ def manejar_producto_fresco(cursor, codigo_local: str, nombre: str, cadena: str)
             (producto_id, cadena, codigo_local)
         )
         return producto_id
+
+app.include_router(admin_router)
+
 
 # ========================================
 # ENDPOINTS BÁSICOS
@@ -499,6 +501,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
