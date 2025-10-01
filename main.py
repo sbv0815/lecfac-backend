@@ -770,8 +770,7 @@ async def save_invoice_with_image(
                     factura_id,
                     precio,
                     establecimiento,
-                    cadena,
-                    fecha_registro
+                    cadena
                 )
                 VALUES (%s, %s, %s, %s, %s, %s)
             """, (
@@ -779,8 +778,7 @@ async def save_invoice_with_image(
                 factura_id,
                 precio,
                 establecimiento,
-                cadena,
-                datetime.now()
+                cadena
             ))
 
             productos_guardados += 1
@@ -846,6 +844,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
