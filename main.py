@@ -852,6 +852,96 @@ async def save_invoice_with_image(
                 os.unlink(temp_file.name)
             except Exception:
                 pass
+
+@app.get("/admin/facturas/{factura_id}")
+async def get_factura_detalle(factura_id: int):
+    """Obtener factura completa con productos"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Datos de factura
+        cursor.execute("""
+            SELECT id, establecimiento, total_factura, fecha_cargue,
+                   estado_validacion, puntaje_calidad
+            FROM facturas WHERE id = %s
+        """, (factura_id,))
+        
+        factura = cursor.fetchone()
+        if not factura:
+            raise HTTPException(404, "Factura no encontrada")
+        
+        # Productos
+        cursor.execute("""
+            SELECT pp.id, pc.codigo_ean, pc.nombre_producto, pp.precio
+            FROM precios_productos pp
+            JOIN productos_catalogo pc ON pp.producto_id = pc.id
+            WHERE pp.factura_id = %s
+        """, (factura_id,))
+        
+        productos = [
+            {"id": p[0], "codigo": p[1], "nombre": p[2], "precio": float(p[3])}
+            for p in cursor.fetchall()
+        ]
+        
+        conn.close()
+        
+        return {
+            "id": factura[0],
+            "establecimiento": factura[1],
+            "total_factura": float(factura[2]) if factura[2] else 0,
+            "fecha_cargue": factura[3].isoformat() if factura[3] else None,
+            "estado_validacion": factura[4],
+            "puntaje_calidad": factura[5],
+            "productos": productos
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.put("/admin/facturas/{factura_id}")
+async def actualizar_factura(factura_id: int, datos: dict):
+    """Actualizar factura y productos"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Actualizar factura
+        cursor.execute("""
+            UPDATE facturas
+            SET establecimiento = %s, total_factura = %s
+            WHERE id = %s
+        """, (datos['establecimiento'], datos['total_factura'], factura_id))
+        
+        # Actualizar productos (borrar y recrear)
+        cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+        
+        for prod in datos['productos']:
+            cursor.execute("""
+                SELECT id FROM productos_catalogo WHERE codigo_ean = %s
+            """, (prod['codigo'],))
+            
+            resultado = cursor.fetchone()
+            if resultado:
+                producto_id = resultado[0]
+            else:
+                cursor.execute("""
+                    INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
+                    VALUES (%s, %s) RETURNING id
+                """, (prod['codigo'], prod['nombre']))
+                producto_id = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                INSERT INTO precios_productos (producto_id, factura_id, precio, establecimiento, cadena)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (producto_id, factura_id, prod['precio'], datos['establecimiento'], 'otro'))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -860,6 +950,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
