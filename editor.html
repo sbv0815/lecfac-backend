@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Factura - LecFac</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .editor-container {
+            display: grid;
+            grid-template-columns: 55% 45%;
+            height: 100vh;
+        }
+        
+        /* Panel izquierdo: Imagen */
+        .image-panel {
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .image-controls {
+            background: #2d2d2d;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid #444;
+        }
+        
+        .image-controls button {
+            background: #4a4a4a;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .image-controls button:hover { background: #5a5a5a; }
+        
+        .zoom-info {
+            color: #aaa;
+            margin-left: auto;
+            font-size: 14px;
+        }
+        
+        .image-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+        }
+        
+        .image-container:active { cursor: grabbing; }
+        
+        .image-container img {
+            max-width: none;
+            transition: transform 0.1s;
+        }
+        
+        /* Panel derecho: Formulario */
+        .form-panel {
+            background: white;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .form-header {
+            background: #1a73e8;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .validation-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .badge-validada { background: #34a853; }
+        .badge-revision_requerida { background: #fbbc04; color: #000; }
+        .badge-pendiente { background: #ea4335; }
+        
+        .form-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .form-section {
+            margin-bottom: 25px;
+        }
+        
+        .form-section h3 {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        
+        .field-group {
+            margin-bottom: 15px;
+        }
+        
+        .field-group label {
+            display: block;
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        .field-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .field-group input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+        
+        /* Tabla de productos */
+        .productos-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        
+        .productos-table th {
+            background: #f5f5f5;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        .productos-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .productos-table input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .productos-table input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+        
+        .btn-delete {
+            background: #ea4335;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .btn-delete:hover { background: #d33; }
+        
+        .btn-add {
+            background: #34a853;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .btn-add:hover { background: #2d9148; }
+        
+        .form-actions {
+            padding: 20px;
+            background: #f9f9f9;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            flex: 1;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .btn-primary:hover { background: #1557b0; }
+        
+        .btn-secondary {
+            background: #5f6368;
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        
+        .btn-secondary:hover { background: #3c4043; }
+        
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1a73e8;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #34a853;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 10000;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(400px); }
+            to { transform: translateX(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <!-- Panel de imagen -->
+        <div class="image-panel">
+            <div class="image-controls">
+                <button onclick="zoomIn()">+</button>
+                <button onclick="zoomOut()">-</button>
+                <button onclick="resetZoom()">Reset</button>
+                <button onclick="rotateImage()">Rotar</button>
+                <span class="zoom-info" id="zoomInfo">100%</span>
+            </div>
+            <div class="image-container" id="imageContainer">
+                <img id="facturaImage" src="" alt="Factura">
+            </div>
+        </div>
+        
+        <!-- Panel de formulario -->
+        <div class="form-panel">
+            <div class="form-header">
+                <div>
+                    <h2>Factura #<span id="facturaId">-</span></h2>
+                    <div style="font-size: 12px; opacity: 0.9; margin-top: 4px;">
+                        Puntaje: <span id="puntaje">-</span>/100
+                    </div>
+                </div>
+                <span class="validation-badge" id="estadoBadge">Pendiente</span>
+            </div>
+            
+            <div class="form-content">
+                <!-- Datos generales -->
+                <div class="form-section">
+                    <h3>Datos Generales</h3>
+                    <div class="field-group">
+                        <label>Establecimiento</label>
+                        <input type="text" id="establecimiento" placeholder="Ej: Jumbo Bulevar">
+                    </div>
+                    <div class="field-group">
+                        <label>Total ($)</label>
+                        <input type="number" id="total" step="0.01">
+                    </div>
+                </div>
+                
+                <!-- Productos -->
+                <div class="form-section">
+                    <h3>Productos (<span id="productosCount">0</span>)</h3>
+                    <table class="productos-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 25%">Código</th>
+                                <th style="width: 40%">Nombre</th>
+                                <th style="width: 20%">Precio</th>
+                                <th style="width: 15%"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="productosBody"></tbody>
+                    </table>
+                    <button class="btn-add" onclick="agregarProducto()">+ Agregar Producto</button>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button class="btn-secondary" onclick="window.close()">Cerrar</button>
+                <button class="btn-primary" onclick="guardarCambios()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'https://lecfac-api.onrender.com';
+        const facturaId = new URLSearchParams(window.location.search).get('id');
+        
+        let zoomLevel = 1;
+        let rotation = 0;
+        let productos = [];
+        let productosOriginales = [];
+        
+        async function cargarFactura() {
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/detalle`);
+                const data = await response.json();
+                
+                // Llenar formulario
+                document.getElementById('facturaId').textContent = data.factura.id;
+                document.getElementById('establecimiento').value = data.factura.establecimiento || '';
+                document.getElementById('total').value = data.factura.total || '';
+                document.getElementById('puntaje').textContent = data.factura.puntaje || 0;
+                
+                const badge = document.getElementById('estadoBadge');
+                badge.textContent = data.factura.estado || 'pendiente';
+                badge.className = 'validation-badge badge-' + (data.factura.estado || 'pendiente');
+                
+                // Cargar productos
+                productos = data.productos.map(p => ({...p}));
+                productosOriginales = JSON.parse(JSON.stringify(productos));
+                renderProductos();
+                
+                // Cargar imagen
+                document.getElementById('facturaImage').src = `${API_URL}/admin/facturas/${facturaId}/imagen`;
+                
+                hideLoading();
+            } catch (error) {
+                alert('Error cargando factura: ' + error.message);
+                hideLoading();
+            }
+        }
+        
+        function renderProductos() {
+            const tbody = document.getElementById('productosBody');
+            tbody.innerHTML = '';
+            
+            productos.forEach((prod, index) => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td><input type="text" value="${prod.codigo || ''}" onchange="productos[${index}].codigo = this.value.trim()"></td>
+                    <td><input type="text" value="${prod.nombre || ''}" onchange="productos[${index}].nombre = this.value.trim()"></td>
+                    <td><input type="number" step="0.01" value="${prod.precio || 0}" onchange="productos[${index}].precio = parseFloat(this.value)"></td>
+                    <td><button class="btn-delete" onclick="eliminarProducto(${index})">×</button></td>
+                `;
+            });
+            
+            document.getElementById('productosCount').textContent = productos.length;
+        }
+        
+        function agregarProducto() {
+            productos.push({ codigo: '', nombre: '', precio: 0, nuevo: true });
+            renderProductos();
+            const tbody = document.getElementById('productosBody');
+            tbody.lastElementChild.querySelector('input').focus();
+        }
+        
+        async function eliminarProducto(index) {
+            if (!confirm('¿Eliminar este producto?')) return;
+            
+            const prod = productos[index];
+            
+            if (!prod.nuevo && prod.id) {
+                try {
+                    await fetch(`${API_URL}/admin/productos/${prod.id}`, { method: 'DELETE' });
+                } catch (e) {
+                    console.error('Error eliminando:', e);
+                }
+            }
+            
+            productos.splice(index, 1);
+            renderProductos();
+        }
+        
+        async function guardarCambios() {
+            showLoading();
+            
+            try {
+                // Guardar datos generales
+                await fetch(`${API_URL}/admin/facturas/${facturaId}/datos-generales`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        establecimiento: document.getElementById('establecimiento').value,
+                        total: parseFloat(document.getElementById('total').value) || 0
+                    })
+                });
+                
+                // Actualizar productos existentes
+                for (const prod of productos) {
+                    if (!prod.nuevo && prod.id) {
+                        await fetch(`${API_URL}/admin/productos/${prod.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(prod)
+                        });
+                    }
+                }
+                
+                // Agregar productos nuevos
+                for (const prod of productos) {
+                    if (prod.nuevo && prod.codigo && prod.nombre) {
+                        await fetch(`${API_URL}/admin/facturas/${facturaId}/productos`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(prod)
+                        });
+                    }
+                }
+                
+                showToast('Cambios guardados exitosamente');
+                setTimeout(() => cargarFactura(), 1500);
+                
+            } catch (error) {
+                alert('Error guardando: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Controles de zoom
+        function zoomIn() {
+            zoomLevel *= 1.2;
+            updateZoom();
+        }
+        
+        function zoomOut() {
+            zoomLevel /= 1.2;
+            updateZoom();
+        }
+        
+        function resetZoom() {
+            zoomLevel = 1;
+            rotation = 0;
+            updateZoom();
+        }
+        
+        function rotateImage() {
+            rotation = (rotation + 90) % 360;
+            updateZoom();
+        }
+        
+        function updateZoom() {
+            const img = document.getElementById('facturaImage');
+            img.style.transform = `scale(${zoomLevel}) rotate(${rotation}deg)`;
+            document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
+        }
+        
+        // Pan
+        let isPanning = false;
+        let startX, startY, scrollLeft, scrollTop;
+        
+        const container = document.getElementById('imageContainer');
+        container.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            startX = e.pageX - container.offsetLeft;
+            startY = e.pageY - container.offsetTop;
+            scrollLeft = container.scrollLeft;
+            scrollTop = container.scrollTop;
+        });
+        
+        container.addEventListener('mouseleave', () => isPanning = false);
+        container.addEventListener('mouseup', () => isPanning = false);
+        
+        container.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            e.preventDefault();
+            const x = e.pageX - container.offsetLeft;
+            const y = e.pageY - container.offsetTop;
+            container.scrollLeft = scrollLeft - (x - startX);
+            container.scrollTop = scrollTop - (y - startY);
+        });
+        
+        function showLoading() {
+            const overlay = document.createElement('div');
+            overlay.className = 'loading';
+            overlay.id = 'loadingOverlay';
+            overlay.innerHTML = '<div class="spinner"></div>';
+            document.body.appendChild(overlay);
+        }
+        
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) overlay.remove();
+        }
+        
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Atajos
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                guardarCambios();
+            }
+        });
+        
+        cargarFactura();
+    </script>
+</body>
+</html>
