@@ -565,12 +565,12 @@ async def upload_invoice(
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
         print(f"✓ Imagen guardada en BD: {imagen_guardada}")
 
-# Eliminar archivo temporal
-try:
-    os.unlink(temp_file.name)
-    temp_file = None
-except Exception as _:
-    pass
+        # Eliminar archivo temporal
+        try:
+            os.unlink(temp_file.name)
+            temp_file = None
+        except Exception as _:
+            pass
         
         # Limpiar archivo temporal
         os.unlink(temp_file.name)
@@ -859,6 +859,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
