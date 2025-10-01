@@ -615,9 +615,9 @@ async def save_invoice_with_image(
     file: UploadFile = File(...),
     usuario_id: int = Form(...),
     establecimiento: str = Form(...),
-    productos: str = Form(...)  # JSON string
+    productos: str = Form(...)
 ):
-    """Guardar factura con imagen - Recibe imagen + datos del formulario"""
+    """Guardar factura con imagen"""
     import json
     
     try:
@@ -626,7 +626,6 @@ async def save_invoice_with_image(
         print(f"Establecimiento: {establecimiento}")
         print(f"Archivo: {file.filename}")
         
-        # Parsear productos (viene como JSON string)
         productos_list = json.loads(productos)
         print(f"Productos: {len(productos_list)}")
         
@@ -638,7 +637,7 @@ async def save_invoice_with_image(
         
         print(f"Imagen temporal: {temp_file.name}")
         
-        # Guardar en BD
+        # Conexión BD
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -653,12 +652,12 @@ async def save_invoice_with_image(
         factura_id = cursor.fetchone()[0]
         print(f"✓ Factura ID: {factura_id}")
         
-        # Guardar imagen en BD
+        # Guardar imagen
         mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
         save_image_to_db(factura_id, temp_file.name, mime)
         print(f"✓ Imagen guardada en BD")
         
-        # Limpiar archivo temporal
+        # Limpiar temp
         os.unlink(temp_file.name)
         
         # Guardar productos
@@ -688,11 +687,17 @@ async def save_invoice_with_image(
                 """, (codigo, nombre))
                 producto_id = cursor.fetchone()[0]
             
-            # Guardar precio
+            # Guardar precio CON establecimiento y cadena
             cursor.execute("""
-                INSERT INTO precios_productos (producto_id, factura_id, precio)
-                VALUES (%s, %s, %s)
-            """, (producto_id, factura_id, precio))
+                INSERT INTO precios_productos (
+                    producto_id, 
+                    factura_id, 
+                    precio, 
+                    establecimiento, 
+                    cadena
+                )
+                VALUES (%s, %s, %s, %s, %s)
+            """, (producto_id, factura_id, precio, establecimiento, cadena))
             
             productos_guardados += 1
         
@@ -727,6 +732,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
