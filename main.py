@@ -579,10 +579,17 @@ async def upload_invoice(
                 """, (prod["codigo"], prod["nombre"]))
                 producto_id = cursor.fetchone()[0]
             
+            # Guardar precio con establecimiento y cadena
             cursor.execute("""
-                INSERT INTO precios_productos (producto_id, factura_id, precio)
-                VALUES (%s, %s, %s)
-            """, (producto_id, factura_id, prod["precio"]))
+            INSERT INTO precios_productos (
+                producto_id, 
+                factura_id, 
+                precio, 
+                establecimiento, 
+                cadena
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """, (producto_id, factura_id, precio, establecimiento, cadena))
         
         conn.commit()
         cursor.close()
@@ -720,6 +727,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
