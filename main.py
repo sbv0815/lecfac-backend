@@ -514,6 +514,7 @@ async def get_factura_image(factura_id: int):
     
     return Response(content=image_data, media_type=mime_type or "image/jpeg")
 
+
 @app.post("/invoices/upload")
 async def upload_invoice(
     file: UploadFile = File(...),
@@ -948,6 +949,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
