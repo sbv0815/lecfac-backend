@@ -508,6 +508,99 @@ async def get_factura_image(factura_id: int):
         raise HTTPException(404, "Imagen no encontrada")
     
     return Response(content=image_data, media_type=mime_type or "image/jpeg")
+
+@app.post("/invoices/upload")
+async def upload_invoice(
+    file: UploadFile = File(...),
+    usuario_id: int = Form(...)
+):
+    """Procesar factura con OCR y guardarla"""
+    try:
+        print(f"=== PROCESANDO FACTURA ===")
+        print(f"Archivo: {file.filename}")
+        print(f"Usuario: {usuario_id}")
+        
+        # Guardar temporalmente
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close()
+        
+        print(f"Archivo temporal: {temp_file.name}")
+        
+        # Procesar con OCR
+        resultado = parse_invoice_with_openai(temp_file.name)
+        
+        if not resultado["success"]:
+            os.unlink(temp_file.name)
+            return {"success": False, "error": resultado["error"]}
+        
+        # Preparar datos para guardar
+        establecimiento = resultado["data"].get("establecimiento", "Desconocido")
+        productos = resultado["data"].get("productos", [])
+        
+        # Guardar en BD
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cadena = detectar_cadena(establecimiento)
+        
+        cursor.execute(
+            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (usuario_id, establecimiento, cadena, datetime.now())
+        )
+        factura_id = cursor.fetchone()[0]
+        print(f"✓ Factura ID: {factura_id}")
+        
+        # Guardar imagen
+        mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
+        save_image_to_db(factura_id, temp_file.name, mime)
+        print(f"✓ Imagen guardada")
+        
+        # Limpiar archivo temporal
+        os.unlink(temp_file.name)
+        
+        # Guardar productos
+        for prod in productos:
+            cursor.execute("""
+                SELECT id FROM productos_catalogo 
+                WHERE codigo_ean = %s
+            """, (prod["codigo"],))
+            
+            producto = cursor.fetchone()
+            
+            if producto:
+                producto_id = producto[0]
+            else:
+                cursor.execute("""
+                    INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
+                    VALUES (%s, %s) RETURNING id
+                """, (prod["codigo"], prod["nombre"]))
+                producto_id = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                INSERT INTO precios_productos (producto_id, factura_id, precio)
+                VALUES (%s, %s, %s)
+            """, (producto_id, factura_id, prod["precio"]))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "productos": productos,
+            "establecimiento": establecimiento
+        }
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        if 'temp_file' in locals() and os.path.exists(temp_file.name):
+            os.unlink(temp_file.name)
+        raise HTTPException(status_code=500, detail=str(e))
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -516,6 +609,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
