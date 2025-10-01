@@ -142,3 +142,28 @@ async def obtener_imagen_factura(factura_id: int):
         raise HTTPException(404, "Imagen no encontrada")
     
     return Response(content=image_data, media_type=mime_type or "image/jpeg")
+
+
+# En admin.py
+@router.delete("/reset-database")
+async def reset_database():
+    """PELIGRO: Borra TODOS los datos. Solo para desarrollo."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("DELETE FROM precios_productos")
+        cursor.execute("DELETE FROM codigos_locales")
+        cursor.execute("DELETE FROM productos")
+        cursor.execute("DELETE FROM facturas")
+        cursor.execute("DELETE FROM productos_catalogo")
+        cursor.execute("DELETE FROM productos_maestro")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Base de datos limpiada"}
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(500, f"Error: {str(e)}")
