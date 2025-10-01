@@ -16,8 +16,13 @@ async def estadisticas_dashboard():
     cursor.execute("SELECT COUNT(*) FROM facturas")
     total_facturas = cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(*) FROM productos_maestro")
-    total_productos = cursor.fetchone()[0]
+    # Consultar la tabla correcta que se está usando
+    cursor.execute("SELECT COUNT(*) FROM productos_catalogo")
+    total_productos_catalogo = cursor.fetchone()[0]
+    
+    # También contar productos legacy por factura
+    cursor.execute("SELECT COUNT(DISTINCT codigo) FROM productos WHERE codigo IS NOT NULL")
+    total_productos_legacy = cursor.fetchone()[0]
     
     cursor.execute("SELECT COUNT(*) FROM facturas WHERE imagen_data IS NOT NULL")
     facturas_con_imagen = cursor.fetchone()[0]
@@ -29,7 +34,8 @@ async def estadisticas_dashboard():
     
     return {
         "total_facturas": total_facturas,
-        "total_productos_unicos": total_productos,
+        "productos_catalogo": total_productos_catalogo,
+        "productos_unicos_legacy": total_productos_legacy,
         "facturas_con_imagen": facturas_con_imagen,
         "total_usuarios": total_usuarios,
         "porcentaje_imagenes": round((facturas_con_imagen / total_facturas * 100) if total_facturas > 0 else 0, 2)
