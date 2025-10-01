@@ -343,7 +343,7 @@ async def parse_invoice(file: UploadFile = File(...)):
             temp_file.write(content)
             temp_file_path = temp_file.name
         
-        result = parse_invoice_with_openai(temp_file_path)
+        result = parse_invoice_with_claude(temp_file_path)
         
         # NO eliminar el archivo temporal aún
         # Se eliminará después de guardar en /invoices/save
@@ -950,6 +950,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
