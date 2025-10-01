@@ -132,7 +132,7 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 2. TABLA FACTURAS (CON IMÁGENES)
+        # 2. TABLA FACTURAS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS facturas (
             id SERIAL PRIMARY KEY,
@@ -145,14 +145,25 @@ def create_postgresql_tables():
             estado VARCHAR(20) DEFAULT 'procesado',
             productos_detectados INTEGER DEFAULT 0,
             productos_guardados INTEGER DEFAULT 0,
-            porcentaje_lectura DECIMAL(5,2),
-            imagen_data BYTEA,
-            imagen_mime VARCHAR(20),
-            CHECK (total_factura >= 0 OR total_factura IS NULL)
+            porcentaje_lectura DECIMAL(5,2)
         )
         ''')
         
-        # 3. TABLA PRODUCTOS (legacy - por factura)
+        # AGREGAR COLUMNAS DE IMAGEN SI NO EXISTEN
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS imagen_data BYTEA
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS imagen_mime VARCHAR(20)
+            """)
+            print("✓ Columnas de imagen agregadas a facturas")
+        except Exception as e:
+            print(f"⚠️ Columnas de imagen ya existen o error: {e}")
+        
+        # 3. Resto de tablas...
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos (
             id SERIAL PRIMARY KEY,
@@ -163,7 +174,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 4. CATÁLOGO MAESTRO DE PRODUCTOS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_maestro (
             id SERIAL PRIMARY KEY,
@@ -180,7 +190,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 5. CATÁLOGO DE PRODUCTOS (alias para compatibilidad)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_catalogo (
             id SERIAL PRIMARY KEY,
@@ -193,7 +202,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 6. CÓDIGOS LOCALES
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS codigos_locales (
             id SERIAL PRIMARY KEY,
@@ -207,7 +215,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 7. PRECIOS HISTÓRICOS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_historicos (
             id SERIAL PRIMARY KEY,
@@ -224,7 +231,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 8. PRECIOS PRODUCTOS (alias para compatibilidad)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_productos (
             id SERIAL PRIMARY KEY,
@@ -238,7 +244,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 9. HISTORIAL DE COMPRAS PERSONAL
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS historial_compras_usuario (
             id SERIAL PRIMARY KEY,
@@ -252,7 +257,6 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 10. PATRONES DE COMPRA
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS patrones_compra (
             id SERIAL PRIMARY KEY,
@@ -267,11 +271,16 @@ def create_postgresql_tables():
         )
         ''')
         
-        # ÍNDICES
+        # ÍNDICES (después de que las columnas existan)
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_imagen ON facturas(id) WHERE imagen_data IS NOT NULL')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
+        
+        # Índice para imágenes (ahora que la columna existe)
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_imagen ON facturas(id) WHERE imagen_data IS NOT NULL')
+        except:
+            pass  # Ignorar si ya existe
         
         conn.commit()
         conn.close()
