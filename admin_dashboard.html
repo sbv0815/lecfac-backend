@@ -768,36 +768,49 @@ async function handleFileSelect(event) {
         
         statusDiv.innerHTML = `
             <div class="result-box success">
-                <h3 style="color: #2e7d32; margin-bottom: 10px;">✅ Factura procesada exitosamente</h3>
-                <p style="color: #666;">
-                    <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
-                    <strong>Total:</strong> ${totalFormateado}<br>
-                    <strong>Productos detectados:</strong> ${invoice.productos.length}<br>
-                    <strong>Puntaje de calidad:</strong> ${saveData.factura?.puntaje || 'N/A'}/100
-                </p>
-                
-                <div style="margin-top: 15px; max-height: 300px; overflow-y: auto;">
-                    <h4 style="margin-bottom: 10px;">Productos:</h4>
-                    ${invoice.productos.slice(0, 10).map((prod, i) => `
-                        <div style="padding: 8px; border-left: 3px solid #1a73e8; background: #f8f9fa; margin: 8px 0; border-radius: 4px;">
-                            <strong>${i + 1}. ${prod.nombre}</strong>
-                            <div style="font-size: 12px; color: #666;">
-                                Código: ${prod.codigo || 'Sin código'} | 
-                                Precio: $${prod.valor.toLocaleString('es-CO')}
-                            </div>
-                        </div>
-                    `).join('')}
-                    ${invoice.productos.length > 10 ? `<p style="text-align: center; color: #666; margin-top: 10px;">...y ${invoice.productos.length - 10} productos más</p>` : ''}
-                </div>
-                
-                <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="color: #2e7d32; margin-bottom: 10px;">Factura procesada exitosamente</h3>
+                        <p style="color: #666; margin: 0;">
+                            <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
+                            <strong>Total:</strong> ${totalFormateado}<br>
+                            <strong>Productos:</strong> ${invoice.productos.length}
+                        </p>
+                    </div>
                     ${facturaId ? `
-                        <button class="btn btn-primary" onclick="editarFactura(${facturaId})">
-                            ✏️ Ver y Editar Factura
+                        <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="white-space: nowrap;">
+                            Ver y Editar Factura
                         </button>
                     ` : ''}
+                </div>
+                
+                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; background: #fafafa;">
+                    <h4 style="margin-bottom: 10px; position: sticky; top: 0; background: #fafafa; padding-bottom: 5px;">Productos detectados:</h4>
+                    <table style="width: 100%; font-size: 12px;">
+                        <thead style="position: sticky; top: 30px; background: #fafafa;">
+                            <tr style="border-bottom: 2px solid #ddd;">
+                                <th style="text-align: left; padding: 5px;">#</th>
+                                <th style="text-align: left; padding: 5px;">Producto</th>
+                                <th style="text-align: left; padding: 5px;">Código</th>
+                                <th style="text-align: right; padding: 5px;">Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${invoice.productos.map((prod, i) => `
+                                <tr style="border-bottom: 1px solid #eee;">
+                                    <td style="padding: 5px; color: #999;">${i + 1}</td>
+                                    <td style="padding: 5px;"><strong>${prod.nombre}</strong></td>
+                                    <td style="padding: 5px; color: #666; font-family: monospace;">${prod.codigo || '-'}</td>
+                                    <td style="padding: 5px; text-align: right; color: #2e7d32; font-weight: bold;">$${prod.valor.toLocaleString('es-CO')}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div style="margin-top: 15px; text-align: center;">
                     <button class="btn btn-secondary" onclick="limpiarUpload()">
-                        Subir Otra
+                        Subir Otra Factura
                     </button>
                 </div>
             </div>
@@ -808,7 +821,7 @@ async function handleFileSelect(event) {
     } catch (error) {
         statusDiv.innerHTML = `
             <div class="result-box error">
-                <h3 style="color: #c62828;">❌ Error al procesar</h3>
+                <h3 style="color: #c62828;">Error al procesar</h3>
                 <p style="color: #666;">${error.message}</p>
                 <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
                     Intentar de Nuevo
