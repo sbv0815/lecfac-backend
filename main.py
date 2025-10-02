@@ -7,7 +7,7 @@ import os
 import tempfile
 import traceback
 from storage import save_image_to_db, get_image_from_db
-from validator import FacturaValidator  # ← AGREGAR ESTE
+from validator import FacturaValidator
 from database import (
     create_tables, 
     get_db_connection, 
@@ -18,19 +18,12 @@ from database import (
     confirmar_producto_manual
 )
 from claude_invoice import parse_invoice_with_claude
-from fastapi.responses import Response
-from fastapi.responses import FileResponse
-import os
-from admin_dashboard import router as admin_dashboard_router
-from fastapi.middleware.cors import CORSMiddleware
-from admin_dashboard import router as admin_dashboard_router
-
-
+from fastapi.responses import Response, FileResponse
+from admin_dashboard import router as admin_dashboard_router  # ← UNA SOLA VEZ
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
 # ========================================
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicialización y cierre de la aplicación"""
@@ -52,6 +45,7 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -59,6 +53,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.include_router(admin_dashboard_router)
 
 # Endpoints para servir HTML
@@ -73,7 +68,6 @@ async def test_page():
 @app.get("/dashboard")
 async def dashboard():
     return FileResponse("admin_dashboard.html")
-
 # ========================================
 # MODELOS PYDANTIC
 # ========================================
@@ -1201,6 +1195,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
