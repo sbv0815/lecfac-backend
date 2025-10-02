@@ -345,21 +345,21 @@
 </head>
 <body>
     <div class="editor-container">
-        <!-- Panel de imagen -->
-        <div class="resize-handle" id="resizeHandle"></div>
-        <div class="image-panel">
-            <div class="image-controls">
-                <button onclick="zoomIn()">+</button>
-                <button onclick="zoomOut()">-</button>
-                <button onclick="resetZoom()">Reset</button>
-                <button onclick="rotateImage()">Rotar</button>
-                <span class="zoom-info" id="zoomInfo">100%</span>
-            </div>
-            <div class="image-panel">
-            <div class="image-container" id="imageContainer">
-                <img id="facturaImage" src="" alt="Factura">
-            </div>
+    <div class="resize-handle" id="resizeHandle"></div>
+    
+    <!-- Panel de imagen -->
+    <div class="image-panel">
+        <div class="image-controls">
+            <button onclick="zoomIn()">+</button>
+            <button onclick="zoomOut()">-</button>
+            <button onclick="resetZoom()">Reset</button>
+            <button onclick="rotateImage()">Rotar</button>
+            <span class="zoom-info" id="zoomInfo">100%</span>
         </div>
+        <div class="image-container" id="imageContainer">
+            <img id="facturaImage" src="" alt="Factura">
+        </div>
+    </div>
         
         <!-- Panel de formulario -->
         <div class="form-panel">
