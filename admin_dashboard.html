@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Admin - LecFac</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f7fa;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+            color: white;
+            padding: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .navbar-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .navbar h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 0;
+            padding: 0 30px;
+        }
+        
+        .tab {
+            padding: 16px 24px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.8);
+            font-size: 15px;
+            font-weight: 500;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .tab.active {
+            color: white;
+            border-bottom-color: white;
+            background: rgba(255,255,255,0.15);
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+        
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        
+        .stat-card .label {
+            color: #666;
+            font-size: 13px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        
+        .stat-card .value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1a73e8;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .card-body {
+            padding: 0;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        thead {
+            background: #f8f9fa;
+        }
+        
+        th {
+            padding: 14px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        td {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+        
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-success { background: #e8f5e9; color: #2e7d32; }
+        .badge-warning { background: #fff3e0; color: #f57c00; }
+        .badge-danger { background: #ffebee; color: #c62828; }
+        .badge-info { background: #e3f2fd; color: #1976d2; }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #1a73e8;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        
+        .btn-danger {
+            background: #ea4335;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #d33;
+        }
+        
+        .btn-success {
+            background: #34a853;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #2d9148;
+        }
+        
+        .btn-secondary {
+            background: #f1f3f4;
+            color: #5f6368;
+        }
+        
+        .btn-secondary:hover {
+            background: #e8eaed;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .search-box {
+            flex: 1;
+            padding: 10px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+        
+        .duplicate-card {
+            background: white;
+            border: 2px solid #ffa726;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        
+        .duplicate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .duplicate-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .duplicate-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .duplicate-item h4 {
+            margin-bottom: 8px;
+            color: #1a73e8;
+        }
+        
+        .duplicate-item p {
+            margin: 4px 0;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #1a73e8;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #34a853;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 10000;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(400px); }
+            to { transform: translateX(0); }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-header">
+            <h1>🎯 Dashboard de Administración - LecFac</h1>
+        </div>
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('stats')">📊 Estadísticas</button>
+            <button class="tab" onclick="switchTab('facturas')">🧾 Facturas</button>
+            <button class="tab" onclick="switchTab('productos')">📦 Productos</button>
+            <button class="tab" onclick="switchTab('duplicados')">⚠️ Duplicados</button>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <!-- TAB: ESTADÍSTICAS -->
+        <div id="tab-stats" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Total Facturas</div>
+                    <div class="value" id="stat-facturas">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Productos Únicos</div>
+                    <div class="value" id="stat-productos">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Duplicados Detectados</div>
+                    <div class="value" id="stat-duplicados">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Pendientes Revisión</div>
+                    <div class="value" id="stat-pendientes">-</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2>Resumen del Sistema</h2>
+                </div>
+                <div class="card-body">
+                    <div style="padding: 30px;">
+                        <p style="color: #666; line-height: 1.8;">
+                            Bienvenido al panel de administración de LecFac. Usa las pestañas superiores para:
+                        </p>
+                        <ul style="margin: 20px 0; padding-left: 20px; color: #666; line-height: 2;">
+                            <li><strong>Facturas:</strong> Ver, editar y eliminar facturas subidas</li>
+                            <li><strong>Productos:</strong> Gestionar el catálogo de productos</li>
+                            <li><strong>Duplicados:</strong> Detectar y fusionar productos/facturas duplicadas</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB: FACTURAS -->
+        <div id="tab-facturas" class="tab-content">
+            <div class="toolbar">
+                <input type="text" class="search-box" id="searchFacturas" placeholder="🔍 Buscar por establecimiento..." oninput="filtrarFacturas()">
+                <button class="btn btn-danger" onclick="eliminarSeleccionadas()" id="btnEliminarFacturas" style="display:none;">
+                    Eliminar Seleccionadas (<span id="countSeleccionadas">0</span>)
+                </button>
+                <button class="btn btn-secondary" onclick="cargarFacturas()">🔄 Recargar</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2>Lista de Facturas</h2>
+                    <button class="btn btn-primary btn-sm" onclick="toggleTodas()">Seleccionar Todas</button>
+                </div>
+                <div class="card-body">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th width="40"><input type="checkbox" id="checkAll" onchange="toggleTodas()"></th>
+                                <th>ID</th>
+                                <th>Establecimiento</th>
+                                <th>Total</th>
+                                <th>Productos</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="facturasBody">
+                            <tr><td colspan="8" class="loading"><div class="spinner"></div>Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB: PRODUCTOS -->
+        <div id="tab-productos" class="tab-content">
+            <div class="toolbar">
+                <input type="text" class="search-box" id="searchProductos" placeholder="🔍 Buscar productos..." oninput="filtrarProductos()">
+                <button class="btn btn-secondary" onclick="cargarProductos()">🔄 Recargar</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2>Catálogo de Productos</h2>
+                </div>
+                <div class="card-body">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Código EAN</th>
+                                <th>Nombre</th>
+                                <th>Visto</th>
+                                <th>Precio Min-Max</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productosBody">
+                            <tr><td colspan="7" class="loading"><div class="spinner"></div>Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB: DUPLICADOS -->
+        <div id="tab-duplicados" class="tab-content">
+            <div class="toolbar">
+                <button class="btn btn-primary" onclick="detectarDuplicados()">🔍 Detectar Duplicados</button>
+                <button class="btn btn-secondary" onclick="limpiarDuplicados()">🧹 Limpiar Vista</button>
+            </div>
+            
+            <div id="duplicadosContainer">
+                <div class="empty-state">
+                    <h3>Haz clic en "Detectar Duplicados" para comenzar</h3>
+                    <p>El sistema analizará facturas y productos similares</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'https://lecfac-api.onrender.com';
+        let facturasData = [];
+        let productosData = [];
+        let facturasSeleccionadas = new Set();
+        
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active');
+            
+            if (tabName === 'stats') cargarEstadisticas();
+            if (tabName === 'facturas') cargarFacturas();
+            if (tabName === 'productos') cargarProductos();
+        }
+        
+        async function cargarEstadisticas() {
+            try {
+                const response = await fetch(`${API_URL}/admin/stats`);
+                const data = await response.json();
+                
+                document.getElementById('stat-facturas').textContent = data.total_facturas || 0;
+                document.getElementById('stat-productos').textContent = data.productos_unicos || 0;
+                document.getElementById('stat-pendientes').textContent = data.facturas_pendientes || 0;
+                
+                const dupResponse = await fetch(`${API_URL}/admin/duplicados/productos`);
+                const dupData = await dupResponse.json();
+                document.getElementById('stat-duplicados').textContent = dupData.total || 0;
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+        
+        async function cargarFacturas() {
+            const tbody = document.getElementById('facturasBody');
+            tbody.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div>Cargando...</td></tr>';
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas`);
+                const data = await response.json();
+                facturasData = data.facturas || [];
+                
+                if (facturasData.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><h3>No hay facturas</h3></td></tr>';
+                    return;
+                }
+                
+                renderFacturas(facturasData);
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><h3>Error: ${error.message}</h3></td></tr>`;
+                console.error('Error cargando facturas:', error);
+            }
+        }
+        
+       function renderFacturas(facturas) {
+    const tbody = document.getElementById('facturasBody');
+    tbody.innerHTML = facturas.map(f => `
+        <tr>
+            <td><input type="checkbox" class="checkbox check-factura" value="${f.id}" onchange="updateSeleccion()"></td>
+            <td><strong>#${f.id}</strong></td>
+            <td>${f.establecimiento || 'Sin datos'}</td>
+            <td>$${(f.total_factura || f.total || 0).toLocaleString()}</td>
+            <td>${f.productos || 0}</td>
+            <td>${new Date(f.fecha_cargue || f.fecha).toLocaleDateString()}</td>
+            <td><span class="badge badge-${getBadgeClass(f.estado_validacion || f.estado)}">${f.estado_validacion || f.estado || 'pendiente'}</span></td>
+            <td>
+                <div class="btn-group">
+                    <button class="btn btn-primary btn-sm" onclick="editarFactura(${f.id})">✏️ Editar</button>
+                    <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${f.id})">🗑️</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+        function getBadgeClass(estado) {
+            const map = {
+                'validada': 'success',
+                'revision_requerida': 'warning',
+                'pendiente': 'danger'
+            };
+            return map[estado] || 'info';
+        }
+        
+        function updateSeleccion() {
+            facturasSeleccionadas.clear();
+            document.querySelectorAll('.check-factura:checked').forEach(cb => {
+                facturasSeleccionadas.add(parseInt(cb.value));
+            });
+            
+            const count = facturasSeleccionadas.size;
+            document.getElementById('countSeleccionadas').textContent = count;
+            document.getElementById('btnEliminarFacturas').style.display = count > 0 ? 'block' : 'none';
+        }
+        
+        function toggleTodas() {
+            const checkAll = document.getElementById('checkAll');
+            document.querySelectorAll('.check-factura').forEach(cb => {
+                cb.checked = checkAll.checked;
+            });
+            updateSeleccion();
+        }
+        
+        function filtrarFacturas() {
+            const query = document.getElementById('searchFacturas').value.toLowerCase();
+            const filtradas = facturasData.filter(f => 
+                (f.establecimiento || '').toLowerCase().includes(query)
+            );
+            renderFacturas(filtradas);
+        }
+        
+        function editarFactura(id) {
+            window.open(`editor.html?id=${id}`, '_blank');
+        }
+        
+        async function eliminarFactura(id) {
+            if (!confirm('¿Eliminar esta factura y todos sus productos?')) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showToast('Factura eliminada exitosamente');
+                    cargarFacturas();
+                    cargarEstadisticas();
+                } else {
+                    throw new Error('Error al eliminar');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function eliminarSeleccionadas() {
+            if (facturasSeleccionadas.size === 0) return;
+            
+            if (!confirm(`¿Eliminar ${facturasSeleccionadas.size} facturas seleccionadas?`)) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas/eliminar-multiple`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: Array.from(facturasSeleccionadas) })
+                });
+                
+                if (response.ok) {
+                    showToast(`${facturasSeleccionadas.size} facturas eliminadas`);
+                    facturasSeleccionadas.clear();
+                    cargarFacturas();
+                    cargarEstadisticas();
+                } else {
+                    throw new Error('Error al eliminar');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        // PRODUCTOS
+        async function cargarProductos() {
+            const tbody = document.getElementById('productosBody');
+            tbody.innerHTML = '<tr><td colspan="7" class="loading"><div class="spinner"></div>Cargando...</td></tr>';
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/productos/catalogo`);
+                const data = await response.json();
+                productosData = data.productos || [];
+                
+                if (productosData.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>No hay productos</h3></td></tr>';
+                    return;
+                }
+                
+                renderProductos(productosData);
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><h3>Error: ${error.message}</h3></td></tr>`;
+                console.error('Error cargando productos:', error);
+            }
+        }
+        
+        function renderProductos(productos) {
+            const tbody = document.getElementById('productosBody');
+            tbody.innerHTML = productos.map(p => `
+                <tr>
+                    <td><strong>#${p.id}</strong></td>
+                    <td>${p.codigo_ean || 'Sin código'}</td>
+                    <td>${p.nombre || 'Sin nombre'}</td>
+                    <td><span class="badge badge-info">${p.veces_visto}x</span></td>
+                    <td>$${p.precio_min.toLocaleString()} - $${p.precio_max.toLocaleString()}</td>
+                    <td>
+                        ${p.verificado ? '<span class="badge badge-success">✓ Verificado</span>' : ''}
+                        ${p.necesita_revision ? '<span class="badge badge-warning">⚠️ Revisar</span>' : ''}
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-primary btn-sm" onclick="editarProducto(${p.id})">✏️</button>
+                            <button class="btn btn-danger btn-sm" onclick="eliminarProducto(${p.id})">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function filtrarProductos() {
+            const query = document.getElementById('searchProductos').value.toLowerCase();
+            const filtrados = productosData.filter(p => 
+                (p.nombre || '').toLowerCase().includes(query) ||
+                (p.codigo_ean || '').toLowerCase().includes(query)
+            );
+            renderProductos(filtrados);
+        }
+        
+        function editarProducto(id) {
+            const producto = productosData.find(p => p.id === id);
+            const nuevoNombre = prompt('Nuevo nombre:', producto.nombre);
+            if (!nuevoNombre) return;
+            
+            const nuevoCodigo = prompt('Nuevo código EAN (opcional):', producto.codigo_ean || '');
+            
+            fetch(`${API_URL}/admin/productos/${id}/editar`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nombre: nuevoNombre, codigo_ean: nuevoCodigo })
+            })
+            .then(r => r.json())
+            .then(() => {
+                showToast('Producto actualizado');
+                cargarProductos();
+            })
+            .catch(e => alert('Error: ' + e.message));
+        }
+        
+        async function eliminarProducto(id) {
+            if (!confirm('¿Eliminar este producto y todos sus precios?')) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/productos/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showToast('Producto eliminado');
+                    cargarProductos();
+                    cargarEstadisticas();
+                } else {
+                    throw new Error('Error al eliminar');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        // DUPLICADOS
+        async function detectarDuplicados() {
+            const container = document.getElementById('duplicadosContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados...</p></div>';
+            
+            try {
+                // Detectar duplicados de productos
+                const respProductos = await fetch(`${API_URL}/admin/duplicados/productos?umbral=85`);
+                const dataProductos = await respProductos.json();
+                
+                // Detectar duplicados de facturas
+                const respFacturas = await fetch(`${API_URL}/admin/duplicados/facturas`);
+                const dataFacturas = await respFacturas.json();
+                
+                if (dataProductos.total === 0 && dataFacturas.total === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>✅ No se encontraron duplicados</h3>
+                            <p>Tu base de datos está limpia</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = '';
+                
+                // Mostrar duplicados de productos
+                if (dataProductos.total > 0) {
+                    html += '<h2 style="margin-bottom: 20px;">📦 Productos Duplicados (' + dataProductos.total + ')</h2>';
+                    dataProductos.duplicados.forEach(dup => {
+                        html += `
+                            <div class="duplicate-card">
+                                <div class="duplicate-header">
+                                    <div>
+                                        <strong>Similitud: ${dup.similitud}%</strong>
+                                        <span style="margin-left: 10px; color: #666;">${dup.razon}</span>
+                                    </div>
+                                    <button class="btn btn-success btn-sm" onclick="fusionarProductos(${dup.producto1.id}, ${dup.producto2.id})">
+                                        🔗 Fusionar
+                                    </button>
+                                </div>
+                                <div class="duplicate-content">
+                                    <div class="duplicate-item">
+                                        <h4>Producto #${dup.producto1.id}</h4>
+                                        <p><strong>Nombre:</strong> ${dup.producto1.nombre}</p>
+                                        <p><strong>Código:</strong> ${dup.producto1.codigo || 'Sin código'}</p>
+                                        <p><strong>Visto:</strong> ${dup.producto1.veces_visto} veces</p>
+                                    </div>
+                                    <div class="duplicate-item">
+                                        <h4>Producto #${dup.producto2.id}</h4>
+                                        <p><strong>Nombre:</strong> ${dup.producto2.nombre}</p>
+                                        <p><strong>Código:</strong> ${dup.producto2.codigo || 'Sin código'}</p>
+                                        <p><strong>Visto:</strong> ${dup.producto2.veces_visto} veces</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Mostrar duplicados de facturas
+                if (dataFacturas.total > 0) {
+                    html += '<h2 style="margin: 30px 0 20px 0;">🧾 Facturas Duplicadas (' + dataFacturas.total + ')</h2>';
+                    dataFacturas.duplicados.forEach(dup => {
+                        html += `
+                            <div class="duplicate-card">
+                                <div class="duplicate-header">
+                                    <div>
+                                        <strong>${dup.razon}</strong>
+                                    </div>
+                                    <div class="btn-group">
+                                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id})">
+                                            Eliminar #${dup.factura1.id}
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id})">
+                                            Eliminar #${dup.factura2.id}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="duplicate-content">
+                                    <div class="duplicate-item">
+                                        <h4>Factura #${dup.factura1.id}</h4>
+                                        <p><strong>Establecimiento:</strong> ${dup.factura1.establecimiento}</p>
+                                        <p><strong>Total:</strong> $${dup.factura1.total.toLocaleString()}</p>
+                                        <p><strong>Productos:</strong> ${dup.factura1.num_productos}</p>
+                                        <p><strong>Fecha:</strong> ${new Date(dup.factura1.fecha).toLocaleDateString()}</p>
+                                    </div>
+                                    <div class="duplicate-item">
+                                        <h4>Factura #${dup.factura2.id}</h4>
+                                        <p><strong>Establecimiento:</strong> ${dup.factura2.establecimiento}</p>
+                                        <p><strong>Total:</strong> $${dup.factura2.total.toLocaleString()}</p>
+                                        <p><strong>Productos:</strong> ${dup.factura2.num_productos}</p>
+                                        <p><strong>Fecha:</strong> ${new Date(dup.factura2.fecha).toLocaleDateString()}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+                console.error('Error detectando duplicados:', error);
+            }
+        }
+        
+        function limpiarDuplicados() {
+            document.getElementById('duplicadosContainer').innerHTML = `
+                <div class="empty-state">
+                    <h3>Haz clic en "Detectar Duplicados" para comenzar</h3>
+                    <p>El sistema analizará facturas y productos similares</p>
+                </div>
+            `;
+        }
+        
+        async function fusionarProductos(id1, id2) {
+            const cual = prompt(`¿Cuál producto mantener?\n1 = Producto #${id1}\n2 = Producto #${id2}\n\nEscribe 1 o 2:`);
+            
+            let mantener, eliminar;
+            if (cual === '1') {
+                mantener = id1;
+                eliminar = id2;
+            } else if (cual === '2') {
+                mantener = id2;
+                eliminar = id1;
+            } else {
+                alert('Opción inválida');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/productos/fusionar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        producto_mantener_id: mantener,
+                        producto_eliminar_id: eliminar
+                    })
+                });
+                
+                if (response.ok) {
+                    showToast('✓ Productos fusionados exitosamente');
+                    detectarDuplicados();
+                    cargarEstadisticas();
+                } else {
+                    throw new Error('Error al fusionar');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Cargar estadísticas al inicio
+        cargarEstadisticas();
+    </script>
+</body>
+</html>
