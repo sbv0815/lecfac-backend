@@ -879,7 +879,7 @@ async function guardarFacturaYEditar(invoiceData) {
         
         // Abrir el editor después de un momento
         setTimeout(() => {
-            window.open(`editor.html?id=${facturaId}`, '_blank', 'width=1400,height=900');
+           window.open(`/editor?id=${facturaId}`, '_blank', 'width=1400,height=900');
             
             // Actualizar estadísticas y limpiar
             setTimeout(() => {
@@ -1243,7 +1243,7 @@ async function guardarFacturaYEditar(invoiceData) {
         }
         
         function editarFactura(id) {
-    window.open(`editor.html?id=${id}`, '_blank', 'width=1400,height=900');
+    window.open(`/editor?id=${id}`, '_blank', 'width=1400,height=900');
 }
         
         async function eliminarFactura(id) {
