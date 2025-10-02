@@ -1023,6 +1023,130 @@ async def get_factura_detalle(factura_id: int):
         raise HTTPException(500, str(e))
 
 
+# Agregar este endpoint en tu main.py, después del endpoint @app.get("/admin/facturas/{factura_id}/detalle")
+
+@app.post("/admin/facturas")
+async def crear_factura_desde_dashboard(datos: dict):
+    """
+    Crear una nueva factura desde el dashboard después del OCR
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Extraer datos
+        establecimiento = datos.get('establecimiento', 'Desconocido')
+        total_factura = datos.get('total_factura', 0)
+        productos = datos.get('productos', [])
+        usuario_id = datos.get('usuario_id', 1)  # Usuario por defecto si no se especifica
+        
+        # Detectar cadena
+        cadena = detectar_cadena(establecimiento)
+        
+        # Crear factura
+        cursor.execute("""
+            INSERT INTO facturas (
+                usuario_id, 
+                establecimiento, 
+                cadena,
+                total_factura,
+                fecha_cargue,
+                estado_validacion,
+                puntaje_calidad,
+                tiene_imagen
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            usuario_id,
+            establecimiento,
+            cadena,
+            total_factura,
+            datetime.now(),
+            'pendiente',  # Estado inicial
+            80,  # Puntaje inicial
+            False  # Sin imagen por ahora
+        ))
+        
+        factura_id = cursor.fetchone()[0]
+        print(f"✅ Factura creada con ID: {factura_id}")
+        
+        # Guardar productos
+        productos_guardados = 0
+        for prod in productos:
+            try:
+                codigo = str(prod.get('codigo_ean', prod.get('codigo', ''))).strip()
+                nombre = str(prod.get('nombre_producto', prod.get('nombre', ''))).strip()
+                precio = float(prod.get('precio', prod.get('valor', 0)))
+                
+                if not codigo or not nombre:
+                    continue
+                
+                # Buscar o crear producto en catálogo
+                cursor.execute(
+                    "SELECT id FROM productos_catalogo WHERE codigo_ean = %s",
+                    (codigo,)
+                )
+                resultado = cursor.fetchone()
+                
+                if resultado:
+                    producto_id = resultado[0]
+                else:
+                    cursor.execute("""
+                        INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
+                        VALUES (%s, %s) 
+                        RETURNING id
+                    """, (codigo, nombre))
+                    producto_id = cursor.fetchone()[0]
+                
+                # Guardar precio
+                cursor.execute("""
+                    INSERT INTO precios_productos (
+                        producto_id, 
+                        factura_id, 
+                        precio, 
+                        establecimiento, 
+                        cadena
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    producto_id, 
+                    factura_id, 
+                    precio, 
+                    establecimiento, 
+                    cadena
+                ))
+                
+                productos_guardados += 1
+                
+            except Exception as e:
+                print(f"Error guardando producto: {e}")
+                continue
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"✅ {productos_guardados} productos guardados")
+        
+        return {
+            "success": True,
+            "id": factura_id,
+            "factura_id": factura_id,  # Para compatibilidad
+            "productos_guardados": productos_guardados,
+            "message": f"Factura #{factura_id} creada con {productos_guardados} productos"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error creando factura: {e}")
+        import traceback
+        traceback.print_exc()
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, f"Error al crear factura: {str(e)}")
+
+
 @app.put("/admin/facturas/{factura_id}/datos-generales")
 async def actualizar_datos_generales(factura_id: int, datos: dict):
     """Actualizar establecimiento, total, fecha"""
@@ -1194,6 +1318,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
