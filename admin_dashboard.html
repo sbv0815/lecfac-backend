@@ -713,67 +713,103 @@
         }
 
         // SUBIR FACTURA
-        async function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+        // SUBIR FACTURA - VERSIÓN CORREGIDA (igual a test.html)
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (file.size > 10 * 1024 * 1024) {
+        alert('El archivo es muy grande. Máximo 10MB.');
+        return;
+    }
+    
+    const statusDiv = document.getElementById('uploadStatus');
+    statusDiv.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Procesando factura con OCR...</p>
+            <p style="font-size: 12px; color: #999;">Esto puede tardar 5-15 segundos</p>
+        </div>
+    `;
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        // ✅ USAR EL MISMO ENDPOINT QUE test.html
+        const response = await fetch(`${API_URL}/invoices/parse`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const invoice = data.data;
+            const totalFormateado = invoice.total 
+                ? `$${invoice.total.toLocaleString('es-CO')}` 
+                : 'No detectado';
             
-            if (file.size > 10 * 1024 * 1024) {
-                alert('El archivo es muy grande. Máximo 10MB.');
-                return;
-            }
-            
-            const statusDiv = document.getElementById('uploadStatus');
-            statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Procesando factura con OCR...</div>';
-            
-            try {
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                const response = await fetch(`${API_URL}/invoices/save-with-image`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    statusDiv.innerHTML = `
-                        <div class="result-box success">
-                            <h3 style="color: #2e7d32; margin-bottom: 10px;">Factura procesada exitosamente</h3>
-                            <p style="color: #666;">
-                                <strong>Establecimiento:</strong> ${data.factura.establecimiento || 'No detectado'}<br>
-                                <strong>Total:</strong> $${(data.factura.total || 0).toLocaleString()}<br>
-                                <strong>Productos detectados:</strong> ${data.productos_guardados || 0}<br>
-                                <strong>Puntaje de calidad:</strong> ${data.factura.puntaje || 0}/100
-                            </p>
-                            <div style="margin-top: 15px;">
-                                <button class="btn btn-primary" onclick="editarFactura(${data.factura.id})">
-                                    Ver y Editar Factura
-                                </button>
-                                <button class="btn btn-secondary" onclick="limpiarUpload()">
-                                    Subir Otra
-                                </button>
-                            </div>
-                        </div>
-                    `;
+            statusDiv.innerHTML = `
+                <div class="result-box success">
+                    <h3 style="color: #2e7d32; margin-bottom: 10px;">✅ Factura procesada exitosamente</h3>
+                    <p style="color: #666;">
+                        <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
+                        <strong>Total:</strong> ${totalFormateado}<br>
+                        <strong>Productos detectados:</strong> ${invoice.productos.length}<br>
+                        <strong>Método:</strong> ${invoice.metadatos?.metodo || 'Claude Vision'}
+                    </p>
                     
-                    cargarEstadisticas();
-                } else {
-                    throw new Error(data.detail || 'Error al procesar');
-                }
-                
-            } catch (error) {
-                statusDiv.innerHTML = `
-                    <div class="result-box error">
-                        <h3 style="color: #c62828;">Error al procesar</h3>
-                        <p style="color: #666;">${error.message}</p>
-                        <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
-                            Intentar de Nuevo
+                    <div style="margin-top: 15px; max-height: 300px; overflow-y: auto;">
+                        <h4 style="margin-bottom: 10px;">Productos:</h4>
+                        ${invoice.productos.map((prod, i) => `
+                            <div style="padding: 8px; border-left: 3px solid #1a73e8; background: #f8f9fa; margin: 8px 0; border-radius: 4px;">
+                                <strong>${i + 1}. ${prod.nombre}</strong>
+                                <div style="font-size: 12px; color: #666;">
+                                    Código: ${prod.codigo || 'Sin código'} | 
+                                    Precio: $${prod.valor.toLocaleString('es-CO')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-secondary" onclick="limpiarUpload()">
+                            Subir Otra Factura
                         </button>
                     </div>
-                `;
-            }
+                </div>
+            `;
+            
+            cargarEstadisticas();
+            
+        } else {
+            statusDiv.innerHTML = `
+                <div class="result-box error">
+                    <h3 style="color: #c62828;">❌ Error en el procesamiento</h3>
+                    <p style="color: #666;">${data.message || 'Error desconocido'}</p>
+                    <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
+                        Intentar de Nuevo
+                    </button>
+                </div>
+            `;
         }
+        
+    } catch (error) {
+        statusDiv.innerHTML = `
+            <div class="result-box error">
+                <h3 style="color: #c62828;">❌ Error de conexión</h3>
+                <p style="color: #666;">${error.message}</p>
+                <p style="font-size: 12px; margin-top: 10px;">
+                    Verifica que la API esté activa en: ${API_URL}
+                </p>
+                <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
+                    Intentar de Nuevo
+                </button>
+            </div>
+        `;
+    }
+}
 
         function limpiarUpload() {
             document.getElementById('invoiceFile').value = '';
