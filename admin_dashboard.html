@@ -1157,8 +1157,8 @@ async function handleFileSelect(event) {
         }
         
         function editarFactura(id) {
-            window.open(`editor.html?id=${id}`, '_blank', 'width=1400,height=900');
-        }
+    window.open(`editor.html?id=${id}`, '_blank', 'width=1400,height=900');
+}
         
         async function eliminarFactura(id) {
             if (!confirm('¿Eliminar esta factura y todos sus productos?')) return;
