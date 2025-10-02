@@ -727,8 +727,8 @@ async function handleFileSelect(event) {
     statusDiv.innerHTML = `
         <div class="loading">
             <div class="spinner"></div>
-            <p>Procesando factura con OCR...</p>
-            <p style="font-size: 12px; color: #999;">Esto puede tardar 5-15 segundos</p>
+            <p>Procesando y guardando factura con OCR...</p>
+            <p style="font-size: 12px; color: #999;">Esto puede tardar 10-20 segundos</p>
         </div>
     `;
     
@@ -736,87 +736,51 @@ async function handleFileSelect(event) {
         const formData = new FormData();
         formData.append('file', file);
         
-        // PASO 1: Parsear con OCR
-        const parseResponse = await fetch(`${API_URL}/invoices/parse`, {
+        // USAR SOLO save-with-image que hace todo
+        const response = await fetch(`${API_URL}/invoices/save-with-image`, {
             method: 'POST',
             body: formData
         });
         
-        const parseData = await parseResponse.json();
-        console.log('Parse result:', parseData); // DEBUG
-        
-        if (!parseData.success) {
-            throw new Error(parseData.message || 'Error en el procesamiento');
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Error save-with-image:', errorData);
+            throw new Error(errorData.detail ? JSON.stringify(errorData.detail) : 'Error guardando factura');
         }
         
-        // PASO 2: Guardar la factura completa con imagen
-        const formData2 = new FormData();
-        formData2.append('file', file);
+        const data = await response.json();
+        console.log('Respuesta completa:', data);
         
-        const saveResponse = await fetch(`${API_URL}/invoices/save-with-image`, {
-            method: 'POST',
-            body: formData2
-        });
+        const facturaId = data.factura?.id || data.id;
+        const establecimiento = data.factura?.establecimiento || 'No detectado';
+        const total = data.factura?.total || data.factura?.total_factura || 0;
+        const numProductos = data.productos_guardados || 0;
+        const puntaje = data.factura?.puntaje || data.factura?.puntaje_calidad || 0;
         
-        const saveData = await saveResponse.json();
-        console.log('Save result:', saveData); // DEBUG
+        console.log('Factura ID:', facturaId);
         
-        const invoice = parseData.data;
-        const facturaId = saveData.factura?.id || saveData.id || null;
-        
-        console.log('Factura ID obtenido:', facturaId); // DEBUG
-        
-        const totalFormateado = invoice.total 
-            ? `$${invoice.total.toLocaleString('es-CO')}` 
-            : 'No detectado';
+        if (!facturaId) {
+            throw new Error('No se obtuvo ID de factura');
+        }
         
         statusDiv.innerHTML = `
             <div class="result-box success">
-                <h3 style="color: #2e7d32; margin-bottom: 15px;">✅ Factura procesada exitosamente</h3>
+                <h3 style="color: #2e7d32; margin-bottom: 15px;">✅ Factura guardada exitosamente</h3>
                 
                 <div style="background: white; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
                     <p style="color: #666; margin: 5px 0;">
-                        <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
-                        <strong>Total:</strong> ${totalFormateado}<br>
-                        <strong>Productos:</strong> ${invoice.productos.length}
-                        ${facturaId ? `<br><strong>ID Factura:</strong> #${facturaId}` : ''}
+                        <strong>ID:</strong> #${facturaId}<br>
+                        <strong>Establecimiento:</strong> ${establecimiento}<br>
+                        <strong>Total:</strong> $${total.toLocaleString('es-CO')}<br>
+                        <strong>Productos guardados:</strong> ${numProductos}<br>
+                        <strong>Puntaje de calidad:</strong> ${puntaje}/100
                     </p>
                 </div>
                 
-                ${facturaId ? `
-                    <div style="margin-bottom: 15px;">
-                        <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="width: 100%; padding: 15px; font-size: 16px;">
-                            ✏️ Ver y Editar Factura
-                        </button>
-                    </div>
-                ` : `
-                    <div style="background: #fff3cd; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #ffc107;">
-                        <strong>⚠️ Advertencia:</strong> La factura se procesó pero no se pudo guardar. No se puede editar.
-                    </div>
-                `}
-                
-                <div style="max-height: 350px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; background: #fafafa;">
-                    <h4 style="margin-bottom: 10px; position: sticky; top: 0; background: #fafafa; padding-bottom: 5px;">Productos detectados:</h4>
-                    <table style="width: 100%; font-size: 12px;">
-                        <thead style="position: sticky; top: 30px; background: #fafafa;">
-                            <tr style="border-bottom: 2px solid #ddd;">
-                                <th style="text-align: left; padding: 5px;">#</th>
-                                <th style="text-align: left; padding: 5px;">Producto</th>
-                                <th style="text-align: left; padding: 5px;">Código</th>
-                                <th style="text-align: right; padding: 5px;">Precio</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${invoice.productos.map((prod, i) => `
-                                <tr style="border-bottom: 1px solid #eee;">
-                                    <td style="padding: 5px; color: #999;">${i + 1}</td>
-                                    <td style="padding: 5px;"><strong>${prod.nombre}</strong></td>
-                                    <td style="padding: 5px; color: #666; font-family: monospace;">${prod.codigo || '-'}</td>
-                                    <td style="padding: 5px; text-align: right; color: #2e7d32; font-weight: bold;">$${prod.valor.toLocaleString('es-CO')}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div style="margin-bottom: 15px;">
+                    <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="width: 100%; padding: 15px; font-size: 16px;">
+                        ✏️ Ver y Editar Factura
+                    </button>
                 </div>
                 
                 <div style="margin-top: 15px; text-align: center;">
@@ -835,6 +799,9 @@ async function handleFileSelect(event) {
             <div class="result-box error">
                 <h3 style="color: #c62828;">❌ Error al procesar</h3>
                 <p style="color: #666;">${error.message}</p>
+                <p style="font-size: 12px; margin-top: 10px; color: #999;">
+                    Revisa la consola del navegador (F12) para más detalles
+                </p>
                 <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
                     Intentar de Nuevo
                 </button>
