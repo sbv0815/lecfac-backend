@@ -450,40 +450,7 @@ document.addEventListener('mouseup', () => {
     }
 });
 
-cargarFactura();
-        
-        async function cargarFactura() {
-            showLoading();
-            
-            try {
-                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/detalle`);
-                const data = await response.json();
-                
-                // Llenar formulario
-                document.getElementById('facturaId').textContent = data.factura.id;
-                document.getElementById('establecimiento').value = data.factura.establecimiento || '';
-                document.getElementById('total').value = data.factura.total || '';
-                document.getElementById('puntaje').textContent = data.factura.puntaje || 0;
-                
-                const badge = document.getElementById('estadoBadge');
-                badge.textContent = data.factura.estado || 'pendiente';
-                badge.className = 'validation-badge badge-' + (data.factura.estado || 'pendiente');
-                
-                // Cargar productos
-                productos = data.productos.map(p => ({...p}));
-                productosOriginales = JSON.parse(JSON.stringify(productos));
-                renderProductos();
-                
-                // Cargar imagen
-                document.getElementById('facturaImage').src = `${API_URL}/admin/facturas/${facturaId}/imagen`;
-                
-                hideLoading();
-            } catch (error) {
-                alert('Error cargando factura: ' + error.message);
-                hideLoading();
-            }
-        }
-        
+
         function renderProductos() {
             const tbody = document.getElementById('productosBody');
             tbody.innerHTML = '';
