@@ -24,6 +24,7 @@
             background: #1a1a1a;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
         
         .image-controls {
@@ -33,6 +34,7 @@
             gap: 10px;
             align-items: center;
             border-bottom: 1px solid #444;
+            flex-shrink: 0;
         }
         
         .image-controls button {
@@ -57,15 +59,18 @@
             flex: 1;
             overflow: auto;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
+            padding: 20px;
             cursor: grab;
         }
         
         .image-container:active { cursor: grabbing; }
         
         .image-container img {
-            max-width: none;
+            max-width: 100%;
+            height: auto;
+            display: block;
             transition: transform 0.1s;
         }
         
@@ -84,6 +89,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
         
         .validation-badge {
@@ -101,6 +107,7 @@
             flex: 1;
             overflow-y: auto;
             padding: 20px;
+            padding-bottom: 80px;
         }
         
         .form-section {
@@ -200,11 +207,16 @@
         .btn-add:hover { background: #2d9148; }
         
         .form-actions {
-            padding: 20px;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 45%;
+            padding: 15px 20px;
             background: #f9f9f9;
-            border-top: 1px solid #ddd;
+            border-top: 2px solid #ddd;
             display: flex;
             gap: 10px;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
         }
         
         .btn-primary {
@@ -275,6 +287,33 @@
         @keyframes slideIn {
             from { transform: translateX(400px); }
             to { transform: translateX(0); }
+        }
+
+        .form-content::-webkit-scrollbar,
+        .image-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .form-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .form-content::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        .form-content::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .image-container::-webkit-scrollbar-track {
+            background: #2d2d2d;
+        }
+
+        .image-container::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
         }
     </style>
 </head>
@@ -352,35 +391,51 @@
         let zoomLevel = 1;
         let rotation = 0;
         let productos = [];
-        let productosOriginales = [];
         
         async function cargarFactura() {
+            console.log('Cargando factura ID:', facturaId);
             showLoading();
             
             try {
                 const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/detalle`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('Datos recibidos:', data);
                 
                 // Llenar formulario
-                document.getElementById('facturaId').textContent = data.factura.id;
+                document.getElementById('facturaId').textContent = data.factura.id || '-';
                 document.getElementById('establecimiento').value = data.factura.establecimiento || '';
-                document.getElementById('total').value = data.factura.total || '';
-                document.getElementById('puntaje').textContent = data.factura.puntaje || 0;
+                document.getElementById('total').value = data.factura.total_factura || data.factura.total || '';
+                document.getElementById('puntaje').textContent = data.factura.puntaje_calidad || data.factura.puntaje || 0;
                 
                 const badge = document.getElementById('estadoBadge');
-                badge.textContent = data.factura.estado || 'pendiente';
-                badge.className = 'validation-badge badge-' + (data.factura.estado || 'pendiente');
+                const estado = data.factura.estado_validacion || data.factura.estado || 'pendiente';
+                badge.textContent = estado;
+                badge.className = 'validation-badge badge-' + estado;
                 
                 // Cargar productos
-                productos = data.productos.map(p => ({...p}));
-                productosOriginales = JSON.parse(JSON.stringify(productos));
+                productos = (data.productos || []).map(p => ({
+                    id: p.id,
+                    codigo: p.codigo_ean || p.codigo_local || p.codigo || '',
+                    nombre: p.nombre_producto || p.nombre || '',
+                    precio: p.precio || 0
+                }));
+                
+                console.log('Productos cargados:', productos);
                 renderProductos();
                 
                 // Cargar imagen
-                document.getElementById('facturaImage').src = `${API_URL}/admin/facturas/${facturaId}/imagen`;
+                const imgUrl = `${API_URL}/admin/facturas/${facturaId}/imagen`;
+                console.log('Cargando imagen:', imgUrl);
+                document.getElementById('facturaImage').src = imgUrl;
                 
                 hideLoading();
             } catch (error) {
+                console.error('Error completo:', error);
                 alert('Error cargando factura: ' + error.message);
                 hideLoading();
             }
@@ -406,8 +461,13 @@
         function agregarProducto() {
             productos.push({ codigo: '', nombre: '', precio: 0, nuevo: true });
             renderProductos();
-            const tbody = document.getElementById('productosBody');
-            tbody.lastElementChild.querySelector('input').focus();
+            
+            const formContent = document.querySelector('.form-content');
+            setTimeout(() => {
+                formContent.scrollTop = formContent.scrollHeight;
+                const tbody = document.getElementById('productosBody');
+                tbody.lastElementChild.querySelector('input').focus();
+            }, 100);
         }
         
         async function eliminarProducto(index) {
@@ -418,6 +478,7 @@
             if (!prod.nuevo && prod.id) {
                 try {
                     await fetch(`${API_URL}/admin/productos/${prod.id}`, { method: 'DELETE' });
+                    showToast('Producto eliminado');
                 } catch (e) {
                     console.error('Error eliminando:', e);
                 }
@@ -463,7 +524,7 @@
                     }
                 }
                 
-                showToast('Cambios guardados exitosamente');
+                showToast('✓ Cambios guardados exitosamente');
                 setTimeout(() => cargarFactura(), 1500);
                 
             } catch (error) {
@@ -473,7 +534,6 @@
             }
         }
         
-        // Controles de zoom
         function zoomIn() {
             zoomLevel *= 1.2;
             updateZoom();
@@ -501,7 +561,6 @@
             document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
         }
         
-        // Pan
         let isPanning = false;
         let startX, startY, scrollLeft, scrollTop;
         
@@ -547,7 +606,6 @@
             setTimeout(() => toast.remove(), 3000);
         }
         
-        // Atajos
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
