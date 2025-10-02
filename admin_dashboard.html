@@ -714,6 +714,8 @@
 
   // Reemplaza SOLO la función handleFileSelect en tu admin_dashboard.html con esta versión:
 
+// Reemplaza la función handleFileSelect en admin_dashboard.html con esta versión final:
+
 async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -736,7 +738,7 @@ async function handleFileSelect(event) {
         const formData = new FormData();
         formData.append('file', file);
         
-        // Usar el mismo endpoint que test.html
+        // Procesar con OCR
         const response = await fetch(`${API_URL}/invoices/parse`, {
             method: 'POST',
             body: formData
@@ -754,9 +756,7 @@ async function handleFileSelect(event) {
             ? `$${invoice.total.toLocaleString('es-CO')}` 
             : 'No detectado';
         
-        // Guardar los datos de la factura temporalmente para poder crear y editar
-        window.tempInvoiceData = invoice;
-        
+        // Mostrar resultados con botón para guardar y editar
         statusDiv.innerHTML = `
             <div class="result-box success">
                 <h3 style="color: #2e7d32; margin-bottom: 15px;">✅ Factura procesada exitosamente</h3>
@@ -794,16 +794,14 @@ async function handleFileSelect(event) {
                 </div>
                 
                 <div style="text-align: center;">
-                    <div style="margin-bottom: 15px;">
-                        <button class="btn btn-primary" onclick="guardarYEditarFactura()" style="font-size: 16px; padding: 12px 30px; margin-right: 10px;">
-                            💾 Guardar y Ver Imagen
-                        </button>
-                        <button class="btn btn-secondary" onclick="limpiarUpload()">
-                            📸 Subir Otra Factura
-                        </button>
-                    </div>
-                    <p style="color: #666; font-size: 12px;">
-                        Haz clic en "Guardar y Ver Imagen" para guardar la factura y poder editarla
+                    <button class="btn btn-primary" onclick="guardarFacturaYEditar(${JSON.stringify(invoice).replace(/"/g, '&quot;')})" style="font-size: 16px; padding: 12px 30px;">
+                        💾 Guardar y Editar con Imagen
+                    </button>
+                    <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-left: 10px;">
+                        📸 Subir Otra Factura
+                    </button>
+                    <p style="color: #666; font-size: 12px; margin-top: 10px;">
+                        Al hacer clic en "Guardar y Editar con Imagen" podrás ver la imagen de la factura y corregir cualquier error
                     </p>
                 </div>
             </div>
@@ -823,138 +821,86 @@ async function handleFileSelect(event) {
     }
 }
 
-// Nueva función para guardar la factura y abrir el editor
-async function guardarYEditarFactura() {
-    if (!window.tempInvoiceData) {
-        alert('No hay datos de factura para guardar');
-        return;
-    }
-    
+// Función para guardar la factura y abrir el editor
+async function guardarFacturaYEditar(invoiceData) {
     const statusDiv = document.getElementById('uploadStatus');
     statusDiv.innerHTML = `
         <div class="loading">
             <div class="spinner"></div>
-            <p>Guardando factura en la base de datos...</p>
+            <p>Guardando factura...</p>
         </div>
     `;
     
     try {
-        // Crear la estructura de datos para guardar
-        const facturaData = {
-            establecimiento: window.tempInvoiceData.establecimiento || 'Sin establecimiento',
-            total_factura: window.tempInvoiceData.total || 0,
-            fecha_cargue: new Date().toISOString(),
-            estado_validacion: 'pendiente',
-            puntaje_calidad: 80, // Puntaje por defecto
-            productos: window.tempInvoiceData.productos.map(p => ({
+        // Preparar datos para el endpoint
+        const datosFactura = {
+            establecimiento: invoiceData.establecimiento || 'Desconocido',
+            total_factura: invoiceData.total || 0,
+            productos: invoiceData.productos.map(p => ({
+                codigo: p.codigo || '',
                 codigo_ean: p.codigo || '',
-                codigo_local: p.codigo || '',
+                nombre: p.nombre || '',
                 nombre_producto: p.nombre || '',
-                precio: p.valor || 0
-            }))
+                precio: p.valor || 0,
+                valor: p.valor || 0
+            })),
+            usuario_id: 1  // Usuario por defecto, cambiar según tu lógica
         };
         
-        console.log('Enviando datos para guardar:', facturaData);
+        console.log('Enviando datos:', datosFactura);
         
-        // Intentar guardar con diferentes endpoints posibles
-        let saveResponse;
-        let facturaId = null;
+        // Crear factura
+        const response = await fetch(`${API_URL}/admin/facturas`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datosFactura)
+        });
         
-        // Intento 1: endpoint estándar
-        try {
-            saveResponse = await fetch(`${API_URL}/admin/facturas`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(facturaData)
-            });
-            
-            if (saveResponse.ok) {
-                const result = await saveResponse.json();
-                facturaId = result.id || result.factura_id || result.invoice_id;
-            }
-        } catch (e) {
-            console.log('Intento 1 falló:', e);
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Error ${response.status}: ${error}`);
         }
         
-        // Intento 2: endpoint alternativo
-        if (!facturaId) {
-            try {
-                saveResponse = await fetch(`${API_URL}/invoices`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        establecimiento: window.tempInvoiceData.establecimiento,
-                        total: window.tempInvoiceData.total,
-                        items: window.tempInvoiceData.productos
-                    })
-                });
-                
-                if (saveResponse.ok) {
-                    const result = await saveResponse.json();
-                    facturaId = result.id || result.invoice_id;
-                }
-            } catch (e) {
-                console.log('Intento 2 falló:', e);
-            }
-        }
+        const result = await response.json();
+        const facturaId = result.id || result.factura_id;
         
-        if (facturaId) {
-            // Éxito - abrir el editor
-            showToast('✅ Factura guardada con éxito. Abriendo editor...');
+        console.log('Factura creada con ID:', facturaId);
+        
+        // Mostrar éxito y abrir editor
+        statusDiv.innerHTML = `
+            <div class="result-box success">
+                <h3 style="color: #2e7d32;">✅ Factura guardada</h3>
+                <p style="margin: 15px 0;">
+                    Factura #<strong>${facturaId}</strong> creada exitosamente
+                </p>
+                <p style="color: #666;">Abriendo el editor...</p>
+            </div>
+        `;
+        
+        // Abrir el editor después de un momento
+        setTimeout(() => {
+            window.open(`editor.html?id=${facturaId}`, '_blank', 'width=1400,height=900');
             
-            statusDiv.innerHTML = `
-                <div class="result-box success">
-                    <h3 style="color: #2e7d32;">✅ Factura guardada</h3>
-                    <p style="margin: 15px 0;">ID de factura: <strong>#${facturaId}</strong></p>
-                    <p style="color: #666; font-size: 13px;">Abriendo el editor de imágenes...</p>
-                </div>
-            `;
-            
-            // Abrir el editor en una nueva ventana
+            // Actualizar estadísticas y limpiar
             setTimeout(() => {
-                window.open(`editor.html?id=${facturaId}`, '_blank', 'width=1400,height=900');
-                
-                // Actualizar estadísticas y limpiar después de un momento
-                setTimeout(() => {
-                    cargarEstadisticas();
-                    limpiarUpload();
-                }, 2000);
-            }, 500);
-            
-        } else {
-            // Si no se pudo guardar, mostrar opciones alternativas
-            throw new Error('No se pudo guardar en la base de datos');
-        }
+                cargarEstadisticas();
+                cargarFacturas();
+                limpiarUpload();
+            }, 1000);
+        }, 500);
         
     } catch (error) {
         console.error('Error guardando:', error);
-        
-        // Mostrar mensaje de error pero con opción de continuar
         statusDiv.innerHTML = `
             <div class="result-box error">
-                <h3 style="color: #c62828;">⚠️ No se pudo guardar automáticamente</h3>
-                <p style="color: #666; margin: 15px 0;">
-                    ${error.message}<br><br>
-                    <strong>Opciones:</strong>
-                </p>
-                <ol style="text-align: left; margin: 10px 20px; color: #666;">
-                    <li>Ve a la pestaña "Facturas" y crea una nueva factura manualmente</li>
-                    <li>Luego usa el botón "Editar" para abrir el editor de imágenes</li>
-                </ol>
-                <div style="margin-top: 20px;">
-                    <button class="btn btn-primary" onclick="switchTab('facturas')" style="margin-right: 10px;">
-                        Ir a Facturas
-                    </button>
-                    <button class="btn btn-secondary" onclick="limpiarUpload()">
-                        Intentar con Otra Factura
-                    </button>
-                </div>
+                <h3 style="color: #c62828;">❌ Error al guardar</h3>
+                <p style="color: #666; margin: 15px 0;">${error.message}</p>
+                <button class="btn btn-secondary" onclick="limpiarUpload()">
+                    Intentar de Nuevo
+                </button>
             </div>
         `;
     }
-    
-    // Limpiar datos temporales
-    delete window.tempInvoiceData;
 }
 
 
