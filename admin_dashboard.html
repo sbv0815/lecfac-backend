@@ -714,6 +714,11 @@
 
         // SUBIR FACTURA
         // SUBIR FACTURA - VERSIÓN CORREGIDA (igual a test.html)
+// INSTRUCCIONES:
+// 1. Abre tu archivo admin_dashboard.html original
+// 2. Busca la función handleFileSelect (aproximadamente en la línea 770)
+// 3. Reemplaza SOLO esa función con esta versión:
+
 async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -749,6 +754,32 @@ async function handleFileSelect(event) {
             throw new Error(data.message || 'Error en el procesamiento');
         }
         
+        // Primero intentar guardar la factura en la BD
+        let facturaId = null;
+        try {
+            const saveResponse = await fetch(`${API_URL}/admin/facturas`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    establecimiento: data.data.establecimiento,
+                    total_factura: data.data.total,
+                    productos: data.data.productos.map(p => ({
+                        codigo_ean: p.codigo,
+                        nombre: p.nombre,
+                        precio: p.valor
+                    }))
+                })
+            });
+            
+            if (saveResponse.ok) {
+                const saveData = await saveResponse.json();
+                facturaId = saveData.id || saveData.factura_id;
+                console.log('Factura guardada con ID:', facturaId);
+            }
+        } catch (saveError) {
+            console.log('No se pudo guardar automáticamente:', saveError);
+        }
+        
         const invoice = data.data;
         const totalFormateado = invoice.total 
             ? `$${invoice.total.toLocaleString('es-CO')}` 
@@ -763,6 +794,7 @@ async function handleFileSelect(event) {
                         <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
                         <strong>Total:</strong> ${totalFormateado}<br>
                         <strong>Productos:</strong> ${invoice.productos.length}
+                        ${facturaId ? `<br><strong>ID Factura:</strong> #${facturaId}` : ''}
                     </p>
                 </div>
                 
@@ -791,16 +823,37 @@ async function handleFileSelect(event) {
                 </div>
                 
                 <div style="text-align: center;">
-                    <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
-                        La factura ha sido procesada. Para guardarla y poder editarla más tarde,<br>
-                        ve a la pestaña <strong>"Facturas"</strong> y haz clic en "Subir Nueva Factura" desde allí.
-                    </p>
-                    <button class="btn btn-secondary" onclick="limpiarUpload()">
-                        Subir Otra Factura
-                    </button>
+                    ${facturaId ? `
+                        <div style="margin-bottom: 15px;">
+                            <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="font-size: 16px; padding: 12px 24px;">
+                                📝 Ver Imagen y Editar
+                            </button>
+                            <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-left: 10px;">
+                                📸 Subir Otra Factura
+                            </button>
+                        </div>
+                        <p style="color: #666; font-size: 12px;">
+                            Haz clic en "Ver Imagen y Editar" para revisar la factura escaneada y hacer correcciones
+                        </p>
+                    ` : `
+                        <div style="margin-bottom: 15px;">
+                            <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
+                                La factura se procesó pero no se guardó automáticamente.<br>
+                                Puedes guardarla manualmente desde la pestaña "Facturas".
+                            </p>
+                            <button class="btn btn-secondary" onclick="limpiarUpload()">
+                                Subir Otra Factura
+                            </button>
+                        </div>
+                    `}
                 </div>
             </div>
         `;
+        
+        // Si se guardó exitosamente, actualizar estadísticas
+        if (facturaId) {
+            cargarEstadisticas();
+        }
         
     } catch (error) {
         console.error('Error completo:', error);
@@ -815,6 +868,8 @@ async function handleFileSelect(event) {
         `;
     }
 }
+
+
         function limpiarUpload() {
             document.getElementById('invoiceFile').value = '';
             document.getElementById('uploadStatus').innerHTML = '';
