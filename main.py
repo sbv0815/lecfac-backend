@@ -50,19 +50,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-@app.get("/editor.html")
-async def serve_editor():
-    """Servir editor de facturas"""
-    return FileResponse("editor.html")
+# Endpoints para servir HTML
+@app.get("/")
+async def root():
+    return {"message": "LecFac API"}
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(admin_dashboard_router)
+@app.get("/test")
+async def test_page():
+    return FileResponse("test.html")
+
+@app.get("/dashboard")
+async def dashboard():
+    return FileResponse("admin_dashboard.html")
 
 # ========================================
 # MODELOS PYDANTIC
@@ -1191,6 +1190,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
