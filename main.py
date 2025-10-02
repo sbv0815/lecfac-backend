@@ -72,6 +72,81 @@ async def dashboard():
 @app.get("/editor")
 async def editor_page():
     return FileResponse("editor.html")
+
+# Agregar este endpoint que falta
+@app.get("/admin/facturas")
+async def listar_facturas():
+    """Listar todas las facturas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT f.id, f.establecimiento, f.total_factura, 
+                   f.fecha_cargue, f.estado_validacion, f.cadena,
+                   COUNT(pp.id) as productos
+            FROM facturas f
+            LEFT JOIN precios_productos pp ON f.id = pp.factura_id
+            GROUP BY f.id, f.establecimiento, f.total_factura, 
+                     f.fecha_cargue, f.estado_validacion, f.cadena
+            ORDER BY f.id DESC
+            LIMIT 100
+        """)
+        
+        facturas = []
+        for row in cursor.fetchall():
+            facturas.append({
+                "id": row[0],
+                "establecimiento": row[1],
+                "total_factura": float(row[2]) if row[2] else 0,
+                "fecha": row[3].isoformat() if row[3] else None,
+                "estado": row[4],
+                "cadena": row[5],
+                "productos": row[6]
+            })
+        
+        conn.close()
+        
+        return {"success": True, "facturas": facturas}
+        
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+# Agregar el endpoint de estadísticas
+@app.get("/admin/stats")
+async def get_stats():
+    """Obtener estadísticas del dashboard"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Total facturas
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        total_facturas = cursor.fetchone()[0]
+        
+        # Productos únicos
+        cursor.execute("SELECT COUNT(*) FROM productos_catalogo")
+        productos_unicos = cursor.fetchone()[0]
+        
+        # Facturas pendientes
+        cursor.execute("SELECT COUNT(*) FROM facturas WHERE estado_validacion = 'pendiente'")
+        facturas_pendientes = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            "total_facturas": total_facturas,
+            "productos_unicos": productos_unicos,
+            "facturas_pendientes": facturas_pendientes
+        }
+        
+    except Exception as e:
+        return {
+            "total_facturas": 0,
+            "productos_unicos": 0,
+            "facturas_pendientes": 0,
+            "error": str(e)
+        }
 # ========================================
 # MODELOS PYDANTIC
 # ========================================
@@ -1322,6 +1397,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
