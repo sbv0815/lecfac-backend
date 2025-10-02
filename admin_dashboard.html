@@ -17,6 +17,9 @@
             color: white;
             padding: 0;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
         
         .navbar-header {
@@ -33,18 +36,20 @@
             display: flex;
             gap: 0;
             padding: 0 30px;
+            overflow-x: auto;
         }
         
         .tab {
-            padding: 16px 24px;
+            padding: 16px 20px;
             cursor: pointer;
             background: none;
             border: none;
             color: rgba(255,255,255,0.8);
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 500;
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
+            white-space: nowrap;
         }
         
         .tab:hover {
@@ -303,6 +308,90 @@
             color: #666;
         }
         
+        /* Alertas */
+        .alert-card {
+            background: white;
+            border-left: 4px solid #ea4335;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .alert-card.warning {
+            border-left-color: #fbbc04;
+        }
+        
+        .alert-card.success {
+            border-left-color: #34a853;
+        }
+        
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .alert-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .alert-meta {
+            display: flex;
+            gap: 15px;
+            margin-top: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .price-comparison {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 12px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .price-item {
+            flex: 1;
+        }
+        
+        .price-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .price-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        .price-change {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .price-change.up {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .price-change.down {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
         .loading {
             text-align: center;
             padding: 40px;
@@ -347,6 +436,22 @@
             from { transform: translateX(400px); }
             to { transform: translateX(0); }
         }
+
+        .comparison-table {
+            margin-top: 15px;
+        }
+
+        .comparison-table table {
+            font-size: 13px;
+        }
+
+        .comparison-table tr.cheapest {
+            background: #e8f5e9 !important;
+        }
+
+        .comparison-table tr.expensive {
+            background: #ffebee !important;
+        }
     </style>
 </head>
 <body>
@@ -356,6 +461,7 @@
         </div>
         <div class="tabs">
             <button class="tab active" onclick="switchTab('stats')">📊 Estadísticas</button>
+            <button class="tab" onclick="switchTab('alertas')">🔔 Alertas de Precios</button>
             <button class="tab" onclick="switchTab('facturas')">🧾 Facturas</button>
             <button class="tab" onclick="switchTab('productos')">📦 Productos</button>
             <button class="tab" onclick="switchTab('duplicados')">⚠️ Duplicados</button>
@@ -375,8 +481,8 @@
                     <div class="value" id="stat-productos">-</div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Duplicados Detectados</div>
-                    <div class="value" id="stat-duplicados">-</div>
+                    <div class="label">Alertas Activas</div>
+                    <div class="value" id="stat-alertas">-</div>
                 </div>
                 <div class="stat-card">
                     <div class="label">Pendientes Revisión</div>
@@ -394,12 +500,30 @@
                             Bienvenido al panel de administración de LecFac. Usa las pestañas superiores para:
                         </p>
                         <ul style="margin: 20px 0; padding-left: 20px; color: #666; line-height: 2;">
+                            <li><strong>Alertas de Precios:</strong> Ver cambios significativos y comparar entre establecimientos</li>
                             <li><strong>Facturas:</strong> Ver, editar y eliminar facturas subidas</li>
                             <li><strong>Productos:</strong> Gestionar el catálogo de productos</li>
                             <li><strong>Duplicados:</strong> Detectar y fusionar productos/facturas duplicadas</li>
                         </ul>
                     </div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- TAB: ALERTAS DE PRECIOS -->
+        <div id="tab-alertas" class="tab-content">
+            <div class="toolbar">
+                <select id="diasAlertas" onchange="cargarAlertas()" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    <option value="7">Últimos 7 días</option>
+                    <option value="15">Últimos 15 días</option>
+                    <option value="30" selected>Últimos 30 días</option>
+                </select>
+                <button class="btn btn-primary" onclick="cargarAlertas()">🔄 Actualizar</button>
+                <button class="btn btn-secondary" onclick="cargarTendencias()">📈 Ver Tendencias</button>
+            </div>
+            
+            <div id="alertasContainer">
+                <div class="loading"><div class="spinner"></div>Cargando alertas...</div>
             </div>
         </div>
         
@@ -502,10 +626,12 @@
             document.getElementById('tab-' + tabName).classList.add('active');
             
             if (tabName === 'stats') cargarEstadisticas();
+            if (tabName === 'alertas') cargarAlertas();
             if (tabName === 'facturas') cargarFacturas();
             if (tabName === 'productos') cargarProductos();
         }
         
+        // ESTADÍSTICAS
         async function cargarEstadisticas() {
             try {
                 const response = await fetch(`${API_URL}/admin/stats`);
@@ -515,14 +641,255 @@
                 document.getElementById('stat-productos').textContent = data.productos_unicos || 0;
                 document.getElementById('stat-pendientes').textContent = data.facturas_pendientes || 0;
                 
-                const dupResponse = await fetch(`${API_URL}/admin/duplicados/productos`);
-                const dupData = await dupResponse.json();
-                document.getElementById('stat-duplicados').textContent = dupData.total || 0;
+                // Obtener número de alertas
+                const alertasResp = await fetch(`${API_URL}/admin/alertas/cambios-precio?dias=7`);
+                const alertasData = await alertasResp.json();
+                document.getElementById('stat-alertas').textContent = alertasData.total || 0;
             } catch (error) {
                 console.error('Error cargando estadísticas:', error);
             }
         }
         
+        // ALERTAS DE PRECIOS
+        async function cargarAlertas() {
+            const container = document.getElementById('alertasContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando alertas...</div>';
+            
+            try {
+                const dias = document.getElementById('diasAlertas').value;
+                const response = await fetch(`${API_URL}/admin/alertas/cambios-precio?dias=${dias}`);
+                const data = await response.json();
+                
+                if (data.total === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>✅ No hay alertas de precio</h3>
+                            <p>Todos los precios están dentro del rango normal</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = '<h2 style="margin-bottom: 20px;">🔔 Cambios Detectados (' + data.total + ')</h2>';
+                
+                data.alertas.forEach(alerta => {
+                    const tipoClase = alerta.tipo_alerta === 'MÁXIMO_HISTÓRICO' ? '' : 
+                                     alerta.tipo_alerta === 'MÍNIMO_HISTÓRICO' ? 'success' : 'warning';
+                    
+                    const icono = alerta.tipo_alerta === 'MÁXIMO_HISTÓRICO' ? '📈' : 
+                                 alerta.tipo_alerta === 'MÍNIMO_HISTÓRICO' ? '📉' : '⚠️';
+                    
+                    const cambioClase = alerta.cambio_porcentaje > 0 ? 'up' : 'down';
+                    const simbolo = alerta.cambio_porcentaje > 0 ? '↑' : '↓';
+                    
+                    html += `
+                        <div class="alert-card ${tipoClase}">
+                            <div class="alert-header">
+                                <div>
+                                    <div class="alert-title">${icono} ${alerta.nombre}</div>
+                                    <div class="alert-meta">
+                                        <span><strong>Código:</strong> ${alerta.codigo || 'N/A'}</span>
+                                        <span><strong>Establecimiento:</strong> ${alerta.establecimiento}</span>
+                                        <span><strong>Fecha:</strong> ${new Date(alerta.fecha).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="verComparacion(${alerta.producto_id})">
+                                    Ver Comparación
+                                </button>
+                            </div>
+                            
+                            <div class="price-comparison">
+                                <div class="price-item">
+                                    <div class="price-label">Precio Actual</div>
+                                    <div class="price-value" style="color: #1a73e8;">$${alerta.precio_actual.toLocaleString()}</div>
+                                </div>
+                                <div class="price-item">
+                                    <div class="price-label">Promedio Histórico</div>
+                                    <div class="price-value" style="color: #666;">$${alerta.precio_promedio.toLocaleString()}</div>
+                                </div>
+                                <div class="price-item">
+                                    <div class="price-label">Cambio</div>
+                                    <div class="price-change ${cambioClase}">
+                                        ${simbolo} ${Math.abs(alerta.cambio_porcentaje)}%
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
+                                <strong>Rango histórico:</strong> 
+                                $${alerta.precio_min.toLocaleString()} - $${alerta.precio_max.toLocaleString()}
+                                <span style="margin-left: 20px; color: #666;">
+                                    <strong>Tipo:</strong> ${alerta.tipo_alerta.replace('_', ' ')}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+                console.error('Error cargando alertas:', error);
+            }
+        }
+        
+        async function verComparacion(productoId) {
+            const container = document.getElementById('alertasContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando comparación...</div>';
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/productos/${productoId}/comparar-establecimientos`);
+                const data = await response.json();
+                
+                let html = `
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <h2>${data.nombre}</h2>
+                                <div style="font-size: 13px; color: #666; margin-top: 5px;">
+                                    Código: ${data.codigo || 'N/A'}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 13px; color: #666;">Ahorro máximo</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #34a853;">
+                                    $${data.ahorro_maximo.toLocaleString()}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="comparison-table">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Establecimiento</th>
+                                            <th>Cadena</th>
+                                            <th>Precio</th>
+                                            <th>Última Actualización</th>
+                                            <th>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                `;
+                
+                data.comparacion.forEach(item => {
+                    const clase = item.es_mas_barato ? 'cheapest' : item.es_mas_caro ? 'expensive' : '';
+                    const badge = item.es_mas_barato ? '<span class="badge badge-success">🏆 Más Barato</span>' :
+                                 item.es_mas_caro ? '<span class="badge badge-danger">💰 Más Caro</span>' : '';
+                    
+                    html += `
+                        <tr class="${clase}">
+                            <td><strong>${item.establecimiento}</strong></td>
+                            <td>${item.cadena || 'N/A'}</td>
+                            <td style="font-size: 16px; font-weight: 600;">$${item.precio.toLocaleString()}</td>
+                            <td>${new Date(item.fecha).toLocaleDateString()}</td>
+                            <td>${badge}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+                console.error('Error cargando comparación:', error);
+            }
+        }
+        
+        async function cargarTendencias() {
+            const container = document.getElementById('alertasContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando tendencias...</div>';
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/tendencias/precio?dias=30`);
+                const data = await response.json();
+                
+                if (data.total === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No hay suficiente información</h3>
+                            <p>Se necesitan más datos para calcular tendencias</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = `
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+                    </div>
+                    
+                    <h2 style="margin-bottom: 20px;">📈 Productos con Mayor Variación de Precio (Últimos 30 días)</h2>
+                    
+                    <div class="card">
+                        <div class="card-body">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th>Establecimiento</th>
+                                        <th>Precio Mínimo</th>
+                                        <th>Precio Máximo</th>
+                                        <th>Variación</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                data.tendencias.forEach(t => {
+                    html += `
+                        <tr>
+                            <td>
+                                <strong>${t.nombre}</strong><br>
+                                <small style="color: #666;">${t.codigo || 'N/A'}</small>
+                            </td>
+                            <td>${t.establecimiento}</td>
+                            <td>$${t.precio_min.toLocaleString()}</td>
+                            <td>$${t.precio_max.toLocaleString()}</td>
+                            <td>
+                                <span class="badge badge-warning">
+                                    $${t.variacion.toLocaleString()} (${t.variacion_porcentaje}%)
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="verComparacion(${t.producto_id})">
+                                    Ver Detalles
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                container.innerHTML = html;
+                
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+                console.error('Error cargando tendencias:', error);
+            }
+        }
+        
+        // FACTURAS
         async function cargarFacturas() {
             const tbody = document.getElementById('facturasBody');
             tbody.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div>Cargando...</td></tr>';
@@ -544,26 +911,27 @@
             }
         }
         
-       function renderFacturas(facturas) {
-    const tbody = document.getElementById('facturasBody');
-    tbody.innerHTML = facturas.map(f => `
-        <tr>
-            <td><input type="checkbox" class="checkbox check-factura" value="${f.id}" onchange="updateSeleccion()"></td>
-            <td><strong>#${f.id}</strong></td>
-            <td>${f.establecimiento || 'Sin datos'}</td>
-            <td>$${(f.total_factura || f.total || 0).toLocaleString()}</td>
-            <td>${f.productos || 0}</td>
-            <td>${new Date(f.fecha_cargue || f.fecha).toLocaleDateString()}</td>
-            <td><span class="badge badge-${getBadgeClass(f.estado_validacion || f.estado)}">${f.estado_validacion || f.estado || 'pendiente'}</span></td>
-            <td>
-                <div class="btn-group">
-                    <button class="btn btn-primary btn-sm" onclick="editarFactura(${f.id})">✏️ Editar</button>
-                    <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${f.id})">🗑️</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-}
+        function renderFacturas(facturas) {
+            const tbody = document.getElementById('facturasBody');
+            tbody.innerHTML = facturas.map(f => `
+                <tr>
+                    <td><input type="checkbox" class="checkbox check-factura" value="${f.id}" onchange="updateSeleccion()"></td>
+                    <td><strong>#${f.id}</strong></td>
+                    <td>${f.establecimiento || 'Sin datos'}</td>
+                    <td>$${(f.total_factura || f.total || 0).toLocaleString()}</td>
+                    <td>${f.productos || 0}</td>
+                    <td>${new Date(f.fecha_cargue || f.fecha).toLocaleDateString()}</td>
+                    <td><span class="badge badge-${getBadgeClass(f.estado_validacion || f.estado)}">${f.estado_validacion || f.estado || 'pendiente'}</span></td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-primary btn-sm" onclick="editarFactura(${f.id})">✏️ Editar</button>
+                            <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${f.id})">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
         function getBadgeClass(estado) {
             const map = {
                 'validada': 'success',
@@ -686,7 +1054,8 @@
                     </td>
                     <td>
                         <div class="btn-group">
-                            <button class="btn btn-primary btn-sm" onclick="editarProducto(${p.id})">✏️</button>
+                            <button class="btn btn-primary btn-sm" onclick="verComparacion(${p.id})">📊</button>
+                            <button class="btn btn-secondary btn-sm" onclick="editarProducto(${p.id})">✏️</button>
                             <button class="btn btn-danger btn-sm" onclick="eliminarProducto(${p.id})">🗑️</button>
                         </div>
                     </td>
@@ -749,11 +1118,9 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados...</p></div>';
             
             try {
-                // Detectar duplicados de productos
                 const respProductos = await fetch(`${API_URL}/admin/duplicados/productos?umbral=85`);
                 const dataProductos = await respProductos.json();
                 
-                // Detectar duplicados de facturas
                 const respFacturas = await fetch(`${API_URL}/admin/duplicados/facturas`);
                 const dataFacturas = await respFacturas.json();
                 
@@ -769,7 +1136,6 @@
                 
                 let html = '';
                 
-                // Mostrar duplicados de productos
                 if (dataProductos.total > 0) {
                     html += '<h2 style="margin-bottom: 20px;">📦 Productos Duplicados (' + dataProductos.total + ')</h2>';
                     dataProductos.duplicados.forEach(dup => {
@@ -803,7 +1169,6 @@
                     });
                 }
                 
-                // Mostrar duplicados de facturas
                 if (dataFacturas.total > 0) {
                     html += '<h2 style="margin: 30px 0 20px 0;">🧾 Facturas Duplicadas (' + dataFacturas.total + ')</h2>';
                     dataFacturas.duplicados.forEach(dup => {
