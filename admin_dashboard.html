@@ -919,6 +919,18 @@ async function guardarFacturaYEditar(invoiceData) {
             document.getElementById('invoiceFile').value = '';
             document.getElementById('uploadStatus').innerHTML = '';
         }
+
+
+        async function verificarImagen(facturaId) {
+    try {
+        const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/check-image`);
+        const data = await response.json();
+        console.log('Estado de imagen:', data);
+        return data;
+    } catch (error) {
+        console.error('Error verificando imagen:', error);
+    }
+}
         
         // ESTADÍSTICAS
         async function cargarEstadisticas() {
