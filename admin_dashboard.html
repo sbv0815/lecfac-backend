@@ -712,12 +712,7 @@
             }
         }
 
-        // SUBIR FACTURA
-        // SUBIR FACTURA - VERSIÓN CORREGIDA (igual a test.html)
-// INSTRUCCIONES:
-// 1. Abre tu archivo admin_dashboard.html original
-// 2. Busca la función handleFileSelect (aproximadamente en la línea 770)
-// 3. Reemplaza SOLO esa función con esta versión:
+  // Reemplaza SOLO la función handleFileSelect en tu admin_dashboard.html con esta versión:
 
 async function handleFileSelect(event) {
     const file = event.target.files[0];
@@ -754,36 +749,13 @@ async function handleFileSelect(event) {
             throw new Error(data.message || 'Error en el procesamiento');
         }
         
-        // Primero intentar guardar la factura en la BD
-        let facturaId = null;
-        try {
-            const saveResponse = await fetch(`${API_URL}/admin/facturas`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    establecimiento: data.data.establecimiento,
-                    total_factura: data.data.total,
-                    productos: data.data.productos.map(p => ({
-                        codigo_ean: p.codigo,
-                        nombre: p.nombre,
-                        precio: p.valor
-                    }))
-                })
-            });
-            
-            if (saveResponse.ok) {
-                const saveData = await saveResponse.json();
-                facturaId = saveData.id || saveData.factura_id;
-                console.log('Factura guardada con ID:', facturaId);
-            }
-        } catch (saveError) {
-            console.log('No se pudo guardar automáticamente:', saveError);
-        }
-        
         const invoice = data.data;
         const totalFormateado = invoice.total 
             ? `$${invoice.total.toLocaleString('es-CO')}` 
             : 'No detectado';
+        
+        // Guardar los datos de la factura temporalmente para poder crear y editar
+        window.tempInvoiceData = invoice;
         
         statusDiv.innerHTML = `
             <div class="result-box success">
@@ -794,7 +766,6 @@ async function handleFileSelect(event) {
                         <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
                         <strong>Total:</strong> ${totalFormateado}<br>
                         <strong>Productos:</strong> ${invoice.productos.length}
-                        ${facturaId ? `<br><strong>ID Factura:</strong> #${facturaId}` : ''}
                     </p>
                 </div>
                 
@@ -823,37 +794,20 @@ async function handleFileSelect(event) {
                 </div>
                 
                 <div style="text-align: center;">
-                    ${facturaId ? `
-                        <div style="margin-bottom: 15px;">
-                            <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="font-size: 16px; padding: 12px 24px;">
-                                📝 Ver Imagen y Editar
-                            </button>
-                            <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-left: 10px;">
-                                📸 Subir Otra Factura
-                            </button>
-                        </div>
-                        <p style="color: #666; font-size: 12px;">
-                            Haz clic en "Ver Imagen y Editar" para revisar la factura escaneada y hacer correcciones
-                        </p>
-                    ` : `
-                        <div style="margin-bottom: 15px;">
-                            <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
-                                La factura se procesó pero no se guardó automáticamente.<br>
-                                Puedes guardarla manualmente desde la pestaña "Facturas".
-                            </p>
-                            <button class="btn btn-secondary" onclick="limpiarUpload()">
-                                Subir Otra Factura
-                            </button>
-                        </div>
-                    `}
+                    <div style="margin-bottom: 15px;">
+                        <button class="btn btn-primary" onclick="guardarYEditarFactura()" style="font-size: 16px; padding: 12px 30px; margin-right: 10px;">
+                            💾 Guardar y Ver Imagen
+                        </button>
+                        <button class="btn btn-secondary" onclick="limpiarUpload()">
+                            📸 Subir Otra Factura
+                        </button>
+                    </div>
+                    <p style="color: #666; font-size: 12px;">
+                        Haz clic en "Guardar y Ver Imagen" para guardar la factura y poder editarla
+                    </p>
                 </div>
             </div>
         `;
-        
-        // Si se guardó exitosamente, actualizar estadísticas
-        if (facturaId) {
-            cargarEstadisticas();
-        }
         
     } catch (error) {
         console.error('Error completo:', error);
@@ -867,6 +821,140 @@ async function handleFileSelect(event) {
             </div>
         `;
     }
+}
+
+// Nueva función para guardar la factura y abrir el editor
+async function guardarYEditarFactura() {
+    if (!window.tempInvoiceData) {
+        alert('No hay datos de factura para guardar');
+        return;
+    }
+    
+    const statusDiv = document.getElementById('uploadStatus');
+    statusDiv.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Guardando factura en la base de datos...</p>
+        </div>
+    `;
+    
+    try {
+        // Crear la estructura de datos para guardar
+        const facturaData = {
+            establecimiento: window.tempInvoiceData.establecimiento || 'Sin establecimiento',
+            total_factura: window.tempInvoiceData.total || 0,
+            fecha_cargue: new Date().toISOString(),
+            estado_validacion: 'pendiente',
+            puntaje_calidad: 80, // Puntaje por defecto
+            productos: window.tempInvoiceData.productos.map(p => ({
+                codigo_ean: p.codigo || '',
+                codigo_local: p.codigo || '',
+                nombre_producto: p.nombre || '',
+                precio: p.valor || 0
+            }))
+        };
+        
+        console.log('Enviando datos para guardar:', facturaData);
+        
+        // Intentar guardar con diferentes endpoints posibles
+        let saveResponse;
+        let facturaId = null;
+        
+        // Intento 1: endpoint estándar
+        try {
+            saveResponse = await fetch(`${API_URL}/admin/facturas`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(facturaData)
+            });
+            
+            if (saveResponse.ok) {
+                const result = await saveResponse.json();
+                facturaId = result.id || result.factura_id || result.invoice_id;
+            }
+        } catch (e) {
+            console.log('Intento 1 falló:', e);
+        }
+        
+        // Intento 2: endpoint alternativo
+        if (!facturaId) {
+            try {
+                saveResponse = await fetch(`${API_URL}/invoices`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        establecimiento: window.tempInvoiceData.establecimiento,
+                        total: window.tempInvoiceData.total,
+                        items: window.tempInvoiceData.productos
+                    })
+                });
+                
+                if (saveResponse.ok) {
+                    const result = await saveResponse.json();
+                    facturaId = result.id || result.invoice_id;
+                }
+            } catch (e) {
+                console.log('Intento 2 falló:', e);
+            }
+        }
+        
+        if (facturaId) {
+            // Éxito - abrir el editor
+            showToast('✅ Factura guardada con éxito. Abriendo editor...');
+            
+            statusDiv.innerHTML = `
+                <div class="result-box success">
+                    <h3 style="color: #2e7d32;">✅ Factura guardada</h3>
+                    <p style="margin: 15px 0;">ID de factura: <strong>#${facturaId}</strong></p>
+                    <p style="color: #666; font-size: 13px;">Abriendo el editor de imágenes...</p>
+                </div>
+            `;
+            
+            // Abrir el editor en una nueva ventana
+            setTimeout(() => {
+                window.open(`editor.html?id=${facturaId}`, '_blank', 'width=1400,height=900');
+                
+                // Actualizar estadísticas y limpiar después de un momento
+                setTimeout(() => {
+                    cargarEstadisticas();
+                    limpiarUpload();
+                }, 2000);
+            }, 500);
+            
+        } else {
+            // Si no se pudo guardar, mostrar opciones alternativas
+            throw new Error('No se pudo guardar en la base de datos');
+        }
+        
+    } catch (error) {
+        console.error('Error guardando:', error);
+        
+        // Mostrar mensaje de error pero con opción de continuar
+        statusDiv.innerHTML = `
+            <div class="result-box error">
+                <h3 style="color: #c62828;">⚠️ No se pudo guardar automáticamente</h3>
+                <p style="color: #666; margin: 15px 0;">
+                    ${error.message}<br><br>
+                    <strong>Opciones:</strong>
+                </p>
+                <ol style="text-align: left; margin: 10px 20px; color: #666;">
+                    <li>Ve a la pestaña "Facturas" y crea una nueva factura manualmente</li>
+                    <li>Luego usa el botón "Editar" para abrir el editor de imágenes</li>
+                </ol>
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-primary" onclick="switchTab('facturas')" style="margin-right: 10px;">
+                        Ir a Facturas
+                    </button>
+                    <button class="btn btn-secondary" onclick="limpiarUpload()">
+                        Intentar con Otra Factura
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Limpiar datos temporales
+    delete window.tempInvoiceData;
 }
 
 
