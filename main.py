@@ -19,10 +19,13 @@ from database import (
 )
 from claude_invoice import parse_invoice_with_claude
 from fastapi.responses import Response
-from admin import router as admin_router
 from fastapi.responses import FileResponse
 import os
 from admin_dashboard import router as admin_dashboard_router
+from fastapi.middleware.cors import CORSMiddleware
+from admin_dashboard import router as admin_dashboard_router
+
+
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -49,6 +52,14 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(admin_dashboard_router)
 
 # Endpoints para servir HTML
 @app.get("/")
@@ -1190,6 +1201,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
