@@ -420,6 +420,37 @@
         let rotation = 0;
         let productos = [];
         let productosOriginales = [];
+
+        // Redimensionar paneles
+let isResizing = false;
+const resizeHandle = document.getElementById('resizeHandle');
+const container = document.querySelector('.editor-container');
+
+resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    document.body.style.cursor = 'col-resize';
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    const containerWidth = container.offsetWidth;
+    const leftWidth = (e.clientX / containerWidth) * 100;
+    
+    if (leftWidth > 30 && leftWidth < 70) {
+        container.style.gridTemplateColumns = `${leftWidth}% ${100 - leftWidth}%`;
+        resizeHandle.style.left = `${leftWidth}%`;
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = 'default';
+    }
+});
+
+cargarFactura();
         
         async function cargarFactura() {
             showLoading();
