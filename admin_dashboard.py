@@ -68,7 +68,7 @@ async def obtener_catalogo_productos():
                 AVG(pp.precio) as precio_promedio
             FROM productos_catalogo p
             LEFT JOIN precios_productos pp ON p.id = pp.producto_id
-            GROUP BY p.id, p.codigo_ean, p.nombre_producto, p.veces_visto, p.verificado, p.necesita_revision
+            GROUP BY p.id
             ORDER BY p.veces_visto DESC
         """)
         
@@ -142,6 +142,8 @@ async def detectar_facturas_duplicadas():
 
 def similitud_texto(a: str, b: str) -> float:
     """Calcular similitud entre dos strings (0-100)"""
+    if not a or not b:
+        return 0.0
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
 
 
@@ -170,15 +172,16 @@ async def detectar_productos_duplicados(umbral: float = 85.0):
         duplicados = []
         for i, p1 in enumerate(productos):
             for p2 in productos[i+1:]:
-                sim = similitud_texto(p1["nombre"], p2["nombre"])
-                
-                if sim >= umbral:
-                    duplicados.append({
-                        "producto1": p1,
-                        "producto2": p2,
-                        "similitud": round(sim, 1),
-                        "razon": "Nombres muy similares"
-                    })
+                if p1["nombre"] and p2["nombre"]:
+                    sim = similitud_texto(p1["nombre"], p2["nombre"])
+                    
+                    if sim >= umbral:
+                        duplicados.append({
+                            "producto1": p1,
+                            "producto2": p2,
+                            "similitud": round(sim, 1),
+                            "razon": "Nombres muy similares"
+                        })
         
         cursor.close()
         conn.close()
@@ -207,7 +210,7 @@ async def fusionar_productos(request: dict):
         cursor.execute("""
             UPDATE productos_catalogo 
             SET veces_visto = veces_visto + (
-                SELECT veces_visto FROM productos_catalogo WHERE id = %s
+                SELECT COALESCE(veces_visto, 0) FROM productos_catalogo WHERE id = %s
             )
             WHERE id = %s
         """, (producto_eliminar_id, producto_mantener_id))
@@ -278,40 +281,72 @@ async def eliminar_producto_catalogo(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/productos/{producto_id}/historico-precios")
-async def obtener_historico_precios(producto_id: int):
-    """Ver histórico de precios de un producto por establecimiento"""
+@router.get("/productos/{producto_id}/comparar-establecimientos")
+async def comparar_precios_establecimientos(producto_id: int):
+    """Comparar precio actual de un producto en diferentes establecimientos"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT 
-                pp.precio,
-                pp.establecimiento,
-                pp.cadena,
-                pp.fecha_reporte,
-                f.id as factura_id
-            FROM precios_productos pp
-            JOIN facturas f ON pp.factura_id = f.id
-            WHERE pp.producto_id = %s
-            ORDER BY pp.fecha_reporte DESC
+            SELECT nombre_producto, codigo_ean 
+            FROM productos_catalogo 
+            WHERE id = %s
         """, (producto_id,))
         
+        prod_info = cursor.fetchone()
+        if not prod_info:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+        
+        cursor.execute("""
+            SELECT DISTINCT ON (establecimiento)
+                establecimiento,
+                cadena,
+                precio,
+                fecha_reporte
+            FROM precios_productos
+            WHERE producto_id = %s
+            ORDER BY establecimiento, fecha_reporte DESC
+        """, (producto_id,))
+        
+        comparacion = []
         precios = []
+        
         for row in cursor.fetchall():
-            precios.append({
-                "precio": float(row[0]),
-                "establecimiento": row[1],
-                "cadena": row[2],
+            precio = float(row[2])
+            precios.append(precio)
+            comparacion.append({
+                "establecimiento": row[0],
+                "cadena": row[1],
+                "precio": precio,
                 "fecha": str(row[3]),
-                "factura_id": row[4]
+                "es_mas_barato": False,
+                "es_mas_caro": False
             })
+        
+        ahorro_maximo = 0
+        if precios:
+            precio_min = min(precios)
+            precio_max = max(precios)
+            ahorro_maximo = precio_max - precio_min
+            
+            for item in comparacion:
+                if item["precio"] == precio_min:
+                    item["es_mas_barato"] = True
+                if item["precio"] == precio_max:
+                    item["es_mas_caro"] = True
         
         cursor.close()
         conn.close()
         
-        return {"precios": precios, "total": len(precios)}
+        return {
+            "producto_id": producto_id,
+            "nombre": prod_info[0],
+            "codigo": prod_info[1],
+            "comparacion": sorted(comparacion, key=lambda x: x["precio"]),
+            "ahorro_maximo": ahorro_maximo,
+            "total_establecimientos": len(comparacion)
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -413,130 +448,5 @@ async def detectar_cambios_precio(dias: int = 7):
                 })
         
         return {"alertas": alertas, "total": len(alertas)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/productos/{producto_id}/comparar-establecimientos")
-async def comparar_precios_establecimientos(producto_id: int):
-    """Comparar precio actual de un producto en diferentes establecimientos"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT nombre_producto, codigo_ean 
-            FROM productos_catalogo 
-            WHERE id = %s
-        """, (producto_id,))
-        
-        prod_info = cursor.fetchone()
-        if not prod_info:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-        
-        cursor.execute("""
-            SELECT DISTINCT ON (establecimiento)
-                establecimiento,
-                cadena,
-                precio,
-                fecha_reporte
-            FROM precios_productos
-            WHERE producto_id = %s
-            ORDER BY establecimiento, fecha_reporte DESC
-        """, (producto_id,))
-        
-        comparacion = []
-        precios = []
-        
-        for row in cursor.fetchall():
-            precio = float(row[2])
-            precios.append(precio)
-            comparacion.append({
-                "establecimiento": row[0],
-                "cadena": row[1],
-                "precio": precio,
-                "fecha": str(row[3]),
-                "es_mas_barato": False,
-                "es_mas_caro": False
-            })
-        
-        ahorro_maximo = 0
-        if precios:
-            precio_min = min(precios)
-            precio_max = max(precios)
-            ahorro_maximo = precio_max - precio_min
-            
-            for item in comparacion:
-                if item["precio"] == precio_min:
-                    item["es_mas_barato"] = True
-                if item["precio"] == precio_max:
-                    item["es_mas_caro"] = True
-        
-        cursor.close()
-        conn.close()
-        
-        return {
-            "producto_id": producto_id,
-            "nombre": prod_info[0],
-            "codigo": prod_info[1],
-            "comparacion": sorted(comparacion, key=lambda x: x["precio"]),
-            "ahorro_maximo": ahorro_maximo,
-            "total_establecimientos": len(comparacion)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/tendencias/precio")
-async def obtener_tendencias_precio(dias: int = 30):
-    """Obtener productos con mayor variación de precio"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT 
-                pc.id,
-                pc.nombre_producto,
-                pc.codigo_ean,
-                pp.establecimiento,
-                MIN(pp.precio) as precio_min,
-                MAX(pp.precio) as precio_max,
-                AVG(pp.precio) as precio_promedio,
-                COUNT(*) as num_registros,
-                (MAX(pp.precio) - MIN(pp.precio)) as variacion
-            FROM productos_catalogo pc
-            JOIN precios_productos pp ON pc.id = pp.producto_id
-            WHERE pp.fecha_reporte >= NOW() - INTERVAL '%s days'
-            GROUP BY pc.id, pc.nombre_producto, pc.codigo_ean, pp.establecimiento
-            HAVING COUNT(*) > 2
-            ORDER BY variacion DESC
-            LIMIT 20
-        """ % dias)
-        
-        tendencias = []
-        for row in cursor.fetchall():
-            variacion_porcentaje = ((row[8] / row[6]) * 100) if row[6] > 0 else 0
-            
-            tendencias.append({
-                "producto_id": row[0],
-                "nombre": row[1],
-                "codigo": row[2],
-                "establecimiento": row[3],
-                "precio_min": float(row[4]),
-                "precio_max": float(row[5]),
-                "precio_promedio": float(row[6]),
-                "num_registros": row[7],
-                "variacion": float(row[8]),
-                "variacion_porcentaje": round(variacion_porcentaje, 1)
-            })
-        
-        cursor.close()
-        conn.close()
-        
-        return {"tendencias": tendencias, "total": len(tendencias)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-        return {"tendencias": tendencias, "total": len(tendencias)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
