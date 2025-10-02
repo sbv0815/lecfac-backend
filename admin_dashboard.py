@@ -1,557 +1,278 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Admin - LecFac</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+# admin_dashboard.py
+from fastapi import HTTPException, APIRouter
+from typing import List, Optional
+from difflib import SequenceMatcher
+from database import get_db_connection
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+@router.delete("/facturas/{factura_id}")
+async def eliminar_factura(factura_id: int):
+    """Eliminar una factura y todos sus productos asociados"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f5f7fa;
-        }
+        cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+        cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
         
-        .navbar {
-            background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
-            color: white;
-            padding: 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
+        conn.commit()
+        cursor.close()
+        conn.close()
         
-        .navbar-header {
-            padding: 20px 30px;
-            border-bottom: 1px solid rgba(255,255,255,0.2);
-        }
+        return {"message": "Factura eliminada exitosamente", "id": factura_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/facturas/eliminar-multiple")
+async def eliminar_facturas_multiples(request: dict):
+    """Eliminar múltiples facturas de una vez"""
+    try:
+        factura_ids = request.get("ids", [])
         
-        .navbar h1 {
-            font-size: 24px;
-            font-weight: 600;
-        }
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        .tabs {
-            display: flex;
-            gap: 0;
-            padding: 0 30px;
-        }
+        for factura_id in factura_ids:
+            cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+            cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
         
-        .tab {
-            padding: 16px 24px;
-            cursor: pointer;
-            background: none;
-            border: none;
-            color: rgba(255,255,255,0.8);
-            font-size: 15px;
-            font-weight: 500;
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s;
-        }
+        conn.commit()
+        cursor.close()
+        conn.close()
         
-        .tab:hover {
-            color: white;
-            background: rgba(255,255,255,0.1);
-        }
+        return {"message": f"{len(factura_ids)} facturas eliminadas", "ids": factura_ids}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/productos/catalogo")
+async def obtener_catalogo_productos():
+    """Obtener todos los productos del catálogo con estadísticas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        .tab.active {
-            color: white;
-            border-bottom-color: white;
-            background: rgba(255,255,255,0.15);
-        }
+        cursor.execute("""
+            SELECT 
+                p.id,
+                p.codigo_ean,
+                p.nombre_producto,
+                p.veces_visto,
+                p.verificado,
+                p.necesita_revision,
+                COUNT(DISTINCT pp.factura_id) as num_facturas,
+                MIN(pp.precio) as precio_min,
+                MAX(pp.precio) as precio_max,
+                AVG(pp.precio) as precio_promedio
+            FROM productos_catalogo p
+            LEFT JOIN precios_productos pp ON p.id = pp.producto_id
+            GROUP BY p.id, p.codigo_ean, p.nombre_producto, p.veces_visto, p.verificado, p.necesita_revision
+            ORDER BY p.veces_visto DESC
+        """)
         
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 30px;
-        }
+        productos = []
+        for row in cursor.fetchall():
+            productos.append({
+                "id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],
+                "veces_visto": row[3],
+                "verificado": row[4],
+                "necesita_revision": row[5],
+                "num_facturas": row[6] or 0,
+                "precio_min": float(row[7]) if row[7] else 0,
+                "precio_max": float(row[8]) if row[8] else 0,
+                "precio_promedio": float(row[9]) if row[9] else 0
+            })
         
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.3s;
-        }
+        cursor.close()
+        conn.close()
         
-        .tab-content.active {
-            display: block;
-        }
+        return {"productos": productos, "total": len(productos)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/duplicados/facturas")
+async def detectar_facturas_duplicadas():
+    """Detectar facturas potencialmente duplicadas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        cursor.execute("""
+            SELECT 
+                id, establecimiento, total_factura, fecha_cargue,
+                (SELECT COUNT(*) FROM precios_productos WHERE factura_id = facturas.id) as num_productos
+            FROM facturas
+            ORDER BY fecha_cargue DESC
+        """)
         
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
+        facturas = []
+        for row in cursor.fetchall():
+            facturas.append({
+                "id": row[0],
+                "establecimiento": row[1],
+                "total": float(row[2]) if row[2] else 0,
+                "fecha": str(row[3]),
+                "num_productos": row[4]
+            })
         
-        .stat-card {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            transition: transform 0.2s;
-        }
+        duplicados = []
+        for i, f1 in enumerate(facturas):
+            for f2 in facturas[i+1:]:
+                if (f1["establecimiento"] == f2["establecimiento"] and 
+                    abs(f1["total"] - f2["total"]) < 100):
+                    duplicados.append({
+                        "factura1": f1,
+                        "factura2": f2,
+                        "razon": "Mismo establecimiento y total similar",
+                        "similitud": 90
+                    })
         
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-        }
+        cursor.close()
+        conn.close()
         
-        .stat-card .label {
-            color: #666;
-            font-size: 13px;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
+        return {"duplicados": duplicados, "total": len(duplicados)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def similitud_texto(a: str, b: str) -> float:
+    """Calcular similitud entre dos strings (0-100)"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
+
+
+@router.get("/duplicados/productos")
+async def detectar_productos_duplicados(umbral: float = 85.0):
+    """Detectar productos con nombres similares"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        .stat-card .value {
-            font-size: 36px;
-            font-weight: 700;
-            color: #1a73e8;
-        }
+        cursor.execute("""
+            SELECT id, codigo_ean, nombre_producto, veces_visto
+            FROM productos_catalogo
+            ORDER BY veces_visto DESC
+        """)
         
-        .card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            overflow: hidden;
-            margin-bottom: 20px;
-        }
+        productos = []
+        for row in cursor.fetchall():
+            productos.append({
+                "id": row[0],
+                "codigo": row[1],
+                "nombre": row[2],
+                "veces_visto": row[3]
+            })
         
-        .card-header {
-            padding: 20px 25px;
-            border-bottom: 1px solid #e0e0e0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .card-header h2 {
-            font-size: 18px;
-            font-weight: 600;
-        }
-        
-        .card-body {
-            padding: 0;
-            overflow-x: auto;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        thead {
-            background: #f8f9fa;
-        }
-        
-        th {
-            padding: 14px 16px;
-            text-align: left;
-            font-size: 13px;
-            font-weight: 600;
-            color: #666;
-            text-transform: uppercase;
-            border-bottom: 2px solid #e0e0e0;
-        }
-        
-        td {
-            padding: 16px;
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 14px;
-        }
-        
-        tbody tr:hover {
-            background: #f8f9fa;
-        }
-        
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        
-        .badge-success { background: #e8f5e9; color: #2e7d32; }
-        .badge-warning { background: #fff3e0; color: #f57c00; }
-        .badge-danger { background: #ffebee; color: #c62828; }
-        .badge-info { background: #e3f2fd; color: #1976d2; }
-        
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .btn-primary {
-            background: #1a73e8;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #1557b0;
-        }
-        
-        .btn-danger {
-            background: #ea4335;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #d33;
-        }
-        
-        .btn-success {
-            background: #34a853;
-            color: white;
-        }
-        
-        .btn-success:hover {
-            background: #2d9148;
-        }
-        
-        .btn-secondary {
-            background: #f1f3f4;
-            color: #5f6368;
-        }
-        
-        .btn-secondary:hover {
-            background: #e8eaed;
-        }
-        
-        .btn-sm {
-            padding: 6px 12px;
-            font-size: 12px;
-        }
-        
-        .btn-group {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .checkbox {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-        
-        .toolbar {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        
-        .search-box {
-            flex: 1;
-            padding: 10px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        
-        .search-box:focus {
-            outline: none;
-            border-color: #1a73e8;
-        }
-        
-        .duplicate-card {
-            background: white;
-            border: 2px solid #ffa726;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-        }
-        
-        .duplicate-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        
-        .duplicate-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-        
-        .duplicate-item {
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 6px;
-        }
-        
-        .duplicate-item h4 {
-            margin-bottom: 8px;
-            color: #1a73e8;
-        }
-        
-        .duplicate-item p {
-            margin: 4px 0;
-            font-size: 13px;
-            color: #666;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-        
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #1a73e8;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #999;
-        }
-        
-        .toast {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #34a853;
-            color: white;
-            padding: 16px 24px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            z-index: 10000;
-            animation: slideIn 0.3s;
-        }
-        
-        @keyframes slideIn {
-            from { transform: translateX(400px); }
-            to { transform: translateX(0); }
-        }
-    </style>
-</head>
-<body>
-    <nav class="navbar">
-        <div class="navbar-header">
-            <h1>🎯 Dashboard de Administración - LecFac</h1>
-        </div>
-        <div class="tabs">
-            <button class="tab active" onclick="switchTab('stats')">📊 Estadísticas</button>
-            <button class="tab" onclick="switchTab('facturas')">🧾 Facturas</button>
-            <button class="tab" onclick="switchTab('productos')">📦 Productos</button>
-            <button class="tab" onclick="switchTab('duplicados')">⚠️ Duplicados</button>
-        </div>
-    </nav>
-    
-    <div class="container">
-        <!-- TAB: ESTADÍSTICAS -->
-        <div id="tab-stats" class="tab-content active">
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="label">Total Facturas</div>
-                    <div class="value" id="stat-facturas">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Productos Únicos</div>
-                    <div class="value" id="stat-productos">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Duplicados Detectados</div>
-                    <div class="value" id="stat-duplicados">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Pendientes Revisión</div>
-                    <div class="value" id="stat-pendientes">-</div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <div class="card-header">
-                    <h2>Resumen del Sistema</h2>
-                </div>
-                <div class="card-body">
-                    <div style="padding: 30px;">
-                        <p style="color: #666; line-height: 1.8;">
-                            Bienvenido al panel de administración de LecFac. Usa las pestañas superiores para:
-                        </p>
-                        <ul style="margin: 20px 0; padding-left: 20px; color: #666; line-height: 2;">
-                            <li><strong>Facturas:</strong> Ver, editar y eliminar facturas subidas</li>
-                            <li><strong>Productos:</strong> Gestionar el catálogo de productos</li>
-                            <li><strong>Duplicados:</strong> Detectar y fusionar productos/facturas duplicadas</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- TAB: FACTURAS -->
-        <div id="tab-facturas" class="tab-content">
-            <div class="toolbar">
-                <input type="text" class="search-box" id="searchFacturas" placeholder="🔍 Buscar por establecimiento..." oninput="filtrarFacturas()">
-                <button class="btn btn-danger" onclick="eliminarSeleccionadas()" id="btnEliminarFacturas" style="display:none;">
-                    Eliminar Seleccionadas (<span id="countSeleccionadas">0</span>)
-                </button>
-                <button class="btn btn-secondary" onclick="cargarFacturas()">🔄 Recargar</button>
-            </div>
-            
-            <div class="card">
-                <div class="card-header">
-                    <h2>Lista de Facturas</h2>
-                    <button class="btn btn-primary btn-sm" onclick="toggleTodas()">Seleccionar Todas</button>
-                </div>
-                <div class="card-body">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th width="40"><input type="checkbox" id="checkAll" onchange="toggleTodas()"></th>
-                                <th>ID</th>
-                                <th>Establecimiento</th>
-                                <th>Total</th>
-                                <th>Productos</th>
-                                <th>Fecha</th>
-                                <th>Estado</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="facturasBody">
-                            <tr><td colspan="8" class="loading"><div class="spinner"></div>Cargando...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        
-        <!-- TAB: PRODUCTOS -->
-        <div id="tab-productos" class="tab-content">
-            <div class="toolbar">
-                <input type="text" class="search-box" id="searchProductos" placeholder="🔍 Buscar productos..." oninput="filtrarProductos()">
-                <button class="btn btn-secondary" onclick="cargarProductos()">🔄 Recargar</button>
-            </div>
-            
-            <div class="card">
-                <div class="card-header">
-                    <h2>Catálogo de Productos</h2>
-                </div>
-                <div class="card-body">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Código EAN</th>
-                                <th>Nombre</th>
-                                <th>Visto</th>
-                                <th>Precio Min-Max</th>
-                                <th>Estado</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="productosBody">
-                            <tr><td colspan="7" class="loading"><div class="spinner"></div>Cargando...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        
-        <!-- TAB: DUPLICADOS -->
-        <div id="tab-duplicados" class="tab-content">
-            <div class="toolbar">
-                <button class="btn btn-primary" onclick="detectarDuplicados()">🔍 Detectar Duplicados</button>
-                <button class="btn btn-secondary" onclick="limpiarDuplicados()">🧹 Limpiar Vista</button>
-            </div>
-            
-            <div id="duplicadosContainer">
-                <div class="empty-state">
-                    <h3>Haz clic en "Detectar Duplicados" para comenzar</h3>
-                    <p>El sistema analizará facturas y productos similares</p>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        const API_URL = 'https://lecfac-api.onrender.com';
-        let facturasData = [];
-        let productosData = [];
-        let facturasSeleccionadas = new Set();
-        
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            
-            event.target.classList.add('active');
-            document.getElementById('tab-' + tabName).classList.add('active');
-            
-            if (tabName === 'stats') cargarEstadisticas();
-            if (tabName === 'facturas') cargarFacturas();
-            if (tabName === 'productos') cargarProductos();
-        }
-        
-        async function cargarEstadisticas() {
-            try {
-                const response = await fetch(`${API_URL}/admin/stats`);
-                const data = await response.json();
+        duplicados = []
+        for i, p1 in enumerate(productos):
+            for p2 in productos[i+1:]:
+                sim = similitud_texto(p1["nombre"], p2["nombre"])
                 
-                document.getElementById('stat-facturas').textContent = data.total_facturas || 0;
-                document.getElementById('stat-productos').textContent = data.productos_unicos || 0;
-                document.getElementById('stat-pendientes').textContent = data.facturas_pendientes || 0;
-                
-                const dupResponse = await fetch(`${API_URL}/admin/duplicados/productos`);
-                const dupData = await dupResponse.json();
-                document.getElementById('stat-duplicados').textContent = dupData.total || 0;
-            } catch (error) {
-                console.error('Error cargando estadísticas:', error);
-            }
-        }
+                if sim >= umbral:
+                    duplicados.append({
+                        "producto1": p1,
+                        "producto2": p2,
+                        "similitud": round(sim, 1),
+                        "razon": "Nombres muy similares"
+                    })
         
-        async function cargarFacturas() {
-            const tbody = document.getElementById('facturasBody');
-            tbody.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div>Cargando...</td></tr>';
-            
-            try {
-                const response = await fetch(`${API_URL}/admin/facturas`);
-                const data = await response.json();
-                facturasData = data.facturas || [];
-                
-                if (facturasData.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><h3>No hay facturas</h3></td></tr>';
-                    return;
-                }
-                
-                renderFacturas(facturasData);
-            } catch (error) {
-                tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><h3>Error: ${error.message}</h3></td></tr>`;
-                console.error('Error cargando facturas:', error);
-            }
-        }
+        cursor.close()
+        conn.close()
         
-        function renderFacturas(facturas) {
-            const tbody = document.getElementById('facturasBody');
-            tbody.innerHTML = facturas.map(f => `
-                <tr>
-                    <td><input type="checkbox" class="checkbox check-factura" value="${f.id}" onchange="updateSeleccion()"></td>
-                    <td><strong>#${f.id}</strong></td>
-                    <td>${f.establecimiento || 'Sin datos'}</td>
-                    <td>$${(f.total_factura || f.total || 0).toLocaleString()}</td>
-                    <td>${f.productos || 0}</td>
-                    <td>${new Date(f.fecha_cargue || f.fecha).toLocaleDateString()}</td>
-                    <td><span class="badge badge
+        return {"duplicados": duplicados, "total": len(duplicados)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/productos/fusionar")
+async def fusionar_productos(request: dict):
+    """Fusionar dos productos duplicados"""
+    try:
+        producto_mantener_id = request.get("producto_mantener_id")
+        producto_eliminar_id = request.get("producto_eliminar_id")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE precios_productos 
+            SET producto_id = %s 
+            WHERE producto_id = %s
+        """, (producto_mantener_id, producto_eliminar_id))
+        
+        cursor.execute("""
+            UPDATE productos_catalogo 
+            SET veces_visto = veces_visto + (
+                SELECT veces_visto FROM productos_catalogo WHERE id = %s
+            )
+            WHERE id = %s
+        """, (producto_eliminar_id, producto_mantener_id))
+        
+        cursor.execute("DELETE FROM productos_catalogo WHERE id = %s", (producto_eliminar_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "message": "Productos fusionados exitosamente",
+            "producto_final": producto_mantener_id,
+            "producto_eliminado": producto_eliminar_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/productos/{producto_id}/editar")
+async def editar_producto_catalogo(producto_id: int, request: dict):
+    """Editar nombre y código de un producto del catálogo"""
+    try:
+        nombre = request.get("nombre")
+        codigo_ean = request.get("codigo_ean")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if codigo_ean:
+            cursor.execute("""
+                UPDATE productos_catalogo 
+                SET nombre_producto = %s, codigo_ean = %s, verificado = TRUE
+                WHERE id = %s
+            """, (nombre, codigo_ean, producto_id))
+        else:
+            cursor.execute("""
+                UPDATE productos_catalogo 
+                SET nombre_producto = %s, verificado = TRUE
+                WHERE id = %s
+            """, (nombre, producto_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {"message": "Producto actualizado", "id": producto_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/productos/{producto_id}")
+async def eliminar_producto_catalogo(producto_id: int):
+    """Eliminar un producto del catálogo y todos sus precios"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM precios_productos WHERE producto_id = %s", (producto_id,))
+        cursor.execute("DELETE FROM productos_catalogo WHERE id = %s", (producto_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {"message": "Producto eliminado", "id": producto_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
