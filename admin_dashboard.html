@@ -743,6 +743,7 @@ async function handleFileSelect(event) {
         });
         
         const parseData = await parseResponse.json();
+        console.log('Parse result:', parseData); // DEBUG
         
         if (!parseData.success) {
             throw new Error(parseData.message || 'Error en el procesamiento');
@@ -758,9 +759,12 @@ async function handleFileSelect(event) {
         });
         
         const saveData = await saveResponse.json();
+        console.log('Save result:', saveData); // DEBUG
         
         const invoice = parseData.data;
-        const facturaId = saveData.factura?.id || null;
+        const facturaId = saveData.factura?.id || saveData.id || null;
+        
+        console.log('Factura ID obtenido:', facturaId); // DEBUG
         
         const totalFormateado = invoice.total 
             ? `$${invoice.total.toLocaleString('es-CO')}` 
@@ -768,23 +772,30 @@ async function handleFileSelect(event) {
         
         statusDiv.innerHTML = `
             <div class="result-box success">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
-                    <div>
-                        <h3 style="color: #2e7d32; margin-bottom: 10px;">Factura procesada exitosamente</h3>
-                        <p style="color: #666; margin: 0;">
-                            <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
-                            <strong>Total:</strong> ${totalFormateado}<br>
-                            <strong>Productos:</strong> ${invoice.productos.length}
-                        </p>
-                    </div>
-                    ${facturaId ? `
-                        <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="white-space: nowrap;">
-                            Ver y Editar Factura
-                        </button>
-                    ` : ''}
+                <h3 style="color: #2e7d32; margin-bottom: 15px;">✅ Factura procesada exitosamente</h3>
+                
+                <div style="background: white; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                    <p style="color: #666; margin: 5px 0;">
+                        <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
+                        <strong>Total:</strong> ${totalFormateado}<br>
+                        <strong>Productos:</strong> ${invoice.productos.length}
+                        ${facturaId ? `<br><strong>ID Factura:</strong> #${facturaId}` : ''}
+                    </p>
                 </div>
                 
-                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; background: #fafafa;">
+                ${facturaId ? `
+                    <div style="margin-bottom: 15px;">
+                        <button class="btn btn-primary" onclick="editarFactura(${facturaId})" style="width: 100%; padding: 15px; font-size: 16px;">
+                            ✏️ Ver y Editar Factura
+                        </button>
+                    </div>
+                ` : `
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #ffc107;">
+                        <strong>⚠️ Advertencia:</strong> La factura se procesó pero no se pudo guardar. No se puede editar.
+                    </div>
+                `}
+                
+                <div style="max-height: 350px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; background: #fafafa;">
                     <h4 style="margin-bottom: 10px; position: sticky; top: 0; background: #fafafa; padding-bottom: 5px;">Productos detectados:</h4>
                     <table style="width: 100%; font-size: 12px;">
                         <thead style="position: sticky; top: 30px; background: #fafafa;">
@@ -810,7 +821,7 @@ async function handleFileSelect(event) {
                 
                 <div style="margin-top: 15px; text-align: center;">
                     <button class="btn btn-secondary" onclick="limpiarUpload()">
-                        Subir Otra Factura
+                        📤 Subir Otra Factura
                     </button>
                 </div>
             </div>
@@ -819,9 +830,10 @@ async function handleFileSelect(event) {
         cargarEstadisticas();
         
     } catch (error) {
+        console.error('Error completo:', error);
         statusDiv.innerHTML = `
             <div class="result-box error">
-                <h3 style="color: #c62828;">Error al procesar</h3>
+                <h3 style="color: #c62828;">❌ Error al procesar</h3>
                 <p style="color: #666;">${error.message}</p>
                 <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
                     Intentar de Nuevo
@@ -830,7 +842,6 @@ async function handleFileSelect(event) {
         `;
     }
 }
-
         function limpiarUpload() {
             document.getElementById('invoiceFile').value = '';
             document.getElementById('uploadStatus').innerHTML = '';
