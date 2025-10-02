@@ -269,6 +269,26 @@
             outline: none;
             border-color: #1a73e8;
         }
+
+        .upload-zone {
+            border: 3px dashed #1a73e8;
+            border-radius: 12px;
+            padding: 60px;
+            text-align: center;
+            cursor: pointer;
+            background: #f8f9fa;
+            transition: all 0.3s;
+        }
+
+        .upload-zone:hover {
+            background: #e3f2fd;
+            transform: scale(1.02);
+        }
+
+        .upload-zone.dragover {
+            background: #bbdefb;
+            border-color: #0d47a1;
+        }
         
         .duplicate-card {
             background: white;
@@ -308,7 +328,6 @@
             color: #666;
         }
         
-        /* Alertas */
         .alert-card {
             background: white;
             border-left: 4px solid #ea4335;
@@ -437,14 +456,6 @@
             to { transform: translateX(0); }
         }
 
-        .comparison-table {
-            margin-top: 15px;
-        }
-
-        .comparison-table table {
-            font-size: 13px;
-        }
-
         .comparison-table tr.cheapest {
             background: #e8f5e9 !important;
         }
@@ -452,19 +463,36 @@
         .comparison-table tr.expensive {
             background: #ffebee !important;
         }
+
+        .result-box {
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .result-box.success {
+            background: #e8f5e9;
+            border: 2px solid #2e7d32;
+        }
+
+        .result-box.error {
+            background: #ffebee;
+            border: 2px solid #c62828;
+        }
     </style>
 </head>
 <body>
     <nav class="navbar">
         <div class="navbar-header">
-            <h1>🎯 Dashboard de Administración - LecFac</h1>
+            <h1>Dashboard de Administración - LecFac</h1>
         </div>
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('stats')">📊 Estadísticas</button>
-            <button class="tab" onclick="switchTab('alertas')">🔔 Alertas de Precios</button>
-            <button class="tab" onclick="switchTab('facturas')">🧾 Facturas</button>
-            <button class="tab" onclick="switchTab('productos')">📦 Productos</button>
-            <button class="tab" onclick="switchTab('duplicados')">⚠️ Duplicados</button>
+            <button class="tab active" onclick="switchTab('stats')">Estadísticas</button>
+            <button class="tab" onclick="switchTab('subir')">Subir Factura</button>
+            <button class="tab" onclick="switchTab('alertas')">Alertas de Precios</button>
+            <button class="tab" onclick="switchTab('facturas')">Facturas</button>
+            <button class="tab" onclick="switchTab('productos')">Productos</button>
+            <button class="tab" onclick="switchTab('duplicados')">Duplicados</button>
         </div>
     </nav>
     
@@ -500,12 +528,34 @@
                             Bienvenido al panel de administración de LecFac. Usa las pestañas superiores para:
                         </p>
                         <ul style="margin: 20px 0; padding-left: 20px; color: #666; line-height: 2;">
+                            <li><strong>Subir Factura:</strong> Cargar nuevas facturas con OCR automático</li>
                             <li><strong>Alertas de Precios:</strong> Ver cambios significativos y comparar entre establecimientos</li>
                             <li><strong>Facturas:</strong> Ver, editar y eliminar facturas subidas</li>
                             <li><strong>Productos:</strong> Gestionar el catálogo de productos</li>
                             <li><strong>Duplicados:</strong> Detectar y fusionar productos/facturas duplicadas</li>
                         </ul>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: SUBIR FACTURA -->
+        <div id="tab-subir" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Subir Nueva Factura</h2>
+                </div>
+                <div class="card-body" style="padding: 30px;">
+                    <input type="file" id="invoiceFile" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+                    
+                    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('invoiceFile').click()">
+                        <div style="font-size: 48px; margin-bottom: 20px;">📸</div>
+                        <h3 style="margin-bottom: 10px;">Haz clic para subir una factura</h3>
+                        <p style="color: #666;">o arrastra la imagen aquí</p>
+                        <p style="color: #999; font-size: 12px; margin-top: 10px;">Formatos: JPG, PNG (máx. 10MB)</p>
+                    </div>
+                    
+                    <div id="uploadStatus"></div>
                 </div>
             </div>
         </div>
@@ -518,8 +568,8 @@
                     <option value="15">Últimos 15 días</option>
                     <option value="30" selected>Últimos 30 días</option>
                 </select>
-                <button class="btn btn-primary" onclick="cargarAlertas()">🔄 Actualizar</button>
-                <button class="btn btn-secondary" onclick="cargarTendencias()">📈 Ver Tendencias</button>
+                <button class="btn btn-primary" onclick="cargarAlertas()">Actualizar</button>
+                <button class="btn btn-secondary" onclick="cargarTendencias()">Ver Tendencias</button>
             </div>
             
             <div id="alertasContainer">
@@ -530,11 +580,11 @@
         <!-- TAB: FACTURAS -->
         <div id="tab-facturas" class="tab-content">
             <div class="toolbar">
-                <input type="text" class="search-box" id="searchFacturas" placeholder="🔍 Buscar por establecimiento..." oninput="filtrarFacturas()">
+                <input type="text" class="search-box" id="searchFacturas" placeholder="Buscar por establecimiento..." oninput="filtrarFacturas()">
                 <button class="btn btn-danger" onclick="eliminarSeleccionadas()" id="btnEliminarFacturas" style="display:none;">
                     Eliminar Seleccionadas (<span id="countSeleccionadas">0</span>)
                 </button>
-                <button class="btn btn-secondary" onclick="cargarFacturas()">🔄 Recargar</button>
+                <button class="btn btn-secondary" onclick="cargarFacturas()">Recargar</button>
             </div>
             
             <div class="card">
@@ -567,8 +617,8 @@
         <!-- TAB: PRODUCTOS -->
         <div id="tab-productos" class="tab-content">
             <div class="toolbar">
-                <input type="text" class="search-box" id="searchProductos" placeholder="🔍 Buscar productos..." oninput="filtrarProductos()">
-                <button class="btn btn-secondary" onclick="cargarProductos()">🔄 Recargar</button>
+                <input type="text" class="search-box" id="searchProductos" placeholder="Buscar productos..." oninput="filtrarProductos()">
+                <button class="btn btn-secondary" onclick="cargarProductos()">Recargar</button>
             </div>
             
             <div class="card">
@@ -599,8 +649,8 @@
         <!-- TAB: DUPLICADOS -->
         <div id="tab-duplicados" class="tab-content">
             <div class="toolbar">
-                <button class="btn btn-primary" onclick="detectarDuplicados()">🔍 Detectar Duplicados</button>
-                <button class="btn btn-secondary" onclick="limpiarDuplicados()">🧹 Limpiar Vista</button>
+                <button class="btn btn-primary" onclick="detectarDuplicados()">Detectar Duplicados</button>
+                <button class="btn btn-secondary" onclick="limpiarDuplicados()">Limpiar Vista</button>
             </div>
             
             <div id="duplicadosContainer">
@@ -630,6 +680,105 @@
             if (tabName === 'facturas') cargarFacturas();
             if (tabName === 'productos') cargarProductos();
         }
+
+        // DRAG AND DROP
+        const uploadZone = document.getElementById('uploadZone');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, () => uploadZone.classList.add('dragover'), false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadZone.addEventListener(eventName, () => uploadZone.classList.remove('dragover'), false);
+        });
+        
+        uploadZone.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                document.getElementById('invoiceFile').files = files;
+                handleFileSelect({ target: { files: files } });
+            }
+        }
+
+        // SUBIR FACTURA
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (file.size > 10 * 1024 * 1024) {
+                alert('El archivo es muy grande. Máximo 10MB.');
+                return;
+            }
+            
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Procesando factura con OCR...</div>';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch(`${API_URL}/invoices/save-with-image`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <div class="result-box success">
+                            <h3 style="color: #2e7d32; margin-bottom: 10px;">Factura procesada exitosamente</h3>
+                            <p style="color: #666;">
+                                <strong>Establecimiento:</strong> ${data.factura.establecimiento || 'No detectado'}<br>
+                                <strong>Total:</strong> $${(data.factura.total || 0).toLocaleString()}<br>
+                                <strong>Productos detectados:</strong> ${data.productos_guardados || 0}<br>
+                                <strong>Puntaje de calidad:</strong> ${data.factura.puntaje || 0}/100
+                            </p>
+                            <div style="margin-top: 15px;">
+                                <button class="btn btn-primary" onclick="editarFactura(${data.factura.id})">
+                                    Ver y Editar Factura
+                                </button>
+                                <button class="btn btn-secondary" onclick="limpiarUpload()">
+                                    Subir Otra
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    cargarEstadisticas();
+                } else {
+                    throw new Error(data.detail || 'Error al procesar');
+                }
+                
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="result-box error">
+                        <h3 style="color: #c62828;">Error al procesar</h3>
+                        <p style="color: #666;">${error.message}</p>
+                        <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
+                            Intentar de Nuevo
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function limpiarUpload() {
+            document.getElementById('invoiceFile').value = '';
+            document.getElementById('uploadStatus').innerHTML = '';
+        }
         
         // ESTADÍSTICAS
         async function cargarEstadisticas() {
@@ -641,7 +790,6 @@
                 document.getElementById('stat-productos').textContent = data.productos_unicos || 0;
                 document.getElementById('stat-pendientes').textContent = data.facturas_pendientes || 0;
                 
-                // Obtener número de alertas
                 const alertasResp = await fetch(`${API_URL}/admin/alertas/cambios-precio?dias=7`);
                 const alertasData = await alertasResp.json();
                 document.getElementById('stat-alertas').textContent = alertasData.total || 0;
@@ -663,21 +811,18 @@
                 if (data.total === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <h3>✅ No hay alertas de precio</h3>
+                            <h3>No hay alertas de precio</h3>
                             <p>Todos los precios están dentro del rango normal</p>
                         </div>
                     `;
                     return;
                 }
                 
-                let html = '<h2 style="margin-bottom: 20px;">🔔 Cambios Detectados (' + data.total + ')</h2>';
+                let html = '<h2 style="margin-bottom: 20px;">Cambios Detectados (' + data.total + ')</h2>';
                 
                 data.alertas.forEach(alerta => {
                     const tipoClase = alerta.tipo_alerta === 'MÁXIMO_HISTÓRICO' ? '' : 
                                      alerta.tipo_alerta === 'MÍNIMO_HISTÓRICO' ? 'success' : 'warning';
-                    
-                    const icono = alerta.tipo_alerta === 'MÁXIMO_HISTÓRICO' ? '📈' : 
-                                 alerta.tipo_alerta === 'MÍNIMO_HISTÓRICO' ? '📉' : '⚠️';
                     
                     const cambioClase = alerta.cambio_porcentaje > 0 ? 'up' : 'down';
                     const simbolo = alerta.cambio_porcentaje > 0 ? '↑' : '↓';
@@ -686,7 +831,7 @@
                         <div class="alert-card ${tipoClase}">
                             <div class="alert-header">
                                 <div>
-                                    <div class="alert-title">${icono} ${alerta.nombre}</div>
+                                    <div class="alert-title">${alerta.nombre}</div>
                                     <div class="alert-meta">
                                         <span><strong>Código:</strong> ${alerta.codigo || 'N/A'}</span>
                                         <span><strong>Establecimiento:</strong> ${alerta.establecimiento}</span>
@@ -699,10 +844,10 @@
                             </div>
                             
                             <div class="price-comparison">
-                                <div class="price-item">
-                                    <div class="price-label">Precio Actual</div>
-                                    <div class="price-value" style="color: #1a73e8;">$${alerta.precio_actual.toLocaleString()}</div>
-                                </div>
+                            <div class="price-item">
+                            <div class="price-label">Precio Actual</div>
+                            <div class="price-value" style="color: #1a73e8;">$${alerta.precio_actual.toLocaleString()}</div>
+                            </div>
                                 <div class="price-item">
                                     <div class="price-label">Promedio Histórico</div>
                                     <div class="price-value" style="color: #666;">$${alerta.precio_promedio.toLocaleString()}</div>
@@ -779,8 +924,8 @@
                 
                 data.comparacion.forEach(item => {
                     const clase = item.es_mas_barato ? 'cheapest' : item.es_mas_caro ? 'expensive' : '';
-                    const badge = item.es_mas_barato ? '<span class="badge badge-success">🏆 Más Barato</span>' :
-                                 item.es_mas_caro ? '<span class="badge badge-danger">💰 Más Caro</span>' : '';
+                    const badge = item.es_mas_barato ? '<span class="badge badge-success">Más Barato</span>' :
+                                 item.es_mas_caro ? '<span class="badge badge-danger">Más Caro</span>' : '';
                     
                     html += `
                         <tr class="${clase}">
@@ -832,7 +977,7 @@
                         <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
                     </div>
                     
-                    <h2 style="margin-bottom: 20px;">📈 Productos con Mayor Variación de Precio (Últimos 30 días)</h2>
+                    <h2 style="margin-bottom: 20px;">Productos con Mayor Variación de Precio (Últimos 30 días)</h2>
                     
                     <div class="card">
                         <div class="card-body">
@@ -924,8 +1069,8 @@
                     <td><span class="badge badge-${getBadgeClass(f.estado_validacion || f.estado)}">${f.estado_validacion || f.estado || 'pendiente'}</span></td>
                     <td>
                         <div class="btn-group">
-                            <button class="btn btn-primary btn-sm" onclick="editarFactura(${f.id})">✏️ Editar</button>
-                            <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${f.id})">🗑️</button>
+                            <button class="btn btn-primary btn-sm" onclick="editarFactura(${f.id})">Editar</button>
+                            <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${f.id})">Eliminar</button>
                         </div>
                     </td>
                 </tr>
@@ -969,7 +1114,7 @@
         }
         
         function editarFactura(id) {
-            window.open(`editor.html?id=${id}`, '_blank');
+            window.open(`editor.html?id=${id}`, '_blank', 'width=1400,height=900');
         }
         
         async function eliminarFactura(id) {
@@ -1049,14 +1194,14 @@
                     <td><span class="badge badge-info">${p.veces_visto}x</span></td>
                     <td>$${p.precio_min.toLocaleString()} - $${p.precio_max.toLocaleString()}</td>
                     <td>
-                        ${p.verificado ? '<span class="badge badge-success">✓ Verificado</span>' : ''}
-                        ${p.necesita_revision ? '<span class="badge badge-warning">⚠️ Revisar</span>' : ''}
+                        ${p.verificado ? '<span class="badge badge-success">Verificado</span>' : ''}
+                        ${p.necesita_revision ? '<span class="badge badge-warning">Revisar</span>' : ''}
                     </td>
                     <td>
                         <div class="btn-group">
-                            <button class="btn btn-primary btn-sm" onclick="verComparacion(${p.id})">📊</button>
-                            <button class="btn btn-secondary btn-sm" onclick="editarProducto(${p.id})">✏️</button>
-                            <button class="btn btn-danger btn-sm" onclick="eliminarProducto(${p.id})">🗑️</button>
+                            <button class="btn btn-primary btn-sm" onclick="verComparacion(${p.id}); switchTab('alertas')">Ver Precios</button>
+                            <button class="btn btn-secondary btn-sm" onclick="editarProducto(${p.id})">Editar</button>
+                            <button class="btn btn-danger btn-sm" onclick="eliminarProducto(${p.id})">Eliminar</button>
                         </div>
                     </td>
                 </tr>
@@ -1127,7 +1272,7 @@
                 if (dataProductos.total === 0 && dataFacturas.total === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <h3>✅ No se encontraron duplicados</h3>
+                            <h3>No se encontraron duplicados</h3>
                             <p>Tu base de datos está limpia</p>
                         </div>
                     `;
@@ -1137,7 +1282,7 @@
                 let html = '';
                 
                 if (dataProductos.total > 0) {
-                    html += '<h2 style="margin-bottom: 20px;">📦 Productos Duplicados (' + dataProductos.total + ')</h2>';
+                    html += '<h2 style="margin-bottom: 20px;">Productos Duplicados (' + dataProductos.total + ')</h2>';
                     dataProductos.duplicados.forEach(dup => {
                         html += `
                             <div class="duplicate-card">
@@ -1147,7 +1292,7 @@
                                         <span style="margin-left: 10px; color: #666;">${dup.razon}</span>
                                     </div>
                                     <button class="btn btn-success btn-sm" onclick="fusionarProductos(${dup.producto1.id}, ${dup.producto2.id})">
-                                        🔗 Fusionar
+                                        Fusionar
                                     </button>
                                 </div>
                                 <div class="duplicate-content">
@@ -1170,7 +1315,7 @@
                 }
                 
                 if (dataFacturas.total > 0) {
-                    html += '<h2 style="margin: 30px 0 20px 0;">🧾 Facturas Duplicadas (' + dataFacturas.total + ')</h2>';
+                    html += '<h2 style="margin: 30px 0 20px 0;">Facturas Duplicadas (' + dataFacturas.total + ')</h2>';
                     dataFacturas.duplicados.forEach(dup => {
                         html += `
                             <div class="duplicate-card">
@@ -1251,7 +1396,7 @@
                 });
                 
                 if (response.ok) {
-                    showToast('✓ Productos fusionados exitosamente');
+                    showToast('Productos fusionados exitosamente');
                     detectarDuplicados();
                     cargarEstadisticas();
                 } else {
@@ -1270,7 +1415,6 @@
             setTimeout(() => toast.remove(), 3000);
         }
         
-        // Cargar estadísticas al inicio
         cargarEstadisticas();
     </script>
 </body>
