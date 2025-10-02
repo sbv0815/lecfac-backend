@@ -667,6 +667,19 @@
         let facturasData = [];
         let productosData = [];
         let facturasSeleccionadas = new Set();
+        // Agregar esta variable global al inicio del script
+        let currentImageFile = null;
+
+// Modificar handleFileSelect para guardar el archivo
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Guardar el archivo para usarlo después
+    currentImageFile = file;
+    
+   
+}
         
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -827,33 +840,31 @@ async function guardarFacturaYEditar(invoiceData) {
     statusDiv.innerHTML = `
         <div class="loading">
             <div class="spinner"></div>
-            <p>Guardando factura...</p>
+            <p>Guardando factura con imagen...</p>
         </div>
     `;
     
     try {
-        // Preparar datos para el endpoint
-        const datosFactura = {
-            establecimiento: invoiceData.establecimiento || 'Desconocido',
-            total_factura: invoiceData.total || 0,
-            productos: invoiceData.productos.map(p => ({
-                codigo: p.codigo || '',
-                codigo_ean: p.codigo || '',
-                nombre: p.nombre || '',
-                nombre_producto: p.nombre || '',
-                precio: p.valor || 0,
-                valor: p.valor || 0
-            })),
-            usuario_id: 1  // Usuario por defecto, cambiar según tu lógica
-        };
+        // Crear FormData para enviar archivo + datos
+        const formData = new FormData();
         
-        console.log('Enviando datos:', datosFactura);
+        // Agregar la imagen si existe
+        if (currentImageFile) {
+            formData.append('file', currentImageFile);
+        }
         
-        // Crear factura
-        const response = await fetch(`${API_URL}/admin/facturas`, {
+        // Agregar los datos de la factura
+        formData.append('establecimiento', invoiceData.establecimiento || 'Desconocido');
+        formData.append('total', invoiceData.total || 0);
+        formData.append('usuario_id', '1');
+        formData.append('productos', JSON.stringify(invoiceData.productos));
+        
+        console.log('Enviando factura con imagen...');
+        
+        // Usar el endpoint que guarda con imagen
+        const response = await fetch(`${API_URL}/invoices/save-with-image`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(datosFactura)
+            body: formData
         });
         
         if (!response.ok) {
@@ -862,14 +873,14 @@ async function guardarFacturaYEditar(invoiceData) {
         }
         
         const result = await response.json();
-        const facturaId = result.id || result.factura_id;
+        const facturaId = result.factura_id;
         
         console.log('Factura creada con ID:', facturaId);
         
         // Mostrar éxito y abrir editor
         statusDiv.innerHTML = `
             <div class="result-box success">
-                <h3 style="color: #2e7d32;">✅ Factura guardada</h3>
+                <h3 style="color: #2e7d32;">✅ Factura guardada con imagen</h3>
                 <p style="margin: 15px 0;">
                     Factura #<strong>${facturaId}</strong> creada exitosamente
                 </p>
@@ -877,11 +888,13 @@ async function guardarFacturaYEditar(invoiceData) {
             </div>
         `;
         
-        // Abrir el editor después de un momento
+        // Limpiar el archivo guardado
+        currentImageFile = null;
+        
+        // Abrir el editor
         setTimeout(() => {
-           window.open(`/editor?id=${facturaId}`, '_blank', 'width=1400,height=900');
+            window.open(`/editor?id=${facturaId}`, '_blank', 'width=1400,height=900');
             
-            // Actualizar estadísticas y limpiar
             setTimeout(() => {
                 cargarEstadisticas();
                 cargarFacturas();
@@ -902,8 +915,6 @@ async function guardarFacturaYEditar(invoiceData) {
         `;
     }
 }
-
-
         function limpiarUpload() {
             document.getElementById('invoiceFile').value = '';
             document.getElementById('uploadStatus').innerHTML = '';
