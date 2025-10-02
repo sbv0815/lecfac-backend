@@ -68,6 +68,10 @@ async def test_page():
 @app.get("/dashboard")
 async def dashboard():
     return FileResponse("admin_dashboard.html")
+
+@app.get("/editor")
+async def editor_page():
+    return FileResponse("editor.html")
 # ========================================
 # MODELOS PYDANTIC
 # ========================================
@@ -1318,6 +1322,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
