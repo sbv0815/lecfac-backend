@@ -22,6 +22,7 @@ from fastapi.responses import Response
 from admin import router as admin_router
 from fastapi.responses import FileResponse
 import os
+from admin_dashboard import router as admin_dashboard_router
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -61,6 +62,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(admin_dashboard_router)
 
 # ========================================
 # MODELOS PYDANTIC
@@ -1189,6 +1191,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
