@@ -715,105 +715,111 @@
         // SUBIR FACTURA
         // SUBIR FACTURA - VERSIÓN CORREGIDA (igual a test.html)
 async function handleFileSelect(event) {
+    // Obtener el primer archivo
     const file = event.target.files[0];
+
+    // Validar existencia de archivo
     if (!file) return;
-    
+
+    // Validación de tamaño de archivo
     if (file.size > 10 * 1024 * 1024) {
         alert('El archivo es muy grande. Máximo 10MB.');
         return;
     }
-    
+
+    // Crear URL segura para la imagen
+    const imageUrl = URL.createObjectURL(file);
+
+    // Mostrar botón de ver imágenes
+    const verImagenesBtn = document.getElementById('verImagenesBtn');
+    if (verImagenesBtn) {
+        verImagenesBtn.style.display = 'block';
+        verImagenesBtn.disabled = false;
+
+        // Almacenar URL de la imagen
+        verImagenesBtn.dataset.imageUrl = imageUrl;
+    }
+
+    // Previsualización de imagen
+    const previewImg = document.getElementById('imagePreview');
+    if (previewImg) {
+        previewImg.src = imageUrl;
+        previewImg.style.display = 'block';
+
+        // Liberar memoria cuando la imagen se cargue
+        previewImg.onload = () => {
+            URL.revokeObjectURL(imageUrl);
+        };
+    }
+
+    // Mostrar estado de procesamiento
     const statusDiv = document.getElementById('uploadStatus');
-    statusDiv.innerHTML = `
-        <div class="loading">
-            <div class="spinner"></div>
-            <p>Procesando factura con OCR...</p>
-            <p style="font-size: 12px; color: #999;">Esto puede tardar 5-15 segundos</p>
-        </div>
-    `;
-    
-    try {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        // Usar el mismo endpoint que test.html
-        const response = await fetch(`${API_URL}/invoices/parse`, {
-            method: 'POST',
-            body: formData
-        });
-        
-        const data = await response.json();
-        console.log('Parse result:', data);
-        
-        if (!data.success) {
-            throw new Error(data.message || 'Error en el procesamiento');
-        }
-        
-        const invoice = data.data;
-        const totalFormateado = invoice.total 
-            ? `$${invoice.total.toLocaleString('es-CO')}` 
-            : 'No detectado';
-        
+    if (statusDiv) {
         statusDiv.innerHTML = `
-            <div class="result-box success">
-                <h3 style="color: #2e7d32; margin-bottom: 15px;">✅ Factura procesada exitosamente</h3>
-                
-                <div style="background: white; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
-                    <p style="color: #666; margin: 5px 0;">
-                        <strong>Establecimiento:</strong> ${invoice.establecimiento}<br>
-                        <strong>Total:</strong> ${totalFormateado}<br>
-                        <strong>Productos:</strong> ${invoice.productos.length}
-                    </p>
-                </div>
-                
-                <div style="max-height: 350px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; background: #fafafa; margin-bottom: 15px;">
-                    <h4 style="margin-bottom: 10px; position: sticky; top: 0; background: #fafafa; padding-bottom: 5px;">Productos detectados:</h4>
-                    <table style="width: 100%; font-size: 12px;">
-                        <thead style="position: sticky; top: 30px; background: #fafafa;">
-                            <tr style="border-bottom: 2px solid #ddd;">
-                                <th style="text-align: left; padding: 5px;">#</th>
-                                <th style="text-align: left; padding: 5px;">Producto</th>
-                                <th style="text-align: left; padding: 5px;">Código</th>
-                                <th style="text-align: right; padding: 5px;">Precio</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${invoice.productos.map((prod, i) => `
-                                <tr style="border-bottom: 1px solid #eee;">
-                                    <td style="padding: 5px; color: #999;">${i + 1}</td>
-                                    <td style="padding: 5px;"><strong>${prod.nombre}</strong></td>
-                                    <td style="padding: 5px; color: #666; font-family: monospace;">${prod.codigo || '-'}</td>
-                                    <td style="padding: 5px; text-align: right; color: #2e7d32; font-weight: bold;">$${prod.valor.toLocaleString('es-CO')}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div style="text-align: center;">
-                    <p style="color: #666; font-size: 13px; margin-bottom: 10px;">
-                        La factura ha sido procesada. Para guardarla y poder editarla más tarde,<br>
-                        ve a la pestaña <strong>"Facturas"</strong> y haz clic en "Subir Nueva Factura" desde allí.
-                    </p>
-                    <button class="btn btn-secondary" onclick="limpiarUpload()">
-                        Subir Otra Factura
-                    </button>
-                </div>
-            </div>
-        `;
-        
-    } catch (error) {
-        console.error('Error completo:', error);
-        statusDiv.innerHTML = `
-            <div class="result-box error">
-                <h3 style="color: #c62828;">❌ Error al procesar</h3>
-                <p style="color: #666;">${error.message}</p>
-                <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
-                    Intentar de Nuevo
-                </button>
+            <div class="alert alert-success">
+                Imagen procesada correctamente
+                <br>
+                Tamaño: ${(file.size / 1024).toFixed(2)} KB
             </div>
         `;
     }
+}
+
+// Función para abrir la imagen
+function abrirImagen() {
+    const verImagenesBtn = document.getElementById('verImagenesBtn');
+    const imageUrl = verImagenesBtn.dataset.imageUrl;
+
+    if (imageUrl) {
+        // Abrir en nueva pestaña
+        window.open(imageUrl, '_blank');
+    }
+}
+```
+
+HTML complementario:
+```html
+<input
+    type="file"
+    id="fileInput"
+    accept="image/*"
+    onchange="handleFileSelect(event)"
+>
+<div id="uploadStatus"></div>
+<button
+    id="verImagenesBtn"
+    style="display:none;"
+    onclick="abrirImagen()"
+>
+    Ver Imágenes
+</button>
+<img
+    id="imagePreview"
+    style="display:none; max-width: 300px;"
+>
+```
+
+CSS sugerido:
+```css
+.alert {
+    padding: 15px;
+    margin-top: 10px;
+    border-radius: 5px;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+#verImagenesBtn {
+    margin-top: 10px;
+    padding: 10px 20px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
 }
         function limpiarUpload() {
             document.getElementById('invoiceFile').value = '';
