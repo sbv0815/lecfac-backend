@@ -5,361 +5,294 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de Factura - LecFac</title>
     <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        height: 100vh;
-        overflow: hidden;
-    }
-    
-    .editor-container {
-        display: grid;
-        grid-template-columns: 55% 45%;
-        height: 100vh;
-        position: relative;
-    }
-    
-    /* Divisor redimensionable */
-    .resize-handle {
-        position: absolute;
-        left: 55%;
-        top: 0;
-        bottom: 0;
-        width: 8px;
-        background: #ddd;
-        cursor: col-resize;
-        z-index: 1000;
-        transition: background 0.2s;
-    }
-    
-    .resize-handle:hover {
-        background: #1a73e8;
-    }
-    
-    /* Panel izquierdo: Imagen CON SCROLL */
-    .image-panel {
-        background: #1a1a1a;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-    
-    .image-controls {
-        background: #2d2d2d;
-        padding: 10px;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        border-bottom: 1px solid #444;
-        flex-shrink: 0;
-    }
-    
-    .image-controls button {
-        background: #4a4a4a;
-        color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-    }
-    
-    .image-controls button:hover { background: #5a5a5a; }
-    
-    .zoom-info {
-        color: #aaa;
-        margin-left: auto;
-        font-size: 14px;
-    }
-    
-    /* CAMBIO CLAVE: Hacer el contenedor scrolleable */
-    .image-container {
-        flex: 1;
-        overflow: auto;  /* ← Permite scroll vertical y horizontal */
-        background: #1a1a1a;
-        padding: 20px;
-    }
-    
-    .image-container img {
-        display: block;
-        max-width: none;
-        width: auto;
-        height: auto;
-        cursor: grab;
-        transition: transform 0.1s;
-    }
-    
-    .image-container:active img {
-        cursor: grabbing;
-    }
-    
-    /* Panel derecho: Formulario CON MEJOR SCROLL */
-    .form-panel {
-        background: white;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-    
-    .form-header {
-        background: #1a73e8;
-        color: white;
-        padding: 15px 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
-    }
-    
-    .validation-badge {
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: bold;
-    }
-    
-    .badge-validada { background: #34a853; }
-    .badge-revision_requerida { background: #fbbc04; color: #000; }
-    .badge-pendiente { background: #ea4335; }
-    
-    /* CAMBIO: Mejorar el scroll del formulario */
-    .form-content {
-        flex: 1;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 20px;
-        /* Scroll suave */
-        scroll-behavior: smooth;
-    }
-    
-    /* Personalizar scrollbar */
-    .form-content::-webkit-scrollbar,
-    .image-container::-webkit-scrollbar {
-        width: 12px;
-    }
-    
-    .form-content::-webkit-scrollbar-track,
-    .image-container::-webkit-scrollbar-track {
-        background: #f1f1f1;
-    }
-    
-    .form-content::-webkit-scrollbar-thumb,
-    .image-container::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 6px;
-    }
-    
-    .form-content::-webkit-scrollbar-thumb:hover,
-    .image-container::-webkit-scrollbar-thumb:hover {
-        background: #555;
-    }
-    
-    .form-section {
-        margin-bottom: 25px;
-    }
-    
-    .form-section h3 {
-        font-size: 13px;
-        color: #666;
-        margin-bottom: 10px;
-        text-transform: uppercase;
-        position: sticky;
-        top: 0;
-        background: white;
-        padding: 10px 0;
-        z-index: 10;
-    }
-    
-    .field-group {
-        margin-bottom: 15px;
-    }
-    
-    .field-group label {
-        display: block;
-        font-size: 13px;
-        color: #333;
-        margin-bottom: 5px;
-        font-weight: 500;
-    }
-    
-    .field-group input {
-        width: 100%;
-        padding: 10px;
-        border: 2px solid #e0e0e0;
-        border-radius: 6px;
-        font-size: 14px;
-    }
-    
-    .field-group input:focus {
-        outline: none;
-        border-color: #1a73e8;
-    }
-    
-    /* Tabla de productos */
-    .productos-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-        margin-top: 10px;
-    }
-    
-    .productos-table thead {
-        position: sticky;
-        top: 40px;  /* Después del h3 sticky */
-        background: white;
-        z-index: 9;
-    }
-    
-    .productos-table th {
-        background: #f5f5f5;
-        padding: 10px 8px;
-        text-align: left;
-        font-weight: 600;
-        color: #666;
-        border-bottom: 2px solid #ddd;
-    }
-    
-    .productos-table td {
-        padding: 8px;
-        border-bottom: 1px solid #eee;
-    }
-    
-    .productos-table input {
-        width: 100%;
-        padding: 6px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-    
-    .productos-table input:focus {
-        outline: none;
-        border-color: #1a73e8;
-    }
-    
-    .btn-delete {
-        background: #ea4335;
-        color: white;
-        border: none;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 12px;
-    }
-    
-    .btn-delete:hover { background: #d33; }
-    
-    .btn-add {
-        background: #34a853;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 6px;
-        cursor: pointer;
-        width: 100%;
-        margin-top: 10px;
-    }
-    
-    .btn-add:hover { background: #2d9148; }
-    
-    .form-actions {
-        padding: 20px;
-        background: #f9f9f9;
-        border-top: 1px solid #ddd;
-        display: flex;
-        gap: 10px;
-        flex-shrink: 0;
-    }
-    
-    .btn-primary {
-        flex: 1;
-        background: #1a73e8;
-        color: white;
-        border: none;
-        padding: 14px;
-        border-radius: 6px;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-    }
-    
-    .btn-primary:hover { background: #1557b0; }
-    
-    .btn-secondary {
-        background: #5f6368;
-        color: white;
-        border: none;
-        padding: 14px 24px;
-        border-radius: 6px;
-        cursor: pointer;
-    }
-    
-    .btn-secondary:hover { background: #3c4043; }
-    
-    .loading {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-    }
-    
-    .spinner {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #1a73e8;
-        border-radius: 50%;
-        width: 50px;
-        height: 50px;
-        animation: spin 1s linear infinite;
-    }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    
-    .toast {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #34a853;
-        color: white;
-        padding: 16px 24px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        z-index: 10000;
-        animation: slideIn 0.3s;
-    }
-    
-    @keyframes slideIn {
-        from { transform: translateX(400px); }
-        to { transform: translateX(0); }
-    }
-</style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .editor-container {
+            display: grid;
+            grid-template-columns: 55% 45%;
+            height: 100vh;
+        }
+        
+        /* Panel izquierdo: Imagen */
+        .image-panel {
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .image-controls {
+            background: #2d2d2d;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid #444;
+        }
+        
+        .image-controls button {
+            background: #4a4a4a;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .image-controls button:hover { background: #5a5a5a; }
+        
+        .zoom-info {
+            color: #aaa;
+            margin-left: auto;
+            font-size: 14px;
+        }
+        
+        .image-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+        }
+        
+        .image-container:active { cursor: grabbing; }
+        
+        .image-container img {
+            max-width: none;
+            transition: transform 0.1s;
+        }
+        
+        /* Panel derecho: Formulario */
+        .form-panel {
+            background: white;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .form-header {
+            background: #1a73e8;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .validation-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .badge-validada { background: #34a853; }
+        .badge-revision_requerida { background: #fbbc04; color: #000; }
+        .badge-pendiente { background: #ea4335; }
+        
+        .form-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .form-section {
+            margin-bottom: 25px;
+        }
+        
+        .form-section h3 {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        
+        .field-group {
+            margin-bottom: 15px;
+        }
+        
+        .field-group label {
+            display: block;
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        .field-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .field-group input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+        
+        /* Tabla de productos */
+        .productos-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        
+        .productos-table th {
+            background: #f5f5f5;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        .productos-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .productos-table input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .productos-table input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+        
+        .btn-delete {
+            background: #ea4335;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .btn-delete:hover { background: #d33; }
+        
+        .btn-add {
+            background: #34a853;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .btn-add:hover { background: #2d9148; }
+        
+        .form-actions {
+            padding: 20px;
+            background: #f9f9f9;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            flex: 1;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .btn-primary:hover { background: #1557b0; }
+        
+        .btn-secondary {
+            background: #5f6368;
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        
+        .btn-secondary:hover { background: #3c4043; }
+        
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1a73e8;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #34a853;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 10000;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(400px); }
+            to { transform: translateX(0); }
+        }
+    </style>
 </head>
 <body>
     <div class="editor-container">
-    <div class="resize-handle" id="resizeHandle"></div>
-    
-    <!-- Panel de imagen -->
-    <div class="image-panel">
-        <div class="image-controls">
-            <button onclick="zoomIn()">+</button>
-            <button onclick="zoomOut()">-</button>
-            <button onclick="resetZoom()">Reset</button>
-            <button onclick="rotateImage()">Rotar</button>
-            <span class="zoom-info" id="zoomInfo">100%</span>
+        <!-- Panel de imagen -->
+        <div class="image-panel">
+            <div class="image-controls">
+                <button onclick="zoomIn()">+</button>
+                <button onclick="zoomOut()">-</button>
+                <button onclick="resetZoom()">Reset</button>
+                <button onclick="rotateImage()">Rotar</button>
+                <span class="zoom-info" id="zoomInfo">100%</span>
+            </div>
+            <div class="image-container" id="imageContainer">
+                <img id="facturaImage" src="" alt="Factura">
+            </div>
         </div>
-        <div class="image-container" id="imageContainer">
-            <img id="facturaImage" src="" alt="Factura">
-        </div>
-    </div>
         
         <!-- Panel de formulario -->
         <div class="form-panel">
@@ -420,37 +353,39 @@
         let rotation = 0;
         let productos = [];
         let productosOriginales = [];
-
-        // Redimensionar paneles
-let isResizing = false;
-const resizeHandle = document.getElementById('resizeHandle');
-const container = document.querySelector('.editor-container');
-
-resizeHandle.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    document.body.style.cursor = 'col-resize';
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
-    
-    const containerWidth = container.offsetWidth;
-    const leftWidth = (e.clientX / containerWidth) * 100;
-    
-    if (leftWidth > 30 && leftWidth < 70) {
-        container.style.gridTemplateColumns = `${leftWidth}% ${100 - leftWidth}%`;
-        resizeHandle.style.left = `${leftWidth}%`;
-    }
-});
-
-document.addEventListener('mouseup', () => {
-    if (isResizing) {
-        isResizing = false;
-        document.body.style.cursor = 'default';
-    }
-});
-
-
+        
+        async function cargarFactura() {
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/detalle`);
+                const data = await response.json();
+                
+                // Llenar formulario
+                document.getElementById('facturaId').textContent = data.factura.id;
+                document.getElementById('establecimiento').value = data.factura.establecimiento || '';
+                document.getElementById('total').value = data.factura.total || '';
+                document.getElementById('puntaje').textContent = data.factura.puntaje || 0;
+                
+                const badge = document.getElementById('estadoBadge');
+                badge.textContent = data.factura.estado || 'pendiente';
+                badge.className = 'validation-badge badge-' + (data.factura.estado || 'pendiente');
+                
+                // Cargar productos
+                productos = data.productos.map(p => ({...p}));
+                productosOriginales = JSON.parse(JSON.stringify(productos));
+                renderProductos();
+                
+                // Cargar imagen
+                document.getElementById('facturaImage').src = `${API_URL}/admin/facturas/${facturaId}/imagen`;
+                
+                hideLoading();
+            } catch (error) {
+                alert('Error cargando factura: ' + error.message);
+                hideLoading();
+            }
+        }
+        
         function renderProductos() {
             const tbody = document.getElementById('productosBody');
             tbody.innerHTML = '';
@@ -621,6 +556,9 @@ document.addEventListener('mouseup', () => {
         });
         
         cargarFactura();
+    </script>
+</body>
+</html>
     </script>
 </body>
 </html>
