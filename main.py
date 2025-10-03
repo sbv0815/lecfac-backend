@@ -58,6 +58,18 @@ app.add_middleware(
 app.include_router(admin_dashboard_router)
 app.include_router(auth_router)
 
+
+# Al iniciar, crear tablas si no existen
+@app.on_event("startup")
+async def startup_event():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(CREATE_TABLES_SQL)
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print("✅ Tablas móviles creadas/verificadas")
+
 # Endpoints para servir HTML
 @app.get("/")
 async def root():
@@ -1399,6 +1411,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
