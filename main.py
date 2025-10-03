@@ -24,6 +24,8 @@ from auth_routes import router as auth_router
 import uuid
 import json
 from typing import Optional
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request
+from typing import List, Optional
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -183,8 +185,9 @@ class SaveInvoice(BaseModel):
     usuario_id: int
     establecimiento: str
     productos: list
-    temp_file_path: str = None  # Agregar este campo
- class ProductoItem(BaseModel):
+    temp_file_path: str = None  
+
+class ProductoItem(BaseModel):  
     nombre: str
     cantidad: int = 1
     precio: float
@@ -460,27 +463,50 @@ async def parse_invoice(file: UploadFile = File(...)):
         # Procesar con Claude
         result = parse_invoice_with_claude(temp_file.name)
         
-        if not result["success"]:
+        if result["success"]:
+            # Guardar en BD con estado PENDIENTE
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            data = result["data"]
+            establecimiento = data.get("establecimiento", "Desconocido")
+            total = data.get("total", 0)
+            
+            cursor.execute("""
+                INSERT INTO facturas (
+                    usuario_id, establecimiento, total_factura,
+                    fecha_cargue, estado_validacion
+                ) VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (1, establecimiento, total, datetime.now(), 'pendiente'))
+            
+            factura_id = cursor.fetchone()[0]
+            
+            # Guardar productos
+            for prod in data.get("productos", []):
+                cursor.execute("""
+                    INSERT INTO productos (factura_id, codigo, nombre, valor)
+                    VALUES (%s, %s, %s, %s)
+                """, (factura_id, prod.get("codigo", ""), prod.get("nombre", ""), prod.get("precio", 0)))
+            
+            conn.commit()
+            conn.close()
+            
+            # Limpiar archivo temporal
+            os.unlink(temp_file.name)
+            
+            return {
+                "success": True,
+                "data": data,
+                "factura_id": factura_id,
+                "status": "pendiente",
+                "message": "Factura procesada y pendiente de revisión"
+            }
+        else:
             os.unlink(temp_file.name)
             return result
-        
-        # NO eliminar el archivo aún
-        return {
-            "success": True,
-            "data": result["data"],  # ← ASEGÚRATE QUE ESTO ESTÉ
-            "temp_file_path": temp_file.name
-        }
-        
+            
     except Exception as e:
         return {"success": False, "error": str(e)}
-        
-    except Exception as e:
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.unlink(temp_file_path)
-            except:
-                pass
-        raise HTTPException(500, f"Error: {str(e)}")
 
 @app.post("/invoices/save")
 async def save_invoice(invoice: SaveInvoice):
@@ -1672,6 +1698,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
