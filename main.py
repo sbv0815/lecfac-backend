@@ -55,6 +55,7 @@ app.add_middleware(
 )
 
 app.include_router(admin_dashboard_router)
+app.include_router(auth_router)
 
 # Endpoints para servir HTML
 @app.get("/")
@@ -1397,6 +1398,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
