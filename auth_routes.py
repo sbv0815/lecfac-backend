@@ -1,17 +1,15 @@
-# ============= auth_routes.py =============
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 import jwt
 from datetime import datetime, timedelta
 import os
+import bcrypt
 
-from database import get_db_connection, hash_password, verify_password
+from database import get_db_connection
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-# Configuración JWT
-SECRET_KEY = os.environ.get("JWT_SECRET", "tu-secret-key-super-segura")
+SECRET_KEY = os.environ.get("JWT_SECRET", "69Sbv8v15nf*!@")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 
@@ -26,15 +24,15 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
-class UserResponse(BaseModel):
-    id: int
-    email: str
-    nombre: str
-    apellidos: str
-    celular: str
+def hash_password(password: str) -> str:
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def create_access_token(data: dict):
-    """Crear token JWT"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
@@ -43,59 +41,37 @@ def create_access_token(data: dict):
 
 @router.post("/register")
 async def register(request: RegisterRequest):
-    """Registro de nuevo usuario"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         # Verificar si el email ya existe
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("SELECT id FROM usuarios WHERE email = %s", (request.email,))
-        else:
-            cursor.execute("SELECT id FROM usuarios WHERE email = ?", (request.email,))
+        cursor.execute("SELECT id FROM usuarios WHERE email = %s", (request.email,))
         
         if cursor.fetchone():
             raise HTTPException(status_code=400, detail="El correo ya está registrado")
         
-        # Hash de la contraseña
         password_hash = hash_password(request.password)
-        
-        # Crear nombre completo
         nombre_completo = f"{request.nombres} {request.apellidos}"
         
-        # Insertar nuevo usuario
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                INSERT INTO usuarios (email, password_hash, nombre, celular, nombres, apellidos)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """, (request.email, password_hash, nombre_completo, request.celular, 
-                  request.nombres, request.apellidos))
-            user_id = cursor.fetchone()[0]
-        else:
-            cursor.execute("""
-                INSERT INTO usuarios (email, password_hash, nombre, celular, nombres, apellidos)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (request.email, password_hash, nombre_completo, request.celular,
-                  request.nombres, request.apellidos))
-            user_id = cursor.lastrowid
+        cursor.execute("""
+            INSERT INTO usuarios (email, password_hash, nombre)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        """, (request.email, password_hash, nombre_completo))
         
+        user_id = cursor.fetchone()[0]
         conn.commit()
         
-        # Crear token
         access_token = create_access_token({"user_id": user_id, "email": request.email})
         
         return {
             "success": True,
-            "message": "Usuario registrado exitosamente",
             "token": access_token,
             "user": {
                 "id": str(user_id),
                 "email": request.email,
-                "name": nombre_completo,
-                "nombres": request.nombres,
-                "apellidos": request.apellidos,
-                "celular": request.celular
+                "name": nombre_completo
             }
         }
         
@@ -103,88 +79,44 @@ async def register(request: RegisterRequest):
         raise
     except Exception as e:
         conn.rollback()
-        print(f"Error en registro: {e}")
-        raise HTTPException(status_code=500, detail="Error al registrar usuario")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 
 @router.post("/login")
 async def login(request: LoginRequest):
-    """Login de usuario"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # Buscar usuario
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT id, email, password_hash, nombre, celular, 
-                       nombres, apellidos 
-                FROM usuarios WHERE email = %s
-            """, (request.email,))
-        else:
-            cursor.execute("""
-                SELECT id, email, password_hash, nombre, celular,
-                       nombres, apellidos 
-                FROM usuarios WHERE email = ?
-            """, (request.email,))
+        cursor.execute(
+            "SELECT id, email, password_hash, nombre FROM usuarios WHERE email = %s",
+            (request.email,)
+        )
         
         user = cursor.fetchone()
         
-        if not user:
+        if not user or not verify_password(request.password, user[2]):
             raise HTTPException(status_code=401, detail="Credenciales inválidas")
         
-        # Verificar contraseña
-        if not verify_password(request.password, user[2]):
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
-        
-        # Crear token
         access_token = create_access_token({"user_id": user[0], "email": user[1]})
-        
-        # Preparar respuesta
-        user_data = {
-            "id": str(user[0]),
-            "email": user[1],
-            "name": user[3] or f"{user[5]} {user[6]}",
-            "celular": user[4]
-        }
-        
-        # Agregar nombres y apellidos si existen
-        if len(user) > 5:
-            user_data["nombres"] = user[5]
-            user_data["apellidos"] = user[6]
         
         return {
             "success": True,
             "token": access_token,
-            "user": user_data
+            "user": {
+                "id": str(user[0]),
+                "email": user[1],
+                "name": user[3] or "Usuario"
+            }
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error en login: {e}")
-        raise HTTPException(status_code=500, detail="Error al iniciar sesión")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
-
-@router.get("/verify")
-async def verify_token(token: str):
-    """Verificar si un token es válido"""
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return {
-            "valid": True,
-            "user_id": payload.get("user_id"),
-            "email": payload.get("email")
-        }
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.JWTError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-# ============= Agregar a main.py =============
-# En tu archivo main.py, agrega estas líneas:
 
 from auth_routes import router as auth_router
 app.include_router(auth_router)
