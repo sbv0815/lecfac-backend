@@ -19,7 +19,8 @@ from database import (
 )
 from claude_invoice import parse_invoice_with_claude
 from fastapi.responses import Response, FileResponse
-from admin_dashboard import router as admin_dashboard_router  # ← UNA SOLA VEZ
+from admin_dashboard import router as admin_dashboard_router
+from auth_routes import router as auth_router  
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -1398,6 +1399,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
