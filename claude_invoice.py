@@ -71,7 +71,6 @@ REGLAS:
         elif "```" in response_text:
             json_str = response_text.split("```")[1].split("```")[0].strip()
         else:
-        # Intentar parsear directamente
             json_str = response_text.strip()
 
         # Normalizar
