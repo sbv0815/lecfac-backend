@@ -611,7 +611,7 @@ async def get_factura_image(factura_id: int):
 
 # Agregar esto a tu main.py existente
 
-@app.post("/api/mobile/upload-invoice")
+
 @app.post("/api/mobile/upload-invoice")
 async def mobile_upload_invoice(
     image: UploadFile = File(...),
@@ -1488,6 +1488,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
