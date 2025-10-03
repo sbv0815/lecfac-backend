@@ -118,5 +118,4 @@ async def login(request: LoginRequest):
     finally:
         conn.close()
 
-from auth_routes import router as auth_router
-app.include_router(auth_router)
+
