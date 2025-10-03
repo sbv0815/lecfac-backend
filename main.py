@@ -20,7 +20,10 @@ from database import (
 from claude_invoice import parse_invoice_with_claude
 from fastapi.responses import Response, FileResponse
 from admin_dashboard import router as admin_dashboard_router
-from auth_routes import router as auth_router  
+from auth_routes import router as auth_router
+import uuid
+import json
+from typing import Optional
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -59,21 +62,8 @@ app.include_router(admin_dashboard_router)
 app.include_router(auth_router)
 
 
-# Al iniciar, crear tablas si no existen
-@app.on_event("startup")
-async def startup_event():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(CREATE_TABLES_SQL)
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print("✅ Tablas móviles creadas/verificadas")
-
 # Endpoints para servir HTML
-@app.get("/")
-async def root():
-    return {"message": "LecFac API"}
+
 
 @app.get("/test")
 async def test_page():
@@ -619,6 +609,93 @@ async def get_factura_image(factura_id: int):
     
     return Response(content=image_data, media_type=mime_type or "image/jpeg")
 
+# Agregar esto a tu main.py existente
+
+@app.post("/api/mobile/upload-invoice")
+@app.post("/api/mobile/upload-invoice")
+async def mobile_upload_invoice(
+    image: UploadFile = File(...),
+    user_id: str = Form("mobile_user"),
+    user_email: Optional[str] = Form(None),
+    device_id: Optional[str] = Form(None)
+):
+    """Endpoint simple para recibir facturas desde Flutter"""
+    try:
+        # Validar imagen
+        if image.size > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Imagen muy grande")
+        
+        # Leer imagen
+        image_bytes = await image.read()
+        
+        # Guardar temporalmente
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(image_bytes)
+            temp_path = tmp_file.name
+        
+        # Procesar con claude_invoice.py
+        result = parse_invoice_with_claude(temp_path)
+        
+        if result["success"]:
+            ocr_data = result["data"]
+            
+            # Guardar en BD
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Usar ID entero para facturas
+            cursor.execute("""
+                INSERT INTO facturas 
+                (usuario_id, establecimiento, fecha_cargue, total_factura)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (
+                1,  # Usuario por defecto para móvil
+                ocr_data.get("establecimiento", "Sin identificar"),
+                datetime.now(),
+                ocr_data.get("total", 0)
+            ))
+            
+            factura_id = cursor.fetchone()[0]
+            
+            # Guardar productos
+            for prod in ocr_data.get("productos", []):
+                cursor.execute("""
+                    INSERT INTO productos (factura_id, codigo, nombre, valor)
+                    VALUES (%s, %s, %s, %s)
+                """, (
+                    factura_id,
+                    prod.get("codigo", ""),
+                    prod.get("nombre", ""),
+                    prod.get("precio", 0)
+                ))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            # Limpiar archivo temporal
+            os.remove(temp_path)
+            
+            return {
+                "success": True,
+                "invoice_id": factura_id,
+                "ocr_result": ocr_data,
+                "message": "Factura procesada exitosamente"
+            }
+        else:
+            os.remove(temp_path)
+            return {
+                "success": False,
+                "error": result.get("error", "Error en OCR")
+            }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 @app.post("/invoices/upload")
 async def upload_invoice(
@@ -1116,7 +1193,7 @@ async def get_factura_detalle(factura_id: int):
         raise HTTPException(500, str(e))
 
 
-# Agregar este endpoint en tu main.py, después del endpoint @app.get("/admin/facturas/{factura_id}/detalle")
+
 
 @app.post("/admin/facturas")
 async def crear_factura_desde_dashboard(datos: dict):
@@ -1411,6 +1488,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
