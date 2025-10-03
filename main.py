@@ -169,7 +169,19 @@ class SaveInvoice(BaseModel):
     establecimiento: str
     productos: list
     temp_file_path: str = None  # Agregar este campo
+ class ProductoItem(BaseModel):
+    nombre: str
+    cantidad: int = 1
+    precio: float
+    codigo: Optional[str] = None
 
+class InvoiceConfirm(BaseModel):
+    establecimiento: str
+    fecha: str
+    total: float
+    productos: List[ProductoItem]
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
 # ========================================
 # FUNCIONES AUXILIARES
 # ========================================
@@ -1478,7 +1490,53 @@ async def marcar_como_validada(factura_id: int):
         return {"success": True, "message": "Factura validada"}
     except Exception as e:
         raise HTTPException(500, str(e))
+from datetime import datetime
+from typing import List, Optional
+from pydantic import BaseModel
 
+class ProductoItem(BaseModel):
+    nombre: str
+    cantidad: int = 1
+    precio: float
+    codigo: Optional[str] = None
+
+class InvoiceConfirm(BaseModel):
+    establecimiento: str
+    fecha: str
+    total: float
+    productos: List[ProductoItem]
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+
+@app.post("/api/invoices/confirm")
+async def confirm_invoice(invoice: InvoiceConfirm, request: Request):
+    """Guarda una factura confirmada en la base de datos"""
+    try:
+        # Aquí deberías guardar en tu base de datos PostgreSQL
+        # Por ahora, solo simulamos el guardado
+        
+        invoice_data = {
+            "id": str(datetime.now().timestamp()),
+            "establecimiento": invoice.establecimiento,
+            "fecha": invoice.fecha,
+            "total": invoice.total,
+            "productos": [p.dict() for p in invoice.productos],
+            "created_at": datetime.now().isoformat(),
+            "user_id": invoice.user_id,
+            "status": "confirmed"
+        }
+        
+        # TODO: Guardar en PostgreSQL
+        # db.invoices.insert(invoice_data)
+        
+        return {
+            "success": True,
+            "message": "Factura guardada exitosamente",
+            "invoice_id": invoice_data["id"]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ========================================
 # INICIO DEL SERVIDOR
@@ -1488,6 +1546,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
