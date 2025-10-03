@@ -151,6 +151,21 @@ async def get_stats():
             "facturas_pendientes": 0,
             "error": str(e)
         }
+
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    # Aquí decodifica el token y obtén el user_id
+    # Por ahora, simulamos:
+    return {"user_id": "user123", "email": "user@example.com"}
+
+# Función para verificar si es admin
+async def require_admin(user = Depends(get_current_user)):
+    # Verificar si el usuario es admin
+    # Por ahora simulamos:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Requiere permisos de admin")
+    return user
 # ========================================
 # MODELOS PYDANTIC
 # ========================================
@@ -1538,6 +1553,117 @@ async def confirm_invoice(invoice: InvoiceConfirm, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ENDPOINTS PARA USUARIOS
+@app.get("/api/user/my-invoices")
+async def get_my_invoices(user = Depends(get_current_user)):
+    """Obtiene solo las facturas del usuario autenticado"""
+    user_id = user["user_id"]
+    
+    # TODO: Consultar la base de datos
+    # SELECT * FROM invoices WHERE user_id = user_id
+    
+    # Por ahora, datos de ejemplo:
+    return {
+        "success": True,
+        "invoices": [
+            {
+                "id": "1",
+                "establecimiento": "Supermercado Éxito",
+                "fecha": "2024-01-15",
+                "total": 150000,
+                "productos_count": 12
+            }
+        ]
+    }
+
+@app.get("/api/user/my-stats")
+async def get_my_stats(user = Depends(get_current_user)):
+    """Estadísticas personales del usuario"""
+    user_id = user["user_id"]
+    
+    # TODO: Calcular desde la base de datos
+    return {
+        "total_facturas": 5,
+        "gasto_total": 750000,
+        "gasto_promedio": 150000,
+        "establecimiento_frecuente": "Éxito"
+    }
+
+# ENDPOINTS PARA ADMIN
+@app.get("/api/admin/analytics")
+async def get_analytics(user = Depends(require_admin)):
+    """Datos agregados para el admin - SIN información personal"""
+    
+    # TODO: Consultas agregadas a la BD
+    return {
+        "total_usuarios": 150,
+        "total_facturas": 1200,
+        "productos_populares": [
+            {"nombre": "Leche", "frecuencia": 450},
+            {"nombre": "Pan", "frecuencia": 380}
+        ],
+        "promedio_compra": 125000,
+        "establecimientos_top": [
+            {"nombre": "Éxito", "visitas": 400},
+            {"nombre": "Carulla", "visitas": 350}
+        ]
+    }
+
+@app.get("/api/admin/pending-reviews")
+async def get_pending_reviews(user = Depends(require_admin)):
+    """Facturas pendientes de revisión por el admin"""
+    
+    # TODO: Consultar BD por facturas con status = 'pending'
+    return {
+        "pending": [
+            {
+                "id": "123",
+                "uploaded_at": "2024-01-15T10:30:00",
+                "user_id": "user456",  # Solo ID, no datos personales
+                "image_url": "/images/invoice123.jpg",
+                "ocr_result": {...},
+                "status": "pending"
+            }
+        ]
+    }
+
+@app.put("/api/admin/approve-invoice/{invoice_id}")
+async def approve_invoice(invoice_id: str, user = Depends(require_admin)):
+    """Admin aprueba una factura después de revisarla"""
+    
+    # TODO: Actualizar en BD
+    # UPDATE invoices SET status = 'approved', reviewed_by = admin_id WHERE id = invoice_id
+    
+    return {"success": True, "message": "Factura aprobada"}
+
+# Modificar el endpoint de procesamiento para guardar con estado pendiente
+@app.post("/invoices/parse")
+async def process_invoice(file: UploadFile = File(...), user = Depends(get_current_user)):
+    """Procesa factura y la guarda como pendiente de revisión"""
+    
+    # Procesar con OCR (tu código existente)
+    result = parse_invoice_with_claude(file)
+    
+    if result["success"]:
+        # Guardar en BD con estado pendiente
+        invoice_data = {
+            "user_id": user["user_id"],
+            "ocr_result": result["data"],
+            "status": "pending",  # Pendiente de revisión admin
+            "created_at": datetime.now()
+        }
+        
+        # TODO: Insertar en BD
+        # db.invoices.insert(invoice_data)
+        
+        return {
+            "success": True,
+            "message": "Factura procesada y pendiente de revisión",
+            "data": result["data"]
+        }
+    
+    return result
+
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -1546,6 +1672,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
