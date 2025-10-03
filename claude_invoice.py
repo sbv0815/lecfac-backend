@@ -43,24 +43,25 @@ REGLAS:
 - SOLO JSON, sin explicaciones"""
         
         # Llamar API
-        message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_data,
-                        },
-                    },
-                    {"type": "text", "text": prompt}
-                ],
-            }],
-        )
+      # Llamar API
+message = client.messages.create(
+    model="claude-3-5-sonnet-latest",  # ← Usa este nombre
+    max_tokens=4096,
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": image_data,
+                },
+            },
+            {"type": "text", "text": prompt}
+        ],
+    }],
+)
         
         # Parsear respuesta
         response_text = message.content[0].text
