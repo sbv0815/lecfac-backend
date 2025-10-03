@@ -1220,6 +1220,72 @@
                 console.error('Error cargando facturas:', error);
             }
         }
+
+    // Agregar en tu admin_dashboard.html
+async function verEstadoColaMobile() {
+    try {
+        const response = await fetch(`${API_URL}/api/mobile/queue-status`);
+        const data = await response.json();
+        
+        // Mostrar en un modal o actualizar un div
+        const html = `
+            <div class="card">
+                <div class="card-header">
+                    <h3>📱 Cola de Procesamiento Móvil</h3>
+                </div>
+                <div class="card-body">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="label">En Cola</div>
+                            <div class="value">${data.queue_stats.queued}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Procesando</div>
+                            <div class="value">${data.queue_stats.processing}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Completadas Hoy</div>
+                            <div class="value">${data.queue_stats.completed_today}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Tiempo Promedio</div>
+                            <div class="value">${data.performance.average_processing_time_seconds}s</div>
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin-top: 20px;">Cola Actual:</h4>
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>ID Factura</th>
+                                <th>Posición</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.current_queue.map(item => `
+                                <tr>
+                                    <td>${item.invoice_id}</td>
+                                    <td>${item.position || '-'}</td>
+                                    <td><span class="badge badge-${item.status === 'processing' ? 'warning' : 'info'}">${item.status}</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        
+        // Mostrar en un contenedor
+        document.getElementById('mobile-queue-status').innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+
+// Actualizar cada 5 segundos
+setInterval(verEstadoColaMobile, 5000);
         
         function renderFacturas(facturas) {
             const tbody = document.getElementById('facturasBody');
