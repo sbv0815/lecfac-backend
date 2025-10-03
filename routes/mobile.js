@@ -9,7 +9,6 @@ router.post('/process-invoice', upload.single('image'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No se recibió imagen' });
     }
-
     // Datos de prueba por ahora
     const ocrResult = {
       establecimiento: 'Supermercado Ejemplo',
@@ -20,7 +19,6 @@ router.post('/process-invoice', upload.single('image'), async (req, res) => {
         { descripcion: 'Pan', cantidad: 3, precio: 15.00 }
       ]
     };
-
     res.json(ocrResult);
   } catch (error) {
     console.error('Error:', error);
@@ -41,4 +39,4 @@ router.post('/save-invoice', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = router;  
