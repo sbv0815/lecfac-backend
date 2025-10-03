@@ -65,14 +65,14 @@ REGLAS:
         response_text = message.content[0].text
 
         # Extraer JSON
-        if "json" in response_text:
-            json_str = response_text.split("json")[1].split("")[0].strip()
-        elif "" in response_text:
-            json_str = response_text.split("")[1].split("")[0].strip()
+        # CÓDIGO CORREGIDO:
+        if "```json" in response_text:
+            json_str = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            json_str = response_text.split("```")[1].split("```")[0].strip()
         else:
+        # Intentar parsear directamente
             json_str = response_text.strip()
-
-        data = json.loads(json_str)
 
         # Normalizar
         for prod in data.get("productos", []):
