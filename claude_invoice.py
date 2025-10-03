@@ -3,34 +3,34 @@ import base64
 import os
 import json
 from typing import Dict
+
 def parse_invoice_with_claude(image_path: str) -> Dict:
     """Procesa factura con Claude Vision API"""
-
     try:
         print("======================================================================")
         print("PROCESANDO FACTURA")
         print("======================================================================")
-
+        
         # Leer imagen
         with open(image_path, 'rb') as f:
             image_data = base64.b64encode(f.read()).decode('utf-8')
-
+        
         # Tipo MIME
         media_type = "image/png" if image_path.lower().endswith('.png') else "image/jpeg"
-
+        
         # Cliente Anthropic
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
-
+        
         client = anthropic.Anthropic(api_key=api_key)
-
+        
         # Prompt
         prompt = """Analiza esta factura de supermercado colombiano y extrae en formato JSON:
 {
   "establecimiento": "Nombre del supermercado",
   "total": 123456,
-  "fecha": "2009-11-23",
+  "fecha": "2024-01-15",
   "productos": [
     {"codigo": "7702993047842", "nombre": "Chocolate BI", "precio": 2190}
   ]
@@ -41,9 +41,10 @@ REGLAS:
 - precio: Número entero. IGNORA descuentos (negativos) y subtotales
 - Incluye TODOS los productos, incluso duplicados
 - SOLO JSON, sin explicaciones"""
+        
         # Llamar API
         message = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=4096,
             messages=[{
                 "role": "user",
@@ -60,46 +61,48 @@ REGLAS:
                 ],
             }],
         )
-
+        
         # Parsear respuesta
         response_text = message.content[0].text
-
+        
         # Extraer JSON
-        # CÓDIGO CORREGIDO:
         if "```json" in response_text:
             json_str = response_text.split("```json")[1].split("```")[0].strip()
         elif "```" in response_text:
             json_str = response_text.split("```")[1].split("```")[0].strip()
         else:
             json_str = response_text.strip()
-
+        
+        # PARSEAR JSON - ESTA LÍNEA FALTABA
+        data = json.loads(json_str)
+        
         # Normalizar
         for prod in data.get("productos", []):
             prod["valor"] = float(prod.get("precio", 0))
             if "precio" not in prod:
                 prod["precio"] = prod["valor"]
-
+        
         print(f"Establecimiento: {data.get('establecimiento', 'N/A')}")
         print(f"Total: ${data.get('total', 0):,.0f}")
         print(f"Productos únicos: {len(data.get('productos', []))}")
         print("======================================================================")
-
+        
         return {
             "success": True,
             "data": {
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-sonnet-4.5"
+                    "modelo": "claude-3.5-sonnet"
                 }
             }
         }
-
+        
     except json.JSONDecodeError as e:
         print(f"❌ Error JSON: {e}")
         return {"success": False, "error": f"JSON inválido: {str(e)}"}
-
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
+        return {"success": False, "error": str(e)}
