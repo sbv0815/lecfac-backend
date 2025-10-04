@@ -48,21 +48,20 @@ class AuditSystem:
         
         try:
             # Buscar duplicados potenciales
-            cursor.execute("""
-                SELECT 
-                    usuario_id, 
-                    establecimiento, 
-                    total_factura,
-                    DATE(fecha_cargue) as fecha,
-                    COUNT(*) as duplicados,
-                    STRING_AGG(CAST(id AS VARCHAR), ',') as ids
-                FROM facturas
-                WHERE fecha_cargue >= CURRENT_DATE - INTERVAL '7 days'
-                  AND estado_validacion != 'duplicado'
-                GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
-                HAVING COUNT(*) > 1
+           cursor.execute("""
+            SELECT 
+            usuario_id, 
+            establecimiento, 
+            total_factura,
+            DATE(fecha_cargue) as fecha,
+            COUNT(*) as duplicados,
+            STRING_AGG(CAST(id AS TEXT), ',') as ids
+            FROM facturas
+        WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
+          AND estado_validacion != 'duplicado'
+        GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
+        HAVING COUNT(*) > 1
             """)
-            
             duplicates = cursor.fetchall()
             processed = 0
             
