@@ -493,6 +493,8 @@
             <button class="tab" onclick="switchTab('facturas')">Facturas</button>
             <button class="tab" onclick="switchTab('productos')">Productos</button>
             <button class="tab" onclick="switchTab('duplicados')">Duplicados</button>
+            <button class="tab" onclick="switchTab('auditoria')">🔍 Auditoría</button>
+            if (tabName === 'auditoria') cargarReporteAuditoria();
         </div>
     </nav>
     
@@ -517,6 +519,58 @@
                     <div class="value" id="stat-pendientes">-</div>
                 </div>
             </div>
+            <!-- TAB: AUDITORÍA -->
+<div id="tab-auditoria" class="tab-content">
+    <div class="toolbar">
+        <button class="btn btn-primary" onclick="ejecutarAuditoriaCompleta()">
+            🔍 Ejecutar Auditoría Completa
+        </button>
+        <button class="btn btn-secondary" onclick="cargarReporteAuditoria()">
+            📊 Ver Reporte
+        </button>
+        <button class="btn btn-secondary" onclick="ejecutarLimpiezaDatos()">
+            🧹 Limpiar Datos
+        </button>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2>Salud del Sistema</h2>
+            <span id="system-health-badge">-</span>
+        </div>
+        <div class="card-body">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Calidad Promedio</div>
+                    <div class="value" id="audit-avg-quality">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Procesadas</div>
+                    <div class="value" id="audit-processed">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Con Errores</div>
+                    <div class="value" id="audit-errors">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">En Revisión</div>
+                    <div class="value" id="audit-pending">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2>Recomendaciones del Sistema</h2>
+        </div>
+        <div class="card-body" id="recommendations-container">
+            <div class="loading">Cargando...</div>
+        </div>
+    </div>
+
+    <div id="audit-results-container"></div>
+</div>
             
             <div class="card">
                 <div class="card-header">
@@ -1647,6 +1701,115 @@ setInterval(verEstadoColaMobile, 5000);
         }
         
         cargarEstadisticas();
+
+    // FUNCIONES DE AUDITORÍA
+async function cargarReporteAuditoria() {
+    try {
+        const response = await fetch(`${API_URL}/api/admin/audit-report`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const report = await response.json();
+        const health = report.data_quality || {};
+        
+        document.getElementById('audit-avg-quality').textContent = Math.round(health.avg_quality || 0) + '%';
+        document.getElementById('audit-processed').textContent = health.processed || 0;
+        document.getElementById('audit-errors').textContent = health.errors || 0;
+        document.getElementById('audit-pending').textContent = health.pending_review || 0;
+        document.getElementById('system-health-badge').textContent = report.system_health || '-';
+        
+        const recsContainer = document.getElementById('recommendations-container');
+        const recs = report.recommendations || [];
+        
+        if (recs.length > 0) {
+            recsContainer.innerHTML = recs.map(rec => `
+                <div style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 15px; margin-bottom: 10px; border-radius: 4px;">
+                    <strong>${rec}</strong>
+                </div>
+            `).join('');
+        } else {
+            recsContainer.innerHTML = '<p style="color: #34a853;">✅ Todo funciona correctamente.</p>';
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('recommendations-container').innerHTML = 
+            `<p style="color: #ea4335;">Error al cargar reporte: ${error.message}</p>`;
+    }
+}
+
+async function ejecutarAuditoriaCompleta() {
+    if (!confirm('¿Ejecutar auditoría completa? Puede tardar varios minutos.')) return;
+    
+    const resultsContainer = document.getElementById('audit-results-container');
+    resultsContainer.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Ejecutando auditoría...</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/admin/run-audit`, { method: 'POST' });
+        const result = await response.json();
+        
+        if (result.success) {
+            const r = result.results;
+            resultsContainer.innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2>✅ Auditoría Completada</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="label">Duplicados</div>
+                                <div class="value">${r.duplicates?.found || 0}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="label">Errores Matemáticos</div>
+                                <div class="value">${r.math_errors?.errors || 0}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="label">Anomalías de Precio</div>
+                                <div class="value">${r.price_anomalies?.anomalies || 0}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="label">Problemas Corregidos</div>
+                                <div class="value">${r.product_issues?.issues_fixed || 0}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            showToast('Auditoría completada');
+            cargarReporteAuditoria();
+        }
+    } catch (error) {
+        resultsContainer.innerHTML = `<div class="card"><div class="card-body"><p style="color: #ea4335;">Error: ${error.message}</p></div></div>`;
+    }
+}
+
+async function ejecutarLimpiezaDatos() {
+    if (!confirm('¿Limpiar datos antiguos?')) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/admin/clean-data`, { method: 'POST' });
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`Limpieza completada:\n- ${result.cleaned.archived_invoices} facturas archivadas\n- ${result.cleaned.logs_deleted} logs eliminados`);
+        }
+    } catch (error) {
+        showToast('Error al limpiar datos', 'error');
+    }
+}
     </script>
 </body>
 </html>
