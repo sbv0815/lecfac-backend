@@ -1774,6 +1774,44 @@ async def get_ocr_stats():
     """Estadísticas del procesador"""
     return processor.get_stats()
 
+@app.get("/api/admin/audit-report")
+async def get_audit_report():
+    """Obtiene reporte completo de auditoría"""
+    audit = AuditSystem()
+    return audit.generate_audit_report()
+
+@app.post("/api/admin/run-audit")
+async def run_manual_audit():
+    """Ejecuta auditoría manual completa"""
+    audit = AuditSystem()
+    results = audit.run_daily_audit()
+    return {
+        "success": True,
+        "timestamp": datetime.now().isoformat(),
+        "results": results
+    }
+
+@app.get("/api/admin/audit-status")
+async def get_audit_status():
+    """Obtiene estado del sistema de auditoría"""
+    return {
+        "scheduler_running": audit_scheduler.is_running,
+        "last_run": audit_scheduler.audit_system._get_recent_audit_logs()[:1],
+        "system_health": audit_scheduler.audit_system._calculate_system_health(
+            audit_scheduler.audit_system.assess_data_quality()
+        )
+    }
+
+@app.post("/api/admin/clean-data")
+async def clean_old_data():
+    """Ejecuta limpieza manual de datos antiguos"""
+    audit = AuditSystem()
+    results = audit.clean_old_data()
+    return {
+        "success": True,
+        "cleaned": results
+    }
+
 # ========================================
 # INICIO DEL SERVIDOR
 # ========================================
@@ -1782,6 +1820,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
