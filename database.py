@@ -132,7 +132,7 @@ def create_postgresql_tables():
         )
         ''')
         
-        # 2. TABLA FACTURAS
+        # 2. TABLA FACTURAS (con todas las columnas necesarias)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS facturas (
             id SERIAL PRIMARY KEY,
@@ -142,7 +142,14 @@ def create_postgresql_tables():
             total_factura INTEGER,
             fecha_factura DATE,
             fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            fecha_procesamiento TIMESTAMP,
+            fecha_validacion TIMESTAMP,
             estado VARCHAR(20) DEFAULT 'procesado',
+            estado_validacion VARCHAR(20) DEFAULT 'pendiente',
+            puntaje_calidad INTEGER DEFAULT 0,
+            notas TEXT,
+            procesado_por VARCHAR(50),
+            tiene_imagen BOOLEAN DEFAULT FALSE,
             productos_detectados INTEGER DEFAULT 0,
             productos_guardados INTEGER DEFAULT 0,
             porcentaje_lectura DECIMAL(5,2)
@@ -163,7 +170,41 @@ def create_postgresql_tables():
         except Exception as e:
             print(f"⚠️ Columnas de imagen ya existen o error: {e}")
         
-        # 3. Resto de tablas...
+        # AGREGAR COLUMNAS ADICIONALES SI NO EXISTEN
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS fecha_procesamiento TIMESTAMP
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS estado_validacion VARCHAR(20) DEFAULT 'pendiente'
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS puntaje_calidad INTEGER DEFAULT 0
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS notas TEXT
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS procesado_por VARCHAR(50)
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS tiene_imagen BOOLEAN DEFAULT FALSE
+            """)
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS fecha_validacion TIMESTAMP
+            """)
+            print("✓ Columnas adicionales agregadas a facturas")
+        except Exception as e:
+            print(f"⚠️ Error agregando columnas: {e}")
+        
+        # 3. TABLA PRODUCTOS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos (
             id SERIAL PRIMARY KEY,
@@ -174,6 +215,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 4. TABLA PRODUCTOS MAESTRO
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_maestro (
             id SERIAL PRIMARY KEY,
@@ -190,6 +232,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 5. TABLA PRODUCTOS CATÁLOGO
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_catalogo (
             id SERIAL PRIMARY KEY,
@@ -202,6 +245,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 6. TABLA CÓDIGOS LOCALES
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS codigos_locales (
             id SERIAL PRIMARY KEY,
@@ -215,6 +259,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 7. TABLA PRECIOS HISTÓRICOS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_historicos (
             id SERIAL PRIMARY KEY,
@@ -231,6 +276,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 8. TABLA PRECIOS PRODUCTOS
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_productos (
             id SERIAL PRIMARY KEY,
@@ -244,6 +290,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 9. TABLA HISTORIAL COMPRAS USUARIO
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS historial_compras_usuario (
             id SERIAL PRIMARY KEY,
@@ -257,6 +304,7 @@ def create_postgresql_tables():
         )
         ''')
         
+        # 10. TABLA PATRONES DE COMPRA
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS patrones_compra (
             id SERIAL PRIMARY KEY,
@@ -271,20 +319,35 @@ def create_postgresql_tables():
         )
         ''')
         
-        # ÍNDICES (después de que las columnas existan)
+        # 11. NUEVA TABLA: OCR LOGS (para el procesador automático)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ocr_logs (
+            id SERIAL PRIMARY KEY,
+            factura_id INTEGER REFERENCES facturas(id) ON DELETE CASCADE,
+            status VARCHAR(20),
+            message TEXT,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # ÍNDICES
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado_validacion)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_factura ON ocr_logs(factura_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_created ON ocr_logs(created_at DESC)')
         
-        # Índice para imágenes (ahora que la columna existe)
+        # Índice para imágenes
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_imagen ON facturas(id) WHERE imagen_data IS NOT NULL')
         except:
-            pass  # Ignorar si ya existe
+            pass
         
         conn.commit()
         conn.close()
-        print("✅ Tablas PostgreSQL creadas (con almacenamiento de imágenes)")
+        print("✅ Tablas PostgreSQL creadas/actualizadas correctamente")
         
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
@@ -302,64 +365,121 @@ def create_sqlite_tables():
     try:
         cursor = conn.cursor()
         
+        # Tabla usuarios
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             nombre TEXT,
+            facturas_aportadas INTEGER DEFAULT 0,
+            productos_aportados INTEGER DEFAULT 0,
+            puntos_contribucion INTEGER DEFAULT 0,
             fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         
+        # Tabla facturas completa
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS facturas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             usuario_id INTEGER NOT NULL,
             establecimiento TEXT NOT NULL,
+            cadena TEXT,
             total_factura INTEGER,
-            estado TEXT DEFAULT 'procesado',
+            fecha_factura DATE,
+            fecha_cargue DATETIME DEFAULT CURRENT_TIMESTAMP,
+            fecha_procesamiento DATETIME,
+            fecha_validacion DATETIME,
+            estado TEXT DEFAULT 'pendiente',
+            estado_validacion TEXT DEFAULT 'pendiente',
+            puntaje_calidad INTEGER DEFAULT 0,
+            notas TEXT,
+            procesado_por TEXT,
+            tiene_imagen INTEGER DEFAULT 0,
             productos_detectados INTEGER DEFAULT 0,
             productos_guardados INTEGER DEFAULT 0,
+            porcentaje_lectura DECIMAL(5,2),
             imagen_data BLOB,
             imagen_mime TEXT,
-            fecha_cargue DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
         )
         ''')
         
+        # Tabla productos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS productos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            factura_id INTEGER NOT NULL,
+            codigo TEXT,
+            nombre TEXT,
+            valor INTEGER,
+            FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE CASCADE
+        )
+        ''')
+        
+        # Tabla productos maestro
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_maestro (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             codigo_ean TEXT UNIQUE NOT NULL,
             nombre TEXT NOT NULL,
+            marca TEXT,
+            categoria TEXT,
+            es_fresco INTEGER DEFAULT 0,
             precio_promedio INTEGER,
             veces_reportado INTEGER DEFAULT 1,
-            fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
+            primera_vez DATETIME DEFAULT CURRENT_TIMESTAMP,
+            ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # Tabla productos catálogo
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS productos_catalogo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_ean TEXT UNIQUE,
+            nombre_producto TEXT NOT NULL,
+            es_producto_fresco INTEGER DEFAULT 0,
+            primera_fecha_reporte DATETIME,
+            total_reportes INTEGER DEFAULT 1,
+            ultimo_reporte DATETIME
+        )
+        ''')
+        
+        # Tabla OCR logs
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ocr_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            factura_id INTEGER REFERENCES facturas(id),
+            status TEXT,
+            message TEXT,
+            details TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         
         conn.commit()
         conn.close()
-        print("✅ Tablas SQLite creadas (con imágenes)")
+        print("✅ Tablas SQLite creadas/actualizadas correctamente")
         
     except Exception as e:
         print(f"❌ Error creando tablas SQLite: {e}")
         if conn:
             conn.close()
 
-# [Mantener todas las funciones auxiliares existentes sin cambios]
-# buscar_o_crear_producto, registrar_precio_historico, etc.
-
 def hash_password(password: str) -> str:
+    """Hashea una contraseña usando bcrypt"""
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
+    """Verifica una contraseña contra su hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def test_database_connection():
+    """Prueba la conexión a la base de datos"""
     print("🔧 Probando conexión a base de datos...")
     conn = get_db_connection()
     if not conn:
@@ -385,9 +505,48 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
+
+def detectar_cadena(establecimiento: str) -> str:
+    """Detecta la cadena comercial basándose en el nombre del establecimiento"""
+    if not establecimiento:
+        return "otro"
+    
+    establecimiento_lower = establecimiento.lower()
+    
+    cadenas = {
+        'exito': ['exito', 'éxito', 'almacenes exito', 'almacenes éxito'],
+        'carulla': ['carulla', 'carulla fresh', 'carulla express'],
+        'jumbo': ['jumbo'],
+        'olimpica': ['olimpica', 'olímpica', 'supertiendas olimpica', 'super tiendas olimpica'],
+        'ara': ['ara', 'tiendas ara'],
+        'd1': ['d1', 'tiendas d1', 'tienda d1'],
+        'justo_bueno': ['justo & bueno', 'justo y bueno', 'justo&bueno'],
+        'alkosto': ['alkosto', 'alkomprar'],
+        'makro': ['makro'],
+        'pricesmart': ['pricesmart', 'price smart'],
+        'home_center': ['homecenter', 'home center'],
+        'falabella': ['falabella'],
+        'cruz_verde': ['cruz verde', 'cruzverde'],
+        'farmatodo': ['farmatodo'],
+        'la_rebaja': ['la rebaja', 'drogas la rebaja', 'droguerias la rebaja'],
+        'cafam': ['cafam', 'supermercados cafam'],
+        'colsubsidio': ['colsubsidio'],
+        'euro': ['euro', 'eurosupermercados'],
+        'metro': ['metro'],
+        'consumo': ['consumo', 'almacenes consumo'],
+        'zapatoca': ['zapatoca']
+    }
+    
+    for cadena, palabras in cadenas.items():
+        for palabra in palabras:
+            if palabra in establecimiento_lower:
+                return cadena
+    
+    return 'otro'
+
 def obtener_productos_frecuentes_faltantes(usuario_id: int, codigos_detectados: set, limite: int = 3):
     """
-    Identifica productos que el usuario compra frecuentemente pero no están en la factura actual.
+    Identifica productos que el usuario compra frecuentemente pero no están en la factura actual
     """
     from datetime import datetime, timedelta
     
@@ -435,7 +594,6 @@ def obtener_productos_frecuentes_faltantes(usuario_id: int, codigos_detectados: 
     candidatos = cursor.fetchall()
     conn.close()
     
-    # Filtrar productos que no están en la factura actual
     productos_sugeridos = []
     
     for prod in candidatos:
@@ -460,7 +618,6 @@ def obtener_productos_frecuentes_faltantes(usuario_id: int, codigos_detectados: 
     
     productos_sugeridos.sort(key=lambda x: x['relevancia'], reverse=True)
     return productos_sugeridos[:limite]
-
 
 def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usuario_id: int):
     """Agrega un producto confirmado manualmente por el usuario"""
