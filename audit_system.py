@@ -42,7 +42,7 @@ class AuditSystem:
         return results
     
     def detect_duplicate_invoices(self) -> Dict:
-    """Detecta facturas duplicadas"""
+        """Detecta facturas duplicadas"""
         conn = get_db_connection()
         cursor = conn.cursor()
     
@@ -61,7 +61,7 @@ class AuditSystem:
               AND estado_validacion != 'duplicado'
             GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
             HAVING COUNT(*) > 1
-        """)
+            """)
         
             duplicates = cursor.fetchall(        )  # <-- LÍNEA 65: debe tener 8 espacios
             processed = 0
