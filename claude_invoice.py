@@ -61,7 +61,7 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
         # Llamar API - NOTA: La indentación aquí es crucial
         message = client.messages.create(
-            model="claude-3-opus-20240229",  # Usar Opus que debería funcionar
+        model="claude-3-haiku-20240307",  # Económico y funcional
             max_tokens=4096,
             temperature=0,
             messages=[{
