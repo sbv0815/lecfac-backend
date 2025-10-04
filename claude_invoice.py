@@ -43,25 +43,24 @@ REGLAS:
 - SOLO JSON, sin explicaciones"""
         
         # Llamar API
-      # Llamar API
-message = client.messages.create(
-    model="claude-3-5-sonnet-latest",  # ← Usa este nombre
-    max_tokens=4096,
-    messages=[{
-        "role": "user",
-        "content": [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": media_type,
-                    "data": image_data,
-                },
-            },
-            {"type": "text", "text": prompt}
-        ],
-    }],
-)
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",  # Modelo más económico que funciona
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": image_data,
+                        },
+                    },
+                    {"type": "text", "text": prompt}
+                ],
+            }],
+        )
         
         # Parsear respuesta
         response_text = message.content[0].text
@@ -74,7 +73,7 @@ message = client.messages.create(
         else:
             json_str = response_text.strip()
         
-        # PARSEAR JSON - ESTA LÍNEA FALTABA
+        # Parsear JSON
         data = json.loads(json_str)
         
         # Normalizar
@@ -94,7 +93,7 @@ message = client.messages.create(
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-3.5-sonnet"
+                    "modelo": "claude-haiku"
                 }
             }
         }
