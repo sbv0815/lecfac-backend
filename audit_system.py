@@ -43,10 +43,10 @@ class AuditSystem:
     
     def detect_duplicate_invoices(self) -> Dict:
     """Detecta facturas duplicadas"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor()
     
-    try:
+        try:
         # Buscar duplicados potenciales
         cursor.execute("""
             SELECT 
@@ -63,21 +63,21 @@ class AuditSystem:
             HAVING COUNT(*) > 1
         """)
         
-        duplicates = cursor.fetchall(        )  # <-- LÍNEA 65: debe tener 8 espacios
-        processed = 0
+            duplicates = cursor.fetchall(        )  # <-- LÍNEA 65: debe tener 8 espacios
+            processed = 0
             
-            conn.commit()
-            return {
+                conn.commit()
+                return {
                 'found': len(duplicates),
                 'processed': processed,
                 'status': 'success'
             }
             
-        except Exception as e:
-            print(f"❌ Error detectando duplicados: {e}")
+            except Exception as e:
+                print(f"❌ Error detectando duplicados: {e}")
             return {'error': str(e), 'status': 'failed'}
-        finally:
-            conn.close()
+            finally:
+                conn.close()
     
     def verify_invoice_math(self) -> Dict:
         """Verifica matemáticas de las facturas"""
