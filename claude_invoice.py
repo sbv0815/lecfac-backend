@@ -25,7 +25,7 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         
         client = anthropic.Anthropic(api_key=api_key)
         
-        # Prompt mejorado y más específico
+        # Prompt mejorado
         prompt = """Analiza esta imagen de factura o recibo. Extrae TODA la información visible.
 
 IMPORTANTE:
@@ -59,63 +59,39 @@ REGLAS ESTRICTAS:
 
 RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
-        # Usar modelo más potente para mejor OCR
-         message = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4096,
-                temperature=0,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_data,
-                            },
+        # Llamar API - NOTA: La indentación aquí es crucial
+        message = client.messages.create(
+            model="claude-3-opus-20240229",  # Usar Opus que debería funcionar
+            max_tokens=4096,
+            temperature=0,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": image_data,
                         },
-                        {"type": "text", "text": prompt}
-                    ],
-                }],
-            )
-        except anthropic.NotFoundError:
-            # Si falla, usar Opus que debería estar disponible
-            print("Sonnet 3.5 no disponible, usando Opus...")
-            message = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=4096,
-                temperature=0,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_data,
-                            },
-                        },
-                        {"type": "text", "text": prompt}
-                    ],
-                }],
-            )
+                    },
+                    {"type": "text", "text": prompt}
+                ],
+            }],
+        )
         
         # Parsear respuesta
         response_text = message.content[0].text
         print(f"Respuesta de Claude: {response_text[:200]}...")  # Debug
         
-        # Extraer JSON con más opciones
+        # Extraer JSON
         json_str = response_text
         
-        # Intentar diferentes formas de extraer JSON
         if "```json" in response_text:
             json_str = response_text.split("```json")[1].split("```")[0]
         elif "```" in response_text:
             json_str = response_text.split("```")[1].split("```")[0]
         elif "{" in response_text:
-            # Buscar el JSON entre llaves
             start = response_text.find("{")
             end = response_text.rfind("}") + 1
             if start != -1 and end > start:
@@ -126,13 +102,12 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         # Parsear JSON
         data = json.loads(json_str)
         
-        # Validar y normalizar datos
+        # Validar y normalizar
         if "productos" not in data:
             data["productos"] = []
         
         # Normalizar productos
         for prod in data.get("productos", []):
-            # Asegurar que precio existe y es numérico
             if "precio" in prod:
                 try:
                     prod["precio"] = float(str(prod["precio"]).replace(",", "").replace(".", ""))
@@ -141,14 +116,11 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
             else:
                 prod["precio"] = 0
             
-            # Agregar valor para compatibilidad
             prod["valor"] = prod["precio"]
             
-            # Asegurar cantidad
             if "cantidad" not in prod:
                 prod["cantidad"] = 1
             
-            # Limpiar código
             if "codigo" in prod and prod["codigo"]:
                 prod["codigo"] = str(prod["codigo"]).strip()
             else:
@@ -169,7 +141,7 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-3-sonnet"
+                    "modelo": "claude-opus"
                 }
             }
         }
@@ -182,6 +154,13 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
             "error": f"No se pudo procesar la factura. Intenta con una imagen más clara.",
             "debug": str(e)
         }
+    except anthropic.NotFoundError as e:
+        print(f"❌ Error de modelo: {e}")
+        # Si Opus no funciona, intentar con Haiku
+        return {
+            "success": False,
+            "error": "Error con el modelo de IA. Contacta al administrador."
+        }
     except Exception as e:
         print(f"❌ Error general: {e}")
         import traceback
@@ -189,4 +168,5 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         return {
             "success": False, 
             "error": "Error procesando la imagen. Verifica que sea una factura legible."
+        
         }
