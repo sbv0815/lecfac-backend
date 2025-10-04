@@ -42,49 +42,29 @@ class AuditSystem:
         return results
     
     def detect_duplicate_invoices(self) -> Dict:
-        """Detecta facturas duplicadas"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Buscar duplicados potenciales
-           cursor.execute("""
+    """Detecta facturas duplicadas"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Buscar duplicados potenciales
+        cursor.execute("""
             SELECT 
-            usuario_id, 
-            establecimiento, 
-            total_factura,
-            DATE(fecha_cargue) as fecha,
-            COUNT(*) as duplicados,
-            STRING_AGG(CAST(id AS TEXT), ',') as ids
+                usuario_id, 
+                establecimiento, 
+                total_factura,
+                DATE(fecha_cargue) as fecha,
+                COUNT(*) as duplicados,
+                STRING_AGG(CAST(id AS TEXT), ',') as ids
             FROM facturas
-        WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
-          AND estado_validacion != 'duplicado'
-        GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
-        HAVING COUNT(*) > 1
-            """)
-            duplicates = cursor.fetchall()
-            processed = 0
-            
-            for dup in duplicates:
-                usuario_id, establecimiento, total, fecha, count, ids_str = dup
-                ids = ids_str.split(',')
-                
-                # Mantener el primero, marcar resto como duplicados
-                for dup_id in ids[1:]:
-                    cursor.execute("""
-                        UPDATE facturas 
-                        SET estado_validacion = 'duplicado',
-                            notas = CONCAT(COALESCE(notas, ''), ' | Duplicado de factura #', %s),
-                            puntaje_calidad = 0
-                        WHERE id = %s
-                    """, (ids[0], dup_id))
-                    processed += 1
-                    
-                    # Log
-                    cursor.execute("""
-                        INSERT INTO ocr_logs (factura_id, status, message, created_at)
-                        VALUES (%s, 'duplicate', %s, %s)
-                    """, (dup_id, f"Duplicado de factura #{ids[0]}", datetime.now()))
+            WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
+              AND estado_validacion != 'duplicado'
+            GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
+            HAVING COUNT(*) > 1
+        """)
+        
+        duplicates = cursor.fetchall()  # <-- LÍNEA 65: debe tener 8 espacios
+        processed = 0
             
             conn.commit()
             return {
