@@ -60,25 +60,47 @@ REGLAS ESTRICTAS:
 RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
         # Usar modelo más potente para mejor OCR
-        message = client.messages.create(
-            model="claude-3-sonnet-20240229",  # Modelo más potente para mejor OCR
-            max_tokens=4096,
-            temperature=0,  # Más determinístico
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_data,
+         message = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4096,
+                temperature=0,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_data,
+                            },
                         },
-                    },
-                    {"type": "text", "text": prompt}
-                ],
-            }],
-        )
+                        {"type": "text", "text": prompt}
+                    ],
+                }],
+            )
+        except anthropic.NotFoundError:
+            # Si falla, usar Opus que debería estar disponible
+            print("Sonnet 3.5 no disponible, usando Opus...")
+            message = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=4096,
+                temperature=0,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_data,
+                            },
+                        },
+                        {"type": "text", "text": prompt}
+                    ],
+                }],
+            )
         
         # Parsear respuesta
         response_text = message.content[0].text
