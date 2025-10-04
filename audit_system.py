@@ -47,18 +47,18 @@ class AuditSystem:
     
         try:
             cursor.execute("""
-            SELECT 
-                usuario_id, 
-                establecimiento, 
-                total_factura,
-                DATE(fecha_cargue) as fecha,
-                COUNT(*) as duplicados,
-                STRING_AGG(id::text, ',') as ids
-            FROM facturas
-            WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
-              AND (estado_validacion IS NULL OR estado_validacion != 'duplicado')
-            GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
-            HAVING COUNT(*) > 1
+                SELECT 
+                    usuario_id, 
+                    establecimiento, 
+                    total_factura,
+                    DATE(fecha_cargue) as fecha,
+                    COUNT(*) as duplicados,
+                    STRING_AGG(id::text, ',') as ids
+                FROM facturas
+                WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
+                  AND (estado_validacion IS NULL OR estado_validacion != 'duplicado')
+                GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
+                HAVING COUNT(*) > 1
             """)
         
             duplicates = cursor.fetchall()
@@ -69,9 +69,9 @@ class AuditSystem:
                 ids = ids_str.split(',')
             
                 # Asegurar que el id original existe
-            if not ids or len(ids) < 2:
-                continue
-                
+                if not ids or len(ids) < 2:
+                    continue
+                    
                 for dup_id in ids[1:]:
                     try:
                         # Convertir explícitamente a enteros
@@ -79,24 +79,24 @@ class AuditSystem:
                         duplicate_id = int(dup_id)
                     
                         cursor.execute("""
-                        UPDATE facturas 
-                        SET estado_validacion = 'duplicado',
-                            notas = CONCAT(COALESCE(notas, ''), ' | Duplicado de factura #', %s),
-                            puntaje_calidad = 0
-                        WHERE id = %s
-                    """, (original_id, duplicate_id))
-                    processed += 1
+                            UPDATE facturas 
+                            SET estado_validacion = 'duplicado',
+                                notas = CONCAT(COALESCE(notas, ''), ' | Duplicado de factura #', %s),
+                                puntaje_calidad = 0
+                            WHERE id = %s
+                        """, (original_id, duplicate_id))
+                        processed += 1
                     except (ValueError, TypeError) as e:
-                    # Manejar errores de conversión
-                    print(f"❌ Error al procesar IDs de facturas duplicadas: {e}")
-                    continue
+                        # Manejar errores de conversión
+                        print(f"❌ Error al procesar IDs de facturas duplicadas: {e}")
+                        continue
         
             conn.commit()
             return {
                 'found': len(duplicates),
                 'processed': processed,
-            'status': 'success'
-        }
+                'status': 'success'
+            }
         
         except Exception as e:
             print(f"❌ Error detectando duplicados: {e}")
