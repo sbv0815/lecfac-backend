@@ -55,8 +55,8 @@ class AuditSystem:
                     COUNT(*) as duplicados,
                     STRING_AGG(CAST(id AS TEXT), ',') as ids
                 FROM facturas
-                WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
-                  AND estado_validacion != 'duplicado'
+                   WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
+                  AND estado_validacion::text != 'duplicado'
                 GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
                 HAVING COUNT(*) > 1
             """)
