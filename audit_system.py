@@ -42,11 +42,11 @@ class AuditSystem:
         return results
     
     def detect_duplicate_invoices(self) -> Dict:
-        """Detecta facturas duplicadas"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-    
-        try:
+    """Detecta facturas duplicadas"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
         # Buscar duplicados potenciales
         cursor.execute("""
             SELECT 
@@ -61,101 +61,115 @@ class AuditSystem:
               AND estado_validacion != 'duplicado'
             GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
             HAVING COUNT(*) > 1
-            """)
+        """)
         
-            duplicates = cursor.fetchall(        )  # <-- LÍNEA 65: debe tener 8 espacios
-            processed = 0
+        duplicates = cursor.fetchall()
+        processed = 0
+        
+        for dup in duplicates:
+            usuario_id, establecimiento, total, fecha, count, ids_str = dup
+            ids = ids_str.split(',')
             
-                conn.commit()
-                return {
-                'found': len(duplicates),
-                'processed': processed,
-                'status': 'success'
-            }
-            
-            except Exception as e:
-                print(f"❌ Error detectando duplicados: {e}")
-            return {'error': str(e), 'status': 'failed'}
-            finally:
-                conn.close()
+            for dup_id in ids[1:]:
+                cursor.execute("""
+                    UPDATE facturas 
+                    SET estado_validacion = 'duplicado',
+                        notas = CONCAT(COALESCE(notas, ''), ' | Duplicado de factura #', %s),
+                        puntaje_calidad = 0
+                    WHERE id = %s
+                """, (ids[0], dup_id))
+                processed += 1
+        
+        conn.commit()
+        return {
+            'found': len(duplicates),
+            'processed': processed,
+            'status': 'success'
+        }
+        
+    except Exception as e:
+        print(f"❌ Error detectando duplicados: {e}")
+        return {'error': str(e), 'status': 'failed'}
+    finally:
+        conn.close()
+
+def verify_invoice_math(self) -> Dict:
+    """Verifica matemáticas de las facturas"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    def verify_invoice_math(self) -> Dict:
-        """Verifica matemáticas de las facturas"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Verificar sumas
-            cursor.execute("""
-                WITH factura_math AS (
-                    SELECT 
-                        f.id,
-                        f.establecimiento,
-                        f.total_factura,
-                        COALESCE(SUM(pp.precio), 0) as suma_productos,
-                        COUNT(pp.id) as num_productos
-                    FROM facturas f
-                    LEFT JOIN precios_productos pp ON f.id = pp.factura_id
-                    WHERE f.estado_validacion IN ('procesado', 'revision')
-                      AND f.fecha_cargue >= CURRENT_DATE - INTERVAL '1 day'
-                    GROUP BY f.id, f.establecimiento, f.total_factura
-                )
+    try:
+        # Verificar sumas
+        cursor.execute("""
+            WITH factura_math AS (
                 SELECT 
-                    id, 
-                    establecimiento,
-                    total_factura, 
-                    suma_productos,
-                    ABS(total_factura - suma_productos) as diferencia,
-                    CASE 
-                        WHEN total_factura = 0 THEN 100
-                        ELSE ABS(total_factura - suma_productos) * 100.0 / total_factura
-                    END as error_porcentaje
-                FROM factura_math
-                WHERE total_factura > 0
-            """)
+                    f.id,
+                    f.establecimiento,
+                    f.total_factura,
+                    COALESCE(SUM(pp.precio), 0) as suma_productos,
+                    COUNT(pp.id) as num_productos
+                FROM facturas f
+                LEFT JOIN precios_productos pp ON f.id = pp.factura_id
+                WHERE f.estado_validacion IN ('procesado', 'revision')
+                  AND f.fecha_cargue >= CURRENT_DATE - INTERVAL '1 day'
+                GROUP BY f.id, f.establecimiento, f.total_factura
+            )
+            SELECT 
+                id, 
+                establecimiento,
+                total_factura, 
+                suma_productos,
+                ABS(total_factura - suma_productos) as diferencia,
+                CASE 
+                    WHEN total_factura = 0 THEN 100
+                    ELSE ABS(total_factura - suma_productos) * 100.0 / total_factura
+                END as error_porcentaje
+            FROM factura_math
+            WHERE total_factura > 0
+        """)
+        
+        all_invoices = cursor.fetchall()
+        errors_found = 0
+        warnings_found = 0
+        
+        for invoice in all_invoices:
+            factura_id, estab, total, suma, diff, error_pct = invoice
             
-            all_invoices = cursor.fetchall()
-            errors_found = 0
-            warnings_found = 0
-            
-            for invoice in all_invoices:
-                factura_id, estab, total, suma, diff, error_pct = invoice
+            if error_pct > 20:
+                cursor.execute("""
+                    UPDATE facturas 
+                    SET estado_validacion = 'error_matematico',
+                        notas = %s,
+                        puntaje_calidad = GREATEST(0, puntaje_calidad - 30)
+                    WHERE id = %s
+                """, (
+                    f"Error matemático: Total ${total} vs Suma ${suma} ({error_pct:.1f}% diferencia)",
+                    factura_id
+                ))
+                errors_found += 1
                 
-                if error_pct > 20:  # Error mayor al 20%
-                    cursor.execute("""
-                        UPDATE facturas 
-                        SET estado_validacion = 'error_matematico',
-                            notas = %s,
-                            puntaje_calidad = GREATEST(0, puntaje_calidad - 30)
-                        WHERE id = %s
-                    """, (
-                        f"Error matemático: Total ${total} vs Suma ${suma} ({error_pct:.1f}% diferencia)",
-                        factura_id
-                    ))
-                    errors_found += 1
-                    
-                elif error_pct > 10:  # Warning: 10-20%
-                    cursor.execute("""
-                        UPDATE facturas 
-                        SET puntaje_calidad = GREATEST(0, puntaje_calidad - 10),
-                            notas = CONCAT(COALESCE(notas, ''), ' | Advertencia: diferencia ', %s, '%')
-                        WHERE id = %s
-                    """, (f"{error_pct:.1f}", factura_id))
-                    warnings_found += 1
-            
-            conn.commit()
-            return {
-                'total_checked': len(all_invoices),
-                'errors': errors_found,
-                'warnings': warnings_found,
-                'status': 'success'
-            }
-            
-        except Exception as e:
-            print(f"❌ Error verificando matemáticas: {e}")
-            return {'error': str(e), 'status': 'failed'}
-        finally:
-            conn.close()
+            elif error_pct > 10:
+                cursor.execute("""
+                    UPDATE facturas 
+                    SET puntaje_calidad = GREATEST(0, puntaje_calidad - 10),
+                        notas = CONCAT(COALESCE(notas, ''), ' | Advertencia: diferencia ', %s, '%')
+                    WHERE id = %s
+                """, (f"{error_pct:.1f}", factura_id))
+                warnings_found += 1
+        
+        conn.commit()
+        return {
+            'total_checked': len(all_invoices),
+            'errors': errors_found,
+            'warnings': warnings_found,
+            'status': 'success'
+        }
+        
+    except Exception as e:
+        print(f"❌ Error verificando matemáticas: {e}")
+        return {'error': str(e), 'status': 'failed'}
+    finally:
+        conn.close()
     
     def detect_price_anomalies(self) -> Dict:
         """Detecta anomalías de precios usando análisis contextual"""
