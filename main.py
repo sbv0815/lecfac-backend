@@ -38,6 +38,7 @@ processor.start()
 async def lifespan(app: FastAPI):
     """Inicialización y cierre de la aplicación"""
     print("🚀 Iniciando LecFac API...")
+    processor.start()
     if test_database_connection():
         print("📊 Conexión a base de datos exitosa")
     else:
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"❌ Error creando tablas: {e}")
     yield
+    processor.stop()
     print("👋 Cerrando LecFac API...")
 
 app = FastAPI(
@@ -1693,7 +1695,83 @@ async def process_invoice(file: UploadFile = File(...), user = Depends(get_curre
         }
     
     return result
+@app.post("/api/mobile/upload-auto")
+async def upload_auto(
+    file: UploadFile = File(...),
+    user_id: Optional[int] = Form(1)
+):
+    """Upload rápido con procesamiento automático"""
+    try:
+        if file.size > 10 * 1024 * 1024:
+            return {"success": False, "error": "Archivo muy grande"}
+        
+        content = await file.read()
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        temp_file.write(content)
+        temp_file.close()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO facturas (
+                usuario_id, establecimiento, estado_validacion, fecha_cargue
+            ) VALUES (%s, %s, %s, %s) RETURNING id
+        """, (user_id, "Procesando...", "cola", datetime.now()))
+        
+        factura_id = cursor.fetchone()[0]
+        
+        # Guardar imagen
+        from storage import save_image_to_db
+        save_image_to_db(factura_id, temp_file.name, "image/jpeg")
+        
+        conn.commit()
+        conn.close()
+        
+        # Agregar a cola
+        processor.add_to_queue(factura_id, temp_file.name, user_id)
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "queue_position": processor.get_queue_position(factura_id),
+            "message": "Factura en cola de procesamiento"
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
+@app.get("/api/mobile/status/{factura_id}")
+async def get_invoice_status(factura_id: int):
+    """Obtiene estado de procesamiento"""
+    
+    if factura_id in processing:
+        return processing[factura_id]
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT estado_validacion, establecimiento, total_factura
+        FROM facturas WHERE id = %s
+    """, (factura_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return {
+            "status": result[0],
+            "establecimiento": result[1],
+            "total": float(result[2]) if result[2] else 0
+        }
+    
+    return {"status": "not_found"}
+
+@app.get("/api/admin/ocr-stats")
+async def get_ocr_stats():
+    """Estadísticas del procesador"""
+    return processor.get_stats()
 
 # ========================================
 # INICIO DEL SERVIDOR
@@ -1703,6 +1781,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
