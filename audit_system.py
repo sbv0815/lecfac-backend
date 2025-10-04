@@ -69,7 +69,7 @@ class AuditSystem:
                 ids = ids_str.split(',')
             
                 # Asegurar que el id original existe
-                if not ids or len(ids) < 2:
+            if not ids or len(ids) < 2:
                 continue
                 
                 for dup_id in ids[1:]:
