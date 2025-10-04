@@ -427,7 +427,6 @@ class AuditSystem:
             COUNT(DISTINCT cl.codigo_local) as codigos_unicos,
             COUNT(DISTINCT cl.producto_id) as productos_mapeados
             FROM codigos_locales cl
-            WHERE cl.activo = TRUE  # <-- ESTA LÍNEA
             GROUP BY cl.cadena
             """)
             
