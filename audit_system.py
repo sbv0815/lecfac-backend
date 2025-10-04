@@ -41,7 +41,7 @@ class AuditSystem:
         print(f"✅ Auditoría completada: {results}")
         return results
     
-    def detect_duplicate_invoices(self) -> Dict:
+def detect_duplicate_invoices(self) -> Dict:
     """Detecta facturas duplicadas"""
     conn = get_db_connection()
     cursor = conn.cursor()
