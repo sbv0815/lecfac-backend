@@ -44,51 +44,66 @@ class AuditSystem:
         """Detecta facturas duplicadas"""
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+    
         try:
             cursor.execute("""
-                SELECT 
-                    usuario_id, 
-                    establecimiento, 
-                    total_factura,
-                    DATE(fecha_cargue) as fecha,
-                    COUNT(*) as duplicados,
-                    STRING_AGG(id::text, ',') as ids
-                FROM facturas
-                WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
-                  AND (estado_validacion IS NULL OR estado_validacion != 'duplicado')
-                GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
-                HAVING COUNT(*) > 1
+            SELECT 
+                usuario_id, 
+                establecimiento, 
+                total_factura,
+                DATE(fecha_cargue) as fecha,
+                COUNT(*) as duplicados,
+                STRING_AGG(id::text, ',') as ids
+            FROM facturas
+            WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
+              AND (estado_validacion IS NULL OR estado_validacion != 'duplicado')
+            GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
+            HAVING COUNT(*) > 1
             """)
-            
+        
             duplicates = cursor.fetchall()
             processed = 0
-            
+        
             for dup in duplicates:
                 usuario_id, establecimiento, total, fecha, count, ids_str = dup
                 ids = ids_str.split(',')
+            
+                # Asegurar que el id original existe
+                if not ids or len(ids) < 2:
+                continue
                 
                 for dup_id in ids[1:]:
-                    cursor.execute("""
+                    try:
+                        # Convertir explícitamente a enteros
+                        original_id = int(ids[0])
+                        duplicate_id = int(dup_id)
+                    
+                        cursor.execute("""
                         UPDATE facturas 
                         SET estado_validacion = 'duplicado',
                             notas = CONCAT(COALESCE(notas, ''), ' | Duplicado de factura #', %s),
                             puntaje_calidad = 0
                         WHERE id = %s
-                    """, (ids[0], dup_id))
+                    """, (original_id, duplicate_id))
                     processed += 1
-            
+                    except (ValueError, TypeError) as e:
+                    # Manejar errores de conversión
+                    print(f"❌ Error al procesar IDs de facturas duplicadas: {e}")
+                    continue
+        
             conn.commit()
             return {
                 'found': len(duplicates),
                 'processed': processed,
-                'status': 'success'
-            }
-            
+            'status': 'success'
+        }
+        
         except Exception as e:
             print(f"❌ Error detectando duplicados: {e}")
+            conn.rollback()  # Añadido rollback para evitar transacciones pendientes
             return {'error': str(e), 'status': 'failed'}
         finally:
+            cursor.close()  # Cerrar el cursor explícitamente
             conn.close()
     
     def verify_invoice_math(self) -> Dict:
