@@ -27,6 +27,7 @@ from typing import Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request
 from typing import List, Optional
 from ocr_processor import processor, ocr_queue, processing
+from audit_system import audit_scheduler, AuditSystem
 
 processor.start()
 
@@ -1781,6 +1782,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
