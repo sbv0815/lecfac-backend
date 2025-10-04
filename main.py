@@ -1560,32 +1560,107 @@ class InvoiceConfirm(BaseModel):
 async def confirm_invoice(invoice: InvoiceConfirm, request: Request):
     """Guarda una factura confirmada en la base de datos"""
     try:
-        # Aquí deberías guardar en tu base de datos PostgreSQL
-        # Por ahora, solo simulamos el guardado
+        # Validar calidad de la factura
+        tiene_imagen = True  # Asumimos que viene del flujo con imagen
+        puntaje, estado, alertas = FacturaValidator.validar_factura(
+            establecimiento=invoice.establecimiento,
+            total=invoice.total,
+            tiene_imagen=tiene_imagen,
+            productos=[p.dict() for p in invoice.productos]
+        )
         
-        invoice_data = {
-            "id": str(datetime.now().timestamp()),
-            "establecimiento": invoice.establecimiento,
-            "fecha": invoice.fecha,
-            "total": invoice.total,
-            "productos": [p.dict() for p in invoice.productos],
-            "created_at": datetime.now().isoformat(),
-            "user_id": invoice.user_id,
-            "status": "confirmed"
-        }
+        # Si el puntaje es muy bajo, podemos advertir al usuario
+        if puntaje < 40:
+            return {
+                "success": False,
+                "message": "La factura tiene problemas de calidad",
+                "validation": {
+                    "score": puntaje,
+                    "status": estado,
+                    "alerts": alertas
+                },
+                "require_confirmation": True
+            }
         
-        # TODO: Guardar en PostgreSQL
-        # db.invoices.insert(invoice_data)
+        # Guardar en la base de datos con el puntaje de calidad
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        return {
-            "success": True,
-            "message": "Factura guardada exitosamente",
-            "invoice_id": invoice_data["id"]
-        }
+        try:
+            # Detectar cadena del establecimiento
+            cadena = detectar_cadena(invoice.establecimiento)
+            
+            # Insertar factura con puntaje de calidad
+            cursor.execute("""
+                INSERT INTO facturas (
+                    usuario_id, establecimiento, cadena, 
+                    fecha_cargue, total_factura,
+                    estado_validacion, puntaje_calidad, tiene_imagen
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                invoice.user_id, invoice.establecimiento, cadena,
+                datetime.now(), invoice.total,
+                estado, puntaje, tiene_imagen
+            ))
+            
+            factura_id = cursor.fetchone()[0]
+            
+            # Guardar productos
+            for producto in invoice.productos:
+                # Buscar o crear producto en catálogo
+                cursor.execute("""
+                    SELECT id FROM productos_catalogo WHERE codigo_ean = %s
+                """, (producto.codigo,))
+                
+                resultado = cursor.fetchone()
+                if resultado:
+                    producto_id = resultado[0]
+                else:
+                    cursor.execute("""
+                        INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
+                        VALUES (%s, %s) RETURNING id
+                    """, (producto.codigo, producto.nombre))
+                    producto_id = cursor.fetchone()[0]
+                
+                # Guardar precio
+                cursor.execute("""
+                    INSERT INTO precios_productos (
+                        producto_id, factura_id, precio, establecimiento, cadena
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    producto_id, factura_id, producto.precio, 
+                    invoice.establecimiento, cadena
+                ))
+            
+            conn.commit()
+            
+            return {
+                "success": True,
+                "message": f"Factura guardada correctamente (Calidad: {puntaje}/100)",
+                "invoice_id": factura_id,
+                "validation": {
+                    "score": puntaje,
+                    "status": estado,
+                    "alerts": alertas if alertas else []
+                }
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Error al guardar la factura"
+        }
 # ENDPOINTS PARA USUARIOS
 @app.get("/api/user/my-invoices")
 async def get_my_invoices(user = Depends(get_current_user)):
@@ -2445,6 +2520,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
