@@ -91,12 +91,12 @@ class AuditSystem:
             return {'error': str(e), 'status': 'failed'}
         finally:
             conn.close()
-def verify_invoice_math(self) -> Dict:
-    """Verifica matemáticas de las facturas"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    def verify_invoice_math(self) -> Dict:
+        """Verifica matemáticas de las facturas"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
     
-    try:
+        try:
         cursor.execute("""
             WITH factura_math AS (
                 SELECT 
@@ -123,17 +123,17 @@ def verify_invoice_math(self) -> Dict:
                 END as error_porcentaje
             FROM factura_math
             WHERE total_factura > 0
-        """)
+            """)
         
-        all_invoices = cursor.fetchall()
-        errors_found = 0
-        warnings_found = 0
+            all_invoices = cursor.fetchall()
+            errors_found = 0
+            warnings_found = 0
         
-        for invoice in all_invoices:
-            factura_id, estab, total, suma, diff, error_pct = invoice
+            for invoice in all_invoices:
+                factura_id, estab, total, suma, diff, error_pct = invoice
             
-            if error_pct > 20:
-                cursor.execute("""
+                if error_pct > 20:
+                    cursor.execute("""
                     UPDATE facturas 
                     SET estado_validacion = 'error_matematico',
                         notas = %s,
@@ -145,8 +145,8 @@ def verify_invoice_math(self) -> Dict:
                 ))
                 errors_found += 1
                 
-            elif error_pct > 10:
-                cursor.execute("""
+                elif error_pct > 10:
+                    cursor.execute("""
                     UPDATE facturas 
                     SET puntaje_calidad = GREATEST(0, puntaje_calidad - 10),
                         notas = CONCAT(COALESCE(notas, ''), ' | Advertencia: diferencia ', %s, '%')
@@ -154,39 +154,39 @@ def verify_invoice_math(self) -> Dict:
                 """, (f"{error_pct:.1f}", factura_id))
                 warnings_found += 1
         
-        conn.commit()
-        return {
-            'total_checked': len(all_invoices),
-            'errors': errors_found,
-            'warnings': warnings_found,
+            conn.commit()
+            return {
+                'total_checked': len(all_invoices),
+                'errors': errors_found,
+                'warnings': warnings_found,
             'status': 'success'
         }
         
-    except Exception as e:
-        print(f"❌ Error verificando matemáticas: {e}")
-        return {'error': str(e), 'status': 'failed'}
-    finally:
-        conn.close()
+        except Exception as e:
+            print(f"❌ Error verificando matemáticas: {e}")
+            return {'error': str(e), 'status': 'failed'}
+        finally:
+            conn.close()
 
-def detect_price_anomalies(self) -> Dict:
-    """Detecta anomalías de precios"""
-    return {'checked': 0, 'anomalies': 0, 'details': [], 'status': 'success'}
+    def detect_price_anomalies(self) -> Dict:
+        """Detecta anomalías de precios"""
+        return {'checked': 0, 'anomalies': 0, 'details': [], 'status': 'success'}
 
-def audit_product_catalog(self) -> Dict:
-    """Audita el catálogo de productos"""
-    return {'issues_fixed': 0, 'details': [], 'status': 'success'}
+    def audit_product_catalog(self) -> Dict:
+        """Audita el catálogo de productos"""
+        return {'issues_fixed': 0, 'details': [], 'status': 'success'}
 
-def audit_fresh_products(self) -> Dict:
-    """Audita productos frescos"""
-    return {'mapeos_por_cadena': [], 'codigos_huerfanos': 0, 'status': 'success'}
+    def audit_fresh_products(self) -> Dict:
+        """Audita productos frescos"""
+        return {'mapeos_por_cadena': [], 'codigos_huerfanos': 0, 'status': 'success'}
 
-def assess_data_quality(self) -> Dict:
-    """Evalúa la calidad general de los datos"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    def assess_data_quality(self) -> Dict:
+        """Evalúa la calidad general de los datos"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
     
-    try:
-        cursor.execute("""
+        try:
+            cursor.execute("""
             SELECT 
                 COUNT(*) as total_facturas,
                 AVG(puntaje_calidad) as calidad_promedio,
@@ -196,14 +196,14 @@ def assess_data_quality(self) -> Dict:
                 COUNT(CASE WHEN imagen_data IS NOT NULL THEN 1 END) as con_imagen
             FROM facturas
             WHERE fecha_cargue >= CURRENT_DATE - INTERVAL '7 days'
-        """)
+            """)
         
-        stats = cursor.fetchone()
-        health_score = min(100, stats[1] or 0)
+            stats = cursor.fetchone()
+            health_score = min(100, stats[1] or 0)
         
-        conn.close()
-        return {
-            'health_score': health_score,
+            conn.close()
+            return {
+                'health_score': health_score,
             'total_invoices': stats[0],
             'avg_quality': float(stats[1]) if stats[1] else 0,
             'processed': stats[2],
@@ -213,43 +213,43 @@ def assess_data_quality(self) -> Dict:
             'status': 'success'
         }
         
-    except Exception as e:
-        print(f"❌ Error evaluando calidad: {e}")
-        return {'error': str(e), 'status': 'failed'}
-    finally:
-        if conn:
-            conn.close()
+        except Exception as e:
+            print(f"❌ Error evaluando calidad: {e}")
+            return {'error': str(e), 'status': 'failed'}
+        finally:
+            if conn:
+                conn.close()
 
-def _save_audit_log(self, results: Dict):
-    """Guarda log de auditoría"""
-    pass
+    def _save_audit_log(self, results: Dict):
+        """Guarda log de auditoría"""
+        pass
 
-def _calculate_system_health(self, quality: Dict) -> str:
-    """Calcula el estado de salud del sistema"""
-    score = quality.get('health_score', 100)
+    def _calculate_system_health(self, quality: Dict) -> str:
+        """Calcula el estado de salud del sistema"""
+        score = quality.get('health_score', 100)
     
-    if score >= 90:
-        return "🟢 Excelente"
-    elif score >= 70:
-        return "🟡 Bueno"
-    elif score >= 50:
-        return "🟠 Regular"
-    else:
-        return "🔴 Requiere atención"
+        if score >= 90:
+            return "🟢 Excelente"
+        elif score >= 70:
+            return "🟡 Bueno"
+        elif score >= 50:
+            return "🟠 Regular"
+        else:
+            return "🔴 Requiere atención"
 
-def generate_audit_report(self) -> Dict:
-    """Genera reporte completo de auditoría"""
-    quality = self.assess_data_quality()
+    def generate_audit_report(self) -> Dict:
+        """Genera reporte completo de auditoría"""
+        quality = self.assess_data_quality()
     
-    return {
-        'generated_at': datetime.now().isoformat(),
-        'data_quality': quality,
-        'price_intelligence': {},
-        'recent_audits': [],
-        'recommendations': ["✅ Sistema funcionando correctamente."],
-        'system_health': self._calculate_system_health(quality)
-    }
-def generate_audit_report(self) -> Dict:
+        return {
+            'generated_at': datetime.now().isoformat(),
+            'data_quality': quality,
+            'price_intelligence': {},
+            'recent_audits': [],
+            'recommendations': ["✅ Sistema funcionando correctamente."],
+            'system_health': self._calculate_system_health(quality)
+        }
+    def generate_audit_report(self) -> Dict:
         """Genera reporte completo de auditoría"""
         
         # Ejecutar evaluación de calidad
@@ -281,14 +281,14 @@ def generate_audit_report(self) -> Dict:
         try:
             # Productos con mayor variación
             cursor.execute("""
-                WITH price_stats AS (
-                    SELECT 
-                        pc.nombre_producto,
-                        pp.cadena,
-                        MIN(pp.precio) as min_precio,
-                        MAX(pp.precio) as max_precio,
-                        AVG(pp.precio) as avg_precio,
-                        COUNT(DISTINCT pp.establecimiento) as num_tiendas
+            WITH price_stats AS (
+                SELECT 
+                    pc.nombre_producto,
+                    pp.cadena,
+                    MIN(pp.precio) as min_precio,
+                    MAX(pp.precio) as max_precio,
+                    AVG(pp.precio) as avg_precio,
+                    COUNT(DISTINCT pp.establecimiento) as num_tiendas
                     FROM precios_productos pp
                     JOIN productos_catalogo pc ON pp.producto_id = pc.id
                     WHERE pp.fecha_reporte >= CURRENT_DATE - INTERVAL '30 days'
@@ -367,7 +367,7 @@ def generate_audit_report(self) -> Dict:
             if conn:
                 conn.close()
     
-    def _generate_recommendations(self, quality: Dict, price_intel: Dict) -> List[str]:
+     def _generate_recommendations(self, quality: Dict, price_intel: Dict) -> List[str]:
         """Genera recomendaciones basadas en los datos"""
         recommendations = []
         
@@ -392,7 +392,7 @@ def generate_audit_report(self) -> Dict:
         
         return recommendations
     
-    def _calculate_system_health(self, quality: Dict) -> str:
+     def _calculate_system_health(self, quality: Dict) -> str:
         """Calcula el estado de salud del sistema"""
         score = quality.get('health_score', 100)
         
