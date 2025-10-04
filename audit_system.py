@@ -422,13 +422,13 @@ class AuditSystem:
         try:
             # Verificar mapeos de códigos locales
             cursor.execute("""
-                SELECT 
-                    cl.cadena,
-                    COUNT(DISTINCT cl.codigo_local) as codigos_unicos,
-                    COUNT(DISTINCT cl.producto_id) as productos_mapeados
-                FROM codigos_locales cl
-                WHERE cl.activo = TRUE
-                GROUP BY cl.cadena
+            SELECT 
+            cl.cadena,
+            COUNT(DISTINCT cl.codigo_local) as codigos_unicos,
+            COUNT(DISTINCT cl.producto_id) as productos_mapeados
+            FROM codigos_locales cl
+            WHERE cl.activo = TRUE  # <-- ESTA LÍNEA
+            GROUP BY cl.cadena
             """)
             
             mapeos = cursor.fetchall()
