@@ -63,7 +63,7 @@ class AuditSystem:
             HAVING COUNT(*) > 1
         """)
         
-        duplicates = cursor.fetchall()  # <-- LÍNEA 65: debe tener 8 espacios
+        duplicates = cursor.fetchall(        )  # <-- LÍNEA 65: debe tener 8 espacios
         processed = 0
             
             conn.commit()
