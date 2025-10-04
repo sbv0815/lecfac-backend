@@ -28,9 +28,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Hea
 from typing import List, Optional
 from ocr_processor import processor, ocr_queue, processing
 
-# Cola global para procesamiento
-ocr_queue = Queue()
-processing = {}  # Track de facturas en proceso
+processor.start()
 
 
 # ========================================
@@ -1705,6 +1703,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
