@@ -44,21 +44,21 @@ class AuditSystem:
         """Detecta facturas duplicadas"""
         conn = get_db_connection()
         cursor = conn.cursor()
-    
+        
         try:
             cursor.execute("""
-            SELECT 
-                usuario_id, 
-                establecimiento, 
-                total_factura,
-                DATE(fecha_cargue) as fecha,
-                COUNT(*) as duplicados,
-                STRING_AGG(id::text, ',') as ids
-            FROM facturas
-            WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
-              AND (estado_validacion IS NULL OR estado_validacion != 'duplicado')
-            GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
-            HAVING COUNT(*) > 1
+                SELECT 
+                    usuario_id, 
+                    establecimiento, 
+                    total_factura,
+                    DATE(fecha_cargue) as fecha,
+                    COUNT(*) as duplicados,
+                    STRING_AGG(id::text, ',') as ids
+                FROM facturas
+                WHERE fecha_cargue >= (CURRENT_DATE - INTERVAL '7 days')
+                  AND (estado_validacion IS NULL OR estado_validacion != 'duplicado')
+                GROUP BY usuario_id, establecimiento, total_factura, DATE(fecha_cargue)
+                HAVING COUNT(*) > 1
             """)
             
             duplicates = cursor.fetchall()
@@ -85,11 +85,11 @@ class AuditSystem:
                 'status': 'success'
             }
             
-            except Exception as e:
-                print(f"❌ Error detectando duplicados: {e}")
-                return {'error': str(e), 'status': 'failed'}
-            finally:
-                conn.close()
+        except Exception as e:
+            print(f"❌ Error detectando duplicados: {e}")
+            return {'error': str(e), 'status': 'failed'}
+        finally:
+            conn.close()
     
     def verify_invoice_math(self) -> Dict:
         """Verifica matemáticas de las facturas"""
