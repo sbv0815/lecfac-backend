@@ -1898,6 +1898,29 @@ async def clean_old_data():
 
 from fastapi.responses import HTMLResponse
 
+# Añade esto temporalmente a tu código para debug
+   @app.get("/api/admin/debug-audit-system")
+   async def debug_audit_system():
+       """Debug del sistema de auditoría"""
+       try:
+           # Verificar si audit_scheduler existe y tiene los métodos correctos
+           methods = [method for method in dir(audit_scheduler) if not method.startswith('_')]
+           # Verificar si los métodos nuevos están presentes
+           has_improve_quality = hasattr(audit_scheduler, 'improve_quality')
+           has_run_manual = hasattr(audit_scheduler, 'run_manual_audit')
+           
+           # Intentar crear las tablas necesarias
+           tables_created = audit_scheduler.audit_system.create_missing_tables()
+           
+           return {
+               "methods_available": methods,
+               "has_improve_quality": has_improve_quality,
+               "has_run_manual": has_run_manual,
+               "tables_created": tables_created
+           }
+       except Exception as e:
+           return {"error": str(e)}
+
 @app.get("/reporte_auditoria", response_class=HTMLResponse)
 async def get_reporte_auditoria():
     html_content = """
@@ -2529,6 +2552,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
