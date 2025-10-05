@@ -1898,7 +1898,7 @@ async def clean_old_data():
 from fastapi.responses import HTMLResponse
 
 # Añade esto temporalmente a tu código para debug
-   @app.get("/api/admin/debug-audit-system")
+@app.get("/api/admin/debug-audit-system")
    async def debug_audit_system():
        """Debug del sistema de auditoría"""
        try:
