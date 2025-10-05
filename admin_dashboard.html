@@ -820,18 +820,21 @@
     let facturasSeleccionadas = new Set();
     let currentImageFile = null; // Variable global para mantener el archivo
 
-    function switchTab(tabName) {
+    // Corregir función switchTab - agregar este código al script
+function switchTab(tabName) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     
-    event.target.classList.add('active');
+    // Activar la pestaña seleccionada
+    document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
     document.getElementById('tab-' + tabName).classList.add('active');
     
+    // Cargar datos específicos según la pestaña
     if (tabName === 'stats') cargarEstadisticas();
     if (tabName === 'alertas') cargarAlertas();
     if (tabName === 'facturas') cargarFacturas();
     if (tabName === 'productos') cargarProductos();
-    if (tabName === 'auditoria') cargarReporteAuditoria(); // <-- AGREGAR ESTA LÍNEA
+    if (tabName === 'auditoria') cargarReporteAuditoria();
 }
 
     // DRAG AND DROP
