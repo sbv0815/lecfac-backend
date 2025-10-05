@@ -1855,10 +1855,9 @@ async def get_audit_report():
     audit = AuditSystem()
     return audit.generate_audit_report()
 
-@app.post("/api/admin/run-audit")
+@app.post("/admin/run-audit")
 async def run_manual_audit():
     """Ejecuta auditoría manual completa"""
-    audit = AuditSystem()
     results = audit_scheduler.run_manual_audit()
     return {
         "success": True,
@@ -1866,7 +1865,7 @@ async def run_manual_audit():
         "results": results
     }
 
-@app.post("/api/admin/improve-quality")
+@app.post("/admin/improve-quality")
 async def improve_quality():
     """Ejecuta mejora manual de calidad de datos"""
     quality_results = audit_scheduler.improve_quality()
@@ -2552,6 +2551,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
