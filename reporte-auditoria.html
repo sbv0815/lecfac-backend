@@ -312,14 +312,26 @@
                 // Mostrar overlay de carga
                 document.getElementById('loadingOverlay').style.display = 'flex';
                 
-                // Obtener datos de la API
-                const response = await fetch('/api/admin/audit-report');
+                let reportData;
+                let response;
                 
-                if (!response.ok) {
-                    throw new Error(`Error al cargar datos: ${response.status}`);
+                try {
+                    // Primer intento - URL actual
+                    response = await fetch('/admin/audit-report');
+                    if (!response.ok) {
+                        throw new Error(`Error al cargar datos: ${response.status}`);
+                    }
+                    reportData = await response.json();
+                } catch (firstError) {
+                    console.warn('Primer intento fallido, probando URL alternativa:', firstError);
+                    
+                    // Segundo intento - URL alternativa
+                    response = await fetch('/api/admin/audit-report');
+                    if (!response.ok) {
+                        throw new Error(`Error al cargar datos: ${response.status}`);
+                    }
+                    reportData = await response.json();
                 }
-                
-                const reportData = await response.json();
                 
                 // Una vez tenemos los datos, actualizamos la UI
                 renderizarReporte(reportData);
@@ -327,6 +339,12 @@
             } catch (error) {
                 console.error('Error al cargar el reporte:', error);
                 mostrarError('No se pudo cargar el reporte. Por favor, intenta nuevamente.');
+                
+                // Mostrar información de depuración en consola
+                console.error('Detalles del error:', error);
+                
+                // Mostrar un reporte de error básico para que no quede vacío
+                mostrarReporteBasico();
             } finally {
                 // Ocultar overlay de carga
                 document.getElementById('loadingOverlay').style.display = 'none';
@@ -378,86 +396,103 @@
                 document.getElementById('pendingReview').textContent = quality.pending_review || 0;
                 document.getElementById('withErrors').textContent = quality.errors || 0;
                 document.getElementById('processedOk').textContent = quality.processed || 0;
+            } else {
+                // Valores por defecto si no hay datos de calidad
+                document.getElementById('totalInvoices').textContent = 0;
+                document.getElementById('avgQuality').textContent = "0.0 / 100";
+                document.getElementById('withImages').textContent = "0 (0.0%)";
+                document.getElementById('pendingReview').textContent = 0;
+                document.getElementById('withErrors').textContent = 0;
+                document.getElementById('processedOk').textContent = 0;
             }
             
             // Renderizar duplicados
             if (data.duplicates) {
-                const duplicates = data.duplicates;
-                document.getElementById('duplicateGroups').textContent = duplicates.found || 0;
-                document.getElementById('duplicatesProcessed').textContent = duplicates.processed || 0;
+                document.getElementById('duplicateGroups').textContent = data.duplicates.found || 0;
+                document.getElementById('duplicatesProcessed').textContent = data.duplicates.processed || 0;
+            } else {
+                // Si no hay datos de duplicados, mostrar 0
+                document.getElementById('duplicateGroups').textContent = 0;
+                document.getElementById('duplicatesProcessed').textContent = 0;
+            }
+            
+            // Siempre mostrar algo en la tabla de duplicados
+            const duplicatesTable = document.getElementById('duplicatesTable');
+            duplicatesTable.innerHTML = '';
+            const dupRow = document.createElement('tr');
+            
+            if (data.duplicates && (data.duplicates.found || 0) > 0) {
+                dupRow.innerHTML = `
+                    <td>${data.duplicates.found} grupo${data.duplicates.found !== 1 ? 's' : ''} de facturas duplicadas detectadas</td>
+                    <td>${data.duplicates.processed} registro${data.duplicates.processed !== 1 ? 's' : ''} afectados</td>
+                    <td>Actualización automática: Estado cambiado a 'duplicado', puntaje de calidad reducido</td>
+                    <td><span class="badge bg-success status-badge">Resuelto</span></td>
+                `;
                 
-                const duplicatesTable = document.getElementById('duplicatesTable');
-                duplicatesTable.innerHTML = '';
-                
-                if ((duplicates.found || 0) > 0) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${duplicates.found} grupo${duplicates.found !== 1 ? 's' : ''} de facturas duplicadas detectadas</td>
-                        <td>${duplicates.processed} registro${duplicates.processed !== 1 ? 's' : ''} afectados</td>
-                        <td>Actualización automática: Estado cambiado a 'duplicado', puntaje de calidad reducido</td>
-                        <td><span class="badge bg-success status-badge">Resuelto</span></td>
-                    `;
-                    duplicatesTable.appendChild(row);
-                    
-                    // Mostrar acción correctiva
-                    document.getElementById('duplicatesAction').classList.remove('d-none');
-                    document.getElementById('duplicatesActionText').textContent = 
-                        'Los duplicados fueron marcados en la base de datos y sus puntajes de calidad fueron ajustados automáticamente. ' + 
-                        'Esta acción ayuda a evitar el doble conteo en análisis financieros y reportes de precios.';
-                } else {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>No se encontraron facturas duplicadas</td>
-                        <td>0 registros afectados</td>
-                        <td>No se requirió acción</td>
-                        <td><span class="badge bg-success status-badge">Verificado</span></td>
-                    `;
-                    duplicatesTable.appendChild(row);
-                }
-                
-                // Si hay error, mostrar sección de error técnico
-                if (duplicates.error) {
-                    document.getElementById('technicalErrorsSection').classList.remove('d-none');
-                    document.getElementById('technicalErrorCode').textContent = duplicates.error;
-                    document.getElementById('technicalErrorSolution').textContent = 
-                        'Solución: Se implementó una conversión explícita de tipos para asegurar que los IDs de facturas fueran procesados correctamente.';
-                }
+                // Mostrar acción correctiva
+                document.getElementById('duplicatesAction').classList.remove('d-none');
+                document.getElementById('duplicatesActionText').textContent = 
+                    'Los duplicados fueron marcados en la base de datos y sus puntajes de calidad fueron ajustados automáticamente. ' + 
+                    'Esta acción ayuda a evitar el doble conteo en análisis financieros y reportes de precios.';
+            } else {
+                dupRow.innerHTML = `
+                    <td>No se encontraron facturas duplicadas</td>
+                    <td>0 registros afectados</td>
+                    <td>No se requirió acción</td>
+                    <td><span class="badge bg-success status-badge">Verificado</span></td>
+                `;
+                // Ocultar acción correctiva
+                document.getElementById('duplicatesAction').classList.add('d-none');
+            }
+            duplicatesTable.appendChild(dupRow);
+            
+            // Si hay error técnico, mostrar la sección
+            if (data.duplicates && data.duplicates.error) {
+                document.getElementById('technicalErrorsSection').classList.remove('d-none');
+                document.getElementById('technicalErrorCode').textContent = data.duplicates.error;
+                document.getElementById('technicalErrorSolution').textContent = 
+                    'Solución: Se implementó una conversión explícita de tipos para asegurar que los IDs de facturas fueran procesados correctamente.';
+            } else {
+                document.getElementById('technicalErrorsSection').classList.add('d-none');
             }
             
             // Renderizar errores matemáticos
             if (data.math_errors) {
-                const mathErrors = data.math_errors;
-                document.getElementById('mathErrors').textContent = mathErrors.errors || 0;
-                
-                const mathErrorsTable = document.getElementById('mathErrorsTable');
-                mathErrorsTable.innerHTML = '';
-                
-                if ((mathErrors.errors || 0) > 0) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>Errores matemáticos en facturas</td>
-                        <td>${mathErrors.errors} facturas con errores, ${mathErrors.warnings} con advertencias</td>
-                        <td>Se ajustó el puntaje de calidad y se marcaron para revisión</td>
-                        <td><span class="badge bg-warning text-dark status-badge">Requiere Revisión</span></td>
-                    `;
-                    mathErrorsTable.appendChild(row);
-                    
-                    // Mostrar acción correctiva
-                    document.getElementById('mathErrorsAction').classList.remove('d-none');
-                    document.getElementById('mathErrorsActionText').textContent = 
-                        'Las facturas con discrepancias matemáticas fueron marcadas y su puntaje de calidad fue reducido. ' +
-                        'Se recomienda una revisión manual para corregir las diferencias.';
-                } else {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>No se encontraron errores matemáticos</td>
-                        <td>${mathErrors.total_checked || 0} facturas verificadas</td>
-                        <td>No se requirió acción</td>
-                        <td><span class="badge bg-success status-badge">Verificado</span></td>
-                    `;
-                    mathErrorsTable.appendChild(row);
-                }
+                document.getElementById('mathErrors').textContent = data.math_errors.errors || 0;
+            } else {
+                document.getElementById('mathErrors').textContent = 0;
             }
+            
+            // Siempre mostrar algo en la tabla de errores matemáticos
+            const mathErrorsTable = document.getElementById('mathErrorsTable');
+            mathErrorsTable.innerHTML = '';
+            const mathRow = document.createElement('tr');
+            
+            if (data.math_errors && (data.math_errors.errors || 0) > 0) {
+                mathRow.innerHTML = `
+                    <td>Errores matemáticos en facturas</td>
+                    <td>${data.math_errors.errors} facturas con errores, ${data.math_errors.warnings || 0} con advertencias</td>
+                    <td>Se ajustó el puntaje de calidad y se marcaron para revisión</td>
+                    <td><span class="badge bg-warning text-dark status-badge">Requiere Revisión</span></td>
+                `;
+                
+                // Mostrar acción correctiva
+                document.getElementById('mathErrorsAction').classList.remove('d-none');
+                document.getElementById('mathErrorsActionText').textContent = 
+                    'Las facturas con discrepancias matemáticas fueron marcadas y su puntaje de calidad fue reducido. ' +
+                    'Se recomienda una revisión manual para corregir las diferencias.';
+            } else {
+                mathRow.innerHTML = `
+                    <td>No se encontraron errores matemáticos</td>
+                    <td>${data.math_errors ? data.math_errors.total_checked || 0 : 0} facturas verificadas</td>
+                    <td>No se requirió acción</td>
+                    <td><span class="badge bg-success status-badge">Verificado</span></td>
+                `;
+                
+                // Ocultar acción correctiva
+                document.getElementById('mathErrorsAction').classList.add('d-none');
+            }
+            mathErrorsTable.appendChild(mathRow);
             
             // Renderizar anomalías de precios si hay datos
             if (data.price_anomalies && (data.price_anomalies.anomalies || 0) > 0) {
@@ -475,6 +510,8 @@
                     <td><span class="badge bg-warning text-dark status-badge">Pendiente</span></td>
                 `;
                 anomaliesTable.appendChild(row);
+            } else {
+                document.getElementById('anomaliesSection').classList.add('d-none');
             }
             
             // Generar recomendaciones basadas en los datos
@@ -603,11 +640,60 @@
             } else {
                 summaryAlert.classList.add('d-none');
             }
+            
+            // Agregar depuración en consola
+            console.log('Datos cargados:', data);
+            if (!data.duplicates) {
+                console.warn('Datos de duplicados no disponibles');
+            }
+            if (!data.math_errors) {
+                console.warn('Datos de errores matemáticos no disponibles');
+            }
+            if (!data.data_quality) {
+                console.warn('Datos de calidad no disponibles');
+            }
+        }
+        
+        // Función para mostrar un reporte básico en caso de error
+        function mostrarReporteBasico() {
+            // Mostrar información mínima
+            document.getElementById('healthScore').textContent = "--";
+            document.getElementById('healthStatus').textContent = "Error al cargar datos";
+            document.getElementById('healthScore').className = 'health-score health-warning';
+            
+            // Mostrar mensajes informativos en las tablas
+            document.getElementById('duplicatesTable').innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center">No se pudieron cargar los datos de duplicados</td>
+                </tr>
+            `;
+            
+            document.getElementById('mathErrorsTable').innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center">No se pudieron cargar los datos de errores matemáticos</td>
+                </tr>
+            `;
+            
+            // Agregar recomendación de verificar conexión
+            document.getElementById('recommendations').innerHTML = `
+                <li>Verificar la conexión con el servidor de datos</li>
+                <li>Reintentar la carga del reporte</li>
+                <li>Contactar al administrador del sistema si el problema persiste</li>
+            `;
         }
         
         // Función para mostrar mensajes de error
         function mostrarError(mensaje) {
-            alert(mensaje);
+            // Mostrar alerta con mensaje de error
+            const summaryAlert = document.getElementById('summaryAlert');
+            const summaryMessage = document.getElementById('summaryMessage');
+            summaryAlert.classList.remove('d-none');
+            summaryAlert.classList.remove('alert-warning');
+            summaryAlert.classList.add('alert-danger');
+            summaryMessage.textContent = mensaje;
+            
+            // También mostrar en consola para depuración
+            console.error(mensaje);
         }
         
         // Cargar el reporte al iniciar la página
