@@ -1899,7 +1899,7 @@ from fastapi.responses import HTMLResponse
 
 # Añade esto temporalmente a tu código para debug
 @app.get("/debug-audit-system")
-   async def debug_audit_system():
+async def debug_audit_system():
        """Debug del sistema de auditoría"""
        try:
            # Verificar si audit_scheduler existe y tiene los métodos correctos
@@ -2551,6 +2551,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
