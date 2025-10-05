@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Admin - LecFac</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -521,18 +522,112 @@
             </div>
             <!-- TAB: AUDITORÍA -->
 
+    <!-- PESTAÑA DE AUDITORÍA MEJORADA -->
+<div id="tab-auditoria" class="tab-content">
+    <!-- Toolbar con botones de acción -->
     <div class="toolbar">
         <button class="btn btn-primary" onclick="ejecutarAuditoriaCompleta()">
             🔍 Ejecutar Auditoría Completa
         </button>
         <button class="btn btn-secondary" onclick="window.location.href='/reporte_auditoria'">
-            📊 Ver Reporte
-            </button>
-        <button class="btn btn-secondary" onclick="ejecutarLimpiezaDatos()">
-            🧹 Limpiar Datos
+            📊 Ver Reporte Detallado
+        </button>
+        <button class="btn btn-secondary" onclick="ejecutarMejoraCalidad()">
+            🧹 Mejorar Calidad de Datos
         </button>
     </div>
-<div id="tab-auditoria" class="tab-content">
+
+    <!-- Panel de Salud del Sistema -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Salud del Sistema</h2>
+            <span id="system-health-badge" class="badge"></span>
+        </div>
+        <div class="card-body">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Calidad Promedio</div>
+                    <div class="value" id="audit-avg-quality">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Procesadas</div>
+                    <div class="value" id="audit-processed">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Con Errores</div>
+                    <div class="value" id="audit-errors">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">En Revisión</div>
+                    <div class="value" id="audit-pending">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel de Métricas Adicionales -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Métricas Detalladas</h2>
+        </div>
+        <div class="card-body">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Facturas con Imagen</div>
+                    <div class="value" id="audit-with-images">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Facturas de Alta Calidad</div>
+                    <div class="value" id="audit-high-quality">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Anomalías de Precio</div>
+                    <div class="value" id="audit-price-anomalies">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Duplicados Detectados</div>
+                    <div class="value" id="audit-duplicates">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel de Recomendaciones -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Recomendaciones del Sistema</h2>
+        </div>
+        <div class="card-body" id="recommendations-container">
+            <div class="loading">Cargando...</div>
+        </div>
+    </div>
+
+    <!-- Resultados de auditoría ejecutada -->
+    <div id="audit-results-container"></div>
+</div>
+
+<!-- PESTAÑA DE ALERTAS DE PRECIOS MEJORADA -->
+<div id="tab-alertas" class="tab-content">
+    <div class="toolbar">
+        <select id="diasAlertas" onchange="cargarAlertas()" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
+            <option value="7">Últimos 7 días</option>
+            <option value="15">Últimos 15 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+        </select>
+        <select id="tipoAlerta" onchange="cargarAlertas()" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
+            <option value="todos" selected>Todas las alertas</option>
+            <option value="cambio_tiempo">Cambios en el tiempo</option>
+            <option value="diferencia_establecimientos">Diferencias entre establecimientos</option>
+        </select>
+        <button class="btn btn-primary" onclick="cargarAlertas()">Actualizar</button>
+        <button class="btn btn-secondary" onclick="cargarTendencias()">Ver Tendencias</button>
+    </div>
+    
+    <div id="alertasContainer">
+        <div class="loading"><div class="spinner"></div>Cargando alertas...</div>
+    </div>
+</div>
+
     <div class="card">
         <div class="card-header">
             <h2>Salud del Sistema</h2>
@@ -1704,6 +1799,7 @@ async function verEstadoColaMobile() {
         cargarEstadisticas();
 
     // FUNCIONES DE AUDITORÍA
+// FUNCIONES PARA LA PESTAÑA DE AUDITORÍA
 async function cargarReporteAuditoria() {
     try {
         const response = await fetch(`${API_URL}/api/admin/audit-report`);
@@ -1713,36 +1809,65 @@ async function cargarReporteAuditoria() {
         }
         
         const report = await response.json();
-        const health = report.data_quality || {};
         
-        document.getElementById('audit-avg-quality').textContent = Math.round(health.avg_quality || 0) + '%';
-        document.getElementById('audit-processed').textContent = health.processed || 0;
-        document.getElementById('audit-errors').textContent = health.errors || 0;
-        document.getElementById('audit-pending').textContent = health.pending_review || 0;
-        document.getElementById('system-health-badge').textContent = report.system_health || '-';
+        // Datos de calidad generales
+        const quality = report.data_quality || {};
         
+        // Establecer valores en el dashboard
+        document.getElementById('audit-avg-quality').textContent = Math.round(quality.avg_quality || 0) + '%';
+        document.getElementById('audit-processed').textContent = quality.processed || 0;
+        document.getElementById('audit-errors').textContent = quality.errors || 0;
+        document.getElementById('audit-pending').textContent = quality.pending_review || 0;
+        
+        // Métricas adicionales
+        document.getElementById('audit-with-images').textContent = quality.with_images || 0;
+        document.getElementById('audit-high-quality').textContent = quality.high_quality || 0;
+        
+        // Anomalías y duplicados
+        const priceAnomalies = report.price_intelligence || {};
+        const duplicates = report.duplicates || {};
+        document.getElementById('audit-price-anomalies').textContent = priceAnomalies.anomalies || 0;
+        document.getElementById('audit-duplicates').textContent = duplicates.found || 0;
+        
+        // Estado de salud del sistema
+        const healthBadge = document.getElementById('system-health-badge');
+        healthBadge.textContent = report.system_health || 'Desconocido';
+        
+        // Asignar clase de badge según el estado
+        healthBadge.className = 'badge';
+        if (report.system_health && report.system_health.includes('Excelente')) {
+            healthBadge.classList.add('badge-success');
+        } else if (report.system_health && report.system_health.includes('Bueno')) {
+            healthBadge.classList.add('badge-info');
+        } else if (report.system_health && report.system_health.includes('Regular')) {
+            healthBadge.classList.add('badge-warning');
+        } else {
+            healthBadge.classList.add('badge-danger');
+        }
+        
+        // Mostrar recomendaciones
         const recsContainer = document.getElementById('recommendations-container');
         const recs = report.recommendations || [];
         
         if (recs.length > 0) {
             recsContainer.innerHTML = recs.map(rec => `
                 <div style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 15px; margin-bottom: 10px; border-radius: 4px;">
-                    <strong>${rec}</strong>
+                    ${rec}
                 </div>
             `).join('');
         } else {
-            recsContainer.innerHTML = '<p style="color: #34a853;">✅ Todo funciona correctamente.</p>';
+            recsContainer.innerHTML = '<p style="color: #34a853; padding: 15px;">✅ Todo funciona correctamente.</p>';
         }
         
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error cargando reporte de auditoría:', error);
         document.getElementById('recommendations-container').innerHTML = 
-            `<p style="color: #ea4335;">Error al cargar reporte: ${error.message}</p>`;
+            `<p style="color: #ea4335; padding: 15px;">Error al cargar reporte: ${error.message}</p>`;
     }
 }
 
 async function ejecutarAuditoriaCompleta() {
-    if (!confirm('¿Ejecutar auditoría completa? Puede tardar varios minutos.')) return;
+    if (!confirm('¿Ejecutar auditoría completa? Esta operación puede tardar varios minutos dependiendo del volumen de datos.')) return;
     
     const resultsContainer = document.getElementById('audit-results-container');
     resultsContainer.innerHTML = `
@@ -1750,67 +1875,696 @@ async function ejecutarAuditoriaCompleta() {
             <div class="card-body">
                 <div class="loading">
                     <div class="spinner"></div>
-                    <p>Ejecutando auditoría...</p>
+                    <p>Ejecutando auditoría completa... Este proceso puede tardar varios minutos.</p>
+                    <p style="font-size: 12px; color: #666;">El sistema está verificando duplicados, errores matemáticos, anomalías de precios y problemas de catálogo.</p>
                 </div>
             </div>
         </div>
     `;
     
     try {
-        const response = await fetch(`${API_URL}/api/admin/run-audit`, { method: 'POST' });
+        const response = await fetch(`${API_URL}/api/admin/run-audit`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP Error ${response.status}`);
+        }
+        
         const result = await response.json();
         
         if (result.success) {
-            const r = result.results;
+            const r = result.results || {};
+            
             resultsContainer.innerHTML = `
                 <div class="card">
                     <div class="card-header">
                         <h2>✅ Auditoría Completada</h2>
+                        <span class="badge badge-success">Completado</span>
                     </div>
                     <div class="card-body">
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <div class="label">Duplicados</div>
                                 <div class="value">${r.duplicates?.found || 0}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                                    ${r.duplicates?.processed || 0} procesados
+                                </div>
                             </div>
                             <div class="stat-card">
                                 <div class="label">Errores Matemáticos</div>
                                 <div class="value">${r.math_errors?.errors || 0}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                                    ${r.math_errors?.warnings || 0} advertencias
+                                </div>
                             </div>
                             <div class="stat-card">
                                 <div class="label">Anomalías de Precio</div>
                                 <div class="value">${r.price_anomalies?.anomalies || 0}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                                    de ${r.price_anomalies?.checked || 0} analizados
+                                </div>
                             </div>
                             <div class="stat-card">
-                                <div class="label">Problemas Corregidos</div>
+                                <div class="label">Mejoras Aplicadas</div>
                                 <div class="value">${r.product_issues?.issues_fixed || 0}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                                    ${r.quality_improvement?.facturas_actualizadas || 0} facturas actualizadas
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
+                            <h3 style="margin-bottom: 10px;">Detalles de Calidad</h3>
+                            <p>Calidad promedio: <strong>${Math.round(r.data_quality?.avg_quality || 0)}%</strong></p>
+                            <p>Health score: <strong>${Math.round(r.data_quality?.health_score || 0)}/100</strong></p>
+                            <div style="margin-top: 15px;">
+                                <button class="btn btn-primary btn-sm" onclick="window.location.href='/reporte_auditoria'">
+                                    Ver Reporte Completo
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
-            showToast('Auditoría completada');
-            cargarReporteAuditoria();
+            
+            showToast('Auditoría completada exitosamente');
+            cargarReporteAuditoria(); // Actualizar los datos generales
+        } else {
+            throw new Error(result.message || 'Error desconocido');
         }
     } catch (error) {
-        resultsContainer.innerHTML = `<div class="card"><div class="card-body"><p style="color: #ea4335;">Error: ${error.message}</p></div></div>`;
+        console.error('Error ejecutando auditoría:', error);
+        resultsContainer.innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <p style="color: #ea4335; padding: 15px;">Error al ejecutar auditoría: ${error.message}</p>
+                    <button class="btn btn-secondary" onclick="ejecutarAuditoriaCompleta()">Intentar Nuevamente</button>
+                </div>
+            </div>`;
+        showToast('Error al ejecutar auditoría', 'error');
     }
 }
 
-async function ejecutarLimpiezaDatos() {
-    if (!confirm('¿Limpiar datos antiguos?')) return;
+async function ejecutarMejoraCalidad() {
+    if (!confirm('¿Mejorar calidad de datos? Esta operación corregirá facturas con problemas y actualizará estados de validación.')) return;
+    
+    const resultsContainer = document.getElementById('audit-results-container');
+    resultsContainer.innerHTML = `
+        <div class="card">
+            <div class="card-body">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Mejorando calidad de datos...</p>
+                </div>
+            </div>
+        </div>
+    `;
     
     try {
-        const response = await fetch(`${API_URL}/api/admin/clean-data`, { method: 'POST' });
+        const response = await fetch(`${API_URL}/api/admin/improve-quality`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP Error ${response.status}`);
+        }
+        
         const result = await response.json();
         
         if (result.success) {
-            alert(`Limpieza completada:\n- ${result.cleaned.archived_invoices} facturas archivadas\n- ${result.cleaned.logs_deleted} logs eliminados`);
+            const improvements = result.improvements || {};
+            
+            resultsContainer.innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2>✅ Mejora de Calidad Completada</h2>
+                        <span class="badge badge-success">Completado</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="label">Facturas Actualizadas</div>
+                                <div class="value">${improvements.facturas_actualizadas || 0}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="label">Sin Imagen Mejoradas</div>
+                                <div class="value">${improvements.sin_imagen_mejoradas || 0}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="label">Puntuación Asignada</div>
+                                <div class="value">${improvements.sin_puntaje_evaluadas || 0}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="label">Estados Actualizados</div>
+                                <div class="value">${improvements.estado_validacion_actualizado || 0}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            showToast('Mejora de calidad completada');
+            cargarReporteAuditoria(); // Actualizar los datos generales
+        } else {
+            throw new Error(result.message || 'Error desconocido');
         }
     } catch (error) {
-        showToast('Error al limpiar datos', 'error');
+        console.error('Error en mejora de calidad:', error);
+        resultsContainer.innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <p style="color: #ea4335; padding: 15px;">Error al mejorar calidad: ${error.message}</p>
+                </div>
+            </div>`;
+        showToast('Error al mejorar calidad', 'error');
     }
 }
+
+// FUNCIONES MEJORADAS PARA ALERTAS
+async function cargarAlertas() {
+    const container = document.getElementById('alertasContainer');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando alertas...</div>';
+    
+    try {
+        const dias = document.getElementById('diasAlertas').value;
+        const tipoAlerta = document.getElementById('tipoAlerta')?.value || 'todos';
+        
+        // Añadir parámetro de tipo de alerta
+        let url = `${API_URL}/admin/alertas/cambios-precio?dias=${dias}`;
+        if (tipoAlerta !== 'todos') {
+            url += `&tipo=${tipoAlerta}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.total === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <h3>No hay alertas de precio</h3>
+                    <p>Todos los precios están dentro del rango normal</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<h2 style="margin-bottom: 20px;">Cambios Detectados (' + data.total + ')</h2>';
+        
+        data.alertas.forEach(alerta => {
+            // Determinar tipo de alerta y clases correspondientes
+            let tipoClase, tipoTexto;
+            
+            if (alerta.tipo_alerta === 'MÁXIMO_HISTÓRICO') {
+                tipoClase = '';
+                tipoTexto = 'Máximo histórico';
+            } else if (alerta.tipo_alerta === 'MÍNIMO_HISTÓRICO') {
+                tipoClase = 'success';
+                tipoTexto = 'Mínimo histórico';
+            } else if (alerta.tipo_alerta === 'CAMBIO_SIGNIFICATIVO') {
+                tipoClase = 'warning';
+                tipoTexto = 'Cambio significativo en el tiempo';
+            } else if (alerta.tipo_alerta === 'DIFERENCIA_ESTABLECIMIENTO') {
+                tipoClase = 'info';
+                tipoTexto = 'Diferencia entre establecimientos';
+            } else {
+                tipoClase = 'warning';
+                tipoTexto = alerta.tipo_alerta.replace('_', ' ');
+            }
+            
+            const cambioClase = alerta.cambio_porcentaje > 0 ? 'up' : 'down';
+            const simbolo = alerta.cambio_porcentaje > 0 ? '↑' : '↓';
+            
+            html += `
+                <div class="alert-card ${tipoClase}">
+                    <div class="alert-header">
+                        <div>
+                            <div class="alert-title">${alerta.nombre}</div>
+                            <div class="alert-meta">
+                                <span><strong>Código:</strong> ${alerta.codigo || 'N/A'}</span>
+                                <span><strong>Establecimiento:</strong> ${alerta.establecimiento}</span>
+                                <span><strong>Fecha:</strong> ${new Date(alerta.fecha).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="verComparacion(${alerta.producto_id})">
+                            Ver Comparación
+                        </button>
+                    </div>
+                    
+                    <div class="price-comparison">
+                        <div class="price-item">
+                            <div class="price-label">Precio Actual</div>
+                            <div class="price-value" style="color: #1a73e8;">$${alerta.precio_actual.toLocaleString()}</div>
+                        </div>
+                        <div class="price-item">
+                            <div class="price-label">Promedio Histórico</div>
+                            <div class="price-value" style="color: #666;">$${alerta.precio_promedio.toLocaleString()}</div>
+                        </div>
+                        <div class="price-item">
+                            <div class="price-label">Cambio</div>
+                            <div class="price-change ${cambioClase}">
+                                ${simbolo} ${Math.abs(alerta.cambio_porcentaje)}%
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
+                        <strong>Rango histórico:</strong> 
+                        $${alerta.precio_min.toLocaleString()} - $${alerta.precio_max.toLocaleString()}
+                        <span style="margin-left: 20px; color: #666;">
+                            <strong>Tipo:</strong> ${tipoTexto}
+                        </span>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+        console.error('Error cargando alertas:', error);
+    }
+}
+
+async function verComparacion(productoId) {
+    const container = document.getElementById('alertasContainer');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando comparación...</div>';
+    
+    try {
+        // Primero obtenemos el historial de precios
+        const historialResponse = await fetch(`${API_URL}/admin/productos/${productoId}/historial-precios`);
+        let historialData = {};
+        
+        // Solo procesamos la respuesta del historial si es exitosa
+        if (historialResponse.ok) {
+            historialData = await historialResponse.json();
+        }
+        
+        // Después obtenemos la comparación entre establecimientos
+        const comparacionResponse = await fetch(`${API_URL}/admin/productos/${productoId}/comparar-establecimientos`);
+        
+        if (!comparacionResponse.ok) {
+            throw new Error(`Error al obtener comparación: HTTP ${comparacionResponse.status}`);
+        }
+        
+        const comparacionData = await comparacionResponse.json();
+        
+        let html = `
+            <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+                <div>
+                    <button class="btn btn-primary" onclick="mostrarHistorial(${productoId})">Historial de Precios</button>
+                    <button class="btn btn-primary" onclick="verComparacion(${productoId})">Comparar Establecimientos</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>${comparacionData.nombre}</h2>
+                        <div style="font-size: 13px; color: #666; margin-top: 5px;">
+                            Código: ${comparacionData.codigo || 'N/A'}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 13px; color: #666;">Ahorro máximo</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #34a853;">
+                            $${comparacionData.ahorro_maximo.toLocaleString()}
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div style="margin-bottom: 20px;">
+                        <h3>Comparación entre Establecimientos</h3>
+                        <p style="color: #666; font-size: 14px;">Precios del producto en diferentes establecimientos en la fecha actual</p>
+                    </div>
+                    
+                    <div class="comparison-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Establecimiento</th>
+                                    <th>Cadena</th>
+                                    <th>Precio</th>
+                                    <th>Última Actualización</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+        `;
+        
+        // Primero verificamos si tenemos datos de comparación
+        if (comparacionData.comparacion && comparacionData.comparacion.length > 0) {
+            comparacionData.comparacion.forEach(item => {
+                const clase = item.es_mas_barato ? 'cheapest' : item.es_mas_caro ? 'expensive' : '';
+                const badge = item.es_mas_barato ? '<span class="badge badge-success">Más Barato</span>' :
+                            item.es_mas_caro ? '<span class="badge badge-danger">Más Caro</span>' : '';
+                
+                html += `
+                    <tr class="${clase}">
+                        <td><strong>${item.establecimiento}</strong></td>
+                        <td>${item.cadena || 'N/A'}</td>
+                        <td style="font-size: 16px; font-weight: 600;">$${item.precio.toLocaleString()}</td>
+                        <td>${new Date(item.fecha).toLocaleDateString()}</td>
+                        <td>${badge}</td>
+                    </tr>
+                `;
+            });
+        } else {
+            html += `<tr><td colspan="5" style="text-align: center; padding: 20px;">No hay datos de comparación disponibles</td></tr>`;
+        }
+        
+        html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Agregamos gráfico solo si tenemos datos de historial
+        if (historialData && historialData.historial && historialData.historial.length > 0) {
+            html += `
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-header">
+                        <h3>Historial de Precios</h3>
+                    </div>
+                    <div class="card-body">
+                        <div style="height: 300px; margin-top: 20px;">
+                            <canvas id="historialPreciosChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html;
+        
+        // Crear el gráfico con los datos de historial si están disponibles
+        if (historialData && historialData.historial && historialData.historial.length > 0) {
+            // Verificar que tenemos Chart.js disponible
+            if (typeof Chart !== 'undefined') {
+                const ctx = document.getElementById('historialPreciosChart').getContext('2d');
+                
+                // Preparar datos para el gráfico
+                const labels = historialData.historial.map(item => new Date(item.fecha).toLocaleDateString());
+                const data = historialData.historial.map(item => item.precio);
+                
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Precio',
+                            data: data,
+                            borderColor: '#1a73e8',
+                            backgroundColor: 'rgba(26, 115, 232, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.2,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Evolución del Precio',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `$${context.parsed.y.toLocaleString()}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '$' + value.toLocaleString();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                console.warn('Chart.js no está disponible. No se puede mostrar el gráfico.');
+            }
+        }
+        
+    } catch (error) {
+        container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+        console.error('Error cargando comparación:', error);
+    }
+}
+
+async function mostrarHistorial(productoId) {
+    const container = document.getElementById('alertasContainer');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando historial...</div>';
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/productos/${productoId}/historial-precios`);
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data || !data.historial || data.historial.length === 0) {
+            container.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+                </div>
+                <div class="empty-state">
+                    <h3>No hay datos históricos</h3>
+                    <p>No se encontró historial de precios para este producto</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Ordenar por fecha (de más reciente a más antigua)
+        data.historial.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        
+        let html = `
+            <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+                <div>
+                    <button class="btn btn-primary" onclick="mostrarHistorial(${productoId})">Historial de Precios</button>
+                    <button class="btn btn-primary" onclick="verComparacion(${productoId})">Comparar Establecimientos</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2>Historial de Precios: ${data.nombre}</h2>
+                    <span style="font-size: 14px; color: #666;">Código: ${data.codigo || 'N/A'}</span>
+                </div>
+                <div class="card-body">
+                    <div style="height: 300px; margin-bottom: 30px;">
+                        <canvas id="historialPreciosChart"></canvas>
+                    </div>
+                    
+                    <h3 style="margin-top: 20px; margin-bottom: 10px;">Detalles</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Establecimiento</th>
+                                <th>Precio</th>
+                                <th>Cambio</th>
+                                <th>% Cambio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        let lastPrice = null;
+        
+        data.historial.forEach((item, index) => {
+            const itemDate = new Date(item.fecha);
+            
+            // Calcular cambio respecto al precio anterior
+            let cambio = 0;
+            let pctCambio = 0;
+            let cambioHtml = '-';
+            
+            if (lastPrice !== null) {
+                cambio = item.precio - lastPrice;
+                if (lastPrice > 0) {
+                    pctCambio = (cambio / lastPrice) * 100;
+                }
+                
+                const simbolo = cambio >= 0 ? '↑' : '↓';
+                const clase = cambio > 0 ? 'up' : cambio < 0 ? 'down' : '';
+                
+                if (cambio !== 0) {
+                    cambioHtml = `<span class="price-change ${clase}">${simbolo} $${Math.abs(cambio).toLocaleString()} (${Math.abs(pctCambio).toFixed(1)}%)</span>`;
+                }
+            }
+            
+            lastPrice = item.precio;
+            
+            html += `
+                <tr>
+                    <td>${itemDate.toLocaleDateString()} ${itemDate.toLocaleTimeString()}</td>
+                    <td>${item.establecimiento}</td>
+                    <td style="font-weight: 600;">$${item.precio.toLocaleString()}</td>
+                    <td>${cambioHtml}</td>
+                    <td>${pctCambio !== 0 ? pctCambio.toFixed(1) + '%' : '-'}</td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+        
+        // Verificar que tenemos Chart.js disponible
+        if (typeof Chart !== 'undefined') {
+            // Crear el gráfico
+            const ctx = document.getElementById('historialPreciosChart').getContext('2d');
+            
+            // Ordenar datos cronológicamente para el gráfico (de más antiguo a más reciente)
+            const historialOrdenado = [...data.historial].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+            
+            // Preparar datos para el gráfico
+            const labels = historialOrdenado.map(item => new Date(item.fecha).toLocaleDateString());
+            const precios = historialOrdenado.map(item => item.precio);
+            
+            // Encontrar min y max para el eje Y
+            const minPrecio = Math.min(...precios) * 0.9; // 10% menos que el mínimo
+            const maxPrecio = Math.max(...precios) * 1.1; // 10% más que el máximo
+            
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Precio',
+                        data: precios,
+                        borderColor: '#1a73e8',
+                        backgroundColor: 'rgba(26, 115, 232, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.2,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Evolución del Precio',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `$${context.parsed.y.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: minPrecio,
+                            max: maxPrecio,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            console.warn('Chart.js no está disponible. No se puede mostrar el gráfico.');
+        }
+        
+    } catch (error) {
+        container.innerHTML = `
+            <div style="margin-bottom: 20px;">
+                <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+            </div>
+            <div class="empty-state"><h3>Error: ${error.message}</h3></div>
+        `;
+        console.error('Error cargando historial:', error);
+    }
+}
+
+// Función para mostrar mensajes toast con más opciones
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    
+    if (type === 'error') {
+        toast.style.backgroundColor = '#ea4335';
+    } else if (type === 'warning') {
+        toast.style.backgroundColor = '#fbbc04';
+    } else {
+        toast.style.backgroundColor = '#34a853';
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Animación de entrada
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-20px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Asegurar que Chart.js esté disponible
+function cargarChartJS() {
+    if (typeof Chart === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+        script.onload = function() {
+            console.log('Chart.js cargado correctamente');
+        };
+        document.head.appendChild(script);
+    }
+}
+
+// Inicializar cuando el documento esté listo
+document.addEventListener('DOMContentLoaded', function() {
+    // Cargar Chart.js para los gráficos
+    cargarChartJS();
+    
+    // Asegurar que se cargue el reporte de auditoría al cambiar a esa pestaña
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            const tabName = this.textContent.trim().replace('🔍 ', '').toLowerCase();
+            if (tabName === 'auditoría') {
+                setTimeout(() => cargarReporteAuditoria(), 100);
+            }
+        });
+    });
+});
     </script>
 </body>
 </html>
