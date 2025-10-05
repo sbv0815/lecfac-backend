@@ -224,7 +224,7 @@ class AuditSystem:
                     ABS(total_factura - suma_productos) as diferencia,
                     CASE 
                         WHEN total_factura = 0 THEN 100
-                        ELSE ABS(total_factura - suma_productos) * 100.0 / NULLIF(total_factura, 0)
+                        ELSE ABS(total_factura - suma_productos) * 100.0 / total_factura
                     END as error_porcentaje,
                     puntaje_calidad
                 FROM factura_math
@@ -327,7 +327,7 @@ class AuditSystem:
                         pa.desviacion_estandar,
                         CASE 
                             WHEN pa.desviacion_estandar = 0 THEN 0 -- Evitar división por cero
-                            ELSE (pp.precio - pa.precio_promedio) / NULLIF(pa.desviacion_estandar, 0)
+                            ELSE (pp.precio - pa.precio_promedio) / pa.desviacion_estandar
                         END as z_score
                     FROM precio_promedio pa
                     JOIN productos_catalogo pc ON pa.codigo_ean = pc.codigo_ean
@@ -348,6 +348,11 @@ class AuditSystem:
             for anomaly in anomalies:
                 precio_id, factura_id, establecimiento, cadena, codigo, nombre, precio, promedio, desviacion, z_score = anomaly
                 
+                # Calcular variación porcentual de manera segura
+                variacion_porcentual = 0
+                if promedio and promedio != 0:
+                    variacion_porcentual = (precio - promedio) * 100 / promedio
+                
                 # Añadir a detalles
                 anomaly_details.append({
                     "precio_id": precio_id,
@@ -362,7 +367,7 @@ class AuditSystem:
                     "precio_promedio": float(promedio) if promedio else 0,
                     "desviacion": float(desviacion) if desviacion else 0,
                     "z_score": float(z_score) if z_score else 0,
-                    "variacion_porcentual": float((precio - promedio) * 100 / NULLIF(promedio, 0) if promedio else 0)
+                    "variacion_porcentual": float(variacion_porcentual)
                 })
                 
                 # Marcar la anomalía en la base de datos
@@ -470,7 +475,6 @@ class AuditSystem:
                     JOIN facturas f ON pp.factura_id = f.id
                     WHERE f.fecha_cargue >= CURRENT_DATE - INTERVAL '180 days'
                 )
-                AND fecha_creacion < CURRENT_DATE - INTERVAL '180 days'
                 RETURNING id
             """)
             
@@ -617,11 +621,16 @@ class AuditSystem:
             daily_stats = []
             for row in cursor.fetchall():
                 fecha, total, calidad, con_imagen = row
+                # Calcular porcentaje con imagen de forma segura
+                porcentaje_con_imagen = 0
+                if total and total > 0:
+                    porcentaje_con_imagen = (con_imagen / total * 100)
+                
                 daily_stats.append({
                     "fecha": fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha),
                     "total_facturas": total,
                     "calidad_promedio": float(calidad) if calidad else 0,
-                    "porcentaje_con_imagen": (con_imagen / total * 100) if total > 0 else 0
+                    "porcentaje_con_imagen": porcentaje_con_imagen
                 })
             
             # Crear resultado detallado
@@ -724,14 +733,14 @@ class AuditSystem:
                         COALESCE(SUM(pp.precio), 0) as suma_productos,
                         CASE 
                             WHEN f.total_factura = 0 THEN 100
-                            ELSE ABS(f.total_factura - COALESCE(SUM(pp.precio), 0)) * 100.0 / NULLIF(f.total_factura, 0)
+                            ELSE ABS(f.total_factura - COALESCE(SUM(pp.precio), 0)) * 100.0 / f.total_factura
                         END as error_porcentaje
                     FROM facturas f
                     JOIN precios_productos pp ON f.id = pp.factura_id
                     WHERE f.estado_validacion NOT IN ('duplicado', 'error_matematico')
                       AND f.total_factura > 0
                     GROUP BY f.id, f.total_factura
-                    HAVING ABS(f.total_factura - COALESCE(SUM(pp.precio), 0)) * 100.0 / NULLIF(f.total_factura, 0) BETWEEN 5 AND 15
+                    HAVING ABS(f.total_factura - COALESCE(SUM(pp.precio), 0)) * 100.0 / f.total_factura BETWEEN 5 AND 15
                 )
                 UPDATE facturas f
                 SET total_factura = fm.suma_productos,
@@ -819,7 +828,7 @@ class AuditSystem:
                             JOIN productos_catalogo pc ON pp.producto_id = pc.id
                             JOIN precios_productos pp2 ON pc.id = pp2.producto_id AND pp2.id != pp.id
                             GROUP BY pp.id, pp.precio, pc.nombre_producto
-                            HAVING pp.precio > 10 * AVG(pp2.precio)
+                            HAVING (pp.precio > 10 * AVG(pp2.precio) AND AVG(pp2.precio) > 0)
                                OR (pp.precio < 0.1 * AVG(pp2.precio) AND AVG(pp2.precio) > 0)
                         )
                         UPDATE precios_productos pp
