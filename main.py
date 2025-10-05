@@ -1844,18 +1844,18 @@ async def get_invoice_status(factura_id: int):
     
     return {"status": "not_found"}
 
-@app.get("/api/admin/ocr-stats")
+@app.get("/ocr-stats")
 async def get_ocr_stats():
     """Estadísticas del procesador"""
     return processor.get_stats()
 
-@app.get("/api/admin/audit-report")
+@app.get("/audit-report")
 async def get_audit_report():
     """Obtiene reporte completo de auditoría"""
     audit = AuditSystem()
     return audit.generate_audit_report()
 
-@app.post("/admin/run-audit")
+@app.post("/run-audit")
 async def run_manual_audit():
     """Ejecuta auditoría manual completa"""
     results = audit_scheduler.run_manual_audit()
@@ -1865,7 +1865,7 @@ async def run_manual_audit():
         "results": results
     }
 
-@app.post("/admin/improve-quality")
+@app.post("/improve-quality")
 async def improve_quality():
     """Ejecuta mejora manual de calidad de datos"""
     quality_results = audit_scheduler.improve_quality()
@@ -1874,7 +1874,7 @@ async def improve_quality():
         "timestamp": datetime.now().isoformat(),
         "results": quality_results
     }
-@app.get("/api/admin/audit-status")
+@app.get("/audit-status")
 async def get_audit_status():
     """Obtiene estado del sistema de auditoría"""
     return {
@@ -1885,7 +1885,7 @@ async def get_audit_status():
         )
     }
 
-@app.post("/api/admin/clean-data")
+@app.post("/admin/clean-data")
 async def clean_old_data():
     """Ejecuta limpieza manual de datos antiguos"""
     audit = AuditSystem()
@@ -1898,7 +1898,7 @@ async def clean_old_data():
 from fastapi.responses import HTMLResponse
 
 # Añade esto temporalmente a tu código para debug
-@app.get("/api/admin/debug-audit-system")
+@app.get("/debug-audit-system")
    async def debug_audit_system():
        """Debug del sistema de auditoría"""
        try:
@@ -2551,6 +2551,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
