@@ -1098,8 +1098,7 @@
                 console.error('Error cargando alertas:', error);
             }
         }
-        
-        async function verComparacion(productoId) {
+    async function verComparacion(productoId) {
     const container = document.getElementById('alertasContainer');
     container.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando comparación...</div>';
     
@@ -1153,7 +1152,70 @@
             data.comparacion = nuevaComparacion;
         }
 
-       
+        let html = `
+            <div style="margin-bottom: 20px;">
+                <button class="btn btn-secondary" onclick="cargarAlertas()">← Volver a Alertas</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>${data.nombre}</h2>
+                        <div style="font-size: 13px; color: #666; margin-top: 5px;">
+                            Código: ${data.codigo || 'N/A'}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 13px; color: #666;">Ahorro máximo</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #34a853;">
+                            $${data.ahorro_maximo.toLocaleString()}
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="comparison-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Establecimiento</th>
+                                    <th>Cadena</th>
+                                    <th>Precio</th>
+                                    <th>Última Actualización</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+        `;
+        
+        data.comparacion.forEach(item => {
+            const clase = item.es_mas_barato ? 'cheapest' : item.es_mas_caro ? 'expensive' : '';
+            const badge = item.es_mas_barato ? '<span class="badge badge-success">Más Barato</span>' :
+                         item.es_mas_caro ? '<span class="badge badge-danger">Más Caro</span>' : '';
+            
+            html += `
+                <tr class="${clase}">
+                    <td><strong>${item.establecimiento}</strong></td>
+                    <td>${item.cadena || 'N/A'}</td>
+                    <td style="font-size: 16px; font-weight: 600;">$${item.precio.toLocaleString()}</td>
+                    <td>${new Date(item.fecha).toLocaleDateString()}</td>
+                    <td>${badge}</td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        container.innerHTML = `<div class="empty-state"><h3>Error: ${error.message}</h3></div>`;
+        console.error('Error cargando comparación:', error);
     }
 }
         
