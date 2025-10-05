@@ -1849,12 +1849,15 @@ async def get_ocr_stats():
     """Estadísticas del procesador"""
     return processor.get_stats()
 
+# Endpoints de auditoría con ambas rutas para compatibilidad
+@app.get("/api/admin/audit-report")
 @app.get("/admin/audit-report")
 async def get_audit_report():
     """Obtiene reporte completo de auditoría"""
     audit = AuditSystem()
     return audit.generate_audit_report()
 
+@app.post("/api/admin/run-audit")
 @app.post("/admin/run-audit")
 async def run_manual_audit():
     """Ejecuta auditoría manual completa"""
@@ -1865,6 +1868,7 @@ async def run_manual_audit():
         "results": results
     }
 
+@app.post("/api/admin/improve-quality")
 @app.post("/admin/improve-quality")
 async def improve_quality():
     """Ejecuta mejora manual de calidad de datos"""
@@ -1874,6 +1878,30 @@ async def improve_quality():
         "timestamp": datetime.now().isoformat(),
         "results": quality_results
     }
+
+
+@app.post("/api/admin/run-audit")
+@app.post("/admin/run-audit")
+async def run_manual_audit():
+    """Ejecuta auditoría manual completa"""
+    results = audit_scheduler.run_manual_audit()
+    return {
+        "success": True,
+        "timestamp": datetime.now().isoformat(),
+        "results": results
+    }
+
+@app.post("/api/admin/improve-quality")
+@app.post("/admin/improve-quality")
+async def improve_quality():
+    """Ejecuta mejora manual de calidad de datos"""
+    quality_results = audit_scheduler.improve_quality()
+    return {
+        "success": True,
+        "timestamp": datetime.now().isoformat(),
+        "results": quality_results
+    }
+    
 @app.get("/admin/audit-status")
 async def get_audit_status():
     """Obtiene estado del sistema de auditoría"""
@@ -2527,6 +2555,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
