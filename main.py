@@ -2237,32 +2237,42 @@ async def get_reporte_auditoria():
         <script>
             // Función para obtener datos de la auditoría
             // Función para obtener datos de la auditoría
-    async function cargarReporteAuditoria() {
-        try {
+    // Función para obtener datos de la auditoría
+async function cargarReporteAuditoria() {
+    try {
         // Mostrar overlay de carga
-            document.getElementById('loadingOverlay').style.display = 'flex';
+        document.getElementById('loadingOverlay').style.display = 'flex';
         
-        // Obtener datos de la API
-        const response = await fetch('/api/admin/audit-report');  // <-- ESTA ES LA LÍNEA
-        
-        if (!response.ok) {
-            throw new Error(`Error al cargar datos: ${response.status}`);
+        let reportData;
+        try {
+            // Primer intento - ruta original
+            const response = await fetch('/api/admin/audit-report');
+            if (!response.ok) {
+                throw new Error(`Error en primera ruta: ${response.status}`);
+            }
+            reportData = await response.json();
+        } catch (firstError) {
+            console.warn('Primer intento fallido, probando ruta alternativa');
+            
+            // Segundo intento - ruta alternativa
+            const response = await fetch('/admin/audit-report');
+            if (!response.ok) {
+                throw new Error(`Error en segunda ruta: ${response.status}`);
+            }
+            reportData = await response.json();
         }
-        
-        const reportData = await response.json();
         
         // Una vez tenemos los datos, actualizamos la UI
         renderizarReporte(reportData);
         
-        } catch (error) {
+    } catch (error) {
         console.error('Error al cargar el reporte:', error);
         mostrarError('No se pudo cargar el reporte. Por favor, intenta nuevamente.');
-        } finally {
+    } finally {
         // Ocultar overlay de carga
         document.getElementById('loadingOverlay').style.display = 'none';
-        }
-}
-            
+    }
+}          
             // Función para renderizar los datos del reporte
             function renderizarReporte(data) {
                 const timestamp = new Date(data.generated_at || data.timestamp);
@@ -2556,6 +2566,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
