@@ -28,6 +28,13 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Hea
 from typing import List, Optional
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
+from fastapi import File, UploadFile
+from image_handlers import router as image_handlers_router
+
+# Paso 4: Incluir el router en la aplicación
+# Añadir esta línea después de las otras inclusiones de routers
+
+app.include_router(image_handlers_router)
 
 processor.start()
 
@@ -2566,6 +2573,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
