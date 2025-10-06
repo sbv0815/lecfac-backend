@@ -1,10 +1,33 @@
 const express = require('express');
 const cors = require('cors');
+const fetch = require('node-fetch'); // Asegúrate de tener este paquete instalado
+
 const app = express();
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Ruta para la API de Anthropic
+app.post('/api/anthropic/messages', async (req, res) => {
+  try {
+    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY, // Usa la variable de entorno en el servidor
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(req.body)
+    });
+    
+    const data = await anthropicResponse.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error calling Anthropic API:', error);
+    res.status(500).json({ error: 'Error processing request' });
+  }
+});
 
 // Rutas
 const mobileRoutes = require('./routes/mobile');
