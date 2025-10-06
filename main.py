@@ -19,7 +19,9 @@ from database import (
     confirmar_producto_manual
 )
 from claude_invoice import parse_invoice_with_claude
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, HTMLResponse  # Añadir HTMLResponse aquí
+from fastapi.staticfiles import StaticFiles  # Añadir esta importación
+from pathlib import Path  # Añadir esta importación
 from admin_dashboard import router as admin_dashboard_router
 from auth_routes import router as auth_router
 import uuid
@@ -29,12 +31,9 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Hea
 from typing import List, Optional
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
-
 # Importar el router de image_handlers
 from image_handlers import router as image_handlers_router
-
 processor.start()
-
 # ========================================
 # CONFIGURACIÓN DE LA APP
 # ========================================
@@ -55,13 +54,11 @@ async def lifespan(app: FastAPI):
     yield
     processor.stop()
     print("👋 Cerrando LecFac API...")
-
 app = FastAPI(
     title="LecFac API", 
     version="2.0.0",
     lifespan=lifespan
 )
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,12 +66,51 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Incluir los routers DESPUÉS de crear la instancia de app
 app.include_router(admin_dashboard_router)
 app.include_router(auth_router)
 app.include_router(image_handlers_router)  # Ahora el router de imágenes
-# Endpoints para servir HTML
+
+# Montar archivos estáticos (si tienes una carpeta para ello)
+# app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Ruta específica para gestor_duplicados.html
+@app.get("/gestor_duplicados.html", response_class=HTMLResponse)
+async def get_duplicados_page():
+    # Buscar el archivo primero en la raíz del proyecto
+    html_path = Path("gestor_duplicados.html")
+    
+    # Si no está en la raíz, busca en otras posibles ubicaciones
+    if not html_path.exists():
+        possible_paths = [
+            Path("static/gestor_duplicados.html"),
+            Path("public/gestor_duplicados.html"),
+            Path("templates/gestor_duplicados.html")
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                html_path = path
+                break
+    
+    # Si encontramos el archivo, lo servimos
+    if html_path.exists():
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    else:
+        # Si no lo encontramos, devolvemos un error
+        raise HTTPException(status_code=404, detail="Archivo gestor_duplicados.html no encontrado")
+
+# También añadimos una ruta para la URL sin extensión .html
+@app.get("/gestor_duplicados", response_class=HTMLResponse)
+async def get_duplicados_page_alt():
+    return await get_duplicados_page()
+
+# Endpoint para verificar la salud de la API (útil para el modo demo)
+@app.get("/api/health-check")
+async def health_check():
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 
 @app.get("/test")
@@ -2671,6 +2707,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
