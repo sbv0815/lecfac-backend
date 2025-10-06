@@ -1849,6 +1849,18 @@
             
             mostrarToast('Configuración guardada correctamente', 'success');
         }
+        // Verificar si la API está activa
+        async function verificarConexionAPI() {
+        try {
+        const response = await fetch(`${API_URL}/api/health-check`);
+        if (!response.ok) {
+            mostrarMensajeError('No se pudo conectar con la API. Algunas funciones pueden no estar disponibles.');
+        }
+        } catch (error) {
+        console.error('Error verificando API:', error);
+        mostrarMensajeError('Error de conexión con el servidor. Algunas funciones pueden no estar disponibles.');
+        }
+        }
         
         // Cargar la configuración de IA desde localStorage
         function cargarConfiguracionIA() {
@@ -2417,10 +2429,7 @@ async function procesarLoteIA(tipo, lote, confianzaMinima) {
         }
        
    
-function cancelarProcesamientoIA(tipo) {
-            procesoIACancelado = true;
-            mostrarToast(`Procesamiento de ${tipo} cancelado`, 'info');
-        }
+
  </script>                           
 </body>
 </html>
