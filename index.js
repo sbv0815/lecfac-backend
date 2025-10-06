@@ -8,27 +8,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Ruta para la API de Anthropic
-app.post('/api/anthropic/messages', async (req, res) => {
-  try {
-    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY, // Usa la variable de entorno en el servidor
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify(req.body)
-    });
-    
-    const data = await anthropicResponse.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error calling Anthropic API:', error);
-    res.status(500).json({ error: 'Error processing request' });
-  }
-});
-
 // Rutas
 const mobileRoutes = require('./routes/mobile');
 app.use('/api/mobile', mobileRoutes);
@@ -38,23 +17,24 @@ app.get('/', (req, res) => {
   res.json({ message: 'LecFac API funcionando' });
 });
 
-// Puerto
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
+// Endpoint de salud para verificar que el servidor está funcionando
+app.get('/api/health-check', (req, res) => {
+  res.json({ status: 'ok' });
 });
+
 // Endpoint para obtener la API key
 app.get('/api/config/anthropic-key', (req, res) => {
   // Recuperar la API key de las variables de entorno
-  const apiKey = process.env.ANTHROPIC_API_KEY || '';
+  // Intentar primero ANTHROPIC_API_KEY1, luego ANTHROPIC_API_KEY como respaldo
+  const apiKey = process.env.ANTHROPIC_API_KEY1 || process.env.ANTHROPIC_API_KEY || '';
   res.json({ apiKey: apiKey });
 });
 
 // Endpoint para comunicarse con la API de Anthropic
 app.post('/api/anthropic/messages', async (req, res) => {
   try {
-    // Verificar si tenemos la API key
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Verificar si tenemos la API key (intentar ambas variables de entorno)
+    const apiKey = process.env.ANTHROPIC_API_KEY1 || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'API key de Anthropic no configurada en el servidor' });
     }
@@ -77,53 +57,13 @@ app.post('/api/anthropic/messages', async (req, res) => {
   }
 });
 
-// Endpoint de prueba para verificar que el servidor está funcionando
-app.get('/api/health-check', (req, res) => {
-  res.json({ status: 'ok' });
-});
-// Add these endpoints to your existing Express app:
-
-// Endpoint to securely provide the Anthropic API key to the frontend
-app.get('/api/config/anthropic-key', (req, res) => {
-  // Use the environment variable name you have configured in Render
-  const apiKey = process.env.ANTHROPIC_API_KEY1 || '';
-  res.json({ apiKey: apiKey });
-});
-
-// Proxy endpoint for Anthropic API to avoid CORS issues
-app.post('/api/anthropic/messages', async (req, res) => {
-  try {
-    // Use the correct environment variable name
-    const apiKey = process.env.ANTHROPIC_API_KEY1;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'API key no configurada' });
-    }
-    
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify(req.body)
-    });
-    
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error API Anthropic:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// For handling invoice image checks
+// Endpoint para verificar si una factura tiene imagen
 app.get('/admin/duplicados/facturas/:id/check-image', async (req, res) => {
   try {
     const facturaId = req.params.id;
     
-    // This is a temporary implementation since you haven't set up actual image checking yet
-    // You would replace this with actual logic to check if images exist
+    // Implementación temporal hasta que tengas verificación real de imágenes
+    // Devuelve siempre false para evitar errores en el frontend
     res.json({ 
       tiene_imagen: false,
       mensaje: 'Funcionalidad de verificación de imágenes aún no implementada'
@@ -134,19 +74,19 @@ app.get('/admin/duplicados/facturas/:id/check-image', async (req, res) => {
   }
 });
 
-// If you need an endpoint to serve the actual images
+// Endpoint para servir imágenes de facturas
 app.get('/admin/duplicados/facturas/:id/imagen', async (req, res) => {
   try {
     const facturaId = req.params.id;
     
-    // This is a placeholder - you would replace with actual image serving code
-    // For now, we'll just return a 404 with a helpful message
+    // Implementación temporal - devuelve un mensaje informativo
+    // Esto evitará errores 404 en el frontend
     res.status(404).json({
       error: 'Imagen no encontrada',
       mensaje: 'La funcionalidad de imágenes no está implementada todavía'
     });
     
-    // When you implement this properly, it would look more like:
+    // Cuando implementes esta funcionalidad, sería algo como:
     // const imagePath = `./storage/facturas/${facturaId}.jpg`;
     // if (fs.existsSync(imagePath)) {
     //   res.sendFile(imagePath, { root: __dirname });
@@ -157,4 +97,12 @@ app.get('/admin/duplicados/facturas/:id/imagen', async (req, res) => {
     console.error('Error sirviendo imagen:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Puerto
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
+  console.log(`API Key configurada: ${process.env.ANTHROPIC_API_KEY1 ? 'Sí (ANTHROPIC_API_KEY1)' : 'No'}`);
+  console.log(`API Key alternativa: ${process.env.ANTHROPIC_API_KEY ? 'Sí (ANTHROPIC_API_KEY)' : 'No'}`);
 });
