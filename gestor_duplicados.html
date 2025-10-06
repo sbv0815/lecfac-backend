@@ -1458,11 +1458,17 @@
                 facturasDuplicadas = data.duplicados || [];
                 
                 // Actualizar estadísticas
+                // En detectarFacturasDuplicadas, después de actualizar estadísticas:
                 document.getElementById('total-facturas-duplicadas').textContent = data.total || 0;
                 const porcentaje = data.total > 0 ? 
-                    ((data.total / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
-                    '0%';
-                document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
+                ((data.total / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
+                '0%';
+
+            // Verificar si el elemento existe antes de asignar
+            const porcentajeElement = document.getElementById('porcentaje-facturas-duplicadas');
+                if (porcentajeElement) {
+                porcentajeElement.textContent = porcentaje;
+                }
                 
                 if (facturasDuplicadas.length === 0) {
                     container.innerHTML = `
