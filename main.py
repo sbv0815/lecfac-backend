@@ -1052,6 +1052,8 @@ async def save_invoice_with_image(
                 os.unlink(temp_file.name)
             except:
                 pass
+# Reemplazar o modificar el endpoint existente en main.py
+
 @app.get("/admin/facturas/{factura_id}")
 async def get_factura_detalle(factura_id: int):
     """Obtener factura completa con productos"""
@@ -1059,18 +1061,18 @@ async def get_factura_detalle(factura_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Datos de factura
+        # 1. Datos generales de la factura
         cursor.execute("""
-            SELECT id, establecimiento, total_factura, fecha_cargue,
-                   estado_validacion, puntaje_calidad
+            SELECT id, establecimiento, total_factura, fecha_factura, fecha_cargue,
+                   estado_validacion, puntaje_calidad, tiene_imagen
             FROM facturas WHERE id = %s
         """, (factura_id,))
         
-        factura = cursor.fetchone()
-        if not factura:
-            raise HTTPException(404, "Factura no encontrada")
+        factura_row = cursor.fetchone()
+        if not factura_row:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
         
-        # Productos
+        # 2. Ahora obtenemos productos (primero intentamos con precios_productos)
         cursor.execute("""
             SELECT pp.id, pc.codigo_ean, pc.nombre_producto, pp.precio
             FROM precios_productos pp
@@ -1078,24 +1080,67 @@ async def get_factura_detalle(factura_id: int):
             WHERE pp.factura_id = %s
         """, (factura_id,))
         
-        productos = [
-            {"id": p[0], "codigo": p[1], "nombre": p[2], "precio": float(p[3])}
-            for p in cursor.fetchall()
-        ]
+        productos_rows = cursor.fetchall()
+        
+        # 3. Si no hay productos en precios_productos, intentamos con la tabla productos
+        if not productos_rows:
+            cursor.execute("""
+                SELECT id, codigo, nombre, valor
+                FROM productos 
+                WHERE factura_id = %s
+            """, (factura_id,))
+            
+            productos_rows = cursor.fetchall()
+            
+            # Crear la lista de productos con el formato correcto
+            productos = [
+                {
+                    "id": p[0],
+                    "codigo": p[1] or "",
+                    "nombre": p[2] or "Producto sin nombre",
+                    "precio": float(p[3]) if p[3] else 0
+                }
+                for p in productos_rows
+            ]
+        else:
+            # Formato para los productos de precios_productos
+            productos = [
+                {
+                    "id": p[0],
+                    "codigo": p[1] or "",
+                    "nombre": p[2] or "Producto sin nombre", 
+                    "precio": float(p[3]) if p[3] else 0
+                }
+                for p in productos_rows
+            ]
+        
+        # 4. Registrar los productos encontrados para debug
+        print(f"✅ Factura {factura_id}: Encontrados {len(productos)} productos")
+        for i, p in enumerate(productos):
+            print(f"  {i+1}. {p['codigo']} - {p['nombre']} - ${p['precio']}")
         
         conn.close()
         
-        return {
-            "id": factura[0],
-            "establecimiento": factura[1],
-            "total_factura": float(factura[2]) if factura[2] else 0,
-            "fecha_cargue": factura[3].isoformat() if factura[3] else None,
-            "estado_validacion": factura[4],
-            "puntaje_calidad": factura[5],
+        # Construir la respuesta
+        respuesta = {
+            "id": factura_row[0],
+            "establecimiento": factura_row[1] or "",
+            "total_factura": float(factura_row[2]) if factura_row[2] else 0,
+            "fecha": factura_row[3].isoformat() if factura_row[3] else (
+                factura_row[4].isoformat() if factura_row[4] else None
+            ),
+            "fecha_cargue": factura_row[4].isoformat() if factura_row[4] else None,
+            "estado_validacion": factura_row[5] or "pendiente",
+            "puntaje_calidad": factura_row[6] or 0,
             "productos": productos
         }
+        
+        return respuesta
+        
     except Exception as e:
-        raise HTTPException(500, str(e))
+        print(f"❌ Error obteniendo factura {factura_id}: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.put("/admin/facturas/{factura_id}")
@@ -2569,6 +2614,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
