@@ -460,15 +460,19 @@ async def get_user_invoices(user_id: int):
 # ENDPOINTS DE FACTURAS
 # ========================================
 
+# Modificación del endpoint /invoices/parse en main.py
+
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...)):
-    """Procesa factura con Claude Vision"""
+    """Procesa factura con Claude Vision y guarda la imagen"""
     try:
         # Guardar temporalmente
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         content = await file.read()
         temp_file.write(content)
         temp_file.close()
+        
+        print(f"✅ Imagen temporal guardada: {temp_file.name}, tamaño: {len(content)} bytes")
         
         # Procesar con Claude
         result = parse_invoice_with_claude(temp_file.name)
@@ -482,24 +486,73 @@ async def parse_invoice(file: UploadFile = File(...)):
             establecimiento = data.get("establecimiento", "Desconocido")
             total = data.get("total", 0)
             
-            cursor.execute("""
-                INSERT INTO facturas (
-                    usuario_id, establecimiento, total_factura,
-                    fecha_cargue, estado_validacion
-                ) VALUES (%s, %s, %s, %s, %s) RETURNING id
-            """, (1, establecimiento, total, datetime.now(), 'pendiente'))
-            
-            factura_id = cursor.fetchone()[0]
-            
-            # Guardar productos
-            for prod in data.get("productos", []):
+            try:
                 cursor.execute("""
-                    INSERT INTO productos (factura_id, codigo, nombre, valor)
-                    VALUES (%s, %s, %s, %s)
-                """, (factura_id, prod.get("codigo", ""), prod.get("nombre", ""), prod.get("precio", 0)))
-            
-            conn.commit()
-            conn.close()
+                    INSERT INTO facturas (
+                        usuario_id, establecimiento, total_factura,
+                        fecha_cargue, estado_validacion, tiene_imagen
+                    ) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+                """, (1, establecimiento, total, datetime.now(), 'pendiente', True))
+                
+                factura_id = cursor.fetchone()[0]
+                print(f"✅ Factura creada con ID: {factura_id}")
+                
+                # Guardar productos
+                for prod in data.get("productos", []):
+                    try:
+                        cursor.execute("""
+                            INSERT INTO productos (factura_id, codigo, nombre, valor)
+                            VALUES (%s, %s, %s, %s)
+                        """, (factura_id, prod.get("codigo", ""), prod.get("nombre", ""), prod.get("precio", 0)))
+                    except Exception as e:
+                        print(f"⚠️ Error guardando producto: {e}")
+                
+                # IMPORTANTE: Guardar imagen EXPLÍCITAMENTE
+                # 1. Leer el archivo temporal
+                with open(temp_file.name, "rb") as img_file:
+                    img_content = img_file.read()
+                
+                # 2. Preparar datos para PostgreSQL si es necesario
+                if os.environ.get("DATABASE_TYPE") == "postgresql":
+                    try:
+                        # Intentar importar Binary de psycopg3
+                        from psycopg import Binary
+                        binary_data = Binary(img_content)
+                    except ImportError:
+                        # Usar el contenido directamente si no está disponible
+                        binary_data = img_content
+                    
+                    # 3. Guardar la imagen en la BD
+                    cursor.execute("""
+                        UPDATE facturas
+                        SET imagen_data = %s, 
+                            imagen_mime = %s,
+                            tiene_imagen = TRUE
+                        WHERE id = %s
+                    """, (binary_data, "image/jpeg", factura_id))
+                else:
+                    # SQLite
+                    cursor.execute("""
+                        UPDATE facturas
+                        SET imagen_data = ?, 
+                            imagen_mime = ?,
+                            tiene_imagen = 1
+                        WHERE id = ?
+                    """, (img_content, "image/jpeg", factura_id))
+                
+                # 4. Verificar que se guardó
+                cursor.execute("SELECT tiene_imagen FROM facturas WHERE id = %s", (factura_id,))
+                tiene_imagen = cursor.fetchone()[0]
+                print(f"✅ Imagen guardada: {tiene_imagen}")
+                
+                conn.commit()
+                
+            except Exception as e:
+                print(f"❌ Error guardando factura/imagen: {e}")
+                traceback.print_exc()
+                conn.rollback()
+            finally:
+                conn.close()
             
             # Limpiar archivo temporal
             os.unlink(temp_file.name)
@@ -516,6 +569,10 @@ async def parse_invoice(file: UploadFile = File(...)):
             return result
             
     except Exception as e:
+        print(f"❌ Error general en parse_invoice: {e}")
+        traceback.print_exc()
+        if 'temp_file' in locals() and os.path.exists(temp_file.name):
+            os.unlink(temp_file.name)
         return {"success": False, "error": str(e)}
 
 @app.post("/invoices/save")
@@ -2614,6 +2671,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
