@@ -1159,12 +1159,16 @@
                 productosDuplicados = data.duplicados || [];
                 
                 // Actualizar estadísticas
+                // Actualizar estadísticas
                 document.getElementById('total-duplicados').textContent = data.total || 0;
                 const porcentaje = data.total > 0 ? 
                 ((data.total / parseInt(document.getElementById('total-productos').textContent)) * 100).toFixed(1) + '%' : 
-                '0%';
-                document.getElementById('porcentaje-duplicados').textContent = porcentaje;
-                
+                    '0%';
+            // Verificar si el elemento existe antes de asignar
+            const porcentajeElement = document.getElementById('porcentaje-duplicados');
+            if (porcentajeElement) {
+                porcentajeElement.textContent = porcentaje;
+                }
                 if (productosDuplicados.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
@@ -2664,15 +2668,20 @@ function renderizarPaginaProductos(pagina) {
                         <div class="selection-mark ${resultadoIA && resultadoIA.decision === 2 ? 'selected' : (dup.seleccionado === dup.producto2.id ? 'selected' : 'not-selected')}">2</div>
                         
                         <div class="duplicate-metadata">
-                            <h3>Producto #${dup.producto2.id}</h3>
-                            <p style="margin-top: 5px; color: #666;">
-                                <strong>Nombre:</strong> ${dup.producto2.nombre}<br>
-                                <strong>Código:</strong> ${dup.producto2.codigo || 'Sin código'}<br>
-                                <strong>Establecimiento:</strong> ${dup.producto2.establecimiento || 'Desconocido'}<br>
-                                <strong>Precio actual:</strong> ${typeof dup.producto2.precio === 'number' ? dup.producto2.precio.toLocaleString() : dup.producto2.precio || 'N/A'}<br>
-                                <strong>Última actualización:</strong> ${dup.producto2.ultima_actualizacion ? new Date(dup.producto2.ultima_actualizacion).toLocaleDateString() : 'N/A'}<br>
-                                <strong>Visto:</strong> ${dup.producto2.veces_visto || 0} veces
-}
+    <h3>Producto #${dup.producto2.id}</h3>
+    <p style="margin-top: 5px; color: #666;">
+        <strong>Nombre:</strong> ${dup.producto2.nombre}<br>
+        <strong>Código:</strong> ${dup.producto2.codigo || 'Sin código'}<br>
+        <strong>Establecimiento:</strong> ${dup.producto2.establecimiento || 'Desconocido'}<br>
+        <strong>Precio actual:</strong> $${typeof dup.producto2.precio === 'number' ? dup.producto2.precio.toLocaleString() : dup.producto2.precio || 'N/A'}<br>
+        <strong>Última actualización:</strong> ${dup.producto2.ultima_actualizacion ? new Date(dup.producto2.ultima_actualizacion).toLocaleDateString() : 'N/A'}<br>
+        <strong>Visto:</strong> ${dup.producto2.veces_visto || 0} veces
+    </p>
+</div>
+function cancelarProcesamientoIA(tipo) {
+            procesoIACancelado = true;
+            mostrarToast(`Procesamiento de ${tipo} cancelado`, 'info');
+        }
  </script>                           
 </body>
 </html>
