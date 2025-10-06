@@ -1439,434 +1439,344 @@
         }
 
         // GESTIÓN DE FACTURAS DUPLICADAS
-        async function detectarFacturasDuplicadas() {
-            const container = document.getElementById('facturas-duplicadas-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados de facturas...</p></div>';
-            
-            try {
-                const criterio = document.getElementById('criterioFacturas').value;
-                
-                const url = `${API_URL}/admin/duplicados/facturas?criterio=${criterio}`;
-                const response = await fetch(url);
-                
-                if (!response.ok) {
-                    throw new Error(`Error HTTP: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                facturasDuplicadas = data.duplicados || [];
-                
-                // Actualizar estadísticas
-                // En detectarFacturasDuplicadas, después de actualizar estadísticas:
-                document.getElementById('total-facturas-duplicadas').textContent = data.total || 0;
-                const porcentaje = data.total > 0 ? 
-                ((data.total / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
-                '0%';
+        // GESTIÓN DE FACTURAS DUPLICADAS
+async function detectarFacturasDuplicadas() {
+    const container = document.getElementById('facturas-duplicadas-container');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados de facturas...</p></div>';
+    
+    try {
+        const criterio = document.getElementById('criterioFacturas').value;
+        
+        const url = `${API_URL}/admin/duplicados/facturas?criterio=${criterio}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        facturasDuplicadas = data.duplicados || [];
+        
+        // Actualizar estadísticas
+        document.getElementById('total-facturas-duplicadas').textContent = data.total || 0;
+        const porcentaje = data.total > 0 ? 
+            ((data.total / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
+            '0%';
 
-            // Verificar si el elemento existe antes de asignar
-            const porcentajeElement = document.getElementById('porcentaje-facturas-duplicadas');
-                if (porcentajeElement) {
-                porcentajeElement.textContent = porcentaje;
-                }
-                
-                if (facturasDuplicadas.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty-state">
-                            <h3>No se encontraron facturas duplicadas</h3>
-                            <p>Prueba con diferentes criterios de búsqueda</p>
-                        </div>
-                    `;
-                    document.getElementById('facturas-pagination').innerHTML = '';
-                    document.getElementById('facturas-ia-panel').style.display = 'none';
-                    return;
-                }
-                
-                // Mostrar panel de IA
-                document.getElementById('facturas-ia-panel').style.display = 'block';
-                
-                // Pre-verificar si las facturas tienen imágenes
-                const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
-                if (mostrarImagenes) {
-                    for (const dup of facturasDuplicadas) {
-                        try {
-                            const resp1 = await fetch(`${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/check-image`);
+        // Verificar si el elemento existe antes de asignar
+        const porcentajeElement = document.getElementById('porcentaje-facturas-duplicadas');
+        if (porcentajeElement) {
+            porcentajeElement.textContent = porcentaje;
+        }
+        
+        if (facturasDuplicadas.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <h3>No se encontraron facturas duplicadas</h3>
+                    <p>Prueba con diferentes criterios de búsqueda</p>
+                </div>
+            `;
+            document.getElementById('facturas-pagination').innerHTML = '';
+            document.getElementById('facturas-ia-panel').style.display = 'none';
+            return;
+        }
+        
+        // Mostrar panel de IA
+        document.getElementById('facturas-ia-panel').style.display = 'block';
+        
+        // Pre-verificar si las facturas tienen imágenes solo si está activado mostrar imágenes
+        const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
+        if (mostrarImagenes) {
+            for (const dup of facturasDuplicadas) {
+                try {
+                    // Asignar un valor predeterminado (false) a tieneImagen para ambas facturas
+                    dup.factura1.tieneImagen = false;
+                    dup.factura2.tieneImagen = false;
+                    
+                    // Intentar verificar la imagen para la primera factura
+                    try {
+                        const resp1 = await fetch(`${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/check-image`);
+                        if (resp1.ok) {
                             const data1 = await resp1.json();
                             dup.factura1.tieneImagen = data1.tiene_imagen;
-                            
-                            const resp2 = await fetch(`${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/check-image`);
+                        }
+                    } catch (imgError) {
+                        console.warn(`Error verificando imagen de factura ${dup.factura1.id}:`, imgError);
+                        // No hace falta hacer nada más, ya tiene el valor predeterminado false
+                    }
+                    
+                    // Intentar verificar la imagen para la segunda factura
+                    try {
+                        const resp2 = await fetch(`${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/check-image`);
+                        if (resp2.ok) {
                             const data2 = await resp2.json();
                             dup.factura2.tieneImagen = data2.tiene_imagen;
-                        } catch (error) {
-                            console.error('Error verificando imágenes:', error);
-                            dup.factura1.tieneImagen = false;
-                            dup.factura2.tieneImagen = false;
                         }
+                    } catch (imgError) {
+                        console.warn(`Error verificando imagen de factura ${dup.factura2.id}:`, imgError);
+                        // No hace falta hacer nada más, ya tiene el valor predeterminado false
                     }
+                    
+                } catch (error) {
+                    console.error('Error general verificando imágenes:', error);
+                    // Asegurar que tieneImagen sea false para ambas facturas si hay un error general
+                    dup.factura1.tieneImagen = false;
+                    dup.factura2.tieneImagen = false;
                 }
-                
-                // Renderizar la primera página
-                renderizarPaginaFacturas(1);
-                
-            } catch (error) {
-                console.error('Error detectando duplicados de facturas:', error);
-                
-                // Mostrar mensaje de error
-                container.innerHTML = `
-                    <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
-                        <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
-                        <p>${error.message || 'Error desconocido'}</p>
-                        <button class="btn btn-primary" onclick="detectarFacturasDuplicadas()" style="margin-top: 15px;">
-                            Intentar nuevamente
+            }
+        }
+        
+        // Renderizar la primera página
+        renderizarPaginaFacturas(1);
+        
+    } catch (error) {
+        console.error('Error detectando duplicados de facturas:', error);
+        
+        // Mostrar mensaje de error
+        container.innerHTML = `
+            <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
+                <p>${error.message || 'Error desconocido'}</p>
+                <button class="btn btn-primary" onclick="detectarFacturasDuplicadas()" style="margin-top: 15px;">
+                    Intentar nuevamente
+                </button>
+            </div>
+        `;
+        document.getElementById('facturas-ia-panel').style.display = 'none';
+    }
+}
+
+// También es necesario modificar la función renderizarPaginaFacturas para manejar correctamente 
+// cuando las imágenes no están disponibles
+function renderizarPaginaFacturas(pagina) {
+    const container = document.getElementById('facturas-duplicadas-container');
+    const paginacion = document.getElementById('facturas-pagination');
+    const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
+    
+    // Guardar la página actual
+    paginaActualFacturas = pagina;
+    
+    // Calcular índices para la paginación
+    const inicio = (pagina - 1) * elementosPorPagina;
+    const fin = Math.min(inicio + elementosPorPagina, facturasDuplicadas.length);
+    const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
+    
+    let html = '';
+    
+    duplicadosPagina.forEach((dup, index) => {
+        // Análisis de similitudes entre productos para destacar
+        const productosIguales = dup.productos_iguales || false;
+        const productosSimilares = dup.productos_similares || false;
+        const totalIguales = dup.total_iguales || false;
+        
+        // Criterios de duplicado
+        const criterios = [];
+        if (dup.misma_fecha) criterios.push('Misma fecha');
+        if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
+        if (totalIguales) criterios.push('Mismo total');
+        if (productosIguales) criterios.push('Productos idénticos');
+        if (productosSimilares) criterios.push('Productos similares');
+        
+        // Verificar si este duplicado ha sido procesado por IA
+        const resultadoIA = resultadosFacturasIA.find(r => r.dupId === dup.id || r.dupId === index.toString());
+        const iaTag = resultadoIA ? 
+            `<span class="criteria-tag" style="background: #e8f5e9; color: #2e7d32;">IA: ${resultadoIA.decision === 1 ? 'Mantener #1' : 'Mantener #2'} (${resultadoIA.confianza}%)</span>` : '';
+        
+        html += `
+            <div id="factura-dup-${dup.id || index}" class="duplicate-container">
+                <div class="duplicate-header">
+                    <div>
+                        ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
+                        ${iaTag}
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, '${dup.id || index}')">
+                            Eliminar #${dup.factura1.id}
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, '${dup.id || index}')">
+                            Eliminar #${dup.factura2.id}
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
+                            ↔ Comparar
                         </button>
                     </div>
-                `;
-                document.getElementById('facturas-ia-panel').style.display = 'none';
-            }
-        }
-
-        function renderizarPaginaFacturas(pagina) {
-            const container = document.getElementById('facturas-duplicadas-container');
-            const paginacion = document.getElementById('facturas-pagination');
-            const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
-            
-            // Guardar la página actual
-            paginaActualFacturas = pagina;
-            
-            // Calcular índices para la paginación
-            const inicio = (pagina - 1) * elementosPorPagina;
-            const fin = Math.min(inicio + elementosPorPagina, facturasDuplicadas.length);
-            const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
-            
-            let html = '';
-            
-            duplicadosPagina.forEach((dup, index) => {
-                // Análisis de similitudes entre productos para destacar
-                const productosIguales = dup.productos_iguales || false;
-                const productosSimilares = dup.productos_similares || false;
-                const totalIguales = dup.total_iguales || false;
+                </div>
                 
-                // Criterios de duplicado
-                const criterios = [];
-                if (dup.misma_fecha) criterios.push('Misma fecha');
-                if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
-                if (totalIguales) criterios.push('Mismo total');
-                if (productosIguales) criterios.push('Productos idénticos');
-                if (productosSimilares) criterios.push('Productos similares');
-                
-                // Verificar si este duplicado ha sido procesado por IA
-                const resultadoIA = resultadosFacturasIA.find(r => r.dupId === dup.id || r.dupId === index.toString());
-                const iaTag = resultadoIA ? 
-                    `<span class="criteria-tag" style="background: #e8f5e9; color: #2e7d32;">IA: ${resultadoIA.decision === 1 ? 'Mantener #1' : 'Mantener #2'} (${resultadoIA.confianza}%)</span>` : '';
-                
-                html += `
-                    <div id="factura-dup-${dup.id || index}" class="duplicate-container">
-                        <div class="duplicate-header">
-                            <div>
-                                ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
-                                ${iaTag}
-                            </div>
-                            <div class="btn-group">
-                                <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, '${dup.id || index}')">
-                                    Eliminar #${dup.factura1.id}
-                                </button>
-                                <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, '${dup.id || index}')">
-                                    Eliminar #${dup.factura2.id}
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
-                                    ↔ Comparar
-                                </button>
-                            </div>
+                <div class="duplicate-grid">
+                    <div class="duplicate-item ${resultadoIA && resultadoIA.decision === 1 ? 'selected' : ''}">
+                        <div class="duplicate-metadata">
+                            <h3>Factura #${dup.factura1.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Establecimiento:</strong> ${dup.factura1.establecimiento}<br>
+                                <strong>Total:</strong> $${typeof dup.factura1.total === 'number' ? dup.factura1.total.toLocaleString() : dup.factura1.total || 'N/A'}<br>
+                                <strong>Productos:</strong> ${dup.factura1.num_productos || 0}<br>
+                                <strong>Fecha:</strong> ${dup.factura1.fecha ? new Date(dup.factura1.fecha).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Estado:</strong> ${dup.factura1.estado || 'Pendiente'}
+                            </p>
                         </div>
                         
-                        <div class="duplicate-grid">
-                            <div class="duplicate-item ${resultadoIA && resultadoIA.decision === 1 ? 'selected' : ''}">
-                                <div class="duplicate-metadata">
-                                    <h3>Factura #${dup.factura1.id}</h3>
-                                    <p style="margin-top: 5px; color: #666;">
-                                        <strong>Establecimiento:</strong> ${dup.factura1.establecimiento}<br>
-                                        <strong>Total:</strong> $${typeof dup.factura1.total === 'number' ? dup.factura1.total.toLocaleString() : dup.factura1.total || 'N/A'}<br>
-                                        <strong>Productos:</strong> ${dup.factura1.num_productos || 0}<br>
-                                        <strong>Fecha:</strong> ${dup.factura1.fecha ? new Date(dup.factura1.fecha).toLocaleDateString() : 'N/A'}<br>
-                                        <strong>Estado:</strong> ${dup.factura1.estado || 'Pendiente'}
-                                    </p>
-                                </div>
-                                
-                                ${mostrarImagenes ? `
-                                    <div class="duplicate-image">
-                                        ${dup.factura1.tieneImagen ? `
-                                            <img src="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" 
-                                                alt="Factura #${dup.factura1.id}" 
-                                                onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')" 
-                                                style="cursor: zoom-in;">
-                                            <div style="text-align: center; margin-top: 5px;">
-                                                <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')">
-                                                    🔍 Ampliar
-                                                </button>
-                                                <a href="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
-                                                    ↗ Abrir
-                                                </a>
-                                            </div>
-                                        ` : `
-                                            <div style="color: #999;">
-                                                <p style="margin-bottom: 10px;">No hay imagen disponible</p>
-                                                <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura1.id})">
-                                                    Ver Factura
-                                                </button>
-                                            </div>
-                                        `}
+                        ${mostrarImagenes ? `
+                            <div class="duplicate-image">
+                                ${dup.factura1.tieneImagen ? `
+                                    <img src="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" 
+                                        alt="Factura #${dup.factura1.id}" 
+                                        onerror="this.onerror=null; this.parentElement.innerHTML='<div style=\\'color: #999;\\'><p style=\\'margin-bottom: 10px;\\'>Error al cargar imagen</p><button class=\\'btn btn-secondary btn-sm\\' onclick=\\'verFactura(${dup.factura1.id})\\'>Ver Factura</button></div>';"
+                                        onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')" 
+                                        style="cursor: zoom-in;">
+                                    <div style="text-align: center; margin-top: 5px;">
+                                        <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')">
+                                            🔍 Ampliar
+                                        </button>
+                                        <a href="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
+                                            ↗ Abrir
+                                        </a>
                                     </div>
-                                ` : ''}
-                                
-                                <div class="product-list">
-                                    <h4 style="margin-bottom: 10px;">Productos (${dup.factura1.productos?.length || 0})</h4>
-                                    ${dup.factura1.productos && dup.factura1.productos.length > 0 ? dup.factura1.productos.map(p => `
-                                        <div class="product-item">
-                                            <h4>${p.nombre || 'Sin nombre'}</h4>
-                                            <div class="product-meta">
-                                                <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
-                                                <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
-                                            </div>
-                                        </div>
-                                    `).join('') : '<p>No hay productos disponibles</p>'}
-                                </div>
-                            </div>
-                            
-                            <div class="duplicate-item ${resultadoIA && resultadoIA.decision === 2 ? 'selected' : ''}">
-                                <div class="duplicate-metadata">
-                                    <h3>Factura #${dup.factura2.id}</h3>
-                                    <p style="margin-top: 5px; color: #666;">
-                                        <strong>Establecimiento:</strong> ${dup.factura2.establecimiento}<br>
-                                        <strong>Total:</strong> $${typeof dup.factura2.total === 'number' ? dup.factura2.total.toLocaleString() : dup.factura2.total || 'N/A'}<br>
-                                        <strong>Productos:</strong> ${dup.factura2.num_productos || 0}<br>
-                                        <strong>Fecha:</strong> ${dup.factura2.fecha ? new Date(dup.factura2.fecha).toLocaleDateString() : 'N/A'}<br>
-                                        <strong>Estado:</strong> ${dup.factura2.estado || 'Pendiente'}
-                                    </p>
-                                </div>
-                                
-                                ${mostrarImagenes ? `
-                                    <div class="duplicate-image">
-                                        ${dup.factura2.tieneImagen ? `
-                                            <img src="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" 
-                                                alt="Factura #${dup.factura2.id}" 
-                                                onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')" 
-                                                style="cursor: zoom-in;">
-                                            <div style="text-align: center; margin-top: 5px;">
-                                                <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')">
-                                                    🔍 Ampliar
-                                                </button>
-                                                <a href="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
-                                                    ↗ Abrir
-                                                </a>
-                                            </div>
-                                        ` : `
-                                            <div style="color: #999;">
-                                                <p style="margin-bottom: 10px;">No hay imagen disponible</p>
-                                                <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura2.id})">
-                                                    Ver Factura
-                                                </button>
-                                            </div>
-                                        `}
+                                ` : `
+                                    <div style="color: #999;">
+                                        <p style="margin-bottom: 10px;">No hay imagen disponible</p>
+                                        <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura1.id})">
+                                            Ver Factura
+                                        </button>
                                     </div>
-                                ` : ''}
-                                
-                                <div class="product-list">
-                                    <h4 style="margin-bottom: 10px;">Productos (${dup.factura2.productos?.length || 0})</h4>
-                                    ${dup.factura2.productos && dup.factura2.productos.length > 0 ? dup.factura2.productos.map(p => `
-                                        <div class="product-item">
-                                            <h4>${p.nombre || 'Sin nombre'}</h4>
-                                            <div class="product-meta">
-                                                <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
-                                                <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
-                                            </div>
-                                        </div>
-                                    `).join('') : '<p>No hay productos disponibles</p>'}
-                                </div>
+                                `}
                             </div>
-                        </div>
+                        ` : ''}
                         
-                        <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
-                            <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
-                            <p>${dup.razon || 'Facturas con características similares'}</p>
-                            ${resultadoIA ? `<p style="margin-top: 10px; color: #2e7d32;"><strong>Análisis IA:</strong> ${resultadoIA.explicacion || 'Sin explicación disponible'}</p>` : ''}
+                        <div class="product-list">
+                            <h4 style="margin-bottom: 10px;">Productos (${dup.factura1.productos?.length || 0})</h4>
+                            ${dup.factura1.productos && dup.factura1.productos.length > 0 ? dup.factura1.productos.map(p => `
+                                <div class="product-item">
+                                    <h4>${p.nombre || 'Sin nombre'}</h4>
+                                    <div class="product-meta">
+                                        <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
+                                        <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            `).join('') : '<p>No hay productos disponibles</p>'}
                         </div>
                     </div>
-                `;
-            });
-            
-            container.innerHTML = html;
-            
-            // Generar paginación
-            const totalPaginas = Math.ceil(facturasDuplicadas.length / elementosPorPagina);
-            let paginacionHTML = '';
-            
-            if (totalPaginas > 1) {
-                paginacionHTML += `
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(1)">«</div>
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.max(pagina - 1, 1)})">‹</div>
-                `;
-                
-                for (let i = 1; i <= totalPaginas; i++) {
-                    if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
-                        paginacionHTML += `
-                            <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaFacturas(${i})">
-                                ${i}
+                    
+                    <div class="duplicate-item ${resultadoIA && resultadoIA.decision === 2 ? 'selected' : ''}">
+                        <div class="duplicate-metadata">
+                            <h3>Factura #${dup.factura2.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Establecimiento:</strong> ${dup.factura2.establecimiento}<br>
+                                <strong>Total:</strong> $${typeof dup.factura2.total === 'number' ? dup.factura2.total.toLocaleString() : dup.factura2.total || 'N/A'}<br>
+                                <strong>Productos:</strong> ${dup.factura2.num_productos || 0}<br>
+                                <strong>Fecha:</strong> ${dup.factura2.fecha ? new Date(dup.factura2.fecha).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Estado:</strong> ${dup.factura2.estado || 'Pendiente'}
+                            </p>
+                        </div>
+                        
+                        ${mostrarImagenes ? `
+                            <div class="duplicate-image">
+                                ${dup.factura2.tieneImagen ? `
+                                    <img src="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" 
+                                        alt="Factura #${dup.factura2.id}" 
+                                        onerror="this.onerror=null; this.parentElement.innerHTML='<div style=\\'color: #999;\\'><p style=\\'margin-bottom: 10px;\\'>Error al cargar imagen</p><button class=\\'btn btn-secondary btn-sm\\' onclick=\\'verFactura(${dup.factura2.id})\\'>Ver Factura</button></div>';"
+                                        onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')" 
+                                        style="cursor: zoom-in;">
+                                    <div style="text-align: center; margin-top: 5px;">
+                                        <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')">
+                                            🔍 Ampliar
+                                        </button>
+                                        <a href="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
+                                            ↗ Abrir
+                                        </a>
+                                    </div>
+                                ` : `
+                                    <div style="color: #999;">
+                                        <p style="margin-bottom: 10px;">No hay imagen disponible</p>
+                                        <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura2.id})">
+                                            Ver Factura
+                                        </button>
+                                    </div>
+                                `}
                             </div>
-                        `;
-                    } else if (i === pagina - 2 || i === pagina + 2) {
-                        paginacionHTML += '<div class="pagination-item">...</div>';
-                    }
-                }
+                        ` : ''}
+                        
+                        <div class="product-list">
+                            <h4 style="margin-bottom: 10px;">Productos (${dup.factura2.productos?.length || 0})</h4>
+                            ${dup.factura2.productos && dup.factura2.productos.length > 0 ? dup.factura2.productos.map(p => `
+                                <div class="product-item">
+                                    <h4>${p.nombre || 'Sin nombre'}</h4>
+                                    <div class="product-meta">
+                                        <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
+                                        <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            `).join('') : '<p>No hay productos disponibles</p>'}
+                        </div>
+                    </div>
+                </div>
                 
-                paginacionHTML += `
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.min(pagina + 1, totalPaginas)})">›</div>
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(${totalPaginas})">»</div>
-                `;
-            }
-            
-            paginacion.innerHTML = paginacionHTML;
-        }
-
-        async function eliminarFactura(facturaId, dupId) {
-            // Verificar si hay un resultado de IA para esta factura
-            const resultadoIA = resultadosFacturasIA.find(r => r.dupId === dupId || r.dupId === parseInt(dupId));
-            let mensajeConfirmacion = `¿Eliminar la factura #${facturaId} y todos sus productos?`;
-            
-            // Si hay un resultado de IA, mostrar más información
-            if (resultadoIA) {
-                const esRecomendadoPorIA = (resultadoIA.decision === 1 && facturaId === resultadoIA.factura2Id) || 
-                                          (resultadoIA.decision === 2 && facturaId === resultadoIA.factura1Id);
-                
-                if (esRecomendadoPorIA) {
-                    mensajeConfirmacion = `ADVERTENCIA: La IA recomienda MANTENER esta factura y eliminar la otra.\n\n${mensajeConfirmacion}\n\n¿Estás seguro de que deseas continuar?`;
-                } else {
-                    mensajeConfirmacion = `La IA recomienda eliminar esta factura.\n\n${mensajeConfirmacion}`;
-                }
-            }
-            
-            if (!confirm(mensajeConfirmacion)) return;
-            
-            try {
-                const response = await fetch(`${API_URL}/admin/duplicados/facturas/${facturaId}`, {
-                    method: 'DELETE'
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Error HTTP: ${response.status}`);
-                }
-                
-                // Actualizar contador
-                totalEliminaciones++;
-                document.getElementById('total-eliminaciones').textContent = totalEliminaciones;
-                
-                // Eliminar de la lista de duplicados
-                if (dupId) {
-                    facturasDuplicadas = facturasDuplicadas.filter(d => d.id !== dupId && facturasDuplicadas.indexOf(d) !== parseInt(dupId));
-                    
-                    // Eliminar de los resultados de IA si existe
-                    resultadosFacturasIA = resultadosFacturasIA.filter(r => r.dupId !== dupId && r.dupId !== parseInt(dupId));
-                    
-                    // Actualizar estadísticas
-                    document.getElementById('total-facturas-duplicadas').textContent = facturasDuplicadas.length;
-                    const porcentaje = facturasDuplicadas.length > 0 ? 
-                        ((facturasDuplicadas.length / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
-                        '0%';
-                    document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
-                    
-                    // Eliminar visualmente
-                    const elemento = document.getElementById(`factura-dup-${dupId}`);
-                    if (elemento) {
-                        elemento.style.animation = 'fadeOut 0.5s forwards';
-                        setTimeout(() => {
-                            renderizarPaginaFacturas(paginaActualFacturas);
-                        }, 500);
-                    }
-                }
-                
-                mostrarToast('Factura eliminada correctamente');
-                
-            } catch (error) {
-                console.error('Error eliminando factura:', error);
-                mostrarToast('Error al eliminar la factura: ' + error.message, 'error');
-            }
-        }
-
-        function mostrarImagenAmpliada(facturaId, titulo) {
-            document.getElementById('popup-imagen-titulo').textContent = titulo;
-            document.getElementById('popup-imagen-contenido').src = `${API_URL}/admin/duplicados/facturas/${facturaId}/imagen`;
-            document.getElementById('popup-imagen').style.display = 'flex';
-        }
-
-        function compararFacturas(factura1Id, factura2Id) {
-            window.open(`/comparador-facturas?id1=${factura1Id}&id2=${factura2Id}`, '_blank');
-        }
-
-        function verFactura(facturaId) {
-            window.open(`/editor?id=${facturaId}`, '_blank');
-        }
-
-        function mostrarAyudaFacturas() {
-            document.getElementById('popup-ayuda-facturas').style.display = 'flex';
-        }
-
-        function cerrarPopup(id) {
-            document.getElementById(id).style.display = 'none';
-        }
-
-        function mostrarToast(mensaje, tipo = 'success') {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = mensaje;
-            
-            if (tipo === 'error') {
-                toast.style.background = '#ea4335';
-            } else if (tipo === 'info') {
-                toast.style.background = '#4285f4';
-            }
-            
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        }
-
-        // INTEGRACIÓN CON API DE ANTHROPIC
+                <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+                    <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
+                    <p>${dup.razon || 'Facturas con características similares'}</p>
+                    ${resultadoIA ? `<p style="margin-top: 10px; color: #2e7d32;"><strong>Análisis IA:</strong> ${resultadoIA.explicacion || 'Sin explicación disponible'}</p>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    
+    // Generar paginación
+    const totalPaginas = Math.ceil(facturasDuplicadas.length / elementosPorPagina);
+    let paginacionHTML = '';
+    
+    if (totalPaginas > 1) {
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(1)">«</div>
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.max(pagina - 1, 1)})">‹</div>
+        `;
         
-        // Guardar la configuración de IA
-        function guardarConfiguracionIA() {
-            configuracionIA = {
-                apiKey: document.getElementById('apiKey').value,
-                modelo: document.getElementById('modeloIA').value,
-                tamanoLote: parseInt(document.getElementById('tamanoLote').value),
-                intervaloLote: parseInt(document.getElementById('intervaloLote').value),
-                criteriosProductos: document.getElementById('criteriosProductosIA').value.trim(),
-                criteriosFacturas: document.getElementById('criteriosFacturasIA').value.trim()
-            };
-            
-            // Guardar en localStorage para persistencia
-            localStorage.setItem('lecfac_ia_config', JSON.stringify({
-                modelo: configuracionIA.modelo,
-                tamanoLote: configuracionIA.tamanoLote,
-                intervaloLote: configuracionIA.intervaloLote,
-                criteriosProductos: configuracionIA.criteriosProductos,
-                criteriosFacturas: configuracionIA.criteriosFacturas
-            }));
-            
-            mostrarToast('Configuración guardada correctamente', 'success');
+        for (let i = 1; i <= totalPaginas; i++) {
+            if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
+                paginacionHTML += `
+                    <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaFacturas(${i})">
+                        ${i}
+                    </div>
+                `;
+            } else if (i === pagina - 2 || i === pagina + 2) {
+                paginacionHTML += '<div class="pagination-item">...</div>';
+            }
         }
-        // Verificar si la API está activa
-        async function verificarConexionAPI() {
-        try {
+        
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.min(pagina + 1, totalPaginas)})">›</div>
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${totalPaginas})">»</div>
+        `;
+    }
+    
+    paginacion.innerHTML = paginacionHTML;
+}
+
+// Función para manejar ampliación de imágenes con manejo de errores
+function mostrarImagenAmpliada(facturaId, titulo) {
+    document.getElementById('popup-imagen-titulo').textContent = titulo;
+    const imgElement = document.getElementById('popup-imagen-contenido');
+    imgElement.src = `${API_URL}/admin/duplicados/facturas/${facturaId}/imagen`;
+    imgElement.onerror = function() {
+        this.onerror = null;
+        this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOTk5Ij5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD48L3N2Zz4=';
+    };
+    document.getElementById('popup-imagen').style.display = 'flex';
+}
+
+// Función mejorada para verificar la conexión API
+async function verificarConexionAPI() {
+    try {
         const response = await fetch(`${API_URL}/api/health-check`);
         if (!response.ok) {
             mostrarMensajeError('No se pudo conectar con la API. Algunas funciones pueden no estar disponibles.');
         }
-        } catch (error) {
+    } catch (error) {
         console.error('Error verificando API:', error);
         mostrarMensajeError('Error de conexión con el servidor. Algunas funciones pueden no estar disponibles.');
-        }
-        }
+    }
+}
         
         // Cargar la configuración de IA desde localStorage
         function cargarConfiguracionIA() {
