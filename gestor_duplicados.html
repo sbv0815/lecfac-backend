@@ -1267,577 +1267,285 @@
             }
         }
 
-        function renderizarPaginaFacturas(pagina) {
-            const container = document.getElementById('facturas-duplicadas-container');
-            const paginacion = document.getElementById('facturas-pagination');
-            const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
-            
-            // Guardar la página actual
-            paginaActualFacturas = pagina;
-            
-            // Calcular índices para la paginación
-            const inicio = (pagina - 1) * elementosPorPagina;
-            const fin = Math.min(inicio + elementosPorPagina, facturasDuplicadas.length);
-            const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
-            
-            let html = '';
-            
-            duplicadosPagina.forEach((dup, index) => {
-                // Análisis de similitudes entre productos para destacar
-                const productosIguales = dup.productos_iguales || false;
-                const productosSimilares = dup.productos_similares || false;
-                const totalIguales = dup.total_iguales || false;
-                
-                // Criterios de duplicado
-                const criterios = [];
-                if (dup.misma_fecha) criterios.push('Misma fecha');
-                if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
-                if (totalIguales) criterios.push('Mismo total');
-                if (productosIguales) criterios.push('Productos idénticos');
-                if (productosSimilares) criterios.push('Productos similares');
-                
-                html += `
-                    <div id="factura-dup-${dup.id || index}" class="duplicate-container">
-                        <div class="duplicate-header">
-                            <div>
-                                ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
-                            </div>
-                            <div class="btn-group">
-                                <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, '${dup.id || index}')">
-                                    Eliminar #${dup.factura1.id}
-                                </button>
-                                <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, '${dup.id || index}')">
-                                    Eliminar #${dup.factura2.id}
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
-                                    ↔ Comparar
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="duplicate-grid">
-                            <div class="duplicate-item">
-                                <div class="duplicate-metadata">
-                                    // Añadir este código al final del archivo gestor_duplicados.html
-// donde se corta actualmente
+        // Continuación del script para gestor_duplicados.html
 
-                                    <h3>Factura #${dup.factura1.id}</h3>
-                                    <p style="margin-top: 5px; color: #666;">
-                                        <strong>Establecimiento:</strong> ${dup.factura1.establecimiento}<br>
-                                        <strong>Total:</strong> $${typeof dup.factura1.total === 'number' ? dup.factura1.total.toLocaleString() : dup.factura1.total}<br>
-                                        <strong>Productos:</strong> ${dup.factura1.num_productos || 0}<br>
-                                        <strong>Fecha:</strong> ${new Date(dup.factura1.fecha).toLocaleDateString()}<br>
-                                        <strong>Estado:</strong> ${dup.factura1.estado || 'Pendiente'}
-                                    </p>
-                                </div>
-                                
-                                ${mostrarImagenes ? `
-                                    <div class="duplicate-image">
-                                        ${dup.factura1.tieneImagen ? `
-                                            <img src="${MODO_DEMO ? 'https://via.placeholder.com/400x300?text=Factura+' + dup.factura1.id : API_URL + '/admin/facturas/' + dup.factura1.id + '/imagen'}" 
-                                                alt="Factura #${dup.factura1.id}" 
-                                                onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')" 
-                                                style="cursor: zoom-in;">
-                                            <div style="text-align: center; margin-top: 5px;">
-                                                <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')">
-                                                    🔍 Ampliar
-                                                </button>
-                                                <a href="${MODO_DEMO ? '#' : API_URL + '/admin/facturas/' + dup.factura1.id + '/imagen'}" target="_blank" class="btn btn-sm btn-secondary">
-                                                    ↗ Abrir
-                                                </a>
-                                            </div>
-                                        ` : `
-                                            <div style="color: #999;">
-                                                <p style="margin-bottom: 10px;">No hay imagen disponible</p>
-                                                <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura1.id})">
-                                                    Ver Factura
-                                                </button>
-                                            </div>
-                                        `}
-                                    </div>
-                                ` : ''}
-                                
-                                <div class="product-list">
-                                    <h4 style="margin-bottom: 10px;">Productos (${dup.factura1.productos?.length || 0})</h4>
-                                    ${dup.factura1.productos ? dup.factura1.productos.map(p => `
-                                        <div class="product-item">
-                                            <h4>${p.nombre}</h4>
-                                            <div class="product-meta">
-                                                <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
-                                                <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio}</span>
-                                            </div>
-                                        </div>
-                                    `).join('') : '<p>No hay productos disponibles</p>'}
-                                </div>
-                            </div>
-                            
-                            <div class="duplicate-item">
-                                <div class="duplicate-metadata">
-                                    <h3>Factura #${dup.factura2.id}</h3>
-                                    <p style="margin-top: 5px; color: #666;">
-                                        <strong>Establecimiento:</strong> ${dup.factura2.establecimiento}<br>
-                                        <strong>Total:</strong> $${typeof dup.factura2.total === 'number' ? dup.factura2.total.toLocaleString() : dup.factura2.total}<br>
-                                        <strong>Productos:</strong> ${dup.factura2.num_productos || 0}<br>
-                                        <strong>Fecha:</strong> ${new Date(dup.factura2.fecha).toLocaleDateString()}<br>
-                                        <strong>Estado:</strong> ${dup.factura2.estado || 'Pendiente'}
-                                    </p>
-                                </div>
-                                
-                                ${mostrarImagenes ? `
-                                    <div class="duplicate-image">
-                                        ${dup.factura2.tieneImagen ? `
-                                            <img src="${MODO_DEMO ? 'https://via.placeholder.com/400x300?text=Factura+' + dup.factura2.id : API_URL + '/admin/facturas/' + dup.factura2.id + '/imagen'}" 
-                                                alt="Factura #${dup.factura2.id}" 
-                                                onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')" 
-                                                style="cursor: zoom-in;">
-                                            <div style="text-align: center; margin-top: 5px;">
-                                                <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')">
-                                                    🔍 Ampliar
-                                                </button>
-                                                <a href="${MODO_DEMO ? '#' : API_URL + '/admin/facturas/' + dup.factura2.id + '/imagen'}" target="_blank" class="btn btn-sm btn-secondary">
-                                                    ↗ Abrir
-                                                </a>
-                                            </div>
-                                        ` : `
-                                            <div style="color: #999;">
-                                                <p style="margin-bottom: 10px;">No hay imagen disponible</p>
-                                                <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura2.id})">
-                                                    Ver Factura
-                                                </button>
-                                            </div>
-                                        `}
-                                    </div>
-                                ` : ''}
-                                
-                                <div class="product-list">
-                                    <h4 style="margin-bottom: 10px;">Productos (${dup.factura2.productos?.length || 0})</h4>
-                                    ${dup.factura2.productos ? dup.factura2.productos.map(p => `
-                                        <div class="product-item">
-                                            <h4>${p.nombre}</h4>
-                                            <div class="product-meta">
-                                                <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
-                                                <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio}</span>
-                                            </div>
-                                        </div>
-                                    `).join('') : '<p>No hay productos disponibles</p>'}
-                                </div>
-                            </div>
+// Para factura2
+function renderizarPaginaFacturas(pagina) {
+    const container = document.getElementById('facturas-duplicadas-container');
+    const paginacion = document.getElementById('facturas-pagination');
+    const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
+    
+    // Guardar la página actual
+    paginaActualFacturas = pagina;
+    
+    // Calcular índices para la paginación
+    const inicio = (pagina - 1) * elementosPorPagina;
+    const fin = Math.min(inicio + elementosPorPagina, facturasDuplicadas.length);
+    const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
+    
+    let html = '';
+    
+    duplicadosPagina.forEach((dup, index) => {
+        // Análisis de similitudes entre productos para destacar
+        const productosIguales = dup.productos_iguales || false;
+        const productosSimilares = dup.productos_similares || false;
+        const totalIguales = dup.total_iguales || false;
+        
+        // Criterios de duplicado
+        const criterios = [];
+        if (dup.misma_fecha) criterios.push('Misma fecha');
+        if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
+        if (totalIguales) criterios.push('Mismo total');
+        if (productosIguales) criterios.push('Productos idénticos');
+        if (productosSimilares) criterios.push('Productos similares');
+        
+        html += `
+            <div id="factura-dup-${dup.id || index}" class="duplicate-container">
+                <div class="duplicate-header">
+                    <div>
+                        ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, '${dup.id || index}')">
+                            Eliminar #${dup.factura1.id}
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, '${dup.id || index}')">
+                            Eliminar #${dup.factura2.id}
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
+                            ↔ Comparar
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="duplicate-grid">
+                    <div class="duplicate-item">
+                        <div class="duplicate-metadata">
+                            <h3>Factura #${dup.factura1.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Establecimiento:</strong> ${dup.factura1.establecimiento}<br>
+                                <strong>Total:</strong> $${typeof dup.factura1.total === 'number' ? dup.factura1.total.toLocaleString() : dup.factura1.total || 'N/A'}<br>
+                                <strong>Productos:</strong> ${dup.factura1.num_productos || 0}<br>
+                                <strong>Fecha:</strong> ${dup.factura1.fecha ? new Date(dup.factura1.fecha).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Estado:</strong> ${dup.factura1.estado || 'Pendiente'}
+                            </p>
                         </div>
                         
-                        <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
-                            <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
-                            <p>${dup.razon || 'Facturas con características similares'}</p>
+                        ${mostrarImagenes ? `
+                            <div class="duplicate-image">
+                                ${dup.factura1.tieneImagen ? `
+                                    <img src="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" 
+                                        alt="Factura #${dup.factura1.id}" 
+                                        onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')" 
+                                        style="cursor: zoom-in;">
+                                    <div style="text-align: center; margin-top: 5px;">
+                                        <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')">
+                                            🔍 Ampliar
+                                        </button>
+                                        <a href="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
+                                            ↗ Abrir
+                                        </a>
+                                    </div>
+                                ` : `
+                                    <div style="color: #999;">
+                                        <p style="margin-bottom: 10px;">No hay imagen disponible</p>
+                                        <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura1.id})">
+                                            Ver Factura
+                                        </button>
+                                    </div>
+                                `}
+                            </div>
+                        ` : ''}
+                        
+                        <div class="product-list">
+                            <h4 style="margin-bottom: 10px;">Productos (${dup.factura1.productos?.length || 0})</h4>
+                            ${dup.factura1.productos && dup.factura1.productos.length > 0 ? dup.factura1.productos.map(p => `
+                                <div class="product-item">
+                                    <h4>${p.nombre || 'Sin nombre'}</h4>
+                                    <div class="product-meta">
+                                        <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
+                                        <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            `).join('') : '<p>No hay productos disponibles</p>'}
                         </div>
                     </div>
-                `;
-            });
-            
-            container.innerHTML = html;
-            
-            // Generar paginación
-            const totalPaginas = Math.ceil(facturasDuplicadas.length / elementosPorPagina);
-            let paginacionHTML = '';
-            
-            if (totalPaginas > 1) {
-                paginacionHTML += `
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(1)">«</div>
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.max(pagina - 1, 1)})">‹</div>
-                `;
-                
-                for (let i = 1; i <= totalPaginas; i++) {
-                    if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
-                        paginacionHTML += `
-                            <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaFacturas(${i})">
-                                ${i}
+                    
+                    <div class="duplicate-item">
+                        <div class="duplicate-metadata">
+                            <h3>Factura #${dup.factura2.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Establecimiento:</strong> ${dup.factura2.establecimiento}<br>
+                                <strong>Total:</strong> $${typeof dup.factura2.total === 'number' ? dup.factura2.total.toLocaleString() : dup.factura2.total || 'N/A'}<br>
+                                <strong>Productos:</strong> ${dup.factura2.num_productos || 0}<br>
+                                <strong>Fecha:</strong> ${dup.factura2.fecha ? new Date(dup.factura2.fecha).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Estado:</strong> ${dup.factura2.estado || 'Pendiente'}
+                            </p>
+                        </div>
+                        
+                        ${mostrarImagenes ? `
+                            <div class="duplicate-image">
+                                ${dup.factura2.tieneImagen ? `
+                                    <img src="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" 
+                                        alt="Factura #${dup.factura2.id}" 
+                                        onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')" 
+                                        style="cursor: zoom-in;">
+                                    <div style="text-align: center; margin-top: 5px;">
+                                        <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')">
+                                            🔍 Ampliar
+                                        </button>
+                                        <a href="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
+                                            ↗ Abrir
+                                        </a>
+                                    </div>
+                                ` : `
+                                    <div style="color: #999;">
+                                        <p style="margin-bottom: 10px;">No hay imagen disponible</p>
+                                        <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura2.id})">
+                                            Ver Factura
+                                        </button>
+                                    </div>
+                                `}
                             </div>
-                        `;
-                    } else if (i === pagina - 2 || i === pagina + 2) {
-                        paginacionHTML += '<div class="pagination-item">...</div>';
-                    }
-                }
+                        ` : ''}
+                        
+                        <div class="product-list">
+                            <h4 style="margin-bottom: 10px;">Productos (${dup.factura2.productos?.length || 0})</h4>
+                            ${dup.factura2.productos && dup.factura2.productos.length > 0 ? dup.factura2.productos.map(p => `
+                                <div class="product-item">
+                                    <h4>${p.nombre || 'Sin nombre'}</h4>
+                                    <div class="product-meta">
+                                        <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
+                                        <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            `).join('') : '<p>No hay productos disponibles</p>'}
+                        </div>
+                    </div>
+                </div>
                 
+                <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+                    <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
+                    <p>${dup.razon || 'Facturas con características similares'}</p>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    
+    // Generar paginación
+    const totalPaginas = Math.ceil(facturasDuplicadas.length / elementosPorPagina);
+    let paginacionHTML = '';
+    
+    if (totalPaginas > 1) {
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(1)">«</div>
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.max(pagina - 1, 1)})">‹</div>
+        `;
+        
+        for (let i = 1; i <= totalPaginas; i++) {
+            if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
                 paginacionHTML += `
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.min(pagina + 1, totalPaginas)})">›</div>
-                    <div class="pagination-item" onclick="renderizarPaginaFacturas(${totalPaginas})">»</div>
+                    <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaFacturas(${i})">
+                        ${i}
+                    </div>
                 `;
+            } else if (i === pagina - 2 || i === pagina + 2) {
+                paginacionHTML += '<div class="pagination-item">...</div>';
             }
-            
-            paginacion.innerHTML = paginacionHTML;
-        }
-
-        async function eliminarFactura(facturaId, dupId) {
-            if (!confirm(`¿Eliminar la factura #${facturaId} y todos sus productos?`)) return;
-            
-            try {
-                if (MODO_DEMO) {
-                    // Simulación de eliminación
-                    await new Promise(resolve => setTimeout(resolve, 800));
-                    
-                    // Actualizar contador
-                    totalEliminaciones++;
-                    document.getElementById('total-eliminaciones').textContent = totalEliminaciones;
-                    
-                    // Eliminar de la lista de duplicados
-                    if (dupId) {
-                        facturasDuplicadas = facturasDuplicadas.filter(d => d.id !== dupId && facturasDuplicadas.indexOf(d) !== parseInt(dupId));
-                        
-                        // Actualizar estadísticas
-                        document.getElementById('total-facturas-duplicadas').textContent = facturasDuplicadas.length;
-                        const porcentaje = facturasDuplicadas.length > 0 ? 
-                            ((facturasDuplicadas.length / 124) * 100).toFixed(1) + '%' : '0%';
-                        document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
-                        
-                        // Eliminar visualmente
-                        const elemento = document.getElementById(`factura-dup-${dupId}`);
-                        if (elemento) {
-                            elemento.style.animation = 'fadeOut 0.5s forwards';
-                            setTimeout(() => {
-                                renderizarPaginaFacturas(paginaActualFacturas);
-                            }, 500);
-                        }
-                    }
-                    
-                    mostrarToast('Factura eliminada correctamente');
-                    return;
-                }
-                
-                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`, {
-                    method: 'DELETE'
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Error HTTP: ${response.status}`);
-                }
-                
-                // Actualizar contador
-                totalEliminaciones++;
-                document.getElementById('total-eliminaciones').textContent = totalEliminaciones;
-                
-                // Eliminar de la lista de duplicados
-                if (dupId) {
-                    facturasDuplicadas = facturasDuplicadas.filter(d => d.id !== dupId && facturasDuplicadas.indexOf(d) !== parseInt(dupId));
-                    
-                    // Actualizar estadísticas
-                    document.getElementById('total-facturas-duplicadas').textContent = facturasDuplicadas.length;
-                    const porcentaje = facturasDuplicadas.length > 0 ? 
-                        ((facturasDuplicadas.length / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
-                        '0%';
-                    document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
-                    
-                    // Eliminar visualmente
-                    const elemento = document.getElementById(`factura-dup-${dupId}`);
-                    if (elemento) {
-                        elemento.style.animation = 'fadeOut 0.5s forwards';
-                        setTimeout(() => {
-                            renderizarPaginaFacturas(paginaActualFacturas);
-                        }, 500);
-                    }
-                }
-                
-                mostrarToast('Factura eliminada correctamente');
-                
-            } catch (error) {
-                console.error('Error eliminando factura:', error);
-                mostrarToast('Error al eliminar la factura: ' + error.message, 'error');
-            }
-        }
-
-        function mostrarImagenAmpliada(facturaId, titulo) {
-            document.getElementById('popup-imagen-titulo').textContent = titulo;
-            document.getElementById('popup-imagen-contenido').src = MODO_DEMO ? 
-                `https://via.placeholder.com/800x600?text=Factura+${facturaId}` : 
-                `${API_URL}/admin/facturas/${facturaId}/imagen`;
-            document.getElementById('popup-imagen').style.display = 'flex';
-        }
-
-        function compararFacturas(factura1Id, factura2Id) {
-            if (MODO_DEMO) {
-                mostrarToast('Función de comparación no disponible en modo demostración', 'info');
-                return;
-            }
-            window.open(`/comparador-facturas?id1=${factura1Id}&id2=${factura2Id}`, '_blank');
-        }
-
-        function verFactura(facturaId) {
-            if (MODO_DEMO) {
-                mostrarToast('Función de visualización no disponible en modo demostración', 'info');
-                return;
-            }
-            window.open(`/editor?id=${facturaId}`, '_blank');
-        }
-
-        function mostrarAyudaFacturas() {
-            document.getElementById('popup-ayuda-facturas').style.display = 'flex';
-        }
-
-        function cerrarPopup(id) {
-            document.getElementById(id).style.display = 'none';
-        }
-
-        function mostrarToast(mensaje, tipo = 'success') {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = mensaje;
-            
-            if (tipo === 'error') {
-                toast.style.background = '#ea4335';
-            } else if (tipo === 'info') {
-                toast.style.background = '#4285f4';
-            }
-            
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        }
-
-        // DATOS DEMO PARA FUNCIONAR SIN API
-        function getDatosDemoProductos() {
-            return [
-                {
-                    id: '1',
-                    similitud: 92,
-                    mismo_codigo: true,
-                    mismo_establecimiento: true,
-                    nombre_similar: true,
-                    razon: 'Mismo código y nombre similar en el mismo establecimiento',
-                    producto1: {
-                        id: 101,
-                        nombre: 'Leche Entera Alpina 1L',
-                        codigo: '7702001045532',
-                        establecimiento: 'Éxito Colina',
-                        precio: 4500,
-                        ultima_actualizacion: '2024-09-15T10:30:00',
-                        veces_visto: 15
-                    },
-                    producto2: {
-                        id: 203,
-                        nombre: 'Leche Entera Alpina Litro',
-                        codigo: '7702001045532',
-                        establecimiento: 'Éxito Colina',
-                        precio: 4600,
-                        ultima_actualizacion: '2024-10-03T14:20:00',
-                        veces_visto: 8
-                    }
-                },
-                {
-                    id: '2',
-                    similitud: 85,
-                    mismo_codigo: false,
-                    mismo_establecimiento: true,
-                    nombre_similar: true,
-                    razon: 'Nombres muy similares en el mismo establecimiento',
-                    producto1: {
-                        id: 145,
-                        nombre: 'Arroz Diana Premium 500g',
-                        codigo: '7709999001248',
-                        establecimiento: 'Jumbo Unicentro',
-                        precio: 2800,
-                        ultima_actualizacion: '2024-09-28T09:45:00',
-                        veces_visto: 22
-                    },
-                    producto2: {
-                        id: 278,
-                        nombre: 'Arroz Diana Premium 1/2 Kg',
-                        codigo: '',
-                        establecimiento: 'Jumbo Unicentro',
-                        precio: 2800,
-                        ultima_actualizacion: '2024-09-20T16:10:00',
-                        veces_visto: 7
-                    }
-                },
-                {
-                    id: '3',
-                    similitud: 88,
-                    mismo_codigo: true,
-                    mismo_establecimiento: true,
-                    nombre_similar: false,
-                    razon: 'Mismo código con nombres diferentes en el mismo establecimiento',
-                    producto1: {
-                        id: 312,
-                        nombre: 'Coca-Cola Original 1.5L',
-                        codigo: '7702535000118',
-                        establecimiento: 'D1 Cedritos',
-                        precio: 5200,
-                        ultima_actualizacion: '2024-09-10T11:20:00',
-                        veces_visto: 31
-                    },
-                    producto2: {
-                        id: 489,
-                        nombre: 'Gaseosa Coca-Cola 1.5 Litros',
-                        codigo: '7702535000118',
-                        establecimiento: 'D1 Cedritos',
-                        precio: 5200,
-                        ultima_actualizacion: '2024-10-01T08:15:00',
-                        veces_visto: 18
-                    }
-                },
-                {
-                    id: '4',
-                    similitud: 78,
-                    mismo_codigo: false,
-                    mismo_establecimiento: true,
-                    nombre_similar: true,
-                    razon: 'Nombres similares sin código en el mismo establecimiento',
-                    producto1: {
-                        id: 421,
-                        nombre: 'Pan Tajado Bimbo Blanco',
-                        codigo: '',
-                        establecimiento: 'Olímpica Suba',
-                        precio: 8400,
-                        ultima_actualizacion: '2024-09-18T13:40:00',
-                        veces_visto: 14
-                    },
-                    producto2: {
-                        id: 567,
-                        nombre: 'Pan Bimbo Tajado Grande',
-                        codigo: '',
-                        establecimiento: 'Olímpica Suba',
-                        precio: 8600,
-                        ultima_actualizacion: '2024-09-25T10:05:00',
-                        veces_visto: 9
-                    }
-                },
-                {
-                    id: '5',
-                    similitud: 95,
-                    mismo_codigo: true,
-                    mismo_establecimiento: true,
-                    nombre_similar: true,
-                    razon: 'Duplicado exacto (mismo código y nombre) en el mismo establecimiento',
-                    producto1: {
-                        id: 532,
-                        nombre: 'Huevos AAA x 30 Unidades',
-                        codigo: '7707654321098',
-                        establecimiento: 'Carulla 147',
-                        precio: 18500,
-                        ultima_actualizacion: '2024-09-22T15:30:00',
-                        veces_visto: 27
-                    },
-                    producto2: {
-                        id: 619,
-                        nombre: 'Huevos AAA x 30 Unidades',
-                        codigo: '7707654321098',
-                        establecimiento: 'Carulla 147',
-                        precio: 19200,
-                        ultima_actualizacion: '2024-10-05T12:15:00',
-                        veces_visto: 11
-                    }
-                }
-            ];
         }
         
-        function getDatosDemoFacturas() {
-            return [
-                {
-                    id: '1',
-                    misma_fecha: true,
-                    mismo_establecimiento: true,
-                    total_iguales: true,
-                    productos_iguales: true,
-                    razon: 'Factura duplicada exacta (misma fecha, establecimiento, total y productos)',
-                    factura1: {
-                        id: 1001,
-                        establecimiento: 'Éxito Colina',
-                        total: 127500,
-                        num_productos: 8,
-                        fecha: '2024-09-15T14:30:00',
-                        estado: 'Validada',
-                        productos: [
-                            { nombre: 'Arroz Diana Premium 5kg', codigo: '7702085123456', precio: 28900 },
-                            { nombre: 'Aceite Gourmet 1L', codigo: '7702085001234', precio: 12700 },
-                            { nombre: 'Azúcar Manuelita 2.5kg', codigo: '7702060789012', precio: 15800 },
-                            { nombre: 'Leche Alpina Entera 6un', codigo: '7702001045600', precio: 25200 },
-                            { nombre: 'Pan Tajado Bimbo', codigo: '7702004001122', precio: 8600 }
-                        ]
-                    },
-                    factura2: {
-                        id: 1045,
-                        establecimiento: 'Éxito Colina',
-                        total: 127500,
-                        num_productos: 8,
-                        fecha: '2024-09-15T14:35:00',
-                        estado: 'Pendiente',
-                        productos: [
-                            { nombre: 'Arroz Diana Premium 5kg', codigo: '7702085123456', precio: 28900 },
-                            { nombre: 'Aceite Gourmet 1L', codigo: '7702085001234', precio: 12700 },
-                            { nombre: 'Azúcar Manuelita 2.5kg', codigo: '7702060789012', precio: 15800 },
-                            { nombre: 'Leche Alpina Entera 6un', codigo: '7702001045600', precio: 25200 },
-                            { nombre: 'Pan Tajado Bimbo', codigo: '7702004001122', precio: 8600 }
-                        ]
-                    }
-                },
-                {
-                    id: '2',
-                    misma_fecha: true,
-                    mismo_establecimiento: true,
-                    total_iguales: false,
-                    productos_similares: true,
-                    razon: 'Misma fecha y establecimiento con productos similares pero total diferente',
-                    factura1: {
-                        id: 1089,
-                        establecimiento: 'Jumbo Unicentro',
-                        total: 67300,
-                        num_productos: 5,
-                        fecha: '2024-09-22T10:15:00',
-                        estado: 'Validada',
-                        productos: [
-                            { nombre: 'Detergente Líquido Ariel 2L', codigo: '7702010789456', precio: 22500 },
-                            { nombre: 'Café Sello Rojo 500g', codigo: '7702007001234', precio: 18200 },
-                            { nombre: 'Galletas Saltín Noel', codigo: '7702011456789', precio: 5400 }
-                        ]
-                    },
-                    factura2: {
-                        id: 1102,
-                        establecimiento: 'Jumbo Unicentro',
-                        total: 73600,
-                        num_productos: 6,
-                        fecha: '2024-09-22T10:20:00',
-                        estado: 'Pendiente',
-                        productos: [
-                            { nombre: 'Detergente Líquido Ariel 2L', codigo: '7702010789456', precio: 22500 },
-                            { nombre: 'Café Sello Rojo 500g', codigo: '7702007001234', precio: 18200 },
-                            { nombre: 'Galletas Saltín', codigo: '7702011456789', precio: 5400 }
-                        ]
-                    }
-                },
-                {
-                    id: '3',
-                    misma_fecha: false,
-                    mismo_establecimiento: true,
-                    total_iguales: true,
-                    productos_iguales: true,
-                    razon: 'Mismo establecimiento, total y productos pero en fechas diferentes',
-                    factura1: {
-                        id: 1156,
-                        establecimiento: 'D1 Cedritos',
-                        total: 43700,
-                        num_productos: 4,
-                        fecha: '2024-09-18T15:40:00',
-                        estado: 'Validada',
-                        productos: [
-                            { nombre: 'Papel Higiénico Suave 12 rollos', codigo: '7702026123456', precio: 14900 },
-                            { nombre: 'Leche Alquería 6un', codigo: '7702002123456', precio: 22600 },
-                            { nombre: 'Pasta La Muñeca 500g', codigo: '7702015678901', precio: 3400 }
-                        ]
-                    },
-                    factura2: {
-                        id: 1203,
-                        establecimiento: 'D1 Cedritos',
-                        total: 43700,
-                        num_productos: 4,
-                        fecha: '2024-10-02T09:30:00',
-                        estado: 'Pendiente',
-                        productos: [
-                            { nombre: 'Papel Higiénico Suave 12 rollos', codigo: '7702026123456', precio: 14900 },
-                            { nombre: 'Leche Alquería 6un', codigo: '7702002123456', precio: 22600 },
-                            { nombre: 'Pasta La Muñeca 500g', codigo: '7702015678901', precio: 3400 }
-                        ]
-                    }
-                }
-            ];
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.min(pagina + 1, totalPaginas)})">›</div>
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${totalPaginas})">»</div>
+        `;
+    }
+    
+    paginacion.innerHTML = paginacionHTML;
+}
+
+async function eliminarFactura(facturaId, dupId) {
+    if (!confirm(`¿Eliminar la factura #${facturaId} y todos sus productos?`)) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/duplicados/facturas/${facturaId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
         }
-    </script>
-</body>
-</html>
+        
+        // Actualizar contador
+        totalEliminaciones++;
+        document.getElementById('total-eliminaciones').textContent = totalEliminaciones;
+        
+        // Eliminar de la lista de duplicados
+        if (dupId) {
+            facturasDuplicadas = facturasDuplicadas.filter(d => d.id !== dupId && facturasDuplicadas.indexOf(d) !== parseInt(dupId));
+            
+            // Actualizar estadísticas
+            document.getElementById('total-facturas-duplicadas').textContent = facturasDuplicadas.length;
+            const porcentaje = facturasDuplicadas.length > 0 ? 
+                ((facturasDuplicadas.length / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
+                '0%';
+            document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
+            
+            // Eliminar visualmente
+            const elemento = document.getElementById(`factura-dup-${dupId}`);
+            if (elemento) {
+                elemento.style.animation = 'fadeOut 0.5s forwards';
+                setTimeout(() => {
+                    renderizarPaginaFacturas(paginaActualFacturas);
+                }, 500);
+            }
+        }
+        
+        mostrarToast('Factura eliminada correctamente');
+        
+    } catch (error) {
+        console.error('Error eliminando factura:', error);
+        mostrarToast('Error al eliminar la factura: ' + error.message, 'error');
+    }
+}
+
+function mostrarImagenAmpliada(facturaId, titulo) {
+    document.getElementById('popup-imagen-titulo').textContent = titulo;
+    document.getElementById('popup-imagen-contenido').src = `${API_URL}/admin/duplicados/facturas/${facturaId}/imagen`;
+    document.getElementById('popup-imagen').style.display = 'flex';
+}
+
+function compararFacturas(factura1Id, factura2Id) {
+    window.open(`/comparador-facturas?id1=${factura1Id}&id2=${factura2Id}`, '_blank');
+}
+
+function verFactura(facturaId) {
+    window.open(`/editor?id=${facturaId}`, '_blank');
+}
+
+function mostrarAyudaFacturas() {
+    document.getElementById('popup-ayuda-facturas').style.display = 'flex';
+}
+
+function cerrarPopup(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
+function mostrarToast(mensaje, tipo = 'success') {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = mensaje;
+    
+    if (tipo === 'error') {
+        toast.style.background = '#ea4335';
+    } else if (tipo === 'info') {
+        toast.style.background = '#4285f4';
+    }
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
