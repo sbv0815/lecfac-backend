@@ -5,320 +5,393 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de Factura - LecFac</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            height: 100vh;
-            overflow: hidden;
-        }
-        
-        .editor-container {
-            display: grid;
-            grid-template-columns: 55% 45%;
-            height: 100vh;
-        }
-        
-        /* Panel izquierdo: Imagen */
-        .image-panel {
-            background: #1a1a1a;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        
-        .image-controls {
-            background: #2d2d2d;
-            padding: 10px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            border-bottom: 1px solid #444;
-            flex-shrink: 0;
-        }
-        
-        .image-controls button {
-            background: #4a4a4a;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .image-controls button:hover { background: #5a5a5a; }
-        
-        .zoom-info {
-            color: #aaa;
-            margin-left: auto;
-            font-size: 14px;
-        }
-        
-        .image-container {
-            flex: 1;
-            overflow: auto;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
-            padding: 20px;
-            cursor: grab;
-        }
-        
-        .image-container:active { cursor: grabbing; }
-        
-        .image-container img {
-            max-width: 100%;
-            height: auto;
-            display: block;
-            transition: transform 0.1s;
-        }
-        
-        /* Panel derecho: Formulario */
-        .form-panel {
-            background: white;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        
-        .form-header {
-            background: #1a73e8;
-            color: white;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
-        }
-        
-        .validation-badge {
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        
-        .badge-validada { background: #34a853; }
-        .badge-revision_requerida { background: #fbbc04; color: #000; }
-        .badge-pendiente { background: #ea4335; }
-        
-        .form-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            padding-bottom: 80px;
-        }
-        
-        .form-section {
-            margin-bottom: 25px;
-        }
-        
-        .form-section h3 {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-        
-        .field-group {
-            margin-bottom: 15px;
-        }
-        
-        .field-group label {
-            display: block;
-            font-size: 13px;
-            color: #333;
-            margin-bottom: 5px;
-            font-weight: 500;
-        }
-        
-        .field-group input {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        
-        .field-group input:focus {
-            outline: none;
-            border-color: #1a73e8;
-        }
-        
-        /* Tabla de productos */
-        .productos-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-top: 10px;
-        }
-        
-        .productos-table th {
-            background: #f5f5f5;
-            padding: 10px 8px;
-            text-align: left;
-            font-weight: 600;
-            color: #666;
-            border-bottom: 2px solid #ddd;
-        }
-        
-        .productos-table td {
-            padding: 8px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .productos-table input {
-            width: 100%;
-            padding: 6px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        
-        .productos-table input:focus {
-            outline: none;
-            border-color: #1a73e8;
-        }
-        
-        .btn-delete {
-            background: #ea4335;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .btn-delete:hover { background: #d33; }
-        
-        .btn-add {
-            background: #34a853;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 10px;
-        }
-        
-        .btn-add:hover { background: #2d9148; }
-        
-        .form-actions {
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            width: 45%;
-            padding: 15px 20px;
-            background: #f9f9f9;
-            border-top: 2px solid #ddd;
-            display: flex;
-            gap: 10px;
-            box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
-        }
-        
-        .btn-primary {
-            flex: 1;
-            background: #1a73e8;
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-        
-        .btn-primary:hover { background: #1557b0; }
-        
-        .btn-secondary {
-            background: #5f6368;
-            color: white;
-            border: none;
-            padding: 14px 24px;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        
-        .btn-secondary:hover { background: #3c4043; }
-        
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #1a73e8;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .toast {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #34a853;
-            color: white;
-            padding: 16px 24px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            z-index: 10000;
-            animation: slideIn 0.3s;
-        }
-        
-        @keyframes slideIn {
-            from { transform: translateX(400px); }
-            to { transform: translateX(0); }
-        }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .editor-container {
+        display: grid;
+        grid-template-columns: 55% 45%;
+        height: 100vh;
+        position: relative;
+    }
+    
+    /* Divisor redimensionable */
+    .resize-handle {
+        position: absolute;
+        left: 55%;
+        top: 0;
+        bottom: 0;
+        width: 8px;
+        background: #ddd;
+        cursor: col-resize;
+        z-index: 1000;
+        transition: background 0.2s;
+    }
+    
+    .resize-handle:hover {
+        background: #1a73e8;
+    }
+    
+    /* Panel izquierdo: Imagen CON SCROLL */
+    .image-panel {
+        background: #1a1a1a;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .image-controls {
+        background: #2d2d2d;
+        padding: 10px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        border-bottom: 1px solid #444;
+        flex-shrink: 0;
+    }
+    
+    .image-controls button {
+        background: #4a4a4a;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    
+    .image-controls button:hover { background: #5a5a5a; }
+    
+    .zoom-info {
+        color: #aaa;
+        margin-left: auto;
+        font-size: 14px;
+    }
+    
+    /* CAMBIO CLAVE: Hacer el contenedor scrolleable */
+    .image-container {
+        flex: 1;
+        overflow: auto;  /* ← Permite scroll vertical y horizontal */
+        background: #1a1a1a;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .image-container img {
+        display: block;
+        max-width: none;
+        width: auto;
+        height: auto;
+        cursor: grab;
+        transition: transform 0.1s;
+    }
+    
+    .image-container:active img {
+        cursor: grabbing;
+    }
 
-        .form-content::-webkit-scrollbar,
-        .image-container::-webkit-scrollbar {
-            width: 8px;
-        }
+    /* Estilos para mensaje de no imagen */
+    .no-image-message {
+        text-align: center;
+        color: white;
+        padding: 40px 20px;
+        max-width: 400px;
+        margin: 0 auto;
+    }
 
-        .form-content::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
+    .no-image-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+        color: #999;
+    }
 
-        .form-content::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
+    .no-image-title {
+        font-size: 18px;
+        margin-bottom: 10px;
+        color: #eee;
+    }
 
-        .form-content::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
+    .no-image-text {
+        color: #999;
+        margin-bottom: 20px;
+    }
 
-        .image-container::-webkit-scrollbar-track {
-            background: #2d2d2d;
-        }
+    .btn-upload {
+        background: #34a853;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
 
-        .image-container::-webkit-scrollbar-thumb {
-            background: #555;
-            border-radius: 4px;
-        }
-    </style>
+    .btn-upload:hover {
+        background: #2d9148;
+    }
+    
+    /* Panel derecho: Formulario CON MEJOR SCROLL */
+    .form-panel {
+        background: white;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .form-header {
+        background: #1a73e8;
+        color: white;
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+    
+    .validation-badge {
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    
+    .badge-validada { background: #34a853; }
+    .badge-revision_requerida { background: #fbbc04; color: #000; }
+    .badge-pendiente { background: #ea4335; }
+    
+    /* CAMBIO: Mejorar el scroll del formulario */
+    .form-content {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 20px;
+        /* Scroll suave */
+        scroll-behavior: smooth;
+    }
+    
+    /* Personalizar scrollbar */
+    .form-content::-webkit-scrollbar,
+    .image-container::-webkit-scrollbar {
+        width: 12px;
+    }
+    
+    .form-content::-webkit-scrollbar-track,
+    .image-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+    }
+    
+    .form-content::-webkit-scrollbar-thumb,
+    .image-container::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 6px;
+    }
+    
+    .form-content::-webkit-scrollbar-thumb:hover,
+    .image-container::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    
+    .form-section {
+        margin-bottom: 25px;
+    }
+    
+    .form-section h3 {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        position: sticky;
+        top: 0;
+        background: white;
+        padding: 10px 0;
+        z-index: 10;
+    }
+    
+    .field-group {
+        margin-bottom: 15px;
+    }
+    
+    .field-group label {
+        display: block;
+        font-size: 13px;
+        color: #333;
+        margin-bottom: 5px;
+        font-weight: 500;
+    }
+    
+    .field-group input {
+        width: 100%;
+        padding: 10px;
+        border: 2px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    
+    .field-group input:focus {
+        outline: none;
+        border-color: #1a73e8;
+    }
+    
+    /* Tabla de productos */
+    .productos-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        margin-top: 10px;
+    }
+    
+    .productos-table thead {
+        position: sticky;
+        top: 40px;  /* Después del h3 sticky */
+        background: white;
+        z-index: 9;
+    }
+    
+    .productos-table th {
+        background: #f5f5f5;
+        padding: 10px 8px;
+        text-align: left;
+        font-weight: 600;
+        color: #666;
+        border-bottom: 2px solid #ddd;
+    }
+    
+    .productos-table td {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .productos-table input {
+        width: 100%;
+        padding: 6px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+    
+    .productos-table input:focus {
+        outline: none;
+        border-color: #1a73e8;
+    }
+    
+    .btn-delete {
+        background: #ea4335;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    
+    .btn-delete:hover { background: #d33; }
+    
+    .btn-add {
+        background: #34a853;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 10px;
+    }
+    
+    .btn-add:hover { background: #2d9148; }
+    
+    .form-actions {
+        padding: 20px;
+        background: #f9f9f9;
+        border-top: 1px solid #ddd;
+        display: flex;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+    
+    .btn-primary {
+        flex: 1;
+        background: #1a73e8;
+        color: white;
+        border: none;
+        padding: 14px;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    
+    .btn-primary:hover { background: #1557b0; }
+    
+    .btn-secondary {
+        background: #5f6368;
+        color: white;
+        border: none;
+        padding: 14px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+    
+    .btn-secondary:hover { background: #3c4043; }
+    
+    .loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    
+    .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #1a73e8;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #34a853;
+        color: white;
+        padding: 16px 24px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 10000;
+        animation: slideIn 0.3s;
+    }
+    
+    @keyframes slideIn {
+        from { transform: translateX(400px); }
+        to { transform: translateX(0); }
+    }
+</style>
 </head>
 <body>
-    <div class="editor-container">
+    <div class="editor-container" id="editorContainer">
+        <!-- Divisor redimensionable -->
+        <div class="resize-handle" id="resizeHandle"></div>
+        
         <!-- Panel de imagen -->
         <div class="image-panel">
             <div class="image-controls">
@@ -329,7 +402,7 @@
                 <span class="zoom-info" id="zoomInfo">100%</span>
             </div>
             <div class="image-container" id="imageContainer">
-                <img id="facturaImage" src="" alt="Factura">
+                <img id="facturaImage" src="" alt="Factura" style="display: none;">
             </div>
         </div>
         
@@ -391,6 +464,37 @@
         let zoomLevel = 1;
         let rotation = 0;
         let productos = [];
+        let productosOriginales = [];
+        let imagenCargada = false;
+
+        // Redimensionar paneles
+        let isResizing = false;
+        const resizeHandle = document.getElementById('resizeHandle');
+        const editorContainer = document.getElementById('editorContainer');
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const containerWidth = editorContainer.offsetWidth;
+            const leftWidth = (e.clientX / containerWidth) * 100;
+            
+            if (leftWidth > 30 && leftWidth < 70) {
+                editorContainer.style.gridTemplateColumns = `${leftWidth}% ${100 - leftWidth}%`;
+                resizeHandle.style.left = `${leftWidth}%`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = 'default';
+            }
+        });
         
         async function cargarFactura() {
             console.log('Cargando factura ID:', facturaId);
@@ -424,14 +528,13 @@
                     nombre: p.nombre_producto || p.nombre || '',
                     precio: p.precio || 0
                 }));
+                productosOriginales = JSON.parse(JSON.stringify(productos));
                 
                 console.log('Productos cargados:', productos);
                 renderProductos();
                 
-                // Cargar imagen
-                const imgUrl = `${API_URL}/admin/facturas/${facturaId}/imagen`;
-                console.log('Cargando imagen:', imgUrl);
-                document.getElementById('facturaImage').src = imgUrl;
+                // Cargar imagen con manejo de errores
+                await cargarImagen();
                 
                 hideLoading();
             } catch (error) {
@@ -439,6 +542,143 @@
                 alert('Error cargando factura: ' + error.message);
                 hideLoading();
             }
+        }
+        
+        // Función mejorada para cargar imagen con verificación previa
+        async function cargarImagen() {
+            try {
+                console.log('Verificando si la factura tiene imagen...');
+                // Primero verificamos si existe la imagen
+                const checkResponse = await fetch(`${API_URL}/admin/facturas/${facturaId}/check-image`);
+                
+                if (!checkResponse.ok) {
+                    console.error('Error HTTP al verificar imagen:', checkResponse.status);
+                    throw new Error(`Error verificando imagen: HTTP ${checkResponse.status}`);
+                }
+                
+                const imageStatus = await checkResponse.json();
+                console.log('Estado de la imagen:', imageStatus);
+                
+                if (imageStatus && imageStatus.tiene_imagen === true) {
+                    // La imagen existe, la cargamos
+                    console.log('Factura tiene imagen, cargando...');
+                    const imgUrl = `${API_URL}/admin/facturas/${facturaId}/imagen`;
+                    const imgElement = document.getElementById('facturaImage');
+                    
+                    // Mostrar spinner mientras se carga
+                    const container = document.getElementById('imageContainer');
+                    const loadingDiv = document.createElement('div');
+                    loadingDiv.className = 'spinner';
+                    loadingDiv.id = 'imageLoadingSpinner';
+                    container.appendChild(loadingDiv);
+                    
+                    // Configurar eventos para la imagen
+                    imgElement.onload = function() {
+                        console.log('Imagen cargada exitosamente');
+                        imagenCargada = true;
+                        imgElement.style.display = 'block';
+                        const spinner = document.getElementById('imageLoadingSpinner');
+                        if (spinner) spinner.remove();
+                    };
+                    
+                    imgElement.onerror = function() {
+                        console.error('Error cargando la imagen');
+                        const spinner = document.getElementById('imageLoadingSpinner');
+                        if (spinner) spinner.remove();
+                        mostrarMensajeNoImagen('La imagen no pudo ser cargada correctamente.', true);
+                    };
+                    
+                    // Comenzar la carga
+                    imgElement.src = imgUrl;
+                } else {
+                    // No hay imagen
+                    console.log('La factura no tiene imagen');
+                    mostrarMensajeNoImagen('Esta factura no tiene una imagen asociada.', false);
+                }
+            } catch (error) {
+                console.error('Error verificando o cargando imagen:', error);
+                mostrarMensajeNoImagen(`Error: ${error.message}`, true);
+            }
+        }
+        
+        function mostrarMensajeNoImagen(mensaje, esError) {
+            const container = document.getElementById('imageContainer');
+            const imgElement = document.getElementById('facturaImage');
+            
+            // Ocultar la imagen
+            imgElement.style.display = 'none';
+            
+            // Eliminar spinner de carga si existe
+            const spinner = document.getElementById('imageLoadingSpinner');
+            if (spinner) spinner.remove();
+            
+            // Eliminar mensajes previos si existen
+            const prevMessage = document.getElementById('noImageMessage');
+            if (prevMessage) prevMessage.remove();
+            
+            // Crear mensaje
+            const messageDiv = document.createElement('div');
+            messageDiv.id = 'noImageMessage';
+            messageDiv.className = 'no-image-message';
+            
+            messageDiv.innerHTML = `
+                <div class="no-image-icon">📷</div>
+                <h3 class="no-image-title">${esError ? 'Error en la imagen' : 'No hay imagen disponible'}</h3>
+                <p class="no-image-text">${mensaje}</p>
+                <button class="btn-upload" onclick="subirNuevaImagen()">Subir Imagen</button>
+            `;
+            
+            container.appendChild(messageDiv);
+        }
+        
+        function subirNuevaImagen() {
+            // Crear input file oculto
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
+            
+            // Manejar selección de archivo
+            fileInput.onchange = async (e) => {
+                if (e.target.files.length === 0) return;
+                
+                const file = e.target.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                showLoading();
+                
+                try {
+                    const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/subir-imagen`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Error HTTP ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showToast('✓ Imagen subida correctamente');
+                        setTimeout(() => window.location.reload(), 1500);
+                    } else {
+                        throw new Error(result.message || 'Error al subir la imagen');
+                    }
+                    
+                } catch (error) {
+                    console.error('Error subiendo imagen:', error);
+                    alert('Error al subir la imagen: ' + error.message);
+                } finally {
+                    hideLoading();
+                    document.body.removeChild(fileInput);
+                }
+            };
+            
+            // Abrir diálogo de selección de archivo
+            fileInput.click();
         }
         
         function renderProductos() {
@@ -534,23 +774,28 @@
             }
         }
         
+        // Controles de zoom
         function zoomIn() {
+            if (!imagenCargada) return;
             zoomLevel *= 1.2;
             updateZoom();
         }
         
         function zoomOut() {
+            if (!imagenCargada) return;
             zoomLevel /= 1.2;
             updateZoom();
         }
         
         function resetZoom() {
+            if (!imagenCargada) return;
             zoomLevel = 1;
             rotation = 0;
             updateZoom();
         }
         
         function rotateImage() {
+            if (!imagenCargada) return;
             rotation = (rotation + 90) % 360;
             updateZoom();
         }
@@ -561,28 +806,31 @@
             document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
         }
         
+        // Pan
         let isPanning = false;
         let startX, startY, scrollLeft, scrollTop;
         
-        const container = document.getElementById('imageContainer');
-        container.addEventListener('mousedown', (e) => {
+        const imageContainer = document.getElementById('imageContainer');
+        imageContainer.addEventListener('mousedown', (e) => {
+            if (!imagenCargada) return;
+            
             isPanning = true;
-            startX = e.pageX - container.offsetLeft;
-            startY = e.pageY - container.offsetTop;
-            scrollLeft = container.scrollLeft;
-            scrollTop = container.scrollTop;
+            startX = e.pageX - imageContainer.offsetLeft;
+            startY = e.pageY - imageContainer.offsetTop;
+            scrollLeft = imageContainer.scrollLeft;
+            scrollTop = imageContainer.scrollTop;
         });
         
-        container.addEventListener('mouseleave', () => isPanning = false);
-        container.addEventListener('mouseup', () => isPanning = false);
+        imageContainer.addEventListener('mouseleave', () => isPanning = false);
+        imageContainer.addEventListener('mouseup', () => isPanning = false);
         
-        container.addEventListener('mousemove', (e) => {
+        imageContainer.addEventListener('mousemove', (e) => {
             if (!isPanning) return;
             e.preventDefault();
-            const x = e.pageX - container.offsetLeft;
-            const y = e.pageY - container.offsetTop;
-            container.scrollLeft = scrollLeft - (x - startX);
-            container.scrollTop = scrollTop - (y - startY);
+            const x = e.pageX - imageContainer.offsetLeft;
+            const y = e.pageY - imageContainer.offsetTop;
+            imageContainer.scrollLeft = scrollLeft - (x - startX);
+            imageContainer.scrollTop = scrollTop - (y - startY);
         });
         
         function showLoading() {
@@ -606,6 +854,7 @@
             setTimeout(() => toast.remove(), 3000);
         }
         
+        // Atajos
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
@@ -613,10 +862,8 @@
             }
         });
         
+        // Iniciar carga
         cargarFactura();
-    </script>
-</body>
-</html>
     </script>
 </body>
 </html>
