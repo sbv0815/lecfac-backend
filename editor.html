@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editor de Factura - LecFac V1</title>
+    <title>Editor de Factura - LecFac</title>
     <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
@@ -86,8 +86,7 @@
     
     .image-container img {
         display: block;
-        max-width: none;
-        width: auto;
+        max-width: 100%;
         height: auto;
         cursor: grab;
         transition: transform 0.1s;
@@ -95,47 +94,6 @@
     
     .image-container:active img {
         cursor: grabbing;
-    }
-
-    /* Estilos para mensaje de no imagen */
-    .no-image-message {
-        text-align: center;
-        color: white;
-        padding: 40px 20px;
-        max-width: 400px;
-        margin: 0 auto;
-    }
-
-    .no-image-icon {
-        font-size: 64px;
-        margin-bottom: 20px;
-        color: #999;
-    }
-
-    .no-image-title {
-        font-size: 18px;
-        margin-bottom: 10px;
-        color: #eee;
-    }
-
-    .no-image-text {
-        color: #999;
-        margin-bottom: 20px;
-    }
-
-    .btn-upload {
-        background: #34a853;
-        color: white;
-        border: none;
-        padding: 12px 24px;
-        border-radius: 6px;
-        font-size: 14px;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-
-    .btn-upload:hover {
-        background: #2d9148;
     }
     
     /* Panel derecho: Formulario CON MEJOR SCROLL */
@@ -385,6 +343,39 @@
         from { transform: translateX(400px); }
         to { transform: translateX(0); }
     }
+
+    .error-message {
+        color: #ea4335;
+        background: rgba(234, 67, 53, 0.1);
+        padding: 15px;
+        border-radius: 4px;
+        margin: 10px 0;
+        text-align: center;
+        font-size: 14px;
+    }
+
+    .debug-info {
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-top: 20px;
+        font-family: monospace;
+        font-size: 12px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        display: none;
+    }
+
+    .debug-toggle {
+        background: none;
+        border: none;
+        color: #1a73e8;
+        text-decoration: underline;
+        font-size: 12px;
+        cursor: pointer;
+        padding: 5px;
+        margin-top: 5px;
+    }
 </style>
 </head>
 <body>
@@ -402,7 +393,7 @@
                 <span class="zoom-info" id="zoomInfo">100%</span>
             </div>
             <div class="image-container" id="imageContainer">
-                <img id="facturaImage" src="" alt="Factura" style="display: none;">
+                <img id="facturaImage" src="" alt="Factura">
             </div>
         </div>
         
@@ -419,6 +410,8 @@
             </div>
             
             <div class="form-content">
+                <div id="errorMessageContainer"></div>
+                
                 <!-- Datos generales -->
                 <div class="form-section">
                     <h3>Datos Generales</h3>
@@ -429,6 +422,10 @@
                     <div class="field-group">
                         <label>Total ($)</label>
                         <input type="number" id="total" step="0.01">
+                    </div>
+                    <div class="field-group">
+                        <label>Fecha</label>
+                        <input type="date" id="fecha">
                     </div>
                 </div>
                 
@@ -448,6 +445,12 @@
                     </table>
                     <button class="btn-add" onclick="agregarProducto()">+ Agregar Producto</button>
                 </div>
+
+                <!-- Información de Depuración -->
+                <div class="form-section">
+                    <button class="debug-toggle" onclick="toggleDebugInfo()">Mostrar información de depuración</button>
+                    <div id="debugInfo" class="debug-info"></div>
+                </div>
             </div>
             
             <div class="form-actions">
@@ -465,7 +468,7 @@
         let rotation = 0;
         let productos = [];
         let productosOriginales = [];
-        let imagenCargada = false;
+        let datosOriginales = {};
 
         // Redimensionar paneles
         let isResizing = false;
@@ -501,6 +504,7 @@
             showLoading();
             
             try {
+                // Usar el endpoint correcto para obtener todos los detalles de la factura
                 const response = await fetch(`${API_URL}/admin/facturas/${facturaId}/detalle`);
                 
                 if (!response.ok) {
@@ -510,125 +514,81 @@
                 const data = await response.json();
                 console.log('Datos recibidos:', data);
                 
-                // Llenar formulario
+                // Guardar datos originales para depuración
+                datosOriginales = JSON.parse(JSON.stringify(data));
+                
+                // Llenar formulario - usar todos los campos disponibles
                 document.getElementById('facturaId').textContent = data.factura.id || '-';
                 document.getElementById('establecimiento').value = data.factura.establecimiento || '';
                 document.getElementById('total').value = data.factura.total_factura || data.factura.total || '';
                 document.getElementById('puntaje').textContent = data.factura.puntaje_calidad || data.factura.puntaje || 0;
+                
+                // Añadir fecha si está disponible
+                if (data.factura.fecha) {
+                    // Formato YYYY-MM-DD para input type="date"
+                    const fechaObj = new Date(data.factura.fecha);
+                    const fechaFormateada = fechaObj.toISOString().split('T')[0];
+                    document.getElementById('fecha').value = fechaFormateada;
+                }
                 
                 const badge = document.getElementById('estadoBadge');
                 const estado = data.factura.estado_validacion || data.factura.estado || 'pendiente';
                 badge.textContent = estado;
                 badge.className = 'validation-badge badge-' + estado;
                 
-                // Cargar productos
+                // Cargar productos - asegurarnos de capturar todos los campos disponibles
                 productos = (data.productos || []).map(p => ({
                     id: p.id,
                     codigo: p.codigo_ean || p.codigo_local || p.codigo || '',
                     nombre: p.nombre_producto || p.nombre || '',
-                    precio: p.precio || 0
+                    precio: p.precio || 0,
+                    // Capturar cualquier otro campo que pueda existir
+                    cantidad: p.cantidad || 1,
+                    unidad: p.unidad || '',
+                    // Guardar el objeto original para referencia
+                    _original: {...p}
                 }));
+                
                 productosOriginales = JSON.parse(JSON.stringify(productos));
                 
                 console.log('Productos cargados:', productos);
                 renderProductos();
                 
-                // Cargar imagen con manejo de errores
-                await cargarImagen();
+                // Llenar información de depuración
+                document.getElementById('debugInfo').textContent = JSON.stringify(data, null, 2);
+                
+                // Cargar imagen - usar directamente la URL
+                document.getElementById('facturaImage').src = `${API_URL}/admin/facturas/${facturaId}/imagen`;
+                
+                // Agregar manejador de errores para la imagen
+                document.getElementById('facturaImage').onerror = function() {
+                    console.error('Error al cargar la imagen');
+                    mostrarError(`No se pudo cargar la imagen de la factura #${facturaId}. 
+                        <button class="btn-primary" style="margin-top: 10px;" onclick="subirNuevaImagen()">Subir Imagen</button>`);
+                };
                 
                 hideLoading();
             } catch (error) {
                 console.error('Error completo:', error);
-                alert('Error cargando factura: ' + error.message);
+                mostrarError(`Error cargando datos de la factura: ${error.message}`);
                 hideLoading();
             }
         }
         
-        // Función mejorada para cargar imagen con verificación previa
-        async function cargarImagen() {
-            try {
-                console.log('Verificando si la factura tiene imagen...');
-                // Primero verificamos si existe la imagen
-                const checkResponse = await fetch(`${API_URL}/admin/facturas/${facturaId}/check-image`);
-                
-                if (!checkResponse.ok) {
-                    console.error('Error HTTP al verificar imagen:', checkResponse.status);
-                    throw new Error(`Error verificando imagen: HTTP ${checkResponse.status}`);
-                }
-                
-                const imageStatus = await checkResponse.json();
-                console.log('Estado de la imagen:', imageStatus);
-                
-                if (imageStatus && imageStatus.tiene_imagen === true) {
-                    // La imagen existe, la cargamos
-                    console.log('Factura tiene imagen, cargando...');
-                    const imgUrl = `${API_URL}/admin/facturas/${facturaId}/imagen`;
-                    const imgElement = document.getElementById('facturaImage');
-                    
-                    // Mostrar spinner mientras se carga
-                    const container = document.getElementById('imageContainer');
-                    const loadingDiv = document.createElement('div');
-                    loadingDiv.className = 'spinner';
-                    loadingDiv.id = 'imageLoadingSpinner';
-                    container.appendChild(loadingDiv);
-                    
-                    // Configurar eventos para la imagen
-                    imgElement.onload = function() {
-                        console.log('Imagen cargada exitosamente');
-                        imagenCargada = true;
-                        imgElement.style.display = 'block';
-                        const spinner = document.getElementById('imageLoadingSpinner');
-                        if (spinner) spinner.remove();
-                    };
-                    
-                    imgElement.onerror = function() {
-                        console.error('Error cargando la imagen');
-                        const spinner = document.getElementById('imageLoadingSpinner');
-                        if (spinner) spinner.remove();
-                        mostrarMensajeNoImagen('La imagen no pudo ser cargada correctamente.', true);
-                    };
-                    
-                    // Comenzar la carga
-                    imgElement.src = imgUrl;
-                } else {
-                    // No hay imagen
-                    console.log('La factura no tiene imagen');
-                    mostrarMensajeNoImagen('Esta factura no tiene una imagen asociada.', false);
-                }
-            } catch (error) {
-                console.error('Error verificando o cargando imagen:', error);
-                mostrarMensajeNoImagen(`Error: ${error.message}`, true);
-            }
+        function mostrarError(mensaje) {
+            const container = document.getElementById('errorMessageContainer');
+            container.innerHTML = `<div class="error-message">${mensaje}</div>`;
         }
         
-        function mostrarMensajeNoImagen(mensaje, esError) {
-            const container = document.getElementById('imageContainer');
-            const imgElement = document.getElementById('facturaImage');
-            
-            // Ocultar la imagen
-            imgElement.style.display = 'none';
-            
-            // Eliminar spinner de carga si existe
-            const spinner = document.getElementById('imageLoadingSpinner');
-            if (spinner) spinner.remove();
-            
-            // Eliminar mensajes previos si existen
-            const prevMessage = document.getElementById('noImageMessage');
-            if (prevMessage) prevMessage.remove();
-            
-            // Crear mensaje
-            const messageDiv = document.createElement('div');
-            messageDiv.id = 'noImageMessage';
-            messageDiv.className = 'no-image-message';
-            
-            messageDiv.innerHTML = `
-                <div class="no-image-icon">📷</div>
-                <h3 class="no-image-title">${esError ? 'Error en la imagen' : 'No hay imagen disponible'}</h3>
-                <p class="no-image-text">${mensaje}</p>
-                <button class="btn-upload" onclick="subirNuevaImagen()">Subir Imagen</button>
-            `;
-            
-            container.appendChild(messageDiv);
+        function toggleDebugInfo() {
+            const debugInfo = document.getElementById('debugInfo');
+            if (debugInfo.style.display === 'block') {
+                debugInfo.style.display = 'none';
+                document.querySelector('.debug-toggle').textContent = 'Mostrar información de depuración';
+            } else {
+                debugInfo.style.display = 'block';
+                document.querySelector('.debug-toggle').textContent = 'Ocultar información de depuración';
+            }
         }
         
         function subirNuevaImagen() {
@@ -670,7 +630,7 @@
                     
                 } catch (error) {
                     console.error('Error subiendo imagen:', error);
-                    alert('Error al subir la imagen: ' + error.message);
+                    mostrarError(`Error al subir la imagen: ${error.message}`);
                 } finally {
                     hideLoading();
                     document.body.removeChild(fileInput);
@@ -721,6 +681,7 @@
                     showToast('Producto eliminado');
                 } catch (e) {
                     console.error('Error eliminando:', e);
+                    mostrarError(`Error al eliminar producto: ${e.message}`);
                 }
             }
             
@@ -732,14 +693,21 @@
             showLoading();
             
             try {
-                // Guardar datos generales
+                // Guardar datos generales - incluir fecha si está disponible
+                const datosGenerales = {
+                    establecimiento: document.getElementById('establecimiento').value,
+                    total: parseFloat(document.getElementById('total').value) || 0
+                };
+                
+                const fechaInput = document.getElementById('fecha').value;
+                if (fechaInput) {
+                    datosGenerales.fecha = fechaInput;
+                }
+                
                 await fetch(`${API_URL}/admin/facturas/${facturaId}/datos-generales`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        establecimiento: document.getElementById('establecimiento').value,
-                        total: parseFloat(document.getElementById('total').value) || 0
-                    })
+                    body: JSON.stringify(datosGenerales)
                 });
                 
                 // Actualizar productos existentes
@@ -768,7 +736,8 @@
                 setTimeout(() => cargarFactura(), 1500);
                 
             } catch (error) {
-                alert('Error guardando: ' + error.message);
+                console.error('Error guardando:', error);
+                mostrarError(`Error al guardar cambios: ${error.message}`);
             } finally {
                 hideLoading();
             }
@@ -776,26 +745,22 @@
         
         // Controles de zoom
         function zoomIn() {
-            if (!imagenCargada) return;
             zoomLevel *= 1.2;
             updateZoom();
         }
         
         function zoomOut() {
-            if (!imagenCargada) return;
             zoomLevel /= 1.2;
             updateZoom();
         }
         
         function resetZoom() {
-            if (!imagenCargada) return;
             zoomLevel = 1;
             rotation = 0;
             updateZoom();
         }
         
         function rotateImage() {
-            if (!imagenCargada) return;
             rotation = (rotation + 90) % 360;
             updateZoom();
         }
@@ -812,8 +777,6 @@
         
         const imageContainer = document.getElementById('imageContainer');
         imageContainer.addEventListener('mousedown', (e) => {
-            if (!imagenCargada) return;
-            
             isPanning = true;
             startX = e.pageX - imageContainer.offsetLeft;
             startY = e.pageY - imageContainer.offsetTop;
