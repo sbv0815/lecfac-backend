@@ -1987,160 +1987,160 @@
         }
         
         // Procesar un lote de duplicados con IA
-        async function procesarLoteIA(tipo, lote, confianzaMinima) {
-            try {
-                // Preparar prompt para IA según tipo
-                let promptBase;
-                let datosAnalisis;
+        // Procesar un lote de duplicados con IA
+async function procesarLoteIA(tipo, lote, confianzaMinima) {
+    try {
+        // Preparar prompt para IA según tipo
+        let promptBase;
+        let datosAnalisis;
+        
+        if (tipo === 'productos') {
+            promptBase = `Por favor, analiza los siguientes productos duplicados y decide cuál mantener y cuál eliminar. Utiliza estos criterios de decisión:\n\n${configuracionIA.criteriosProductos}\n\nBasa tu decisión en estos criterios y explica tu razonamiento. Para cada par de productos, indica tu decisión como "Mantener #1" o "Mantener #2" y asigna un nivel de confianza de 0-100% a tu decisión.`;
+            
+            datosAnalisis = lote.map((dup, index) => {
+                return {
+                    id: dup.id || index.toString(),
+                    producto1: {
+                        id: dup.producto1.id,
+                        nombre: dup.producto1.nombre || "",
+                        codigo: dup.producto1.codigo || "",
+                        establecimiento: dup.producto1.establecimiento || "",
+                        precio: dup.producto1.precio || 0,
+                        ultima_actualizacion: dup.producto1.ultima_actualizacion || "",
+                        veces_visto: dup.producto1.veces_visto || 0
+                    },
+                    producto2: {
+                        id: dup.producto2.id,
+                        nombre: dup.producto2.nombre || "",
+                        codigo: dup.producto2.codigo || "",
+                        establecimiento: dup.producto2.establecimiento || "",
+                        precio: dup.producto2.precio || 0,
+                        ultima_actualizacion: dup.producto2.ultima_actualizacion || "",
+                        veces_visto: dup.producto2.veces_visto || 0
+                    },
+                    similitud: dup.similitud || 0,
+                    criterios: {
+                        mismo_codigo: dup.mismo_codigo || false,
+                        mismo_establecimiento: dup.mismo_establecimiento || false,
+                        nombre_similar: dup.nombre_similar || false
+                    }
+                };
+            });
+        } else { // facturas
+            promptBase = `Por favor, analiza las siguientes facturas duplicadas y decide cuál mantener y cuál eliminar. Utiliza estos criterios de decisión:\n\n${configuracionIA.criteriosFacturas}\n\nBasa tu decisión en estos criterios y explica tu razonamiento. Para cada par de facturas, indica tu decisión como "Mantener #1" o "Mantener #2" y asigna un nivel de confianza de 0-100% a tu decisión.`;
+            
+            datosAnalisis = lote.map((dup, index) => {
+                return {
+                    id: dup.id || index.toString(),
+                    factura1: {
+                        id: dup.factura1.id,
+                        establecimiento: dup.factura1.establecimiento || "",
+                        total: dup.factura1.total || 0,
+                        fecha: dup.factura1.fecha || "",
+                        num_productos: dup.factura1.num_productos || 0,
+                        tieneImagen: dup.factura1.tieneImagen || false,
+                        productos: dup.factura1.productos || []
+                    },
+                    factura2: {
+                        id: dup.factura2.id,
+                        establecimiento: dup.factura2.establecimiento || "",
+                        total: dup.factura2.total || 0,
+                        fecha: dup.factura2.fecha || "",
+                        num_productos: dup.factura2.num_productos || 0,
+                        tieneImagen: dup.factura2.tieneImagen || false,
+                        productos: dup.factura2.productos || []
+                    },
+                    criterios: {
+                        misma_fecha: dup.misma_fecha || false,
+                        mismo_establecimiento: dup.mismo_establecimiento || false,
+                        total_iguales: dup.total_iguales || false,
+                        productos_iguales: dup.productos_iguales || false,
+                        productos_similares: dup.productos_similares || false
+                    }
+                };
+            });
+        }
                 
-                if (tipo === 'productos') {
-                    promptBase = `Por favor, analiza los siguientes productos duplicados y decide cuál mantener y cuál eliminar. Utiliza estos criterios de decisión:\n\n${configuracionIA.criteriosProductos}\n\nBasa tu decisión en estos criterios y explica tu razonamiento. Para cada par de productos, indica tu decisión como "Mantener #1" o "Mantener #2" y asigna un nivel de confianza de 0-100% a tu decisión.`;
-                    
-                    datosAnalisis = lote.map((dup, index) => {
-                        return {
-                            id: dup.id || index.toString(),
-                            producto1: {
-                                id: dup.producto1.id,
-                                nombre: dup.producto1.nombre || "",
-                                codigo: dup.producto1.codigo || "",
-                                establecimiento: dup.producto1.establecimiento || "",
-                                precio: dup.producto1.precio || 0,
-                                ultima_actualizacion: dup.producto1.ultima_actualizacion || "",
-                                veces_visto: dup.producto1.veces_visto || 0
-                            },
-                            producto2: {
-                                id: dup.producto2.id,
-                                nombre: dup.producto2.nombre || "",
-                                codigo: dup.producto2.codigo || "",
-                                establecimiento: dup.producto2.establecimiento || "",
-                                precio: dup.producto2.precio || 0,
-                                ultima_actualizacion: dup.producto2.ultima_actualizacion || "",
-                                veces_visto: dup.producto2.veces_visto || 0
-                            },
-                            similitud: dup.similitud || 0,
-                            criterios: {
-                                mismo_codigo: dup.mismo_codigo || false,
-                                mismo_establecimiento: dup.mismo_establecimiento || false,
-                                nombre_similar: dup.nombre_similar || false
-                            }
-                        };
-                    });
-                    
-                } else { // facturas
-                    promptBase = `Por favor, analiza las siguientes facturas duplicadas y decide cuál mantener y cuál eliminar. Utiliza estos criterios de decisión:\n\n${configuracionIA.criteriosFacturas}\n\nBasa tu decisión en estos criterios y explica tu razonamiento. Para cada par de facturas, indica tu decisión como "Mantener #1" o "Mantener #2" y asigna un nivel de confianza de 0-100% a tu decisión.`;
-                    
-                    datosAnalisis = lote.map((dup, index) => {
-                        return {
-                            id: dup.id || index.toString(),
-                            factura1: {
-                                id: dup.factura1.id,
-                                establecimiento: dup.factura1.establecimiento || "",
-                                total: dup.factura1.total || 0,
-                                fecha: dup.factura1.fecha || "",
-                                num_productos: dup.factura1.num_productos || 0,
-                                tieneImagen: dup.factura1.tieneImagen || false,
-                                productos: dup.factura1.productos || []
-                            },
-                            factura2: {
-                                id: dup.factura2.id,
-                                establecimiento: dup.factura2.establecimiento || "",
-                                total: dup.factura2.total || 0,
-                                fecha: dup.factura2.fecha || "",
-                                num_productos: dup.factura2.num_productos || 0,
-                                tieneImagen: dup.factura2.tieneImagen || false,
-                                productos: dup.factura2.productos || []
-                            },
-                            criterios: {
-                                misma_fecha: dup.misma_fecha || false,
-                                mismo_establecimiento: dup.mismo_establecimiento || false,
-                                total_iguales: dup.total_iguales || false,
-                                productos_iguales: dup.productos_iguales || false,
-                                productos_similares: dup.productos_similares || false
-                            }
-                        };
-                    });
-                }
-                
-                // Prompt completo
-                const promptCompleto = `${promptBase}\n\nLos datos a analizar son:\n${JSON.stringify(datosAnalisis, null, 2)}\n\nDa tu respuesta en formato JSON, con la siguiente estructura para cada elemento analizado:\n{\n  "dupId": "id_del_duplicado",\n  "decision": 1 o 2 (1 para mantener el primero, 2 para mantener el segundo),\n  "confianza": porcentaje de confianza (0-100),\n  "explicacion": "explicación detallada de la decisión"\n}\n\nDevuelve un array de estos objetos, uno para cada duplicado analizado.`;
-                
-                // Llamar a la API de Anthropic
-                const response = await fetch(`${API_URL}/api/anthropic/messages`, {
-                    method: 'POST',
+        // Prompt completo
+        const promptCompleto = `${promptBase}\n\nLos datos a analizar son:\n${JSON.stringify(datosAnalisis, null, 2)}\n\nDa tu respuesta en formato JSON, con la siguiente estructura para cada elemento analizado:\n{\n  "dupId": "id_del_duplicado",\n  "decision": 1 o 2 (1 para mantener el primero, 2 para mantener el segundo),\n  "confianza": porcentaje de confianza (0-100),\n  "explicacion": "explicación detallada de la decisión"\n}\n\nDevuelve un array de estos objetos, uno para cada duplicado analizado.`;
+        
+        // Llamar a la API a través de tu propio servidor
+        const response = await fetch(`${API_URL}/api/anthropic/messages`, {
+            method: 'POST',
             headers: {
-            'Content-Type': 'application/json'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 model: configuracionIA.modelo,
-            max_tokens: 4000,
-            temperature: 0.1,
-            messages: [
-            { role: "user", content: promptCompleto }
-            ]
+                max_tokens: 4000,
+                temperature: 0.1,
+                messages: [
+                    { role: "user", content: promptCompleto }
+                ]
             })
-            });
-                
-                if (!response.ok) {
-                    throw new Error(`Error en API de Anthropic: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                // Extraer y procesar la respuesta
-                const textoRespuesta = data.content[0].text;
-                
-                // Extraer el JSON de la respuesta
-                const jsonMatch = textoRespuesta.match(/```json\s*([\s\S]*?)\s*```/) || 
-                                 textoRespuesta.match(/\[\s*\{\s*"dupId"/);
-                
-                if (!jsonMatch) {
-                    throw new Error('No se pudo encontrar una respuesta JSON válida');
-                }
-                
-                const jsonContent = jsonMatch[1] || textoRespuesta;
-                let resultados;
-                
-                try {
-                    resultados = JSON.parse(jsonContent);
-                    // Verificar que sea un array
-                    if (!Array.isArray(resultados)) {
-                        resultados = [resultados]; // Si es un objeto único, convertirlo en array
-                    }
-                } catch (e) {
-                    console.error("Error parseando JSON:", e);
-                    // Intentar limpiar el JSON y volver a parsear
-                    const limpiado = jsonContent.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
-                    const match = limpiado.match(/\[.*\]/);
-                    if (match) {
-                        resultados = JSON.parse(match[0]);
-                    } else {
-                        throw new Error('No se pudo parsear la respuesta JSON');
-                    }
-                }
-                
-                // Procesar y filtrar por confianza mínima
-                const resultadosFiltrados = resultados
-                    .map(r => {
-                        if (tipo === 'facturas') {
-                            // Agregar IDs de facturas para facilitar procesamiento posterior
-                            const dup = lote.find(d => d.id === r.dupId || lote.indexOf(d).toString() === r.dupId);
-                            if (dup) {
-                                r.factura1Id = dup.factura1.id;
-                                r.factura2Id = dup.factura2.id;
-                            }
-                        }
-                        return r;
-                    })
-                    .filter(r => r.confianza >= confianzaMinima);
-                
-                return resultadosFiltrados;
-                
-            } catch (error) {
-                console.error(`Error en procesamiento IA de ${tipo}:`, error);
-                mostrarToast(`Error en procesamiento IA: ${error.message}`, 'error');
-                return [];
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Extraer y procesar la respuesta
+        const textoRespuesta = data.content[0].text;
+        
+        // Extraer el JSON de la respuesta
+        const jsonMatch = textoRespuesta.match(/```json\s*([\s\S]*?)\s*```/) || 
+                         textoRespuesta.match(/\[\s*\{\s*"dupId"/);
+        
+        if (!jsonMatch) {
+            throw new Error('No se pudo encontrar una respuesta JSON válida');
+        }
+        
+        const jsonContent = jsonMatch[1] || textoRespuesta;
+        let resultados;
+        
+        try {
+            resultados = JSON.parse(jsonContent);
+            // Verificar que sea un array
+            if (!Array.isArray(resultados)) {
+                resultados = [resultados]; // Si es un objeto único, convertirlo en array
+            }
+        } catch (e) {
+            console.error("Error parseando JSON:", e);
+            // Intentar limpiar el JSON y volver a parsear
+            const limpiado = jsonContent.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
+            const match = limpiado.match(/\[.*\]/);
+            if (match) {
+                resultados = JSON.parse(match[0]);
+            } else {
+                throw new Error('No se pudo parsear la respuesta JSON');
             }
         }
+        
+        // Procesar y filtrar por confianza mínima
+        const resultadosFiltrados = resultados
+            .map(r => {
+                if (tipo === 'facturas') {
+                    // Agregar IDs de facturas para facilitar procesamiento posterior
+                    const dup = lote.find(d => d.id === r.dupId || lote.indexOf(d).toString() === r.dupId);
+                    if (dup) {
+                        r.factura1Id = dup.factura1.id;
+                        r.factura2Id = dup.factura2.id;
+                    }
+                }
+                return r;
+            })
+            .filter(r => r.confianza >= confianzaMinima);
+        
+        return resultadosFiltrados;
+        
+    } catch (error) {
+        console.error(`Error en procesamiento IA de ${tipo}:`, error);
+        mostrarToast(`Error en procesamiento IA: ${error.message}`, 'error');
+        return [];
+    }
+}
         
         // Función para mostrar resumen de resultados IA
         function mostrarResumenIA(tipo) {
