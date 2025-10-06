@@ -180,3 +180,138 @@ async def upload_factura_imagen(factura_id: int, imagen: UploadFile = File(...))
             conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+# Añade estos endpoints a tu archivo image_handlers.py
+
+@router.get("/admin/facturas/{factura_id}/debug-imagen")
+async def debug_imagen_factura(factura_id: int):
+    """Diagnostica problemas con la imagen de una factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Obtener información detallada sobre la imagen
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT 
+                    id,
+                    tiene_imagen,
+                    CASE 
+                        WHEN imagen_data IS NULL THEN 'NULL' 
+                        ELSE 'PRESENTE'
+                    END AS estado_imagen,
+                    imagen_mime,
+                    pg_column_size(imagen_data) AS tamano_bytes,
+                    fecha_cargue
+                FROM facturas 
+                WHERE id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT 
+                    id,
+                    tiene_imagen,
+                    CASE 
+                        WHEN imagen_data IS NULL THEN 'NULL' 
+                        ELSE 'PRESENTE'
+                    END AS estado_imagen,
+                    imagen_mime,
+                    length(imagen_data) AS tamano_bytes,
+                    fecha_cargue
+                FROM facturas 
+                WHERE id = %s
+            """, (factura_id,))
+        
+        resultado = cursor.fetchone()
+        
+        if not resultado:
+            conn.close()
+            return {"error": "Factura no encontrada"}
+        
+        # Verificar si hay inconsistencia entre tiene_imagen y el dato real
+        inconsistencia = False
+        if resultado[1] and resultado[2] == 'NULL':
+            inconsistencia = "Marcada con imagen pero no tiene datos"
+        elif not resultado[1] and resultado[2] == 'PRESENTE':
+            inconsistencia = "Tiene datos de imagen pero no está marcada"
+            
+            # Corregir automáticamente
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    UPDATE facturas SET tiene_imagen = TRUE WHERE id = %s
+                """, (factura_id,))
+            else:
+                cursor.execute("""
+                    UPDATE facturas SET tiene_imagen = 1 WHERE id = %s
+                """, (factura_id,))
+            conn.commit()
+            
+        conn.close()
+        
+        return {
+            "factura_id": resultado[0],
+            "tiene_imagen_flag": resultado[1],
+            "estado_datos_imagen": resultado[2],
+            "mime_type": resultado[3],
+            "tamano_bytes": resultado[4],
+            "fecha_cargue": resultado[5].isoformat() if resultado[5] else None,
+            "inconsistencia": inconsistencia,
+            "corregido": inconsistencia == "Tiene datos de imagen pero no está marcada"
+        }
+        
+    except Exception as e:
+        print(f"Error en debug-imagen: {e}")
+        if 'conn' in locals() and conn:
+            conn.close()
+        return {"error": str(e)}
+
+@router.get("/admin/facturas/{factura_id}/fix-imagen")
+async def fix_imagen_factura(factura_id: int):
+    """Corrige problemas comunes con las imágenes de facturas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar primero si tiene imagen
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s
+            """, (factura_id,))
+        
+        resultado = cursor.fetchone()
+        
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return {
+                "success": False,
+                "message": "La factura no tiene datos de imagen para corregir"
+            }
+            
+        # Actualizar la bandera tiene_imagen
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                UPDATE facturas SET tiene_imagen = TRUE WHERE id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                UPDATE facturas SET tiene_imagen = 1 WHERE id = %s
+            """, (factura_id,))
+            
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": "Bandera de imagen corregida. La imagen debería ser visible ahora."
+        }
+        
+    except Exception as e:
+        print(f"Error corrigiendo imagen: {e}")
+        if 'conn' in locals() and conn:
+            conn.rollback()
+            conn.close()
+        return {"success": False, "error": str(e)}
