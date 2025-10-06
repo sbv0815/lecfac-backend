@@ -1,3 +1,4 @@
+# Imports existentes
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -28,16 +29,11 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Hea
 from typing import List, Optional
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
-from fastapi import File, UploadFile
+
+# Importar el router de image_handlers
 from image_handlers import router as image_handlers_router
 
-# Paso 4: Incluir el router en la aplicación
-# Añadir esta línea después de las otras inclusiones de routers
-
-app.include_router(image_handlers_router)
-
 processor.start()
-
 
 # ========================================
 # CONFIGURACIÓN DE LA APP
@@ -74,10 +70,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Incluir los routers DESPUÉS de crear la instancia de app
 app.include_router(admin_dashboard_router)
 app.include_router(auth_router)
-
-
+app.include_router(image_handlers_router)  # Ahora el router de imágenes
 # Endpoints para servir HTML
 
 
@@ -2573,6 +2569,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 
 
 
