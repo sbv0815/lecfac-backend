@@ -83,9 +83,40 @@
             color: white;
         }
         
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        
         .btn-secondary {
             background: #f1f3f4;
             color: #5f6368;
+        }
+        
+        .btn-secondary:hover {
+            background: #e8eaed;
+        }
+        
+        .btn-danger {
+            background: #ea4335;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #d93025;
+        }
+        
+        .btn-success {
+            background: #34a853;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #2d9148;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
         }
         
         .tabs {
@@ -107,6 +138,11 @@
             color: #666;
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            background: rgba(0, 0, 0, 0.03);
+            color: #333;
         }
         
         .tab.active {
@@ -210,6 +246,236 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        .duplicate-container {
+            margin-top: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .duplicate-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: #f5f7fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .duplicate-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+        }
+        
+        .duplicate-item {
+            padding: 20px;
+            position: relative;
+        }
+        
+        .duplicate-item:first-child {
+            border-right: 2px solid #e0e0e0;
+        }
+        
+        .duplicate-metadata {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .duplicate-image {
+            background: #f1f3f4;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .duplicate-image img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .product-list {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .product-item {
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 5px;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        .product-item.identical {
+            background: #e8f5e9;
+            border-left: 3px solid #34a853;
+        }
+        
+        .product-item.different {
+            background: #fff3e0;
+            border-left: 3px solid #f57c00;
+        }
+        
+        .product-item h4 {
+            margin-bottom: 5px;
+        }
+        
+        .product-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .selection-mark {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .selected {
+            background: #34a853;
+        }
+        
+        .not-selected {
+            background: #ea4335;
+        }
+        
+        .select-button {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .similarity-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            font-weight: 500;
+            font-size: 14px;
+            border-radius: 12px;
+        }
+        
+        .similarity-high {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .similarity-medium {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        
+        .similarity-low {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .criteria-tag {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-right: 5px;
+            font-size: 12px;
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #34a853;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            animation: slideInRight 0.3s, fadeOut 0.5s 2.5s forwards;
+            max-width: 350px;
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; visibility: hidden; }
+        }
+        
+        /* Toggle switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .toggle-slider {
+            background-color: #1a73e8;
+        }
+        
+        input:focus + .toggle-slider {
+            box-shadow: 0 0 1px #1a73e8;
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
     </style>
 </head>
 <body>
@@ -217,7 +483,7 @@
         <div class="navbar-header">
             <h1>Gestor de Duplicados - LecFac</h1>
             <div class="navbar-actions">
-                <a href="/admin" class="btn btn-secondary">← Volver al Dashboard</a>
+                <a href="/" class="btn btn-secondary">← Volver al Dashboard</a>
             </div>
         </div>
     </nav>
@@ -234,7 +500,7 @@
                 <div class="filters">
                     <div class="filter-group">
                         <span class="filter-label">Umbral de Similitud:</span>
-                        <select id="umbralSimilitud" class="filter-select">
+                        <select id="umbralSimilitud" class="filter-select" onchange="detectarProductosDuplicados()">
                             <option value="90">Muy Alta (90%+)</option>
                             <option value="85" selected>Alta (85%+)</option>
                             <option value="75">Media (75%+)</option>
@@ -244,7 +510,7 @@
                     
                     <div class="filter-group">
                         <span class="filter-label">Criterios:</span>
-                        <select id="criteriosProductos" class="filter-select">
+                        <select id="criteriosProductos" class="filter-select" onchange="detectarProductosDuplicados()">
                             <option value="todos" selected>Todos los criterios</option>
                             <option value="codigo">Mismo código</option>
                             <option value="nombre">Nombre similar</option>
@@ -257,7 +523,7 @@
                     <button class="btn btn-primary" onclick="detectarProductosDuplicados()">
                         <span>🔍 Detectar Duplicados</span>
                     </button>
-                    <button class="btn btn-secondary" onclick="mostrarAyuda('productos')">
+                    <button class="btn btn-secondary" onclick="mostrarAyudaProductos()">
                         <span>❓ Ayuda</span>
                     </button>
                 </div>
@@ -288,6 +554,10 @@
                     <p>El sistema analizará productos similares según los criterios seleccionados</p>
                 </div>
             </div>
+
+            <div class="pagination" id="productos-pagination">
+                <!-- Paginación se genera dinámicamente -->
+            </div>
         </div>
 
         <!-- TAB: FACTURAS DUPLICADAS -->
@@ -296,7 +566,7 @@
                 <div class="filters">
                     <div class="filter-group">
                         <span class="filter-label">Criterio Principal:</span>
-                        <select id="criterioFacturas" class="filter-select">
+                        <select id="criterioFacturas" class="filter-select" onchange="detectarFacturasDuplicadas()">
                             <option value="all" selected>Todos los criterios</option>
                             <option value="same_establishment">Mismo establecimiento</option>
                             <option value="same_date">Misma fecha</option>
@@ -307,7 +577,10 @@
                     
                     <div class="filter-group">
                         <span class="filter-label">Ver imágenes:</span>
-                        <input type="checkbox" id="mostrarImagenes" checked>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="mostrarImagenes" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
                 </div>
 
@@ -315,7 +588,7 @@
                     <button class="btn btn-primary" onclick="detectarFacturasDuplicadas()">
                         <span>🔍 Detectar Duplicados</span>
                     </button>
-                    <button class="btn btn-secondary" onclick="mostrarAyuda('facturas')">
+                    <button class="btn btn-secondary" onclick="mostrarAyudaFacturas()">
                         <span>❓ Ayuda</span>
                     </button>
                 </div>
@@ -346,6 +619,123 @@
                     <p>El sistema analizará facturas similares según los criterios seleccionados</p>
                 </div>
             </div>
+
+            <div class="pagination" id="facturas-pagination">
+                <!-- Paginación se genera dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- POPUP: AYUDA PRODUCTOS -->
+    <div id="popup-ayuda-productos" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
+        <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 800px; max-height: 90vh; overflow: auto; position: relative;">
+            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-ayuda-productos')">✕</div>
+            <h2 style="margin-bottom: 20px;">Ayuda: Detección de Productos Duplicados</h2>
+            
+            <p style="margin-bottom: 15px;">El sistema utiliza los siguientes criterios para detectar productos duplicados:</p>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 10px;">Criterios para considerar duplicados:</h3>
+                <ul style="list-style-type: none; padding-left: 0;">
+                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
+                        <strong>Mismo código + mismo establecimiento:</strong> Si dos productos tienen el mismo código EAN y están en el mismo establecimiento, se consideran duplicados.
+                    </li>
+                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
+                        <strong>Similitud en nombre + mismo establecimiento:</strong> Si dos productos tienen nombres muy similares y están en el mismo establecimiento, pueden ser duplicados aunque sus códigos sean diferentes.
+                    </li>
+                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #ea4335;">✗</span>
+                        <strong>No son duplicados:</strong> Productos con el mismo código pero en diferentes establecimientos, ya que pueden tener precios diferentes según la ubicación.
+                    </li>
+                </ul>
+            </div>
+            
+            <h3 style="margin-bottom: 15px;">Proceso de fusión:</h3>
+            <ol style="padding-left: 20px; margin-bottom: 20px;">
+                <li style="margin-bottom: 10px;">Revisa las diferencias entre los productos duplicados.</li>
+                <li style="margin-bottom: 10px;">Selecciona el producto que contiene la información más precisa o completa.</li>
+                <li style="margin-bottom: 10px;">Al fusionar, los historiales de precios se combinan, manteniendo todos los registros.</li>
+                <li style="margin-bottom: 10px;">Si hay valores diferentes para el mismo día, se prioriza el valor más reciente.</li>
+            </ol>
+            
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h4 style="margin-bottom: 10px; color: #1976d2;">Consejos para obtener mejores resultados:</h4>
+                <ul style="list-style-type: none; padding-left: 0;">
+                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1976d2;">•</span>
+                        Ajusta el umbral de similitud según tus necesidades: más alto para mayor precisión, más bajo para encontrar más posibles duplicados.
+                    </li>
+                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1976d2;">•</span>
+                        Comienza revisando los duplicados con coincidencia exacta de código antes de pasar a los basados en similitud de nombre.
+                    </li>
+                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1976d2;">•</span>
+                        Mantén consistentes los nombres de establecimientos para evitar falsos duplicados.
+                    </li>
+                </ul>
+            </div>
+            
+            <button class="btn btn-primary" onclick="cerrarPopup('popup-ayuda-productos')" style="float: right;">Entendido</button>
+        </div>
+    </div>
+
+    <!-- POPUP: AYUDA FACTURAS -->
+    <div id="popup-ayuda-facturas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
+        <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 800px; max-height: 90vh; overflow: auto; position: relative;">
+            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-ayuda-facturas')">✕</div>
+            <h2 style="margin-bottom: 20px;">Ayuda: Detección de Facturas Duplicadas</h2>
+            
+            <p style="margin-bottom: 15px;">El sistema utiliza múltiples criterios para detectar facturas que podrían ser duplicadas:</p>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 10px;">Criterios para considerar facturas duplicadas:</h3>
+                <ul style="list-style-type: none; padding-left: 0;">
+                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
+                        <strong>Misma fecha + mismo establecimiento + mismo total:</strong> Alta probabilidad de ser la misma factura cargada dos veces.
+                    </li>
+                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
+                        <strong>Misma fecha + mismo establecimiento + productos similares:</strong> Posiblemente la misma factura con algunas diferencias en la captura.
+                    </li>
+                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #f57c00;">⚠</span>
+                        <strong>Mismo establecimiento + productos idénticos + fechas cercanas:</strong> Podría ser una compra repetida o una factura duplicada con fecha mal leída.
+                    </li>
+                </ul>
+            </div>
+            
+            <h3 style="margin-bottom: 15px;">Cómo verificar los duplicados:</h3>
+            <ol style="padding-left: 20px; margin-bottom: 20px;">
+                <li style="margin-bottom: 10px;"><strong>Revisa la imagen:</strong> La forma más confiable de verificar si dos facturas son realmente la misma.</li>
+                <li style="margin-bottom: 10px;"><strong>Compara productos:</strong> Revisa si los productos coinciden exactamente o hay variaciones.</li>
+                <li style="margin-bottom: 10px;"><strong>Verifica fechas y horas:</strong> A veces las facturas son del mismo día pero de compras diferentes.</li>
+                <li style="margin-bottom: 10px;"><strong>Números de referencia:</strong> Si están disponibles, los números de factura o transacción son definitivos.</li>
+            </ol>
+            
+            <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h4 style="margin-bottom: 10px; color: #c62828;">Importante:</h4>
+                <ul style="list-style-type: none; padding-left: 0;">
+                    <li style="padding-left: 25px; position: relative;">
+                        <span style="position: absolute; left: 0; color: #c62828;">!</span>
+                        Al eliminar una factura, se eliminan permanentemente sus datos y su imagen. Asegúrate de mantener la factura más completa y precisa cuando elimines duplicados.
+                    </li>
+                </ul>
+            </div>
+            
+            <button class="btn btn-primary" onclick="cerrarPopup('popup-ayuda-facturas')" style="float: right;">Entendido</button>
+        </div>
+    </div>
+
+    <!-- POPUP: VISTA IMAGEN -->
+    <div id="popup-imagen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
+        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 800px; max-height: 90vh; overflow: auto; position: relative; text-align: center;">
+            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-imagen')">✕</div>
+            <h3 id="popup-imagen-titulo" style="margin-bottom: 15px;">Vista Ampliada</h3>
+            <img id="popup-imagen-contenido" src="" alt="Imagen de factura" style="max-width: 100%; max-height: 70vh; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
         </div>
     </div>
 
@@ -354,16 +744,53 @@
         const API_URL = 'https://lecfac-api.onrender.com';
         let productosDuplicados = [];
         let facturasDuplicadas = [];
+        let paginaActualProductos = 1;
+        let paginaActualFacturas = 1;
+        const elementosPorPagina = 5;
         let totalFusiones = 0;
         let totalEliminaciones = 0;
         
-        // Modo demo para desarrollo
-        const MODO_DEMO = true;
+        // Verificar si estamos en modo demo
+        let MODO_DEMO = false;
 
         // Inicialización
         document.addEventListener('DOMContentLoaded', function() {
+            verificarConexionAPI();
             cargarEstadisticas();
         });
+        
+        // Verificar si la API está activa
+        async function verificarConexionAPI() {
+            try {
+                const response = await fetch(`${API_URL}/api/health-check`);
+                if (!response.ok) {
+                    MODO_DEMO = true;
+                    mostrarMensajeError();
+                }
+            } catch (error) {
+                console.error('Error verificando API:', error);
+                MODO_DEMO = true;
+                mostrarMensajeError();
+            }
+        }
+        
+        function mostrarMensajeError() {
+            const container = document.querySelector('.container');
+            const alerta = document.createElement('div');
+            alerta.style.background = '#fff3e0';
+            alerta.style.border = '1px solid #ffb74d';
+            alerta.style.borderRadius = '8px';
+            alerta.style.padding = '15px';
+            alerta.style.marginBottom = '20px';
+            
+            alerta.innerHTML = `
+                <h3 style="margin-bottom: 10px; color: #e65100;">⚠️ Modo Demostración Activado</h3>
+                <p>No se pudo establecer conexión con el API: ${API_URL}</p>
+                <p>Se mostrarán datos de ejemplo para demostración.</p>
+            `;
+            
+            container.insertBefore(alerta, container.firstChild);
+        }
 
         // Función para cambiar pestañas
         function switchTab(tabName) {
@@ -374,177 +801,523 @@
             document.getElementById(`tab-${tabName}`).classList.add('active');
             
             if (tabName === 'productos') {
-                // Cargar productos duplicados
                 detectarProductosDuplicados();
             } else if (tabName === 'facturas') {
-                // Cargar facturas duplicadas
                 detectarFacturasDuplicadas();
             }
         }
 
-        // Cargar estadísticas
-        function cargarEstadisticas() {
-            if (MODO_DEMO) {
-                // Datos demo
+        // Cargar estadísticas generales
+        async function cargarEstadisticas() {
+            try {
+                if (MODO_DEMO) {
+                    // Datos simulados para demostración
+                    document.getElementById('total-productos').textContent = '358';
+                    document.getElementById('total-facturas').textContent = '124';
+                    return;
+                }
+                
+                const response = await fetch(`${API_URL}/admin/stats`);
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                document.getElementById('total-productos').textContent = data.productos_unicos || 0;
+                document.getElementById('total-facturas').textContent = data.total_facturas || 0;
+                
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+                mostrarToast('Error al cargar estadísticas: ' + error.message, 'error');
+                
+                // Usar datos de ejemplo si falla
                 document.getElementById('total-productos').textContent = '358';
                 document.getElementById('total-facturas').textContent = '124';
-                return;
             }
-            
-            // Aquí iría el código real para cargar estadísticas desde la API
-            fetch(`${API_URL}/admin/stats`)
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('total-productos').textContent = data.productos_unicos || 0;
-                    document.getElementById('total-facturas').textContent = data.total_facturas || 0;
-                })
-                .catch(error => {
-                    console.error('Error cargando estadísticas:', error);
-                    // Valores por defecto
-                    document.getElementById('total-productos').textContent = '?';
-                    document.getElementById('total-facturas').textContent = '?';
-                });
         }
-        
-        // Detectar productos duplicados
-        function detectarProductosDuplicados() {
+
+        // GESTIÓN DE PRODUCTOS DUPLICADOS
+        async function detectarProductosDuplicados() {
             const container = document.getElementById('productos-duplicados-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div>Analizando duplicados de productos...</div>';
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados de productos...</p></div>';
             
-            if (MODO_DEMO) {
-                // Simulación de carga
-                setTimeout(() => {
-                    document.getElementById('total-duplicados').textContent = '7';
-                    document.getElementById('porcentaje-duplicados').textContent = '2.0%';
+            try {
+                if (MODO_DEMO) {
+                    // Simular carga
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     
-                    container.innerHTML = `
-                        <div class="card">
-                            <div style="padding: 20px; text-align: center;">
-                                <h3>Modo demostración</h3>
-                                <p>Se encontraron 7 posibles productos duplicados.</p>
-                                <p style="margin-top: 15px;">En la implementación real, aquí se mostrarían los productos duplicados con opciones para fusionarlos.</p>
-                            </div>
-                        </div>
-                    `;
-                }, 1000);
-                return;
-            }
-            
-            // Aquí iría el código real para detectar duplicados desde la API
-            const umbral = document.getElementById('umbralSimilitud').value;
-            const criterio = document.getElementById('criteriosProductos').value;
-            
-            fetch(`${API_URL}/admin/duplicados/productos?umbral=${umbral}&criterio=${criterio}`)
-                .then(response => response.json())
-                .then(data => {
-                    productosDuplicados = data.duplicados || [];
+                    // Datos de ejemplo
+                    productosDuplicados = getDatosDemoProductos();
                     
                     // Actualizar estadísticas
-                    document.getElementById('total-duplicados').textContent = data.total || 0;
-                    const porcentaje = data.total > 0 ? 
-                        ((data.total / parseInt(document.getElementById('total-productos').textContent)) * 100).toFixed(1) + '%' : 
-                        '0%';
+                    document.getElementById('total-duplicados').textContent = productosDuplicados.length;
+                    const porcentaje = ((productosDuplicados.length / 358) * 100).toFixed(1) + '%';
                     document.getElementById('porcentaje-duplicados').textContent = porcentaje;
                     
-                    if (productosDuplicados.length === 0) {
-                        container.innerHTML = `
-                            <div class="empty-state">
-                                <h3>No se encontraron productos duplicados</h3>
-                                <p>Prueba con un umbral de similitud más bajo o diferentes criterios</p>
+                    // Renderizar la primera página
+                    renderizarPaginaProductos(1);
+                    return;
+                }
+                
+                const umbral = document.getElementById('umbralSimilitud').value;
+                const criterio = document.getElementById('criteriosProductos').value;
+                
+                const url = `${API_URL}/admin/duplicados/productos?umbral=${umbral}&criterio=${criterio}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                productosDuplicados = data.duplicados || [];
+                
+                // Actualizar estadísticas
+                document.getElementById('total-duplicados').textContent = data.total || 0;
+                const porcentaje = data.total > 0 ? 
+                    ((data.total / parseInt(document.getElementById('total-productos').textContent)) * 100).toFixed(1) + '%' : 
+                    '0%';
+                document.getElementById('porcentaje-duplicados').textContent = porcentaje;
+                
+                if (productosDuplicados.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No se encontraron productos duplicados</h3>
+                            <p>Prueba con un umbral de similitud más bajo o diferentes criterios</p>
+                        </div>
+                    `;
+                    document.getElementById('productos-pagination').innerHTML = '';
+                    return;
+                }
+                
+                // Renderizar la primera página
+                renderizarPaginaProductos(1);
+                
+            } catch (error) {
+                console.error('Error detectando duplicados de productos:', error);
+                
+                // Si falla, activar modo demo
+                MODO_DEMO = true;
+                
+                container.innerHTML = `
+                    <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
+                        <p>${error.message || 'Error desconocido'}</p>
+                        <p style="margin-top: 10px;">Se activará el modo demostración con datos simulados.</p>
+                        <button class="btn btn-primary" onclick="detectarProductosDuplicados()" style="margin-top: 15px;">
+                            Intentar con datos simulados
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderizarPaginaProductos(pagina) {
+            const container = document.getElementById('productos-duplicados-container');
+            const paginacion = document.getElementById('productos-pagination');
+            
+            // Guardar la página actual
+            paginaActualProductos = pagina;
+            
+            // Calcular índices para la paginación
+            const inicio = (pagina - 1) * elementosPorPagina;
+            const fin = Math.min(inicio + elementosPorPagina, productosDuplicados.length);
+            const duplicadosPagina = productosDuplicados.slice(inicio, fin);
+            
+            let html = '';
+            
+            duplicadosPagina.forEach((dup, index) => {
+                const similitudClase = dup.similitud >= 85 ? 'similarity-high' : 
+                                      dup.similitud >= 70 ? 'similarity-medium' : 'similarity-low';
+                
+                // Determinar criterios de similitud para mostrar etiquetas
+                const criterios = [];
+                if (dup.mismo_codigo) criterios.push('Mismo código');
+                if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
+                if (dup.nombre_similar) criterios.push('Nombre similar');
+                
+                html += `
+                    <div id="duplicado-${dup.id || index}" class="duplicate-container">
+                        <div class="duplicate-header">
+                            <div>
+                                <span class="similarity-tag ${similitudClase}">Similitud: ${dup.similitud}%</span>
+                                ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
+                            </div>
+                            <button class="btn btn-success btn-sm" onclick="fusionarProductos('${dup.id || index}')">
+                                Fusionar Seleccionado
+                            </button>
+                        </div>
+                        
+                        <div class="duplicate-grid">
+                            <div id="producto-${dup.producto1.id}" class="duplicate-item" data-id="${dup.producto1.id}">
+                                <div class="selection-mark selected">1</div>
+                                
+                                <div class="duplicate-metadata">
+                                    <h3>Producto #${dup.producto1.id}</h3>
+                                    <p style="margin-top: 5px; color: #666;">
+                                        <strong>Nombre:</strong> ${dup.producto1.nombre}<br>
+                                        <strong>Código:</strong> ${dup.producto1.codigo || 'Sin código'}<br>
+                                        <strong>Establecimiento:</strong> ${dup.producto1.establecimiento || 'Desconocido'}<br>
+                                        <strong>Precio actual:</strong> $${typeof dup.producto1.precio === 'number' ? dup.producto1.precio.toLocaleString() : dup.producto1.precio}<br>
+                                        <strong>Última actualización:</strong> ${new Date(dup.producto1.ultima_actualizacion).toLocaleDateString()}<br>
+                                        <strong>Visto:</strong> ${dup.producto1.veces_visto || 0} veces
+                                    </p>
+                                </div>
+                                
+                                <button class="btn btn-primary select-button" onclick="seleccionarProducto('${dup.id || index}', ${dup.producto1.id})">
+                                    ✓ Seleccionar Este
+                                </button>
+                            </div>
+                            
+                            <div id="producto-${dup.producto2.id}" class="duplicate-item" data-id="${dup.producto2.id}">
+                                <div class="selection-mark not-selected">2</div>
+                                
+                                <div class="duplicate-metadata">
+                                    <h3>Producto #${dup.producto2.id}</h3>
+                                    <p style="margin-top: 5px; color: #666;">
+                                        <strong>Nombre:</strong> ${dup.producto2.nombre}<br>
+                                        <strong>Código:</strong> ${dup.producto2.codigo || 'Sin código'}<br>
+                                        <strong>Establecimiento:</strong> ${dup.producto2.establecimiento || 'Desconocido'}<br>
+                                        <strong>Precio actual:</strong> $${typeof dup.producto2.precio === 'number' ? dup.producto2.precio.toLocaleString() : dup.producto2.precio}<br>
+                                        <strong>Última actualización:</strong> ${new Date(dup.producto2.ultima_actualizacion).toLocaleDateString()}<br>
+                                        <strong>Visto:</strong> ${dup.producto2.veces_visto || 0} veces
+                                    </p>
+                                </div>
+                                
+                                <button class="btn btn-secondary select-button" onclick="seleccionarProducto('${dup.id || index}', ${dup.producto2.id})">
+                                    Seleccionar Este
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+                            <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
+                            <p>${dup.razon || 'Productos con características similares'}</p>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // Generar paginación
+            const totalPaginas = Math.ceil(productosDuplicados.length / elementosPorPagina);
+            let paginacionHTML = '';
+            
+            if (totalPaginas > 1) {
+                paginacionHTML += `
+                    <div class="pagination-item" onclick="renderizarPaginaProductos(1)">«</div>
+                    <div class="pagination-item" onclick="renderizarPaginaProductos(${Math.max(pagina - 1, 1)})">‹</div>
+                `;
+                
+                for (let i = 1; i <= totalPaginas; i++) {
+                    if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
+                        paginacionHTML += `
+                            <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaProductos(${i})">
+                                ${i}
                             </div>
                         `;
-                        return;
+                    } else if (i === pagina - 2 || i === pagina + 2) {
+                        paginacionHTML += '<div class="pagination-item">...</div>';
                     }
-                    
-                    // Aquí iría el código para mostrar los productos duplicados
-                })
-                .catch(error => {
-                    console.error('Error detectando duplicados de productos:', error);
-                    container.innerHTML = `
-                        <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
-                            <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
-                            <p>${error.message || 'Error desconocido'}</p>
-                        </div>
-                    `;
-                });
-        }
-        
-        // Detectar facturas duplicadas
-        function detectarFacturasDuplicadas() {
-            const container = document.getElementById('facturas-duplicadas-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div>Analizando duplicados de facturas...</div>';
+                }
+                
+                paginacionHTML += `
+                    <div class="pagination-item" onclick="renderizarPaginaProductos(${Math.min(pagina + 1, totalPaginas)})">›</div>
+                    <div class="pagination-item" onclick="renderizarPaginaProductos(${totalPaginas})">»</div>
+                `;
+            }
             
-            if (MODO_DEMO) {
-                // Simulación de carga
-                setTimeout(() => {
-                    document.getElementById('total-facturas-duplicadas').textContent = '6';
-                    document.getElementById('porcentaje-facturas-duplicadas').textContent = '4.8%';
-                    
-                    container.innerHTML = `
-                        <div class="card">
-                            <div style="padding: 20px; text-align: center;">
-                                <h3>Modo demostración</h3>
-                                <p>Se encontraron 6 posibles facturas duplicadas.</p>
-                                <p style="margin-top: 15px;">En la implementación real, aquí se mostrarían las facturas duplicadas con sus imágenes y opciones para eliminar las redundantes.</p>
-                            </div>
-                        </div>
-                    `;
-                }, 1000);
+            paginacion.innerHTML = paginacionHTML;
+        }
+
+        function seleccionarProducto(dupId, productoId) {
+            const duplicado = productosDuplicados.find(d => d.id === dupId || productosDuplicados.indexOf(d) === parseInt(dupId));
+            if (!duplicado) return;
+            
+            // Determinar cuál es el producto seleccionado y cuál no
+            let productoSeleccionado, productoNoSeleccionado;
+            if (duplicado.producto1.id === productoId) {
+                productoSeleccionado = duplicado.producto1;
+                productoNoSeleccionado = duplicado.producto2;
+                
+                document.querySelector(`#producto-${duplicado.producto1.id} .selection-mark`).className = 'selection-mark selected';
+                document.querySelector(`#producto-${duplicado.producto2.id} .selection-mark`).className = 'selection-mark not-selected';
+                
+                document.querySelector(`#producto-${duplicado.producto1.id} .select-button`).className = 'btn btn-primary select-button';
+                document.querySelector(`#producto-${duplicado.producto1.id} .select-button`).innerHTML = '✓ Seleccionar Este';
+                
+                document.querySelector(`#producto-${duplicado.producto2.id} .select-button`).className = 'btn btn-secondary select-button';
+                document.querySelector(`#producto-${duplicado.producto2.id} .select-button`).innerHTML = 'Seleccionar Este';
+                
+            } else {
+                productoSeleccionado = duplicado.producto2;
+                productoNoSeleccionado = duplicado.producto1;
+                
+                document.querySelector(`#producto-${duplicado.producto1.id} .selection-mark`).className = 'selection-mark not-selected';
+                document.querySelector(`#producto-${duplicado.producto2.id} .selection-mark`).className = 'selection-mark selected';
+                
+                document.querySelector(`#producto-${duplicado.producto1.id} .select-button`).className = 'btn btn-secondary select-button';
+                document.querySelector(`#producto-${duplicado.producto1.id} .select-button`).innerHTML = 'Seleccionar Este';
+                
+                document.querySelector(`#producto-${duplicado.producto2.id} .select-button`).className = 'btn btn-primary select-button';
+                document.querySelector(`#producto-${duplicado.producto2.id} .select-button`).innerHTML = '✓ Seleccionar Este';
+            }
+            
+            // Actualizar el duplicado con la selección
+            duplicado.seleccionado = productoId;
+        }
+
+        async function fusionarProductos(dupId) {
+            const duplicado = productosDuplicados.find(d => d.id === dupId || productosDuplicados.indexOf(d) === parseInt(dupId));
+            if (!duplicado) return;
+            
+            // Si no hay seleccionado, por defecto es el producto1
+            const productoMantener = duplicado.seleccionado === duplicado.producto2.id ? 
+                                    duplicado.producto2 : duplicado.producto1;
+            const productoEliminar = productoMantener === duplicado.producto1 ? 
+                                    duplicado.producto2 : duplicado.producto1;
+            
+            if (!confirm(`¿Fusionar estos productos? Se mantendrá "${productoMantener.nombre}" (#${productoMantener.id}) y se eliminará "${productoEliminar.nombre}" (#${productoEliminar.id})`)) {
                 return;
             }
             
-            // Aquí iría el código real para detectar facturas duplicadas desde la API
-            const criterio = document.getElementById('criterioFacturas').value;
-            
-            fetch(`${API_URL}/admin/duplicados/facturas?criterio=${criterio}`)
-                .then(response => response.json())
-                .then(data => {
-                    facturasDuplicadas = data.duplicados || [];
+            try {
+                if (MODO_DEMO) {
+                    // Simulación de tiempo de procesamiento
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    
+                    // Actualizar contador de fusiones
+                    totalFusiones++;
+                    document.getElementById('total-fusiones').textContent = totalFusiones;
+                    
+                    // Eliminar el duplicado fusionado
+                    productosDuplicados = productosDuplicados.filter(d => d.id !== dupId && productosDuplicados.indexOf(d) !== parseInt(dupId));
                     
                     // Actualizar estadísticas
-                    document.getElementById('total-facturas-duplicadas').textContent = data.total || 0;
-                    const porcentaje = data.total > 0 ? 
-                        ((data.total / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
-                        '0%';
-                    document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
+                    document.getElementById('total-duplicados').textContent = productosDuplicados.length;
+                    const porcentaje = productosDuplicados.length > 0 ? 
+                        ((productosDuplicados.length / 358) * 100).toFixed(1) + '%' : '0%';
+                    document.getElementById('porcentaje-duplicados').textContent = porcentaje;
                     
-                    if (facturasDuplicadas.length === 0) {
-                        container.innerHTML = `
-                            <div class="empty-state">
-                                <h3>No se encontraron facturas duplicadas</h3>
-                                <p>Prueba con diferentes criterios de búsqueda</p>
-                            </div>
-                        `;
-                        return;
-                    }
+                    // Eliminar visualmente
+                    document.getElementById(`duplicado-${dupId}`).style.animation = 'fadeOut 0.5s forwards';
+                    setTimeout(() => {
+                        // Actualizar la vista actual
+                        renderizarPaginaProductos(paginaActualProductos);
+                    }, 500);
                     
-                    // Aquí iría el código para mostrar las facturas duplicadas
-                })
-                .catch(error => {
-                    console.error('Error detectando duplicados de facturas:', error);
-                    container.innerHTML = `
-                        <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
-                            <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
-                            <p>${error.message || 'Error desconocido'}</p>
-                        </div>
-                    `;
+                    mostrarToast('Productos fusionados correctamente');
+                    return;
+                }
+                
+                const response = await fetch(`${API_URL}/admin/productos/fusionar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        producto_mantener_id: productoMantener.id,
+                        producto_eliminar_id: productoEliminar.id
+                    })
                 });
-        }
-        
-        // Mostrar ayuda
-        function mostrarAyuda(tipo) {
-            if (tipo === 'productos') {
-                alert("Ayuda para productos duplicados:\n\n" +
-                      "- Mismo código + mismo establecimiento: Si dos productos tienen el mismo código EAN y están en el mismo establecimiento, se consideran duplicados.\n\n" +
-                      "- Nombres similares + mismo establecimiento: Si dos productos tienen nombres muy parecidos y están en el mismo establecimiento, pueden ser duplicados.\n\n" +
-                      "- Productos con el mismo código pero en diferentes establecimientos NO son duplicados, ya que pueden tener precios distintos según la ubicación.");
-            } else {
-                alert("Ayuda para facturas duplicadas:\n\n" +
-                      "- Misma fecha + mismo establecimiento + mismo total: Alta probabilidad de ser la misma factura cargada dos veces.\n\n" +
-                      "- Misma fecha + mismo establecimiento + productos similares: Posiblemente la misma factura con algunas diferencias en la captura.\n\n" +
-                      "- Para verificar si son realmente duplicados, revisa las imágenes de las facturas.");
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                // Actualizar contador de fusiones
+                totalFusiones++;
+                document.getElementById('total-fusiones').textContent = totalFusiones;
+                
+                // Eliminar el duplicado fusionado
+                productosDuplicados = productosDuplicados.filter(d => d.id !== dupId && productosDuplicados.indexOf(d) !== parseInt(dupId));
+                
+                // Actualizar estadísticas
+                document.getElementById('total-duplicados').textContent = productosDuplicados.length;
+                const porcentaje = productosDuplicados.length > 0 ? 
+                    ((productosDuplicados.length / parseInt(document.getElementById('total-productos').textContent)) * 100).toFixed(1) + '%' : 
+                    '0%';
+                document.getElementById('porcentaje-duplicados').textContent = porcentaje;
+                
+                // Eliminar visualmente
+                document.getElementById(`duplicado-${dupId}`).style.animation = 'fadeOut 0.5s forwards';
+                setTimeout(() => {
+                    // Actualizar la vista actual
+                    renderizarPaginaProductos(paginaActualProductos);
+                }, 500);
+                
+                mostrarToast('Productos fusionados correctamente');
+                
+            } catch (error) {
+                console.error('Error fusionando productos:', error);
+                mostrarToast('Error al fusionar productos: ' + error.message, 'error');
             }
         }
-    </script>
-</body>
-</html>
+
+        function mostrarAyudaProductos() {
+            document.getElementById('popup-ayuda-productos').style.display = 'flex';
+        }
+
+        // GESTIÓN DE FACTURAS DUPLICADAS
+        async function detectarFacturasDuplicadas() {
+            const container = document.getElementById('facturas-duplicadas-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados de facturas...</p></div>';
+            
+            try {
+                if (MODO_DEMO) {
+                    // Simular tiempo de carga
+                    await new Promise(resolve => setTimeout(resolve, 1200));
+                    
+                    // Datos simulados
+                    facturasDuplicadas = getDatosDemoFacturas();
+                    
+                    // Actualizar estadísticas
+                    document.getElementById('total-facturas-duplicadas').textContent = facturasDuplicadas.length;
+                    const porcentaje = ((facturasDuplicadas.length / 124) * 100).toFixed(1) + '%';
+                    document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
+                    
+                    // Verificar imágenes (simulado)
+                    const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
+                    if (mostrarImagenes) {
+                        for (const dup of facturasDuplicadas) {
+                            dup.factura1.tieneImagen = Math.random() > 0.3; // 70% de probabilidad de tener imagen
+                            dup.factura2.tieneImagen = Math.random() > 0.3;
+                        }
+                    }
+                    
+                    // Renderizar la primera página
+                    renderizarPaginaFacturas(1);
+                    return;
+                }
+                
+                const criterio = document.getElementById('criterioFacturas').value;
+                
+                const url = `${API_URL}/admin/duplicados/facturas?criterio=${criterio}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                facturasDuplicadas = data.duplicados || [];
+                
+                // Actualizar estadísticas
+                document.getElementById('total-facturas-duplicadas').textContent = data.total || 0;
+                const porcentaje = data.total > 0 ? 
+                    ((data.total / parseInt(document.getElementById('total-facturas').textContent)) * 100).toFixed(1) + '%' : 
+                    '0%';
+                document.getElementById('porcentaje-facturas-duplicadas').textContent = porcentaje;
+                
+                if (facturasDuplicadas.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No se encontraron facturas duplicadas</h3>
+                            <p>Prueba con diferentes criterios de búsqueda</p>
+                        </div>
+                    `;
+                    document.getElementById('facturas-pagination').innerHTML = '';
+                    return;
+                }
+                
+                // Pre-verificar si las facturas tienen imágenes
+                const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
+                if (mostrarImagenes) {
+                    for (const dup of facturasDuplicadas) {
+                        try {
+                            const resp1 = await fetch(`${API_URL}/admin/facturas/${dup.factura1.id}/check-image`);
+                            const data1 = await resp1.json();
+                            dup.factura1.tieneImagen = data1.tiene_imagen;
+                            
+                            const resp2 = await fetch(`${API_URL}/admin/facturas/${dup.factura2.id}/check-image`);
+                            const data2 = await resp2.json();
+                            dup.factura2.tieneImagen = data2.tiene_imagen;
+                        } catch (error) {
+                            console.error('Error verificando imágenes:', error);
+                            dup.factura1.tieneImagen = false;
+                            dup.factura2.tieneImagen = false;
+                        }
+                    }
+                }
+                
+                // Renderizar la primera página
+                renderizarPaginaFacturas(1);
+                
+            } catch (error) {
+                console.error('Error detectando duplicados de facturas:', error);
+                
+                // Si falla, activar modo demo
+                MODO_DEMO = true;
+                
+                // Mostrar mensaje de error
+                container.innerHTML = `
+                    <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
+                        <p>${error.message || 'Error desconocido'}</p>
+                        <p style="margin-top: 10px;">Se activará el modo demostración con datos simulados.</p>
+                        <button class="btn btn-primary" onclick="detectarFacturasDuplicadas()" style="margin-top: 15px;">
+                            Intentar con datos simulados
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderizarPaginaFacturas(pagina) {
+            const container = document.getElementById('facturas-duplicadas-container');
+            const paginacion = document.getElementById('facturas-pagination');
+            const mostrarImagenes = document.getElementById('mostrarImagenes').checked;
+            
+            // Guardar la página actual
+            paginaActualFacturas = pagina;
+            
+            // Calcular índices para la paginación
+            const inicio = (pagina - 1) * elementosPorPagina;
+            const fin = Math.min(inicio + elementosPorPagina, facturasDuplicadas.length);
+            const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
+            
+            let html = '';
+            
+            duplicadosPagina.forEach((dup, index) => {
+                // Análisis de similitudes entre productos para destacar
+                const productosIguales = dup.productos_iguales || false;
+                const productosSimilares = dup.productos_similares || false;
+                const totalIguales = dup.total_iguales || false;
+                
+                // Criterios de duplicado
+                const criterios = [];
+                if (dup.misma_fecha) criterios.push('Misma fecha');
+                if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
+                if (totalIguales) criterios.push('Mismo total');
+                if (productosIguales) criterios.push('Productos idénticos');
+                if (productosSimilares) criterios.push('Productos similares');
+                
+                html += `
+                    <div id="factura-dup-${dup.id || index}" class="duplicate-container">
+                        <div class="duplicate-header">
+                            <div>
+                                ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, '${dup.id || index}')">
+                                    Eliminar #${dup.factura1.id}
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, '${dup.id || index}')">
+                                    Eliminar #${dup.factura2.id}
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
+                                    ↔ Comparar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="duplicate-grid">
+                            <div class="duplicate-item">
+                                <div class="duplicate-metadata">
+                                    <h3>Factura #${dup.factura1.id}</h3>
+                                    <p style="margin-top: 5px; color: #666;">
+                                        <strong>Establecimiento:</strong> ${dup.factura1.establec
