@@ -1048,37 +1048,40 @@
         let resultadosFacturasIA = [];
         
         // Configuración de IA
+        // Configuración de IA
         let configuracionIA = {
-        apiKey: process.env.ANTHROPIC_API_KEY1 || "",
-        modelo: "claude-3-haiku-20240307",
-        tamanoLote: 10,
-        intervaloLote: 5, // segundos
-        criteriosProductos: "",
-        criteriosFacturas: ""
-            };
-        
-        // MODO_DEMO desactivado - Trabajamos con datos reales
-        const MODO_DEMO = false;
+          apiKey: "", // Inicialmente vacío, se obtendrá del servidor
+          modelo: "claude-3-haiku-20240307",
+          tamanoLote: 10,
+          intervaloLote: 5, // segundos
+          criteriosProductos: "",
+      criteriosFacturas: ""
+        };
 
-        // Inicialización
-        document.addEventListener('DOMContentLoaded', function() {
-            verificarConexionAPI();
-            cargarEstadisticas();
-            cargarConfiguracionIA();
-        });
-        
-        // Verificar si la API está activa
-        async function verificarConexionAPI() {
-            try {
-                const response = await fetch(`${API_URL}/api/health-check`);
-                if (!response.ok) {
-                    mostrarMensajeError('No se pudo conectar con la API. Algunas funciones pueden no estar disponibles.');
-                }
-            } catch (error) {
-                console.error('Error verificando API:', error);
-                mostrarMensajeError('Error de conexión con el servidor. Algunas funciones pueden no estar disponibles.');
-            }
-        }
+    // Inicialización
+    document.addEventListener('DOMContentLoaded', function() {
+      verificarConexionAPI();
+      cargarEstadisticas();
+      cargarConfiguracionIA();
+      obtenerAPIKey(); // Nueva función para obtener la API key del servidor
+    });
+
+// Obtener API Key del servidor
+    async function obtenerAPIKey() {
+      try {
+        const response = await fetch(`${API_URL}/api/config/anthropic-key`);
+        if (response.ok) {
+      const data = await response.json();
+      configuracionIA.apiKey = data.apiKey || "";
+      // Actualizar el campo del formulario con asteriscos por seguridad
+      if (document.getElementById('apiKey')) {
+        document.getElementById('apiKey').value = configuracionIA.apiKey ? "********" : "";
+      }
+    }
+  } catch (error) {
+    console.error('Error obteniendo API key:', error);
+  }
+}
         
         function mostrarMensajeError(mensaje) {
             const container = document.querySelector('.container');
@@ -1158,8 +1161,8 @@
                 // Actualizar estadísticas
                 document.getElementById('total-duplicados').textContent = data.total || 0;
                 const porcentaje = data.total > 0 ? 
-                    ((data.total / parseInt(document.getElementById('total-productos').textContent)) * 100).toFixed(1) + '%' : 
-                    '0%';
+                ((data.total / parseInt(document.getElementById('total-productos').textContent)) * 100).toFixed(1) + '%' : 
+                '0%';
                 document.getElementById('porcentaje-duplicados').textContent = porcentaje;
                 
                 if (productosDuplicados.length === 0) {
@@ -1275,8 +1278,8 @@
                                 </div>
                                 
                                <button class="btn ${resultadoIA && resultadoIA.decision === 2 ? 'btn-primary' : (dup.seleccionado === dup.producto2.id ? 'btn-primary' : 'btn-secondary')} select-button" onclick="seleccionarProducto('${dup.id || index}', ${dup.producto2.id})">
-    ${resultadoIA && resultadoIA.decision === 2 ? '✓ Seleccionado por IA' : (dup.seleccionado === dup.producto2.id ? '✓ Seleccionar Este' : 'Seleccionar Este')}
-</button>
+                                ${resultadoIA && resultadoIA.decision === 2 ? '✓ Seleccionado por IA' : (dup.seleccionado === dup.producto2.id ? '✓ Seleccionar Este' : 'Seleccionar Este')}
+                                </button>
                             </div>
                         </div>
                         
@@ -2566,6 +2569,12 @@ async function detectarProductosDuplicados() {
             document.getElementById('productos-pagination').innerHTML = '';
             document.getElementById('productos-ia-panel').style.display = 'none';
             return;
+        }
+
+        // Verificar si el elemento existe antes de asignar
+    const porcentajeElement = document.getElementById('porcentaje-duplicados');
+    if (porcentajeElement) {
+        porcentajeElement.textContent = porcentaje;
         }
         
         // Mostrar panel de IA
