@@ -1,13 +1,12 @@
 # image_handlers.py - Módulo de manejo de imágenes para FastAPI
 
-from fastapi import APIRouter, Response, HTTPException
+from fastapi import APIRouter, Response, HTTPException, UploadFile, File
 from fastapi.responses import Response, FileResponse
 from io import BytesIO
 import base64
 import os
 from database import get_db_connection
 from storage import save_image_to_db, get_image_from_db
-import psycopg
 from typing import Optional
 
 # Crear un router para los endpoints de imágenes
@@ -114,7 +113,7 @@ async def check_factura_imagen(factura_id: int):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @router.post("/admin/facturas/{factura_id}/subir-imagen")
-async def upload_factura_imagen(factura_id: int, imagen = File(...)):
+async def upload_factura_imagen(factura_id: int, imagen: UploadFile = File(...)):
     """Sube una imagen a una factura existente"""
     try:
         # Leer la imagen
@@ -138,17 +137,26 @@ async def upload_factura_imagen(factura_id: int, imagen = File(...)):
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             try:
                 # Intentar usar psycopg3 Binary si está disponible
-                from psycopg import Binary
-                binary_data = Binary(imagen_data)
-            except ImportError:
-                # Si no está disponible, usar el dato directamente
-                binary_data = imagen_data
+                try:
+                    from psycopg import Binary
+                    binary_data = Binary(imagen_data)
+                except ImportError:
+                    # Si no está disponible, usar el dato directamente
+                    binary_data = imagen_data
                 
-            cursor.execute("""
-                UPDATE facturas 
-                SET imagen_data = %s, imagen_mime = %s, tiene_imagen = TRUE
-                WHERE id = %s
-            """, (binary_data, imagen_mime, factura_id))
+                cursor.execute("""
+                    UPDATE facturas 
+                    SET imagen_data = %s, imagen_mime = %s, tiene_imagen = TRUE
+                    WHERE id = %s
+                """, (binary_data, imagen_mime, factura_id))
+            except Exception as e:
+                print(f"Error al guardar imagen en PostgreSQL: {e}")
+                # Método alternativo
+                cursor.execute("""
+                    UPDATE facturas 
+                    SET imagen_data = %s, imagen_mime = %s, tiene_imagen = TRUE
+                    WHERE id = %s
+                """, (imagen_data, imagen_mime, factura_id))
         else:
             cursor.execute("""
                 UPDATE facturas 
