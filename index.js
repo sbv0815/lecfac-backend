@@ -81,3 +81,80 @@ app.post('/api/anthropic/messages', async (req, res) => {
 app.get('/api/health-check', (req, res) => {
   res.json({ status: 'ok' });
 });
+// Add these endpoints to your existing Express app:
+
+// Endpoint to securely provide the Anthropic API key to the frontend
+app.get('/api/config/anthropic-key', (req, res) => {
+  // Use the environment variable name you have configured in Render
+  const apiKey = process.env.ANTHROPIC_API_KEY1 || '';
+  res.json({ apiKey: apiKey });
+});
+
+// Proxy endpoint for Anthropic API to avoid CORS issues
+app.post('/api/anthropic/messages', async (req, res) => {
+  try {
+    // Use the correct environment variable name
+    const apiKey = process.env.ANTHROPIC_API_KEY1;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'API key no configurada' });
+    }
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(req.body)
+    });
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error API Anthropic:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// For handling invoice image checks
+app.get('/admin/duplicados/facturas/:id/check-image', async (req, res) => {
+  try {
+    const facturaId = req.params.id;
+    
+    // This is a temporary implementation since you haven't set up actual image checking yet
+    // You would replace this with actual logic to check if images exist
+    res.json({ 
+      tiene_imagen: false,
+      mensaje: 'Funcionalidad de verificación de imágenes aún no implementada'
+    });
+  } catch (error) {
+    console.error('Error verificando imagen:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// If you need an endpoint to serve the actual images
+app.get('/admin/duplicados/facturas/:id/imagen', async (req, res) => {
+  try {
+    const facturaId = req.params.id;
+    
+    // This is a placeholder - you would replace with actual image serving code
+    // For now, we'll just return a 404 with a helpful message
+    res.status(404).json({
+      error: 'Imagen no encontrada',
+      mensaje: 'La funcionalidad de imágenes no está implementada todavía'
+    });
+    
+    // When you implement this properly, it would look more like:
+    // const imagePath = `./storage/facturas/${facturaId}.jpg`;
+    // if (fs.existsSync(imagePath)) {
+    //   res.sendFile(imagePath, { root: __dirname });
+    // } else {
+    //   res.status(404).send('Imagen no encontrada');
+    // }
+  } catch (error) {
+    console.error('Error sirviendo imagen:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
