@@ -2065,22 +2065,20 @@
                 const promptCompleto = `${promptBase}\n\nLos datos a analizar son:\n${JSON.stringify(datosAnalisis, null, 2)}\n\nDa tu respuesta en formato JSON, con la siguiente estructura para cada elemento analizado:\n{\n  "dupId": "id_del_duplicado",\n  "decision": 1 o 2 (1 para mantener el primero, 2 para mantener el segundo),\n  "confianza": porcentaje de confianza (0-100),\n  "explicacion": "explicación detallada de la decisión"\n}\n\nDevuelve un array de estos objetos, uno para cada duplicado analizado.`;
                 
                 // Llamar a la API de Anthropic
-                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                const response = await fetch(`${API_URL}/api/anthropic/messages`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': configuracionIA.apiKey,
-                        'anthropic-version': '2023-06-01'
-                    },
-                    body: JSON.stringify({
-                        model: configuracionIA.modelo,
-                        max_tokens: 4000,
-                        temperature: 0.1,
-                        messages: [
-                            { role: "user", content: promptCompleto }
-                        ]
-                    })
-                });
+            headers: {
+            'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: configuracionIA.modelo,
+            max_tokens: 4000,
+            temperature: 0.1,
+            messages: [
+            { role: "user", content: promptCompleto }
+            ]
+            })
+            });
                 
                 if (!response.ok) {
                     throw new Error(`Error en API de Anthropic: ${response.status}`);
