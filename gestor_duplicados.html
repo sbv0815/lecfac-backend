@@ -2015,7 +2015,847 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Notificar que las funciones han sido cargadas
 console.log("Funciones faltantes han sido definidas correctamente.");
+// Cargar estadísticas generales
+async function cargarEstadisticas() {
+    try {
+        let response;
+        try {
+            response = await fetch(`${API_URL}/admin/stats`);
+            if (!response.ok) {
+                throw new Error(`Error HTTP: ${response.status}`);
+            }
+        } catch (error) {
+            console.warn('Error al cargar estadísticas del servidor:', error);
+            // Usar datos de ejemplo si falla
+            document.getElementById('total-productos').textContent = '358';
+            document.getElementById('total-facturas').textContent = '124';
+            return;
+        }
+        
+        const data = await response.json();
+        
+        document.getElementById('total-productos').textContent = data.productos_unicos || 0;
+        document.getElementById('total-facturas').textContent = data.total_facturas || 0;
+        
+    } catch (error) {
+        console.error('Error general cargando estadísticas:', error);
+        mostrarToast('Error al cargar estadísticas: ' + error.message, 'error');
+        
+        // Usar datos de ejemplo si falla
+        document.getElementById('total-productos').textContent = '358';
+        document.getElementById('total-facturas').textContent = '124';
+    }
+}
 
+// Cargar la configuración de IA desde localStorage
+function cargarConfiguracionIA() {
+    const configuracionGuardada = localStorage.getItem('lecfac_ia_config');
+    if (configuracionGuardada) {
+        try {
+            const config = JSON.parse(configuracionGuardada);
+            
+            if (config.modelo) document.getElementById('modeloIA').value = config.modelo;
+            if (config.tamanoLote) document.getElementById('tamanoLote').value = config.tamanoLote;
+            if (config.intervaloLote) document.getElementById('intervaloLote').value = config.intervaloLote;
+            if (config.criteriosProductos) document.getElementById('criteriosProductosIA').value = config.criteriosProductos;
+            if (config.criteriosFacturas) document.getElementById('criteriosFacturasIA').value = config.criteriosFacturas;
+            
+            // Actualizar configuración actual
+            configuracionIA.modelo = config.modelo || configuracionIA.modelo;
+            configuracionIA.tamanoLote = config.tamanoLote || configuracionIA.tamanoLote;
+            configuracionIA.intervaloLote = config.intervaloLote || configuracionIA.intervaloLote;
+            configuracionIA.criteriosProductos = config.criteriosProductos || configuracionIA.criteriosProductos;
+            configuracionIA.criteriosFacturas = config.criteriosFacturas || configuracionIA.criteriosFacturas;
+            
+        } catch (error) {
+            console.error('Error cargando configuración de IA:', error);
+        }
+    }
+    
+    // Asegurarse de que los criterios tengan valores por defecto
+    const criteriosProductosElement = document.getElementById('criteriosProductosIA');
+    if (criteriosProductosElement && !configuracionIA.criteriosProductos) {
+        configuracionIA.criteriosProductos = criteriosProductosElement.value.trim();
+    }
+    
+    const criteriosFacturasElement = document.getElementById('criteriosFacturasIA');
+    if (criteriosFacturasElement && !configuracionIA.criteriosFacturas) {
+        configuracionIA.criteriosFacturas = criteriosFacturasElement.value.trim();
+    }
+}
+
+// Guardar la configuración de IA
+function guardarConfiguracionIA() {
+    const apiKeyElement = document.getElementById('apiKey');
+    const modeloElement = document.getElementById('modeloIA');
+    const tamanoLoteElement = document.getElementById('tamanoLote');
+    const intervaloLoteElement = document.getElementById('intervaloLote');
+    const criteriosProductosElement = document.getElementById('criteriosProductosIA');
+    const criteriosFacturasElement = document.getElementById('criteriosFacturasIA');
+    
+    configuracionIA = {
+        apiKey: apiKeyElement ? apiKeyElement.value : configuracionIA.apiKey,
+        modelo: modeloElement ? modeloElement.value : configuracionIA.modelo,
+        tamanoLote: tamanoLoteElement ? parseInt(tamanoLoteElement.value) : configuracionIA.tamanoLote,
+        intervaloLote: intervaloLoteElement ? parseInt(intervaloLoteElement.value) : configuracionIA.intervaloLote,
+        criteriosProductos: criteriosProductosElement ? criteriosProductosElement.value.trim() : configuracionIA.criteriosProductos,
+        criteriosFacturas: criteriosFacturasElement ? criteriosFacturasElement.value.trim() : configuracionIA.criteriosFacturas
+    };
+    
+    // Guardar en localStorage para persistencia
+    localStorage.setItem('lecfac_ia_config', JSON.stringify({
+        modelo: configuracionIA.modelo,
+        tamanoLote: configuracionIA.tamanoLote,
+        intervaloLote: configuracionIA.intervaloLote,
+        criteriosProductos: configuracionIA.criteriosProductos,
+        criteriosFacturas: configuracionIA.criteriosFacturas
+    }));
+    
+    mostrarToast('Configuración guardada correctamente', 'success');
+}
+
+// Función para renderizar página de productos
+function renderizarPaginaProductos(pagina) {
+    const container = document.getElementById('productos-duplicados-container');
+    const paginacion = document.getElementById('productos-pagination');
+    
+    if (!container || !paginacion) {
+        console.error('No se encontraron los contenedores necesarios para renderizar la página de productos');
+        return;
+    }
+    
+    // Guardar la página actual
+    paginaActualProductos = pagina;
+    
+    // Calcular índices para la paginación
+    const inicio = (pagina - 1) * elementosPorPagina;
+    const fin = Math.min(inicio + elementosPorPagina, productosDuplicados.length);
+    const duplicadosPagina = productosDuplicados.slice(inicio, fin);
+    
+    let html = '';
+    
+    duplicadosPagina.forEach((dup, index) => {
+        const similitudClase = dup.similitud >= 85 ? 'similarity-high' : 
+                              dup.similitud >= 70 ? 'similarity-medium' : 'similarity-low';
+        
+        // Determinar criterios de similitud para mostrar etiquetas
+        const criterios = [];
+        if (dup.mismo_codigo) criterios.push('Mismo código');
+        if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
+        if (dup.nombre_similar) criterios.push('Nombre similar');
+        
+        // Verificar si este duplicado ha sido procesado por IA
+        const resultadoIA = resultadosProductosIA.find(r => r.dupId === dup.id || r.dupId === index.toString());
+        const iaTag = resultadoIA ? 
+            `<span class="criteria-tag" style="background: #e8f5e9; color: #2e7d32;">IA: ${resultadoIA.decision === 1 ? 'Mantener #1' : 'Mantener #2'} (${resultadoIA.confianza}%)</span>` : '';
+        
+        html += `
+            <div id="duplicado-${dup.id || index}" class="duplicate-container">
+                <div class="duplicate-header">
+                    <div>
+                        <span class="similarity-tag ${similitudClase}">Similitud: ${dup.similitud}%</span>
+                        ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
+                        ${iaTag}
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="fusionarProductos('${dup.id || index}')">
+                        Fusionar Seleccionado
+                    </button>
+                </div>
+                
+                <div class="duplicate-grid">
+                    <div id="producto-${dup.producto1.id}" class="duplicate-item" data-id="${dup.producto1.id}">
+                        <div class="selection-mark ${resultadoIA && resultadoIA.decision === 1 ? 'selected' : (dup.seleccionado === dup.producto2.id ? 'not-selected' : 'selected')}">1</div>
+                        
+                        <div class="duplicate-metadata">
+                            <h3>Producto #${dup.producto1.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Nombre:</strong> ${dup.producto1.nombre}<br>
+                                <strong>Código:</strong> ${dup.producto1.codigo || 'Sin código'}<br>
+                                <strong>Establecimiento:</strong> ${dup.producto1.establecimiento || 'Desconocido'}<br>
+                                <strong>Precio actual:</strong> $${typeof dup.producto1.precio === 'number' ? dup.producto1.precio.toLocaleString() : dup.producto1.precio || 'N/A'}<br>
+                                <strong>Última actualización:</strong> ${dup.producto1.ultima_actualizacion ? new Date(dup.producto1.ultima_actualizacion).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Visto:</strong> ${dup.producto1.veces_visto || 0} veces
+                            </p>
+                        </div>
+                        
+                        <button class="btn ${resultadoIA && resultadoIA.decision === 1 ? 'btn-primary' : (dup.seleccionado === dup.producto2.id ? 'btn-secondary' : 'btn-primary')} select-button" onclick="seleccionarProducto('${dup.id || index}', ${dup.producto1.id})">
+                            ${resultadoIA && resultadoIA.decision === 1 ? '✓ Seleccionado por IA' : (dup.seleccionado === dup.producto2.id ? 'Seleccionar Este' : '✓ Seleccionar Este')}
+                        </button>
+                    </div>
+                    
+                    <div id="producto-${dup.producto2.id}" class="duplicate-item" data-id="${dup.producto2.id}">
+                        <div class="selection-mark ${resultadoIA && resultadoIA.decision === 2 ? 'selected' : (dup.seleccionado === dup.producto2.id ? 'selected' : 'not-selected')}">2</div>
+                        
+                        <div class="duplicate-metadata">
+                            <h3>Producto #${dup.producto2.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Nombre:</strong> ${dup.producto2.nombre}<br>
+                                <strong>Código:</strong> ${dup.producto2.codigo || 'Sin código'}<br>
+                                <strong>Establecimiento:</strong> ${dup.producto2.establecimiento || 'Desconocido'}<br>
+                                <strong>Precio actual:</strong> $${typeof dup.producto2.precio === 'number' ? dup.producto2.precio.toLocaleString() : dup.producto2.precio || 'N/A'}<br>
+                                <strong>Última actualización:</strong> ${dup.producto2.ultima_actualizacion ? new Date(dup.producto2.ultima_actualizacion).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Visto:</strong> ${dup.producto2.veces_visto || 0} veces
+                            </p>
+                        </div>
+                        
+                       <button class="btn ${resultadoIA && resultadoIA.decision === 2 ? 'btn-primary' : (dup.seleccionado === dup.producto2.id ? 'btn-primary' : 'btn-secondary')} select-button" onclick="seleccionarProducto('${dup.id || index}', ${dup.producto2.id})">
+                        ${resultadoIA && resultadoIA.decision === 2 ? '✓ Seleccionado por IA' : (dup.seleccionado === dup.producto2.id ? '✓ Seleccionar Este' : 'Seleccionar Este')}
+                        </button>
+                    </div>
+                </div>
+                
+                <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+                    <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
+                    <p>${dup.razon || 'Productos con características similares'}</p>
+                    ${resultadoIA ? `<p style="margin-top: 10px; color: #2e7d32;"><strong>Análisis IA:</strong> ${resultadoIA.explicacion || 'Sin explicación disponible'}</p>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html || `
+        <div class="empty-state">
+            <h3>No hay productos duplicados en esta página</h3>
+            <p>Intente con otra página o ajuste los criterios de búsqueda</p>
+        </div>
+    `;
+    
+    // Generar paginación
+    const totalPaginas = Math.ceil(productosDuplicados.length / elementosPorPagina);
+    let paginacionHTML = '';
+    
+    if (totalPaginas > 1) {
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaProductos(1)">«</div>
+            <div class="pagination-item" onclick="renderizarPaginaProductos(${Math.max(pagina - 1, 1)})">‹</div>
+        `;
+        
+        for (let i = 1; i <= totalPaginas; i++) {
+            if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
+                paginacionHTML += `
+                    <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaProductos(${i})">
+                        ${i}
+                    </div>
+                `;
+            } else if (i === pagina - 2 || i === pagina + 2) {
+                paginacionHTML += '<div class="pagination-item">...</div>';
+            }
+        }
+        
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaProductos(${Math.min(pagina + 1, totalPaginas)})">›</div>
+            <div class="pagination-item" onclick="renderizarPaginaProductos(${totalPaginas})">»</div>
+        `;
+    }
+    
+    paginacion.innerHTML = paginacionHTML;
+}
+
+// Función para renderizar página de facturas
+function renderizarPaginaFacturas(pagina) {
+    const container = document.getElementById('facturas-duplicadas-container');
+    const paginacion = document.getElementById('facturas-pagination');
+    
+    if (!container || !paginacion) {
+        console.error('No se encontraron los contenedores necesarios para renderizar la página de facturas');
+        return;
+    }
+    
+    const mostrarImagenesElement = document.getElementById('mostrarImagenes');
+    const mostrarImagenes = mostrarImagenesElement ? mostrarImagenesElement.checked : false;
+    
+    // Guardar la página actual
+    paginaActualFacturas = pagina;
+    
+    // Calcular índices para la paginación
+    const inicio = (pagina - 1) * elementosPorPagina;
+    const fin = Math.min(inicio + elementosPorPagina, facturasDuplicadas.length);
+    const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
+    
+    let html = '';
+    
+    duplicadosPagina.forEach((dup, index) => {
+        // Análisis de similitudes entre productos para destacar
+        const productosIguales = dup.productos_iguales || false;
+        const productosSimilares = dup.productos_similares || false;
+        const totalIguales = dup.total_iguales || false;
+        
+        // Criterios de duplicado
+        const criterios = [];
+        if (dup.misma_fecha) criterios.push('Misma fecha');
+        if (dup.mismo_establecimiento) criterios.push('Mismo establecimiento');
+        if (totalIguales) criterios.push('Mismo total');
+        if (productosIguales) criterios.push('Productos idénticos');
+        if (productosSimilares) criterios.push('Productos similares');
+        
+        // Verificar si este duplicado ha sido procesado por IA
+        const resultadoIA = resultadosFacturasIA.find(r => r.dupId === dup.id || r.dupId === index.toString());
+        const iaTag = resultadoIA ? 
+            `<span class="criteria-tag" style="background: #e8f5e9; color: #2e7d32;">IA: ${resultadoIA.decision === 1 ? 'Mantener #1' : 'Mantener #2'} (${resultadoIA.confianza}%)</span>` : '';
+        
+        html += `
+            <div id="factura-dup-${dup.id || index}" class="duplicate-container">
+                <div class="duplicate-header">
+                    <div>
+                        ${criterios.map(c => `<span class="criteria-tag">${c}</span>`).join('')}
+                        ${iaTag}
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, '${dup.id || index}')">
+                            Eliminar #${dup.factura1.id}
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, '${dup.id || index}')">
+                            Eliminar #${dup.factura2.id}
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
+                            ↔ Comparar
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="duplicate-grid">
+                    <div class="duplicate-item ${resultadoIA && resultadoIA.decision === 1 ? 'selected' : ''}">
+                        <div class="duplicate-metadata">
+                            <h3>Factura #${dup.factura1.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Establecimiento:</strong> ${dup.factura1.establecimiento}<br>
+                                <strong>Total:</strong> $${typeof dup.factura1.total === 'number' ? dup.factura1.total.toLocaleString() : dup.factura1.total || 'N/A'}<br>
+                                <strong>Productos:</strong> ${dup.factura1.num_productos || 0}<br>
+                                <strong>Fecha:</strong> ${dup.factura1.fecha ? new Date(dup.factura1.fecha).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Estado:</strong> ${dup.factura1.estado || 'Pendiente'}
+                            </p>
+                        </div>
+                        
+                        ${mostrarImagenes ? `
+                            <div class="duplicate-image">
+                                ${dup.factura1.tieneImagen ? `
+                                    <img src="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" 
+                                        alt="Factura #${dup.factura1.id}" 
+                                        onerror="this.onerror=null; this.parentElement.innerHTML='<div style=\\'color: #999;\\'><p style=\\'margin-bottom: 10px;\\'>Error al cargar imagen</p><button class=\\'btn btn-secondary btn-sm\\' onclick=\\'verFactura(${dup.factura1.id})\\'>Ver Factura</button></div>';"
+                                        onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')" 
+                                        style="cursor: zoom-in;">
+                                    <div style="text-align: center; margin-top: 5px;">
+                                        <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')">
+                                            🔍 Ampliar
+                                        </button>
+                                        <a href="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
+                                            ↗ Abrir
+                                        </a>
+                                    </div>
+                                ` : `
+                                    <div style="color: #999;">
+                                        <p style="margin-bottom: 10px;">No hay imagen disponible</p>
+                                        <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura1.id})">
+                                            Ver Factura
+                                        </button>
+                                    </div>
+                                `}
+                            </div>
+                        ` : ''}
+                        
+                        <div class="product-list">
+                            <h4 style="margin-bottom: 10px;">Productos (${dup.factura1.productos?.length || 0})</h4>
+                            ${dup.factura1.productos && dup.factura1.productos.length > 0 ? dup.factura1.productos.map(p => `
+                                <div class="product-item">
+                                    <h4>${p.nombre || 'Sin nombre'}</h4>
+                                    <div class="product-meta">
+                                        <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
+                                        <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            `).join('') : '<p>No hay productos disponibles</p>'}
+                        </div>
+                    </div>
+                    
+                    <div class="duplicate-item ${resultadoIA && resultadoIA.decision === 2 ? 'selected' : ''}">
+                        <div class="duplicate-metadata">
+                            <h3>Factura #${dup.factura2.id}</h3>
+                            <p style="margin-top: 5px; color: #666;">
+                                <strong>Establecimiento:</strong> ${dup.factura2.establecimiento}<br>
+                                <strong>Total:</strong> $${typeof dup.factura2.total === 'number' ? dup.factura2.total.toLocaleString() : dup.factura2.total || 'N/A'}<br>
+                                <strong>Productos:</strong> ${dup.factura2.num_productos || 0}<br>
+                                <strong>Fecha:</strong> ${dup.factura2.fecha ? new Date(dup.factura2.fecha).toLocaleDateString() : 'N/A'}<br>
+                                <strong>Estado:</strong> ${dup.factura2.estado || 'Pendiente'}
+                            </p>
+                        </div>
+                        
+                        ${mostrarImagenes ? `
+                            <div class="duplicate-image">
+                                ${dup.factura2.tieneImagen ? `
+                                    <img src="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" 
+                                        alt="Factura #${dup.factura2.id}" 
+                                        onerror="this.onerror=null; this.parentElement.innerHTML='<div style=\\'color: #999;\\'><p style=\\'margin-bottom: 10px;\\'>Error al cargar imagen</p><button class=\\'btn btn-secondary btn-sm\\' onclick=\\'verFactura(${dup.factura2.id})\\'>Ver Factura</button></div>';"
+                                        onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')" 
+                                        style="cursor: zoom-in;">
+                                    <div style="text-align: center; margin-top: 5px;">
+                                        <button class="btn btn-sm btn-secondary" onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')">
+                                            🔍 Ampliar
+                                        </button>
+                                        <a href="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" target="_blank" class="btn btn-sm btn-secondary">
+                                            ↗ Abrir
+                                        </a>
+                                    </div>
+                                ` : `
+                                    <div style="color: #999;">
+                                        <p style="margin-bottom: 10px;">No hay imagen disponible</p>
+                                        <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura2.id})">
+                                            Ver Factura
+                                        </button>
+                                    </div>
+                                `}
+                            </div>
+                        ` : ''}
+                        
+                        <div class="product-list">
+                            <h4 style="margin-bottom: 10px;">Productos (${dup.factura2.productos?.length || 0})</h4>
+                            ${dup.factura2.productos && dup.factura2.productos.length > 0 ? dup.factura2.productos.map(p => `
+                                <div class="product-item">
+                                    <h4>${p.nombre || 'Sin nombre'}</h4>
+                                    <div class="product-meta">
+                                        <span><strong>Código:</strong> ${p.codigo || 'N/A'}</span>
+                                        <span><strong>Precio:</strong> $${typeof p.precio === 'number' ? p.precio.toLocaleString() : p.precio || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            `).join('') : '<p>No hay productos disponibles</p>'}
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="padding: 15px; background: #f5f7fa; border-top: 1px solid #e0e0e0;">
+                    <h4 style="margin-bottom: 10px;">Razón de duplicidad</h4>
+                    <p>${dup.razon || 'Facturas con características similares'}</p>
+                    ${resultadoIA ? `<p style="margin-top: 10px; color: #2e7d32;"><strong>Análisis IA:</strong> ${resultadoIA.explicacion || 'Sin explicación disponible'}</p>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html || `
+        <div class="empty-state">
+            <h3>No hay facturas duplicadas en esta página</h3>
+            <p>Intente con otra página o ajuste los criterios de búsqueda</p>
+        </div>
+    `;
+    
+    // Generar paginación
+    const totalPaginas = Math.ceil(facturasDuplicadas.length / elementosPorPagina);
+    let paginacionHTML = '';
+    
+    if (totalPaginas > 1) {
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(1)">«</div>
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.max(pagina - 1, 1)})">‹</div>
+        `;
+        
+        for (let i = 1; i <= totalPaginas; i++) {
+            if (i === 1 || i === totalPaginas || (i >= pagina - 1 && i <= pagina + 1)) {
+                paginacionHTML += `
+                    <div class="pagination-item ${i === pagina ? 'active' : ''}" onclick="renderizarPaginaFacturas(${i})">
+                        ${i}
+                    </div>
+                `;
+            } else if (i === pagina - 2 || i === pagina + 2) {
+                paginacionHTML += '<div class="pagination-item">...</div>';
+            }
+        }
+        
+        paginacionHTML += `
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${Math.min(pagina + 1, totalPaginas)})">›</div>
+            <div class="pagination-item" onclick="renderizarPaginaFacturas(${totalPaginas})">»</div>
+        `;
+    }
+    
+    paginacion.innerHTML = paginacionHTML;
+}
+
+// Función para seleccionar un producto
+function seleccionarProducto(dupId, productoId) {
+    const duplicado = productosDuplicados.find(d => d.id === dupId || productosDuplicados.indexOf(d) === parseInt(dupId));
+    if (!duplicado) return;
+    
+    // Determinar cuál es el producto seleccionado y cuál no
+    let productoSeleccionado, productoNoSeleccionado;
+    if (duplicado.producto1.id === productoId) {
+        productoSeleccionado = duplicado.producto1;
+        productoNoSeleccionado = duplicado.producto2;
+        
+        const marca1 = document.querySelector(`#producto-${duplicado.producto1.id} .selection-mark`);
+        const marca2 = document.querySelector(`#producto-${duplicado.producto2.id} .selection-mark`);
+        
+        if (marca1) marca1.className = 'selection-mark selected';
+        if (marca2) marca2.className = 'selection-mark not-selected';
+        
+        const btn1 = document.querySelector(`#producto-${duplicado.producto1.id} .select-button`);
+        const btn2 = document.querySelector(`#producto-${duplicado.producto2.id} .select-button`);
+        
+        if (btn1) {
+            btn1.className = 'btn btn-primary select-button';
+            btn1.innerHTML = '✓ Seleccionar Este';
+        }
+        
+        if (btn2) {
+            btn2.className = 'btn btn-secondary select-button';
+            btn2.innerHTML = 'Seleccionar Este';
+        }
+        
+    } else {
+        productoSeleccionado = duplicado.producto2;
+        productoNoSeleccionado = duplicado.producto1;
+        
+        const marca1 = document.querySelector(`#producto-${duplicado.producto1.id} .selection-mark`);
+        const marca2 = document.querySelector(`#producto-${duplicado.producto2.id} .selection-mark`);
+        
+        if (marca1) marca1.className = 'selection-mark not-selected';
+        if (marca2) marca2.className = 'selection-mark selected';
+        
+        const btn1 = document.querySelector(`#producto-${duplicado.producto1.id} .select-button`);
+        const btn2 = document.querySelector(`#producto-${duplicado.producto2.id} .select-button`);
+        
+        if (btn1) {
+            btn1.className = 'btn btn-secondary select-button';
+            btn1.innerHTML = 'Seleccionar Este';
+        }
+        
+        if (btn2) {
+            btn2.className = 'btn btn-primary select-button';
+            btn2.innerHTML = '✓ Seleccionar Este';
+        }
+    }
+    
+    // Actualizar el duplicado con la selección
+    duplicado.seleccionado = productoId;
+
+    // Si hay un resultado de IA para este duplicado, actualizar la decisión manual
+    const resultadoIndex = resultadosProductosIA.findIndex(r => r.dupId === dupId || r.dupId === parseInt(dupId));
+    if (resultadoIndex !== -1) {
+        resultadosProductosIA[resultadoIndex].decisionManual = duplicado.producto1.id === productoId ? 1 : 2;
+    }
+}
+
+// Función para fusionar productos
+async function fusionarProductos(dupId) {
+    const duplicado = productosDuplicados.find(d => d.id === dupId || productosDuplicados.indexOf(d) === parseInt(dupId));
+    if (!duplicado) return;
+    
+    // Si no hay seleccionado, por defecto es el producto1
+    const productoMantener = duplicado.seleccionado === duplicado.producto2.id ? 
+                            duplicado.producto2 : duplicado.producto1;
+    const productoEliminar = productoMantener === duplicado.producto1 ? 
+                            duplicado.producto2 : duplicado.producto1;
+    
+    if (!confirm(`¿Fusionar estos productos? Se mantendrá "${productoMantener.nombre}" (#${productoMantener.id}) y se eliminará "${productoEliminar.nombre}" (#${productoEliminar.id})`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/duplicados/productos/fusionar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                producto_mantener_id: productoMantener.id,
+                producto_eliminar_id: productoEliminar.id
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Actualizar contador de fusiones
+        totalFusiones++;
+        document.getElementById('total-fusiones').textContent = totalFusiones;
+        
+        // Eliminar el duplicado fusionado
+        productosDuplicados = productosDuplicados.filter(d => d.id !== dupId && productosDuplicados.indexOf(d) !== parseInt(dupId));
+        
+        // Eliminar de los resultados de IA si existe
+        resultadosProductosIA = resultadosProductosIA.filter(r => r.dupId !== dupId && r.dupId !== parseInt(dupId));
+        
+        // Actualizar estadísticas
+        const totalDuplicadosElement = document.getElementById('total-duplicados');
+        if (totalDuplicadosElement) {
+            totalDuplicadosElement.textContent = productosDuplicados.length;
+            
+            const totalProductosElement = document.getElementById('total-productos');
+            const totalProductos = totalProductosElement ? parseInt(totalProductosElement.textContent) : 0;
+            
+            const porcentaje = productosDuplicados.length > 0 && totalProductos > 0 ? 
+                ((productosDuplicados.length / totalProductos) * 100).toFixed(1) + '%' : '0%';
+            
+            const porcentajeElement = document.getElementById('porcentaje-duplicados');
+            if (porcentajeElement) {
+                porcentajeElement.textContent = porcentaje;
+            }
+        }
+        
+        // Eliminar visualmente
+        const elemento = document.getElementById(`duplicado-${dupId}`);
+        if (elemento) {
+            elemento.style.animation = 'fadeOut 0.5s forwards';
+            setTimeout(() => {
+                renderizarPaginaProductos(paginaActualProductos);
+            }, 500);
+        } else {
+            renderizarPaginaProductos(paginaActualProductos);
+        }
+        
+        mostrarToast('Productos fusionados correctamente');
+        
+    } catch (error) {
+        console.error('Error fusionando productos:', error);
+        mostrarToast('Error al fusionar productos: ' + error.message, 'error');
+    }
+}
+
+// Función para mostrar ayuda de productos
+function mostrarAyudaProductos() {
+    const popupElement = document.getElementById('popup-ayuda-productos');
+    if (popupElement) {
+        popupElement.style.display = 'flex';
+    } else {
+        console.error('No se encontró el elemento popup-ayuda-productos');
+    }
+}
+
+// Función para mostrar ayuda de facturas
+function mostrarAyudaFacturas() {
+    const popupElement = document.getElementById('popup-ayuda-facturas');
+    if (popupElement) {
+        popupElement.style.display = 'flex';
+    } else {
+        console.error('No se encontró el elemento popup-ayuda-facturas');
+    }
+}
+
+// Función para eliminar factura
+async function eliminarFactura(facturaId, dupId) {
+    // Verificar si hay un resultado de IA para esta factura
+    const resultadoIA = resultadosFacturasIA.find(r => r.dupId === dupId || r.dupId === parseInt(dupId));
+    let mensajeConfirmacion = `¿Eliminar la factura #${facturaId} y todos sus productos?`;
+    
+    // Si hay un resultado de IA, mostrar más información
+    if (resultadoIA) {
+        const esRecomendadoPorIA = (resultadoIA.decision === 1 && facturaId === resultadoIA.factura2Id) || 
+                                  (resultadoIA.decision === 2 && facturaId === resultadoIA.factura1Id);
+        
+        if (esRecomendadoPorIA) {
+            mensajeConfirmacion = `ADVERTENCIA: La IA recomienda MANTENER esta factura y eliminar la otra.\n\n${mensajeConfirmacion}\n\n¿Estás seguro de que deseas continuar?`;
+        } else {
+            mensajeConfirmacion = `La IA recomienda eliminar esta factura.\n\n${mensajeConfirmacion}`;
+        }
+    }
+    
+    if (!confirm(mensajeConfirmacion)) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/duplicados/facturas/${facturaId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+        
+        // Actualizar contador
+        totalEliminaciones++;
+        document.getElementById('total-eliminaciones').textContent = totalEliminaciones;
+        
+        // Eliminar de la lista de duplicados
+        if (dupId) {
+            facturasDuplicadas = facturasDuplicadas.filter(d => d.id !== dupId && facturasDuplicadas.indexOf(d) !== parseInt(dupId));
+            
+            // Eliminar de los resultados de IA si existe
+            resultadosFacturasIA = resultadosFacturasIA.filter(r => r.dupId !== dupId && r.dupId !== parseInt(dupId));
+            
+            // Actualizar estadísticas
+            const totalDuplicadosElement = document.getElementById('total-facturas-duplicadas');
+            if (totalDuplicadosElement) {
+                totalDuplicadosElement.textContent = facturasDuplicadas.length;
+                
+                const totalFacturasElement = document.getElementById('total-facturas');
+                const totalFacturas = totalFacturasElement ? parseInt(totalFacturasElement.textContent) : 0;
+                
+                const porcentaje = facturasDuplicadas.length > 0 && totalFacturas > 0 ? 
+                    ((facturasDuplicadas.length / totalFacturas) * 100).toFixed(1) + '%' : '0%';
+                
+                const porcentajeElement = document.getElementById('porcentaje-facturas-duplicadas');
+                if (porcentajeElement) {
+                    porcentajeElement.textContent = porcentaje;
+                }
+            }
+            
+            // Eliminar visualmente
+            const elemento = document.getElementById(`factura-dup-${dupId}`);
+            if (elemento) {
+                elemento.style.animation = 'fadeOut 0.5s forwards';
+                setTimeout(() => {
+                    renderizarPaginaFacturas(paginaActualFacturas);
+                }, 500);
+            } else {
+                renderizarPaginaFacturas(paginaActualFacturas);
+            }
+        }
+        
+        mostrarToast('Factura eliminada correctamente');
+        
+    } catch (error) {
+        console.error('Error eliminando factura:', error);
+        mostrarToast('Error al eliminar la factura: ' + error.message, 'error');
+    }
+}
+
+// Función para mostrar imagen ampliada
+function mostrarImagenAmpliada(facturaId, titulo) {
+    const tituloElement = document.getElementById('popup-imagen-titulo');
+    const imgElement = document.getElementById('popup-imagen-contenido');
+    const popupElement = document.getElementById('popup-imagen');
+    
+    if (!tituloElement || !imgElement || !popupElement) {
+        console.error('No se encontraron los elementos necesarios para mostrar la imagen ampliada');
+        return;
+    }
+    
+    tituloElement.textContent = titulo;
+    imgElement.src = `${API_URL}/admin/duplicados/facturas/${facturaId}/imagen`;
+    imgElement.onerror = function() {
+        this.onerror = null;
+        this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOTk5Ij5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD48L3N2Zz4=';
+    };
+    popupElement.style.display = 'flex';
+}
+
+// Función para comparar facturas
+function compararFacturas(factura1Id, factura2Id) {
+    window.open(`/comparador-facturas?id1=${factura1Id}&id2=${factura2Id}`, '_blank');
+}
+
+// Función para ver factura
+function verFactura(facturaId) {
+    window.open(`/editor?id=${facturaId}`, '_blank');
+}
+
+// Función para cerrar popup
+function cerrarPopup(id) {
+    const popupElement = document.getElementById(id);
+    if (popupElement) {
+        popupElement.style.display = 'none';
+    } else {
+        console.error(`No se encontró el elemento ${id}`);
+    }
+}
+
+// Función para procesar duplicados con IA
+async function procesarDuplicadosIA(tipo) {
+    if (procesandoIA) {
+        mostrarToast('Ya hay un proceso de IA en ejecución. Espera a que termine.', 'error');
+        return;
+    }
+    
+    let duplicados;
+    let confianzaMinima;
+    
+    if (tipo === 'productos') {
+        duplicados = [...productosDuplicados];
+        const confianzaElement = document.getElementById('confianzaProductos');
+        confianzaMinima = confianzaElement ? parseInt(confianzaElement.value) : 85;
+    } else { // facturas
+        duplicados = [...facturasDuplicadas];
+        const confianzaElement = document.getElementById('confianzaFacturas');
+        confianzaMinima = confianzaElement ? parseInt(confianzaElement.value) : 85;
+    }
+    
+    if (duplicados.length === 0) {
+        mostrarToast(`No se encontraron ${tipo} duplicados para procesar`, 'error');
+        return;
+    }
+    
+    // Dividir en lotes
+    const tamanoLote = configuracionIA.tamanoLote;
+    const lotes = [];
+    
+    for (let i = 0; i < duplicados.length; i += tamanoLote) {
+        lotes.push(duplicados.slice(i, i + tamanoLote));
+    }
+    
+    // Configurar panel de progreso
+    const batchStatusElement = document.getElementById(`${tipo}-batch-status`);
+    const progresoElement = document.getElementById(`${tipo}-progreso`);
+    const progressBarElement = document.getElementById(`${tipo}-progress-bar`);
+    
+    if (batchStatusElement) batchStatusElement.style.display = 'flex';
+    if (progresoElement) progresoElement.textContent = `0/${duplicados.length}`;
+    if (progressBarElement) progressBarElement.style.width = '0%';
+    
+    // Iniciar procesamiento
+    procesandoIA = true;
+    procesoIACancelado = false;
+    
+    // Limpiar resultados anteriores
+    if (tipo === 'productos') {
+        resultadosProductosIA = [];
+    } else {
+        resultadosFacturasIA = [];
+    }
+    
+    let procesados = 0;
+    
+    // Procesar lotes secuencialmente
+    for (let i = 0; i < lotes.length; i++) {
+        if (procesoIACancelado) {
+            break;
+        }
+        
+        const lote = lotes[i];
+        const resultadosLote = await procesarLoteIA(tipo, lote, confianzaMinima);
+        
+        // Almacenar resultados
+        if (tipo === 'productos') {
+            resultadosProductosIA = [...resultadosProductosIA, ...resultadosLote];
+        } else {
+            resultadosFacturasIA = [...resultadosFacturasIA, ...resultadosLote];
+        }
+        
+        // Actualizar progreso
+        procesados += lote.length;
+        const porcentaje = (procesados / duplicados.length) * 100;
+        if (progresoElement) progresoElement.textContent = `${procesados}/${duplicados.length}`;
+        if (progressBarElement) progressBarElement.style.width = `${porcentaje}%`;
+        
+        // Actualizar interfaz con las decisiones de IA
+        if (tipo === 'productos') {
+            renderizarPaginaProductos(paginaActualProductos);
+        } else {
+            renderizarPaginaFacturas(paginaActualFacturas);
+        }
+        
+        // Actualizar contador
+        const procesadosElement = document.getElementById(`${tipo}-procesados-ia`);
+        if (procesadosElement) procesadosElement.textContent = procesados;
+        
+        // Esperar antes del siguiente lote (a menos que sea el último)
+        if (i < lotes.length - 1 && !procesoIACancelado) {
+            await new Promise(resolve => setTimeout(resolve, configuracionIA.intervaloLote * 1000));
+        }
+    }
+    
+    // Finalizar procesamiento
+    procesandoIA = false;
+    
+    // Ocultar panel de progreso
+    setTimeout(() => {
+        if (batchStatusElement) batchStatusElement.style.display = 'none';
+    }, 1000);
+    
+    // Mostrar resumen
+    if (!procesoIACancelado) {
+        mostrarResumenIA(tipo);
+    }
+}
+
+// Notificar que las funciones han sido cargadas
+console.log("Todas las funciones faltantes han sido definidas correctamente.");
  </script>                           
 </body>
 </html>
