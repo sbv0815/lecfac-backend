@@ -1,4 +1,4 @@
-# admin_dashboard.py - STATS CORREGIDO
+# admin_dashboard.py - VERSIÓN CORREGIDA
 from fastapi import HTTPException, APIRouter
 from typing import List, Optional
 from difflib import SequenceMatcher
@@ -34,9 +34,8 @@ async def estadisticas():
         
         # 4. Alertas activas
         cursor.execute("""
-            SELECT COUNT(DISTINCT codigo) 
-            FROM (
-                SELECT codigo, COUNT(DISTINCT valor) as variaciones
+            SELECT COUNT(*) FROM (
+                SELECT codigo 
                 FROM productos
                 WHERE codigo IS NOT NULL AND codigo != ''
                 GROUP BY codigo
@@ -81,9 +80,8 @@ async def estadisticas_detalladas():
         
         # 3. Alertas activas
         cursor.execute("""
-            SELECT COUNT(DISTINCT codigo) 
-            FROM (
-                SELECT codigo, COUNT(DISTINCT valor) as variaciones
+            SELECT COUNT(*) FROM (
+                SELECT codigo 
                 FROM productos
                 WHERE codigo IS NOT NULL AND codigo != ''
                 GROUP BY codigo
@@ -107,7 +105,7 @@ async def estadisticas_detalladas():
             cantidad = row[1]
             por_estado[estado] = cantidad
         
-        # 5. Total pendientes (todo lo que NO sea revisada o validada)
+        # 5. Total pendientes
         cursor.execute("""
             SELECT COUNT(*) FROM facturas 
             WHERE COALESCE(estado_validacion, 'pendiente') NOT IN ('revisada', 'validada')
@@ -137,11 +135,11 @@ async def obtener_catalogo_productos():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Agrupar productos por código (o nombre si no tiene código)
+        # Query CORREGIDO con GROUP BY completo
         cursor.execute("""
             SELECT 
                 MIN(p.id) as id,
-                COALESCE(p.codigo, 'SIN_CODIGO') as codigo,
+                COALESCE(p.codigo, 'SIN_CODIGO_' || MIN(p.id)) as codigo,
                 p.nombre,
                 COUNT(DISTINCT p.factura_id) as num_facturas,
                 COUNT(p.id) as veces_visto,
@@ -150,8 +148,9 @@ async def obtener_catalogo_productos():
                 AVG(p.valor) as precio_promedio
             FROM productos p
             WHERE p.nombre IS NOT NULL AND p.nombre != ''
-            GROUP BY COALESCE(p.codigo, p.nombre), p.nombre
+            GROUP BY p.codigo, p.nombre
             ORDER BY COUNT(p.id) DESC
+            LIMIT 500
         """)
         
         productos = []
@@ -199,6 +198,7 @@ async def obtener_facturas():
             LEFT JOIN productos p ON p.factura_id = f.id
             GROUP BY f.id, f.establecimiento, f.total_factura, f.fecha_cargue, f.estado_validacion, f.tiene_imagen
             ORDER BY f.fecha_cargue DESC
+            LIMIT 100
         """)
         
         facturas = []
@@ -224,29 +224,43 @@ async def obtener_facturas():
 
 
 @router.delete("/facturas/{factura_id}")
-async def eliminar_factura(factura_id: int):
-    """Eliminar una factura y todos sus productos asociados"""
+async def eliminar_factura_admin(factura_id: int):
+    """Eliminar una factura y todos sus productos asociados - ADMIN"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Eliminar productos de la factura
-        cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+        # Verificar que existe
+        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
         
-        # Eliminar la factura
+        # Eliminar productos
+        cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+        productos_eliminados = cursor.rowcount
+        
+        # Eliminar factura
         cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        return {"success": True, "message": "Factura eliminada exitosamente", "id": factura_id}
+        return {
+            "success": True, 
+            "message": "Factura eliminada exitosamente", 
+            "id": factura_id,
+            "productos_eliminados": productos_eliminados
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 
 def similitud_texto(a: str, b: str) -> float:
@@ -257,8 +271,8 @@ def similitud_texto(a: str, b: str) -> float:
 
 
 @router.post("/duplicados/productos/fusionar")
-async def fusionar_productos(request: dict):
-    """Fusionar dos productos duplicados - CORREGIDO"""
+async def fusionar_productos_admin(request: dict):
+    """Fusionar dos productos duplicados - ADMIN (Deprecado, usar duplicados_routes)"""
     try:
         producto_mantener_id = request.get("producto_mantener_id")
         producto_eliminar_id = request.get("producto_eliminar_id")
@@ -281,12 +295,8 @@ async def fusionar_productos(request: dict):
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         
-        # Actualizar todos los productos con el ID a eliminar
-        cursor.execute("""
-            UPDATE productos
-            SET codigo = %s, nombre = %s
-            WHERE id = %s
-        """, (prod_mantener[0], prod_mantener[1], producto_eliminar_id))
+        # Simplemente eliminar el duplicado
+        cursor.execute("DELETE FROM productos WHERE id = %s", (producto_eliminar_id,))
         
         conn.commit()
         cursor.close()
@@ -294,53 +304,80 @@ async def fusionar_productos(request: dict):
         
         return {
             "success": True,
-            "message": "Productos fusionados exitosamente"
+            "message": "Producto duplicado eliminado exitosamente"
         }
     except Exception as e:
         import traceback
         traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/alertas/cambios-precio")
-async def detectar_cambios_precio(dias: int = 7):
+async def detectar_cambios_precio(dias: int = 30):
     """Detectar cambios significativos de precio - CORREGIDO"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Detectar productos con variación de precio significativa
+        # Query CORREGIDO - Detectar productos con variación de precio
         cursor.execute("""
-            WITH productos_con_precios AS (
+            WITH precios_recientes AS (
                 SELECT 
                     p.codigo,
                     p.nombre,
                     f.establecimiento,
                     p.valor as precio,
                     f.fecha_cargue,
-                    AVG(p.valor) OVER (PARTITION BY p.codigo, f.establecimiento) as precio_promedio,
-                    MIN(p.valor) OVER (PARTITION BY p.codigo, f.establecimiento) as precio_min,
-                    MAX(p.valor) OVER (PARTITION BY p.codigo, f.establecimiento) as precio_max
+                    ROW_NUMBER() OVER (PARTITION BY p.codigo, f.establecimiento ORDER BY f.fecha_cargue DESC) as rn
                 FROM productos p
                 JOIN facturas f ON p.factura_id = f.id
                 WHERE p.codigo IS NOT NULL 
                   AND p.codigo != ''
+                  AND p.valor > 0
                   AND f.fecha_cargue >= CURRENT_TIMESTAMP - INTERVAL '%s days'
+            ),
+            estadisticas AS (
+                SELECT 
+                    codigo,
+                    establecimiento,
+                    AVG(precio) as precio_promedio,
+                    MIN(precio) as precio_min,
+                    MAX(precio) as precio_max,
+                    COUNT(*) as num_registros
+                FROM precios_recientes
+                GROUP BY codigo, establecimiento
+                HAVING COUNT(*) >= 2
+            ),
+            ultimo_precio AS (
+                SELECT 
+                    pr.codigo,
+                    pr.nombre,
+                    pr.establecimiento,
+                    pr.precio as precio_actual,
+                    pr.fecha_cargue
+                FROM precios_recientes pr
+                WHERE pr.rn = 1
             )
-            SELECT DISTINCT
-                codigo,
-                nombre,
-                establecimiento,
-                precio as precio_actual,
-                fecha_cargue,
-                precio_promedio,
-                precio_min,
-                precio_max
-            FROM productos_con_precios
-            WHERE (precio > precio_max * 1.2 
-                OR precio < precio_min * 0.8
-                OR ABS(precio - precio_promedio) / precio_promedio > 0.2)
-            ORDER BY fecha_cargue DESC
+            SELECT 
+                up.codigo,
+                up.nombre,
+                up.establecimiento,
+                up.precio_actual,
+                up.fecha_cargue,
+                e.precio_promedio,
+                e.precio_min,
+                e.precio_max
+            FROM ultimo_precio up
+            JOIN estadisticas e ON up.codigo = e.codigo AND up.establecimiento = e.establecimiento
+            WHERE (
+                up.precio_actual > e.precio_max * 1.15 
+                OR up.precio_actual < e.precio_min * 0.85
+                OR ABS(up.precio_actual - e.precio_promedio) / NULLIF(e.precio_promedio, 0) > 0.15
+            )
+            ORDER BY up.fecha_cargue DESC
             LIMIT 50
         """ % dias)
         
@@ -354,12 +391,12 @@ async def detectar_cambios_precio(dias: int = 7):
             cambio_porcentaje = ((precio_actual - precio_promedio) / precio_promedio) * 100 if precio_promedio > 0 else 0
             
             # Determinar tipo de alerta
-            if precio_actual > precio_max:
-                tipo_alerta = "MÁXIMO_HISTÓRICO"
-            elif precio_actual < precio_min:
-                tipo_alerta = "MÍNIMO_HISTÓRICO"
+            if precio_actual > precio_max * 1.15:
+                tipo_alerta = "AUMENTO_SIGNIFICATIVO"
+            elif precio_actual < precio_min * 0.85:
+                tipo_alerta = "DISMINUCIÓN_SIGNIFICATIVA"
             else:
-                tipo_alerta = "CAMBIO_SIGNIFICATIVO"
+                tipo_alerta = "CAMBIO_ATÍPICO"
             
             alertas.append({
                 "codigo": row[0] or "N/A",
@@ -402,7 +439,12 @@ async def comparar_precios_establecimientos(producto_id: int):
         if not prod_info:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         
-        # Comparar precios por establecimiento
+        codigo_producto = prod_info[1]
+        
+        if not codigo_producto:
+            raise HTTPException(status_code=400, detail="Producto sin código EAN, no se puede comparar")
+        
+        # Comparar precios por establecimiento (último precio registrado)
         cursor.execute("""
             SELECT DISTINCT ON (f.establecimiento)
                 f.establecimiento,
@@ -411,9 +453,10 @@ async def comparar_precios_establecimientos(producto_id: int):
                 f.fecha_cargue
             FROM productos p
             JOIN facturas f ON p.factura_id = f.id
-            WHERE p.codigo = (SELECT codigo FROM productos WHERE id = %s)
+            WHERE p.codigo = %s
+              AND p.valor > 0
             ORDER BY f.establecimiento, f.fecha_cargue DESC
-        """, (producto_id,))
+        """, (codigo_producto,))
         
         comparacion = []
         precios = []
@@ -436,8 +479,9 @@ async def comparar_precios_establecimientos(producto_id: int):
             for item in comparacion:
                 item["es_mas_barato"] = (item["precio"] == precio_min)
                 item["es_mas_caro"] = (item["precio"] == precio_max) and (precio_min != precio_max)
+                item["diferencia_vs_min"] = item["precio"] - precio_min
         
-        ahorro_maximo = max(precios) - min(precios) if precios else 0
+        ahorro_maximo = max(precios) - min(precios) if len(precios) > 0 else 0
         
         cursor.close()
         conn.close()
@@ -445,11 +489,16 @@ async def comparar_precios_establecimientos(producto_id: int):
         return {
             "producto_id": producto_id,
             "nombre": prod_info[0],
-            "codigo": prod_info[1] or "N/A",
+            "codigo": codigo_producto,
             "comparacion": sorted(comparacion, key=lambda x: x["precio"]),
-            "ahorro_maximo": ahorro_maximo
+            "ahorro_maximo": round(ahorro_maximo, 2),
+            "num_establecimientos": len(comparacion)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+print("✅ admin_dashboard.py cargado - VERSIÓN CORREGIDA")
