@@ -1,6 +1,8 @@
 """
-duplicados_routes.py - Sistema de Detección de Duplicados CORREGIDO
-Detecta productos que son el mismo item pero con nombres/códigos diferentes
+duplicados_routes.py - Sistema de Detección de Duplicados
+CONCEPTO CORRECTO: 
+- Duplicado = Mismo producto, mismo establecimiento (cargue repetido)
+- NO duplicado = Mismo producto, diferente establecimiento (comparación de precios)
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -83,10 +85,10 @@ def normalizar_nombre_producto(nombre: str) -> str:
     
     return nombre
 
-def son_precios_similares(precio1: float, precio2: float, tolerancia: float = 0.15) -> bool:
+def son_precios_similares(precio1: float, precio2: float, tolerancia: float = 0.05) -> bool:
     """
     Verifica si dos precios son similares (dentro del % de tolerancia)
-    Por defecto 15% de diferencia
+    Por defecto 5% de diferencia (más estricto que antes)
     """
     if precio1 == 0 or precio2 == 0:
         return False
@@ -98,185 +100,247 @@ def son_precios_similares(precio1: float, precio2: float, tolerancia: float = 0.
     return diferencia_porcentual <= tolerancia
 
 # ==========================================
-# ENDPOINTS: PRODUCTOS DUPLICADOS
+# ENDPOINT DE DEBUG TEMPORAL
 # ==========================================
 
-@router.get("/admin/duplicados/productos")
-async def detectar_productos_duplicados(
-    umbral: float = Query(85.0, ge=0, le=100, description="Umbral de similitud (%)"),
-    criterio: str = Query("todos", description="Criterio de detección")
-):
+@router.get("/admin/duplicados/productos/debug")
+async def debug_productos():
     """
-    Detectar productos duplicados - VERSIÓN CORREGIDA
-    
-    Un producto es duplicado cuando:
-    1. Tiene el mismo código EAN (100% duplicado)
-    2. Tiene nombre muy similar (>90%) en el mismo establecimiento
-    3. Tiene nombre similar (>85%) y precio similar (±15%)
-    
-    Criterios:
-    - todos: Aplicar todos los criterios
-    - codigo: Solo por código EAN
-    - nombre: Solo por nombre similar
-    - establecimiento: Solo en mismo establecimiento
+    Endpoint de prueba para ver qué productos hay en la BD
+    y detectar duplicados de forma simple
     """
-    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Obtener productos desde la tabla productos
-        # Agrupamos por nombre normalizado para detectar variaciones
+        # Obtener productos agrupados por establecimiento
         cursor.execute("""
             SELECT 
                 p.id,
                 p.nombre,
                 p.codigo,
                 p.establecimiento,
-                p.valor as precio,
-                f.cadena,
-                COUNT(*) OVER (PARTITION BY p.nombre) as veces_visto
+                p.valor,
+                f.fecha_cargue
             FROM productos p
             LEFT JOIN facturas f ON p.factura_id = f.id
             WHERE p.nombre IS NOT NULL 
               AND p.nombre != ''
-              AND LENGTH(p.nombre) > 3
-            ORDER BY p.nombre, p.id
+              AND p.establecimiento IS NOT NULL
+            ORDER BY p.establecimiento, p.nombre
+            LIMIT 100
+        """)
+        
+        productos = []
+        for row in cursor.fetchall():
+            productos.append({
+                "id": row[0],
+                "nombre": row[1],
+                "codigo": row[2] or "",
+                "establecimiento": row[3],
+                "precio": float(row[4]) if row[4] else 0,
+                "fecha": row[5].isoformat() if row[5] else None
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        # Agrupar por establecimiento para análisis
+        por_establecimiento = {}
+        for p in productos:
+            est = p["establecimiento"]
+            if est not in por_establecimiento:
+                por_establecimiento[est] = []
+            por_establecimiento[est].append(p)
+        
+        return {
+            "success": True,
+            "total_productos": len(productos),
+            "productos_muestra": productos[:20],  # Primeros 20
+            "por_establecimiento": {k: len(v) for k, v in por_establecimiento.items()},
+            "message": "Endpoint de debug - Ver estructura de datos"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error en debug: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ENDPOINTS: PRODUCTOS DUPLICADOS
+# ==========================================
+
+@router.get("/admin/duplicados/productos")
+async def detectar_productos_duplicados(
+    umbral: float = Query(90.0, ge=0, le=100, description="Umbral de similitud (%)"),
+    criterio: str = Query("todos", description="Criterio de detección")
+):
+    """
+    Detectar productos duplicados - VERSIÓN SIMPLIFICADA PARA DEBUG
+    """
+    
+    conn = None
+    cursor = None
+    
+    try:
+        print(f"\n{'='*60}")
+        print(f"🔍 DETECTANDO PRODUCTOS DUPLICADOS")
+        print(f"   Umbral: {umbral}%")
+        print(f"   Criterio: {criterio}")
+        print(f"{'='*60}\n")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Query super simple para evitar errores
+        print("📊 Ejecutando query SQL...")
+        cursor.execute("""
+            SELECT 
+                p.id,
+                p.nombre,
+                p.codigo,
+                p.establecimiento,
+                p.valor
+            FROM productos p
+            WHERE p.nombre IS NOT NULL 
+              AND p.nombre != ''
+              AND p.establecimiento IS NOT NULL
+              AND p.establecimiento != ''
+            LIMIT 200
         """)
         
         productos_raw = cursor.fetchall()
+        print(f"✅ Query ejecutado: {len(productos_raw)} productos obtenidos")
+        
         cursor.close()
         conn.close()
+        conn = None
+        cursor = None
+        
+        if len(productos_raw) == 0:
+            print("⚠️ No hay productos para analizar")
+            return {
+                "success": True,
+                "total": 0,
+                "duplicados": [],
+                "mensaje": "No hay productos con establecimiento para analizar"
+            }
         
         # Convertir a diccionarios
         productos = []
         for row in productos_raw:
             productos.append({
                 "id": row[0],
-                "nombre": row[1],
+                "nombre": row[1] or "",
                 "codigo": row[2] or "",
-                "establecimiento": row[3] or "Desconocido",
+                "establecimiento": row[3] or "",
                 "precio": float(row[4]) if row[4] else 0.0,
-                "cadena": row[5] or "",
-                "veces_visto": row[6] or 1,
+                "fecha_cargue": None,
                 "ultima_actualizacion": None
             })
         
-        print(f"🔍 Analizando {len(productos)} productos...")
-        print(f"   Umbral: {umbral}%")
-        print(f"   Criterio: {criterio}")
+        print(f"✅ Productos convertidos: {len(productos)}")
+        print(f"\n📦 MUESTRA (primeros 3):")
+        for i, p in enumerate(productos[:3]):
+            print(f"   {i+1}. ID={p['id']} | {p['nombre'][:30]} | {p['establecimiento']}")
+        print()
         
-        # Detectar duplicados
+        # Detectar duplicados de forma simple
+        print("🔍 Buscando duplicados...")
         duplicados = []
         procesados = set()
         
         for i, prod1 in enumerate(productos):
             for j, prod2 in enumerate(productos[i+1:], start=i+1):
-                # Evitar comparar el mismo producto
                 if prod1["id"] == prod2["id"]:
                     continue
                 
-                # Evitar duplicar comparaciones
+                # SOLO comparar si es el MISMO establecimiento
+                if prod1["establecimiento"] != prod2["establecimiento"]:
+                    continue
+                
                 par_id = tuple(sorted([prod1["id"], prod2["id"]]))
                 if par_id in procesados:
                     continue
                 
-                # Analizar similitud
                 es_duplicado = False
                 razones = []
-                mismo_codigo = False
-                mismo_establecimiento = False
-                nombre_similar = False
-                precio_similar = False
-                similitud_nombre = 0
                 
-                # 1. CRITERIO PRINCIPAL: Código EAN idéntico
+                # 1. Mismo código EAN
                 if prod1["codigo"] and prod2["codigo"] and len(prod1["codigo"]) >= 8:
                     if prod1["codigo"] == prod2["codigo"]:
-                        mismo_codigo = True
-                        razones.append("Código EAN idéntico")
                         es_duplicado = True
-                        similitud_nombre = 100  # Código EAN es definitivo
+                        razones.append("Mismo código EAN")
                 
-                # 2. Verificar establecimiento/cadena
-                if (prod1["establecimiento"] == prod2["establecimiento"] or
-                    (prod1["cadena"] and prod2["cadena"] and prod1["cadena"] == prod2["cadena"])):
-                    mismo_establecimiento = True
-                
-                # 3. CRITERIO SECUNDARIO: Similitud de nombre
-                similitud_nombre = max(similitud_nombre, calcular_similitud(prod1["nombre"], prod2["nombre"]))
-                
-                if similitud_nombre >= umbral:
-                    nombre_similar = True
-                    razones.append(f"Nombre {similitud_nombre:.1f}% similar")
+                # 2. Nombre muy similar
+                similitud = calcular_similitud(prod1["nombre"], prod2["nombre"])
+                if similitud >= umbral:
+                    razones.append(f"Nombre {similitud:.0f}% similar")
                     
-                    # Si tienen nombre MUY similar (>90%) en mismo establecimiento, son duplicados
-                    if similitud_nombre >= 90 and mismo_establecimiento:
+                    # Si precio también es similar
+                    if son_precios_similares(prod1["precio"], prod2["precio"], 0.05):
                         es_duplicado = True
-                        razones.append("Mismo establecimiento")
-                    
-                    # Si tienen nombre similar y precio similar, probablemente duplicados
-                    if similitud_nombre >= 85 and son_precios_similares(prod1["precio"], prod2["precio"]):
-                        precio_similar = True
                         razones.append("Precio similar")
-                        es_duplicado = True
                 
-                # Aplicar filtros según criterio seleccionado
-                if criterio == "codigo":
-                    if not mismo_codigo:
-                        continue
-                elif criterio == "nombre":
-                    if not nombre_similar:
-                        continue
-                elif criterio == "establecimiento":
-                    if not mismo_establecimiento:
-                        continue
-                elif criterio == "todos":
-                    if not es_duplicado:
-                        continue
-                
-                # Si pasó los filtros, agregar a la lista
-                if es_duplicado or (criterio != "todos" and (mismo_codigo or nombre_similar)):
-                    # Determinar cuál producto mantener por defecto
-                    # Prioridad: 1) Tiene código, 2) Nombre más completo, 3) Más reciente
-                    seleccionado = prod1["id"]
-                    if not prod1["codigo"] and prod2["codigo"]:
-                        seleccionado = prod2["id"]
-                    elif len(prod2["nombre"]) > len(prod1["nombre"]):
-                        seleccionado = prod2["id"]
-                    
+                if es_duplicado:
                     duplicados.append({
                         "id": f"dup-{len(duplicados)}",
                         "producto1": prod1,
                         "producto2": prod2,
-                        "similitud": round(similitud_nombre, 1),
-                        "mismo_codigo": mismo_codigo,
-                        "mismo_establecimiento": mismo_establecimiento,
-                        "nombre_similar": nombre_similar,
-                        "precio_similar": precio_similar,
-                        "razon": " + ".join(razones) if razones else "Criterios seleccionados",
-                        "seleccionado": seleccionado  # Producto recomendado a mantener
+                        "similitud": round(similitud, 1) if 'similitud' in locals() else 100,
+                        "mismo_codigo": prod1.get("codigo") == prod2.get("codigo"),
+                        "mismo_establecimiento": True,
+                        "nombre_similar": similitud >= umbral if 'similitud' in locals() else False,
+                        "razon": " + ".join(razones),
+                        "seleccionado": prod2["id"]  # Por defecto el segundo
                     })
                     
                     procesados.add(par_id)
+                    
+                    if len(duplicados) == 1:
+                        print(f"   ✅ Primer duplicado encontrado:")
+                        print(f"      - {prod1['nombre'][:30]}")
+                        print(f"      - {prod2['nombre'][:30]}")
         
-        print(f"✅ Encontrados {len(duplicados)} pares de duplicados")
+        print(f"\n{'='*60}")
+        print(f"✅ RESULTADO: {len(duplicados)} pares encontrados")
+        print(f"{'='*60}\n")
         
         return {
             "success": True,
             "total": len(duplicados),
             "duplicados": duplicados,
-            "criterios_aplicados": {
-                "umbral_similitud": umbral,
-                "criterio": criterio,
-                "total_productos_analizados": len(productos)
+            "debug_info": {
+                "productos_analizados": len(productos),
+                "umbral_usado": umbral,
+                "criterio": criterio
             }
         }
         
     except Exception as e:
-        print(f"❌ Error detectando duplicados de productos: {e}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"\n❌ ERROR EN DETECCIÓN DE DUPLICADOS:")
+        print(f"   Tipo: {type(e).__name__}")
+        print(f"   Mensaje: {str(e)}")
+        import traceback
+        print(f"\n📋 TRACEBACK COMPLETO:")
+        traceback.print_exc()
+        print(f"\n{'='*60}\n")
+        
+        # Cerrar conexiones si están abiertas
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+        
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @router.post("/admin/duplicados/productos/fusionar")
 async def fusionar_productos(request: FusionProductosRequest):
