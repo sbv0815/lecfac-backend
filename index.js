@@ -271,6 +271,111 @@ finally:
   }
 });
 
+// Endpoint de diagnóstico
+app.get('/api/diagnostico', async (req, res) => {
+  try {
+    // Recolectar información del sistema
+    const os = require('os');
+    const { exec } = require('child_process');
+    
+    // Información básica
+    const diagnostico = {
+      sistema: {
+        plataforma: os.platform(),
+        version: os.release(),
+        memoria_total: `${(os.totalmem() / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+        memoria_libre: `${(os.freemem() / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+        uptime: `${(os.uptime() / 3600).toFixed(2)} horas`
+      },
+      node: {
+        version: process.version,
+        entorno: process.env.NODE_ENV || 'no definido',
+        memoria: process.memoryUsage()
+      },
+      variables_entorno: {
+        database_type: process.env.DATABASE_TYPE || 'no definida',
+        anthropic_key_configurada: !!process.env.ANTHROPIC_API_KEY1 || !!process.env.ANTHROPIC_API_KEY,
+        puerto: process.env.PORT || '3000'
+      },
+      endpoints: {
+        configurados: [
+          '/', 
+          '/api/health-check', 
+          '/api/config/anthropic-key',
+          '/api/anthropic/messages',
+          '/admin/duplicados/facturas/:id/check-image',
+          '/admin/duplicados/facturas/:id/imagen',
+          '/admin/duplicados/productos/fusionar'
+        ]
+      }
+    };
+    
+    // Verificar rutas definidas
+    const rutas = [];
+    app._router.stack.forEach(middleware => {
+      if(middleware.route) {
+        rutas.push({
+          path: middleware.route.path,
+          method: Object.keys(middleware.route.methods)[0].toUpperCase()
+        });
+      }
+    });
+    diagnostico.endpoints.rutas_activas = rutas;
+    
+    // Verificar conexión a la base de datos
+    try {
+      const { stdout } = await new Promise((resolve, reject) => {
+        exec('python3 -c "import sys; sys.path.append(\'.\'); from database import test_database_connection; test_database_connection()"', 
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(error);
+            }
+            resolve({ stdout, stderr });
+          });
+      });
+      
+      diagnostico.base_datos = {
+        test_conexion: stdout.includes('✅') ? 'exitoso' : 'fallido',
+        detalles: stdout
+      };
+    } catch (dbError) {
+      diagnostico.base_datos = {
+        test_conexion: 'error',
+        error: dbError.message
+      };
+    }
+    
+    // Verificar si podemos ejecutar comandos Python
+    try {
+      const { stdout } = await new Promise((resolve, reject) => {
+        exec('python3 --version', (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+          }
+          resolve({ stdout, stderr });
+        });
+      });
+      
+      diagnostico.python = {
+        version: stdout.trim(),
+        disponible: true
+      };
+    } catch (pythonError) {
+      diagnostico.python = {
+        disponible: false,
+        error: pythonError.message
+      };
+    }
+    
+    res.json(diagnostico);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Error generando diagnóstico',
+      detalles: error.message
+    });
+  }
+});
+
 // Puerto
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
