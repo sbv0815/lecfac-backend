@@ -28,12 +28,12 @@ app.get('/api/health-check', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Endpoint para obtener la API key
+
 // Endpoint para obtener la API key
 app.get('/api/config/anthropic-key', (req, res) => {
-  // Recuperar la API key de las variables de entorno
-  // Intentar primero ANTHROPIC_API_KEY1, luego ANTHROPIC_API_KEY como respaldo
+  console.log("Endpoint de API key accedido");
   const apiKey = process.env.ANTHROPIC_API_KEY1 || process.env.ANTHROPIC_API_KEY || '';
+  console.log(`API Key disponible: ${apiKey ? "Sí" : "No"}`);
   res.json({ apiKey: apiKey });
 });
 // Endpoint para comunicarse con la API de Anthropic
