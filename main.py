@@ -454,7 +454,9 @@ async def parse_invoice(file: UploadFile = File(...)):
         total = data.get("total", 0)
         productos = data.get("productos", [])
         
-        # 🔑 IMPORTANTE: Detectar cadena ANTES de validar
+        print(f"📦 OCR detectó {len(productos)} productos")
+        
+        # Detectar cadena ANTES de validar
         cadena = detectar_cadena(establecimiento)
         
         # Validar calidad
@@ -463,7 +465,7 @@ async def parse_invoice(file: UploadFile = File(...)):
             total=total,
             tiene_imagen=True,
             productos=productos,
-            cadena=cadena  # ← Parámetro que faltaba
+            cadena=cadena
         )
         
         # Guardar en BD
@@ -482,22 +484,27 @@ async def parse_invoice(file: UploadFile = File(...)):
         factura_id = cursor.fetchone()[0]
         print(f"✅ Factura ID: {factura_id}, Estado: {estado}, Puntaje: {puntaje}")
         
-        # Guardar productos
-        # Guardar productos
-for prod in productos:
-    try:
-        cursor.execute("""
-            INSERT INTO productos (factura_id, codigo, nombre, valor)
-            VALUES (%s, %s, %s, %s)
-        """, (
-            factura_id,
-            prod.get("codigo", ""),
-            prod.get("nombre", ""),
-            prod.get("precio", 0)  # ← AQUÍ: debe ser "precio" o "valor"?
-        ))
-        print(f"✅ Producto guardado: {prod.get('nombre')}")  # ← AGREGAR ESTE LOG
-    except Exception as e:
-        print(f"⚠️ Error guardando producto: {e}")
+        # Guardar productos EN LA TABLA productos
+        productos_guardados = 0
+        for prod in productos:
+            try:
+                codigo = prod.get("codigo", "") or ""
+                nombre = prod.get("nombre", "") or ""
+                precio = prod.get("precio", 0) or prod.get("valor", 0) or 0
+                
+                if nombre:  # Solo guardar si tiene nombre
+                    cursor.execute("""
+                        INSERT INTO productos (factura_id, codigo, nombre, valor)
+                        VALUES (%s, %s, %s, %s)
+                    """, (factura_id, codigo, nombre, precio))
+                    
+                    productos_guardados += 1
+                    print(f"  ✅ Producto guardado: {nombre} (${precio})")
+                    
+            except Exception as e:
+                print(f"⚠️ Error guardando producto: {e}")
+        
+        print(f"✅ Total productos guardados: {productos_guardados}/{len(productos)}")
         
         # Guardar imagen
         save_image_to_db(factura_id, temp_file.name, "image/jpeg")
@@ -513,12 +520,13 @@ for prod in productos:
             "success": True,
             "data": data,
             "factura_id": factura_id,
+            "productos_guardados": productos_guardados,
             "validacion": {
                 "puntaje": puntaje,
                 "estado": estado,
                 "alertas": alertas
             },
-            "message": "Factura procesada correctamente"
+            "message": f"Factura procesada correctamente. {productos_guardados} productos guardados."
         }
         
     except Exception as e:
@@ -532,20 +540,6 @@ for prod in productos:
             conn.rollback()
             conn.close()
         
-        raise HTTPException(500, str(e))
-        
-        conn.commit()
-        conn.close()
-        
-        return {
-            "success": True,
-            "factura_id": factura_id,
-            "productos_guardados": productos_guardados
-        }
-        
-    except Exception as e:
-        print(f"ERROR: {str(e)}")
-        traceback.print_exc()
         raise HTTPException(500, str(e))
 
 @app.post("/invoices/save-with-image")
@@ -1682,6 +1676,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
