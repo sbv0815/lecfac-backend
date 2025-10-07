@@ -148,7 +148,7 @@ def similitud_texto(a: str, b: str) -> float:
 
 
 @router.get("/duplicados/productos")
-async def detectar_productos_duplicados(umbral: float = 85.0):
+async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "todos"):
     """Detectar productos con nombres similares"""
     try:
         conn = get_db_connection()
@@ -172,15 +172,30 @@ async def detectar_productos_duplicados(umbral: float = 85.0):
         duplicados = []
         for i, p1 in enumerate(productos):
             for p2 in productos[i+1:]:
+                # REGLA CRÍTICA: Si ambos tienen código EAN y son diferentes, NO son duplicados
+                if p1["codigo"] and p2["codigo"] and p1["codigo"] != p2["codigo"]:
+                    continue
+                    
                 if p1["nombre"] and p2["nombre"]:
                     sim = similitud_texto(p1["nombre"], p2["nombre"])
                     
+                    # Aplicar filtro según criterio
+                    if criterio != "todos":
+                        if criterio == "codigo" and (not p1["codigo"] or not p2["codigo"] or p1["codigo"] != p2["codigo"]):
+                            continue
+                        # Agregar más filtros según tus criterios...
+                    
                     if sim >= umbral:
+                        mismo_codigo = bool(p1["codigo"] and p2["codigo"] and p1["codigo"] == p2["codigo"])
+                        
                         duplicados.append({
                             "producto1": p1,
                             "producto2": p2,
                             "similitud": round(sim, 1),
-                            "razon": "Nombres muy similares"
+                            "mismo_codigo": mismo_codigo,
+                            "nombre_similar": True,
+                            "mismo_establecimiento": True,  # Simplificado para esta versión
+                            "razon": "Mismo código EAN" if mismo_codigo else "Nombres muy similares"
                         })
         
         cursor.close()
