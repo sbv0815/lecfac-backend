@@ -129,13 +129,23 @@ async function cargarEstadisticas() {
 }
 
 function cargarConfiguracionIA() {
-    const criteriosProductosDefault = `1. Si dos productos tienen el mismo código EAN y están en el mismo establecimiento, son duplicados.
-2. Si dos productos tienen nombres muy similares (>85% similitud) y están en el mismo establecimiento, son duplicados.
-3. Si los productos tienen la misma marca, mismo tamaño pero descritos de forma diferente, son duplicados.
-4. Para productos sin código EAN, evaluar si las descripciones se refieren al mismo producto con diferente formato.
-5. El producto con información más completa y actualizada debe ser conservado.
-6. En caso de duda, conservar el producto que tiene precio más actualizado o veces visto más alto.
-7. Considerar variaciones de formato como "500g" vs "1/2 kg" como el mismo producto.`;
+    const criteriosProductosDefault = `CRITERIOS DE DETECCIÓN DE PRODUCTOS DUPLICADOS:
+
+⚠️ IMPORTANTE: Solo se detectan duplicados en el MISMO ESTABLECIMIENTO
+(Mismo producto en diferentes establecimientos = Comparación de precios, NO duplicado)
+
+1. Mismo código EAN + Mismo establecimiento + Precio similar (±5%) → DUPLICADO CONFIRMADO
+2. Mismo código EAN + Mismo establecimiento + Nombre similar (>70%) → DUPLICADO (variación OCR)
+3. Nombre muy similar (>90%) + Mismo establecimiento + Precio similar (±5%) → DUPLICADO PROBABLE
+
+REGLA DE ORO:
+- Siempre se mantiene el registro MÁS RECIENTE (último cargue)
+- Los registros anteriores del mismo producto son obsoletos
+
+OBJETIVO:
+- Limpiar datos duplicados por errores de OCR o cargues repetidos
+- Mantener registros únicos de cada producto por establecimiento
+- Permitir comparación de precios entre diferentes establecimientos`;
 
     const criteriosFacturasDefault = `1. Si dos facturas tienen la misma fecha, mismo establecimiento y mismo total, son duplicadas.
 2. Si dos facturas tienen la misma fecha, mismo establecimiento y productos idénticos o muy similares, son duplicadas.
