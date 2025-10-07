@@ -1640,6 +1640,51 @@ async def check_image(factura_id: int):
     }
 
 # ==========================================
+# DEBUG ENDPOINTS - TEMPORAL
+# ==========================================
+@app.get("/api/debug/routes")
+async def debug_routes():
+    """Ver todas las rutas registradas"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            routes.append({
+                "path": route.path,
+                "methods": list(route.methods) if route.methods else [],
+                "name": route.name if hasattr(route, 'name') else None
+            })
+    
+    # Filtrar rutas de imágenes
+    image_routes = [r for r in routes if 'imagen' in r['path'].lower()]
+    
+    return {
+        "total_routes": len(routes),
+        "image_routes": image_routes,
+        "all_routes": routes
+    }
+
+@app.get("/api/debug/test-image/{factura_id}")
+async def debug_test_image(factura_id: int):
+    """Probar directamente la función get_image_from_db"""
+    from storage import get_image_from_db
+    
+    image_data, mime_type = get_image_from_db(factura_id)
+    
+    if image_data:
+        return {
+            "success": True,
+            "has_image": True,
+            "size": len(image_data),
+            "mime": mime_type
+        }
+    else:
+        return {
+            "success": False,
+            "has_image": False,
+            "message": "No hay imagen en BD"
+        }
+
+# ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
 if __name__ == "__main__":
@@ -1651,6 +1696,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
