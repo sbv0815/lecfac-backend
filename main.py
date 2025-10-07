@@ -953,8 +953,9 @@ async def get_factura_para_editor(factura_id: int):
         raise HTTPException(500, str(e))
 
 @app.put("/admin/productos/{producto_id}")
+@app.put("/admin/productos/{producto_id}")
 async def actualizar_producto(producto_id: int, datos: dict):
-    """Actualizar producto en la tabla productos (no precios_productos)"""
+    """Actualizar producto en la tabla productos"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -966,7 +967,6 @@ async def actualizar_producto(producto_id: int, datos: dict):
         if not codigo or not nombre:
             raise HTTPException(400, "Código y nombre son requeridos")
         
-        # Actualizar en la tabla productos
         cursor.execute("""
             UPDATE productos
             SET codigo = %s, nombre = %s, valor = %s
@@ -983,6 +983,7 @@ async def actualizar_producto(producto_id: int, datos: dict):
         conn.close()
         
         return {"success": True, "message": "Producto actualizado"}
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -1007,6 +1008,7 @@ async def eliminar_producto_factura(producto_id: int):
         conn.close()
         
         return {"success": True, "message": "Producto eliminado"}
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -1034,7 +1036,6 @@ async def agregar_producto_a_factura(factura_id: int, datos: dict):
             conn.close()
             raise HTTPException(400, "Código y nombre son requeridos")
         
-        # Insertar en la tabla productos
         cursor.execute("""
             INSERT INTO productos (factura_id, codigo, nombre, valor)
             VALUES (%s, %s, %s, %s)
@@ -1051,6 +1052,7 @@ async def agregar_producto_a_factura(factura_id: int, datos: dict):
             "id": nuevo_id,
             "message": "Producto agregado"
         }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -1078,6 +1080,68 @@ async def marcar_como_validada(factura_id: int):
         
         return {"success": True}
     except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.put("/admin/facturas/{factura_id}/datos-generales")
+async def actualizar_datos_generales(factura_id: int, datos: dict):
+    """Actualizar datos generales de factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        establecimiento = datos.get('establecimiento')
+        total = datos.get('total', 0)
+        fecha = datos.get('fecha')
+        
+        print(f"📝 Actualizando factura {factura_id}:")
+        print(f"  - Establecimiento: {establecimiento}")
+        print(f"  - Total: {total}")
+        print(f"  - Fecha: {fecha}")
+        
+        # Construir query dinámicamente
+        updates = []
+        params = []
+        
+        if establecimiento:
+            updates.append("establecimiento = %s")
+            params.append(establecimiento)
+            updates.append("cadena = %s")
+            params.append(detectar_cadena(establecimiento))
+        
+        if total is not None:
+            updates.append("total_factura = %s")
+            params.append(float(total))
+        
+        if fecha:
+            updates.append("fecha_cargue = %s")
+            params.append(fecha)
+        
+        # IMPORTANTE: Marcar como revisada después de editar
+        updates.append("estado_validacion = %s")
+        params.append('revisada')
+        
+        params.append(factura_id)
+        
+        query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = %s"
+        print(f"🔧 Query: {query}")
+        print(f"🔧 Params: {params}")
+        
+        cursor.execute(query, params)
+        
+        affected = cursor.rowcount
+        print(f"✅ {affected} fila(s) actualizada(s)")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Datos actualizados", "affected": affected}
+        
+    except Exception as e:
+        print(f"❌ Error actualizando datos generales: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
         raise HTTPException(500, str(e))
 
 @app.delete("/admin/facturas/{factura_id}")
@@ -1676,6 +1740,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
