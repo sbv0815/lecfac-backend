@@ -926,6 +926,72 @@ async def get_factura_detalle_completo(factura_id: int):
     except Exception as e:
         raise HTTPException(500, str(e))
 
+# ==========================================
+# ENDPOINT PARA OBTENER FACTURA (EDITOR)
+# ==========================================
+@app.get("/admin/facturas/{factura_id}")
+async def get_factura_para_editor(factura_id: int):
+    """
+    Obtener factura completa para el editor
+    Este endpoint es llamado por editor.html
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Obtener datos de la factura
+        cursor.execute("""
+            SELECT id, usuario_id, establecimiento, cadena, total_factura, 
+                   fecha_cargue, estado_validacion, puntaje_calidad, tiene_imagen
+            FROM facturas WHERE id = %s
+        """, (factura_id,))
+        
+        factura = cursor.fetchone()
+        if not factura:
+            conn.close()
+            raise HTTPException(404, "Factura no encontrada")
+        
+        # 2. Obtener productos asociados
+        cursor.execute("""
+            SELECT p.id, p.codigo, p.nombre, p.valor
+            FROM productos p
+            WHERE p.factura_id = %s
+            ORDER BY p.id
+        """, (factura_id,))
+        
+        productos = []
+        for p in cursor.fetchall():
+            productos.append({
+                "id": p[0],
+                "codigo": p[1] or "",
+                "nombre": p[2] or "",
+                "precio": float(p[3]) if p[3] else 0
+            })
+        
+        conn.close()
+        
+        # 3. Construir respuesta
+        return {
+            "id": factura[0],
+            "usuario_id": factura[1],
+            "establecimiento": factura[2] or "",
+            "cadena": factura[3],
+            "total": float(factura[4]) if factura[4] else 0,
+            "total_factura": float(factura[4]) if factura[4] else 0,  # Alias para compatibilidad
+            "fecha": factura[5].isoformat() if factura[5] else None,
+            "estado": factura[6] or "pendiente",
+            "puntaje": factura[7] or 0,
+            "tiene_imagen": factura[8] or False,
+            "productos": productos
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error en get_factura_para_editor: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
 @app.put("/admin/facturas/{factura_id}/datos-generales")
 async def actualizar_datos_generales(factura_id: int, datos: dict):
     """Actualizar datos generales de factura"""
@@ -1566,3 +1632,4 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
