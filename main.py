@@ -545,28 +545,30 @@ async def save_invoice_with_image(
     total: float = Form(0),
     productos: str = Form(...)
 ):
-    """Guardar factura confirmada con imagen + validación"""
+    """Guardar factura confirmada con imagen"""
     temp_file = None
     conn = None
     
     try:
         print("=== GUARDANDO FACTURA CON IMAGEN ===")
+        print(f"Archivo recibido: {file.filename}, {file.content_type}")
         
         # Parsear productos
         productos_list = json.loads(productos)
-        if not isinstance(productos_list, list):
-            raise ValueError("productos debe ser un array")
         
         # Guardar imagen temporalmente
         content = await file.read()
+        print(f"✅ Imagen leída: {len(content)} bytes")
+        
         if not content:
             raise HTTPException(400, "Imagen vacía")
         
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         temp_file.write(content)
         temp_file.close()
+        print(f"✅ Archivo temporal: {temp_file.name}")
         
-        # Validar calidad
+        # Validar
         cadena = detectar_cadena(establecimiento)
         puntaje, estado, alertas = FacturaValidator.validar_factura(
             establecimiento=establecimiento,
@@ -575,8 +577,6 @@ async def save_invoice_with_image(
             productos=productos_list,
             cadena=cadena
         )
-        
-        print(f"Validación: {puntaje}/100 - {estado}")
         
         # Crear factura
         conn = get_db_connection()
@@ -596,56 +596,35 @@ async def save_invoice_with_image(
             puntaje, True
         ))
         factura_id = cursor.fetchone()[0]
+        print(f"✅ Factura creada: ID={factura_id}")
         
         # Guardar productos
         productos_guardados = 0
         for prod in productos_list:
             codigo = str(prod.get("codigo", "") or "").strip()
             nombre = str(prod.get("nombre", "") or "").strip()
+            precio = float(prod.get("precio", 0))
             
-            try:
-                precio = float(prod.get("precio", 0))
-            except:
-                precio = 0.0
-            
-            if not codigo or not nombre:
-                continue
-            
-            # Buscar o crear producto
-            cursor.execute(
-                "SELECT id FROM productos_catalogo WHERE codigo_ean = %s",
-                (codigo,)
-            )
-            row = cursor.fetchone()
-            
-            if row:
-                producto_id = row[0]
-            else:
-                cursor.execute(
-                    """INSERT INTO productos_catalogo (codigo_ean, nombre_producto) 
-                       VALUES (%s, %s) RETURNING id""",
-                    (codigo, nombre)
-                )
-                producto_id = cursor.fetchone()[0]
-            
-            # Guardar precio
-            cursor.execute("""
-                INSERT INTO precios_productos 
-                (producto_id, factura_id, precio, establecimiento, cadena)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (producto_id, factura_id, precio, establecimiento, cadena))
-            
-            productos_guardados += 1
+            if nombre:
+                cursor.execute("""
+                    INSERT INTO productos (factura_id, codigo, nombre, valor)
+                    VALUES (%s, %s, %s, %s)
+                """, (factura_id, codigo, nombre, precio))
+                productos_guardados += 1
         
-        # COMMIT PRIMERO
+        print(f"✅ {productos_guardados} productos guardados")
+        
+        # COMMIT antes de guardar imagen
         conn.commit()
         cursor.close()
         conn.close()
         conn = None
         
-        # AHORA guardar imagen
+        # 🔑 GUARDAR IMAGEN - LO MÁS IMPORTANTE
+        print(f"📸 Guardando imagen en BD...")
         mime = "image/png" if file.filename and file.filename.lower().endswith(".png") else "image/jpeg"
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
+        print(f"✅ Imagen guardada: {imagen_guardada}")
         
         # Limpiar temporal
         os.unlink(temp_file.name)
@@ -670,109 +649,6 @@ async def save_invoice_with_image(
             conn.rollback()
             conn.close()
         if temp_file and os.path.exists(temp_file.name):
-            os.unlink(temp_file.name)
-        raise HTTPException(500, str(e))
-
-@app.post("/invoices/upload")
-async def upload_invoice(
-    file: UploadFile = File(...),
-    usuario_id: int = Form(...)
-):
-    """Procesar factura con OCR y guardarla (flujo completo)"""
-    try:
-        print(f"=== PROCESANDO FACTURA ===")
-        print(f"Archivo: {file.filename}")
-        print(f"Usuario: {usuario_id}")
-        
-        # Guardar temporalmente
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        content = await file.read()
-        temp_file.write(content)
-        temp_file.close()
-        
-        # Procesar con OCR
-        resultado = parse_invoice_with_claude(temp_file.name)
-        
-        if not resultado["success"]:
-            os.unlink(temp_file.name)
-            return {"success": False, "error": resultado["error"]}
-        
-        # Preparar datos
-        establecimiento = resultado["data"].get("establecimiento", "Desconocido")
-        productos = resultado["data"].get("productos", [])
-        
-        # Guardar en BD
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cadena = detectar_cadena(establecimiento)
-        
-        cursor.execute(
-            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (usuario_id, establecimiento, cadena, datetime.now())
-        )
-        factura_id = cursor.fetchone()[0]
-        
-        # Guardar imagen
-        mime = "image/jpeg" if file.filename.endswith(('.jpg', '.jpeg')) else "image/png"
-        imagen_guardada = save_image_to_db(factura_id, temp_file.name, mime)
-        
-        # Limpiar temporal
-        os.unlink(temp_file.name)
-        
-        # Guardar productos
-        productos_guardados = 0
-        for prod in productos:
-            codigo = prod.get("codigo", "")
-            nombre = prod.get("nombre", "")
-            precio = prod.get("precio", 0) or prod.get("valor", 0)
-            
-            if not codigo or not nombre:
-                continue
-            
-            cursor.execute("""
-                SELECT id FROM productos_catalogo 
-                WHERE codigo_ean = %s
-            """, (codigo,))
-            
-            producto = cursor.fetchone()
-            
-            if producto:
-                producto_id = producto[0]
-            else:
-                cursor.execute("""
-                    INSERT INTO productos_catalogo (codigo_ean, nombre_producto)
-                    VALUES (%s, %s) RETURNING id
-                """, (codigo, nombre))
-                producto_id = cursor.fetchone()[0]
-            
-            # Guardar precio
-            cursor.execute("""
-                INSERT INTO precios_productos (
-                    producto_id, factura_id, precio, establecimiento, cadena
-                )
-                VALUES (%s, %s, %s, %s, %s)
-            """, (producto_id, factura_id, precio, establecimiento, cadena))
-            
-            productos_guardados += 1
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return {
-            "success": True,
-            "factura_id": factura_id,
-            "productos_guardados": productos_guardados,
-            "imagen_guardada": imagen_guardada,
-            "establecimiento": establecimiento
-        }
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        traceback.print_exc()
-        if 'temp_file' in locals() and os.path.exists(temp_file.name):
             os.unlink(temp_file.name)
         raise HTTPException(500, str(e))
 
@@ -1735,6 +1611,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
