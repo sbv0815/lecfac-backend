@@ -1,12 +1,13 @@
 """
 main.py - Servidor FastAPI Principal para LecFac
-VERSIÓN COMPLETA - Incluye TODOS los endpoints necesarios
+VERSIÓN COMPLETA - Incluye TODOS los endpoints necesarios + Gestor de Duplicados
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -38,6 +39,7 @@ from claude_invoice import parse_invoice_with_claude
 from admin_dashboard import router as admin_dashboard_router
 from auth_routes import router as auth_router
 from image_handlers import router as image_handlers_router
+from duplicados_routes import router as duplicados_router  # ← NUEVO
 
 # Importar procesador OCR y auditoría
 from ocr_processor import processor, ocr_queue, processing
@@ -83,13 +85,10 @@ async def lifespan(app: FastAPI):
 # ==========================================
 # CONFIGURACIÓN DE LA APP
 # ==========================================
-# ==========================================
-# CONFIGURACIÓN DE LA APP
-# ==========================================
 app = FastAPI(
     title="LecFac API", 
-    version="3.0.0",
-    description="Sistema de gestión de facturas con control de calidad",
+    version="3.0.1",  # ← Incrementada versión
+    description="Sistema de gestión de facturas con control de calidad y detección de duplicados",
     lifespan=lifespan
 )
 
@@ -101,6 +100,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ==========================================
+# ARCHIVOS ESTÁTICOS Y TEMPLATES
+# ==========================================
+# Montar archivos estáticos (CSS, JS, imágenes)
+static_path = Path(__file__).parent / "frontend" / "static"
+if static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+    print(f"✅ Archivos estáticos montados desde: {static_path}")
+else:
+    print(f"⚠️ Directorio de estáticos no encontrado: {static_path}")
+
+# Configurar templates
+templates_path = Path(__file__).parent / "frontend" / "templates"
+if templates_path.exists():
+    templates = Jinja2Templates(directory=str(templates_path))
+    print(f"✅ Templates configurados desde: {templates_path}")
+else:
+    print(f"⚠️ Directorio de templates no encontrado: {templates_path}")
+    templates = None
 
 # ==========================================
 # INCLUIR ROUTERS CON LOGGING
@@ -136,11 +155,331 @@ try:
 except Exception as e:
     print(f"❌ Error registrando auth_router: {e}")
 
+# Router de duplicados - NUEVO
+try:
+    app.include_router(duplicados_router, tags=["duplicados"])
+    print("✅ duplicados_router registrado")
+    print("   Rutas disponibles:")
+    print("   - GET  /admin/duplicados/productos")
+    print("   - POST /admin/duplicados/productos/fusionar")
+    print("   - GET  /admin/duplicados/facturas")
+    print("   - DELETE /admin/facturas/{id}")
+except Exception as e:
+    print(f"❌ Error registrando duplicados_router: {e}")
+
 print("=" * 60)
 print("✅ ROUTERS CONFIGURADOS")
 print("=" * 60 + "\n")
 
 # ==========================================
+# ENDPOINTS DE PÁGINAS HTML
+# ==========================================
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    """Página principal / Dashboard"""
+    if templates:
+        return templates.TemplateResponse("admin_dashboard.html", {"request": request})
+    return HTMLResponse("<h1>LecFac API</h1><p>Templates no configurados</p>")
+
+@app.get("/editor", response_class=HTMLResponse)
+async def editor(request: Request):
+    """Editor de facturas"""
+    if templates:
+        return templates.TemplateResponse("editor.html", {"request": request})
+    return HTMLResponse("<h1>Editor</h1><p>Templates no configurados</p>")
+
+@app.get("/gestor-duplicados", response_class=HTMLResponse)
+async def gestor_duplicados(request: Request):
+    """Gestor de duplicados - NUEVO"""
+    if templates:
+        return templates.TemplateResponse("gestor_duplicados.html", {"request": request})
+    return HTMLResponse("<h1>Gestor de Duplicados</h1><p>Templates no configurados</p>")
+
+# ==========================================
+# ENDPOINTS DE CONFIGURACIÓN Y UTILIDADES
+# ==========================================
+
+@app.get("/api/health-check")
+async def health_check():
+    """Verificar estado del servidor"""
+    return {
+        "status": "ok",
+        "version": "3.0.1",
+        "timestamp": datetime.now().isoformat(),
+        "database": "connected" if test_database_connection() else "disconnected"
+    }
+
+@app.get("/api/config/anthropic-key")
+async def get_anthropic_key():
+    """
+    Obtener API Key de Anthropic desde variables de entorno
+    (Retorna solo asteriscos por seguridad si existe)
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    
+    if api_key:
+        # Por seguridad, solo indicar que existe
+        return {
+            "apiKey": api_key,  # En producción, mejor devolver solo: "********"
+            "configured": True
+        }
+    else:
+        return {
+            "apiKey": "",
+            "configured": False
+        }
+
+# ==========================================
+# ENDPOINTS DE PROCESAMIENTO DE FACTURAS
+# ==========================================
+
+class FacturaManual(BaseModel):
+    """Modelo para guardado manual de facturas"""
+    establecimiento: str
+    fecha: str
+    total: float
+    productos: List[dict]
+
+@app.post("/invoices/parse")
+async def parse_invoice(file: UploadFile = File(...)):
+    """
+    Procesar factura con OCR usando Claude Vision API
+    Versión mejorada con guardado de imagen
+    """
+    print(f"\n{'='*60}")
+    print(f"📸 NUEVA FACTURA RECIBIDA: {file.filename}")
+    print(f"{'='*60}")
+    
+    temp_file = None
+    conn = None
+    
+    try:
+        # 1. Guardar archivo temporal
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close()
+        
+        print(f"✅ Archivo temporal creado: {temp_file.name}")
+        print(f"📊 Tamaño: {len(content)} bytes")
+        
+        # 2. Procesar con Claude Vision
+        print("🤖 Procesando con Claude Vision API...")
+        result = parse_invoice_with_claude(temp_file.name)
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400, 
+                detail=result.get("error", "Error procesando factura")
+            )
+        
+        data = result["data"]
+        print(f"✅ Datos extraídos: {len(data.get('productos', []))} productos")
+        
+        # 3. Validar datos
+        validator = FacturaValidator()
+        validacion = validator.validate_complete_invoice(data)
+        
+        print(f"📋 Validación: {validacion['score']}/100 puntos")
+        print(f"   Issues: {len(validacion['issues'])}")
+        print(f"   Warnings: {len(validacion['warnings'])}")
+        
+        # 4. Guardar en base de datos
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Detectar cadena
+        cadena = detectar_cadena(data.get("establecimiento", ""))
+        
+        # Insertar factura
+        cursor.execute("""
+            INSERT INTO facturas (
+                establecimiento, fecha, total, 
+                calidad_score, tiene_imagen,
+                raw_ocr_data
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            data.get("establecimiento"),
+            data.get("fecha"),
+            data.get("total", 0),
+            validacion["score"],
+            True,  # Siempre True porque tenemos la imagen
+            json.dumps(data)
+        ))
+        
+        factura_id = cursor.fetchone()[0]
+        print(f"✅ Factura guardada con ID: {factura_id}")
+        
+        # Insertar productos
+        productos = data.get("productos", [])
+        for producto in productos:
+            cursor.execute("""
+                INSERT INTO productos (
+                    nombre, codigo, cantidad, precio, 
+                    precio_total, establecimiento, fecha, 
+                    factura_id, cadena
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                producto.get("nombre"),
+                producto.get("codigo"),
+                producto.get("cantidad", 1),
+                producto.get("precio_unitario", 0),
+                producto.get("precio_total", 0),
+                data.get("establecimiento"),
+                data.get("fecha"),
+                factura_id,
+                cadena
+            ))
+        
+        print(f"✅ {len(productos)} productos guardados")
+        
+        # COMMIT y cerrar conexión
+        conn.commit()
+        cursor.close()
+        conn.close()
+        conn = None  # Importante: marcar como cerrada
+        
+        # 5. GUARDAR IMAGEN (con nueva conexión)
+        print(f"📸 Guardando imagen para factura {factura_id}...")
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
+        
+        if imagen_guardada:
+            print(f"✅✅✅ IMAGEN GUARDADA EXITOSAMENTE ✅✅✅")
+        else:
+            print(f"⚠️ Advertencia: Imagen no se guardó, pero factura está registrada")
+        
+        # 6. Limpiar archivo temporal
+        try:
+            os.unlink(temp_file.name)
+            print(f"✅ Archivo temporal eliminado")
+        except Exception as e:
+            print(f"⚠️ Error eliminando temporal: {e}")
+        
+        print(f"{'='*60}")
+        print(f"✅ FACTURA PROCESADA EXITOSAMENTE")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "data": data,
+            "validation": validacion,
+            "imagen_guardada": imagen_guardada
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"\n❌ ERROR PROCESANDO FACTURA:")
+        print(f"   {str(e)}")
+        print(traceback.format_exc())
+        
+        # Rollback si hay conexión abierta
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
+        
+        # Limpiar archivo temporal
+        if temp_file:
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
+        
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/invoices/save-manual")
+async def save_manual_invoice(factura: FacturaManual):
+    """Guardar factura manualmente (sin imagen)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Detectar cadena
+        cadena = detectar_cadena(factura.establecimiento)
+        
+        # Insertar factura
+        cursor.execute("""
+            INSERT INTO facturas (
+                establecimiento, fecha, total, 
+                calidad_score, tiene_imagen
+            ) VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            factura.establecimiento,
+            factura.fecha,
+            factura.total,
+            100,  # Score perfecto para entrada manual
+            False  # Sin imagen
+        ))
+        
+        factura_id = cursor.fetchone()[0]
+        
+        # Insertar productos
+        for producto in factura.productos:
+            cursor.execute("""
+                INSERT INTO productos (
+                    nombre, codigo, cantidad, precio,
+                    precio_total, establecimiento, fecha,
+                    factura_id, cadena
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                producto.get("nombre"),
+                producto.get("codigo"),
+                producto.get("cantidad", 1),
+                producto.get("precio_unitario", 0),
+                producto.get("precio_total", 0),
+                factura.establecimiento,
+                factura.fecha,
+                factura_id,
+                cadena
+            ))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "message": "Factura guardada correctamente"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error guardando factura manual: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# ARRANQUE DEL SERVIDOR
+# ==========================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    print("\n" + "=" * 60)
+    print("🚀 INICIANDO SERVIDOR LECFAC")
+    print("=" * 60)
+    print("📍 Host: 0.0.0.0")
+    print("📍 Puerto: 8000")
+    print("📍 Docs: http://localhost:8000/docs")
+    print("📍 Gestor Duplicados: http://localhost:8000/gestor-duplicados")
+    print("=" * 60 + "\n")
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
 # MODELOS PYDANTIC
 # ==========================================
 class UserRegister(BaseModel):
@@ -1696,6 +2035,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
