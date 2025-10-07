@@ -4,6 +4,15 @@ const fetch = require('node-fetch'); // Asegúrate de tener este paquete instala
 
 const app = express();
 
+// Al inicio de tu app Express
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
 // Middlewares
 app.use(cors());
 app.use(express.json());
