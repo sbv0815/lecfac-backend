@@ -947,23 +947,23 @@ async function guardarFacturaConImagen(invoiceData) {
         // Limpiar archivo guardado
         currentImageFile = null;
         
-        // Mostrar éxito
-        statusDiv.innerHTML = `
-            <div class="result-box success">
-                <h3 style="color: #2e7d32;">✅ Factura guardada exitosamente</h3>
-                <p style="margin: 15px 0;">
-                    <strong>Factura #${facturaId}</strong><br>
-                    ${result.productos_guardados} productos guardados<br>
-                    ${checkData.estado_datos_imagen === 'PRESENTE' ? '✅ Imagen guardada' : '⚠️ Imagen NO guardada'}
-                </p>
-                <button class="btn btn-primary" onclick="window.open('/editor?id=${facturaId}', '_blank', 'width=1400,height=900')" style="margin: 10px 5px;">
-                    📝 Abrir Editor
-                </button>
-                <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin: 10px 5px;">
-                    📸 Subir Otra
-                </button>
-            </div>
-        `;
+        // Mostrar éxito con verificación correcta de imagen
+statusDiv.innerHTML = `
+    <div class="result-box success">
+        <h3 style="color: #2e7d32;">✅ Factura guardada exitosamente</h3>
+        <p style="margin: 15px 0;">
+            <strong>Factura #${facturaId}</strong><br>
+            ${result.productos_guardados} productos guardados<br>
+            ${checkData.estado_datos_imagen === 'EXISTS' ? '✅ Imagen guardada correctamente' : '⚠️ Imagen NO guardada'}
+        </p>
+        <button class="btn btn-primary" onclick="window.open('/editor?id=${facturaId}', '_blank', 'width=1400,height=900')" style="margin: 10px 5px;">
+            📝 Abrir Editor
+        </button>
+        <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin: 10px 5px;">
+            📸 Subir Otra
+        </button>
+    </div>
+`;
         
         // Actualizar estadísticas
         setTimeout(() => {
