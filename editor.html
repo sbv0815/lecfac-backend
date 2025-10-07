@@ -668,110 +668,141 @@
     }
     
     // CARGAR FACTURA
-    async function cargarFactura() {
-        console.log('🔄 Cargando factura ID:', facturaId);
-        
-        if (!facturaId) {
-            alert('❌ Error: No se especificó ID de factura en la URL');
-            return;
-        }
+    // CARGAR FACTURA - VERSIÓN CON DEBUG DETALLADO
+async function cargarFactura() {
+    console.log('🔄 Cargando factura ID:', facturaId);
+    
+    if (!facturaId) {
+        alert('❌ Error: No se especificó ID de factura en la URL');
+        return;
+    }
 
-        showLoading();
+    showLoading();
+    
+    try {
+        console.log(`📡 Fetching: ${API_URL}/admin/facturas/${facturaId}`);
         
-        try {
-            console.log(`📡 Fetching: ${API_URL}/admin/facturas/${facturaId}`);
-            
-            const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`);
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Error ${response.status}: ${errorText}`);
-            }
-            
-            const factura = await response.json();
-            console.log('✅ Factura recibida:', factura);
-            
-            facturaOriginal = factura;
-            document.getElementById('debugInfo').textContent = JSON.stringify(factura, null, 2);
-            
-            // DATOS GENERALES
-            document.getElementById('facturaId').textContent = factura.id || '-';
-            document.getElementById('establecimiento').value = factura.establecimiento || '';
-            document.getElementById('total').value = factura.total || factura.total_factura || 0;
-            
-            // FECHA - Manejar múltiples formatos
-            if (factura.fecha) {
-                try {
-                    let fechaStr = factura.fecha;
-                    if (typeof fechaStr === 'string') {
-                        // Si viene con tiempo (2025-01-15T12:00:00), extraer solo fecha
-                        if (fechaStr.includes('T')) {
-                            fechaStr = fechaStr.split('T')[0];
-                        }
-                        // Si viene en otro formato, intentar parsear
-                        else if (!fechaStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                            const fecha = new Date(fechaStr);
-                            if (!isNaN(fecha.getTime())) {
-                                fechaStr = fecha.toISOString().split('T')[0];
-                            }
+        const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`);
+        
+        console.log('📥 Response status:', response.status);
+        console.log('📥 Response headers:', [...response.headers.entries()]);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Error ${response.status}: ${errorText}`);
+        }
+        
+        const factura = await response.json();
+        console.log('✅ Factura recibida completa:', factura);
+        
+        // ====== DEBUG CRÍTICO DE PRODUCTOS ======
+        console.log('=== 🔍 DEBUG PRODUCTOS ===');
+        console.log('1. factura.productos existe?', factura.productos !== undefined);
+        console.log('2. Es array?', Array.isArray(factura.productos));
+        console.log('3. Cantidad de productos:', factura.productos?.length || 0);
+        console.log('4. Productos crudos:', factura.productos);
+        if (factura.productos && factura.productos.length > 0) {
+            console.log('5. Primer producto:', factura.productos[0]);
+            console.log('6. Campos del primer producto:', Object.keys(factura.productos[0]));
+        }
+        console.log('========================');
+        
+        facturaOriginal = factura;
+        document.getElementById('debugInfo').textContent = JSON.stringify(factura, null, 2);
+        
+        // DATOS GENERALES
+        document.getElementById('facturaId').textContent = factura.id || '-';
+        document.getElementById('establecimiento').value = factura.establecimiento || '';
+        document.getElementById('total').value = factura.total || factura.total_factura || 0;
+        
+        // FECHA
+        if (factura.fecha) {
+            try {
+                let fechaStr = factura.fecha;
+                if (typeof fechaStr === 'string') {
+                    if (fechaStr.includes('T')) {
+                        fechaStr = fechaStr.split('T')[0];
+                    }
+                    else if (!fechaStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                        const fecha = new Date(fechaStr);
+                        if (!isNaN(fecha.getTime())) {
+                            fechaStr = fecha.toISOString().split('T')[0];
                         }
                     }
-                    document.getElementById('fecha').value = fechaStr;
-                } catch (e) {
-                    console.warn('⚠️ Error parseando fecha:', e);
                 }
+                document.getElementById('fecha').value = fechaStr;
+            } catch (e) {
+                console.warn('⚠️ Error parseando fecha:', e);
             }
-            
-            // ESTADO
-            const estado = factura.estado || factura.estado_validacion || 'pendiente';
-            const estadoBadge = document.getElementById('estadoBadge');
-            estadoBadge.textContent = estado;
-            estadoBadge.className = 'validation-badge badge-' + estado.toLowerCase().replace(' ', '_');
-            
-            // PUNTAJE
-            if (factura.puntaje !== undefined && factura.puntaje !== null) {
-                document.getElementById('puntaje').textContent = factura.puntaje;
-            }
-            
-            // PRODUCTOS - Mapeo robusto
-            if (factura.productos && Array.isArray(factura.productos)) {
-                console.log(`📦 ${factura.productos.length} productos encontrados`);
-                
-                productos = factura.productos.map(p => {
-                    // Intentar múltiples campos para cada propiedad
-                    const codigo = p.codigo || p.codigo_ean || p.codigo_local || '';
-                    const nombre = p.nombre || p.nombre_producto || p.descripcion || 'Sin nombre';
-                    const precio = parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || 0;
-                    
-                    return {
-                        id: p.id,
-                        codigo: codigo,
-                        nombre: nombre,
-                        precio: precio,
-                        nuevo: false
-                    };
-                });
-                
-                console.log('✅ Productos mapeados:', productos);
-            } else {
-                console.warn('⚠️ No hay productos o formato inválido');
-                productos = [];
-            }
-            
-            renderProductos();
-            
-            // CARGAR IMAGEN
-            await cargarImagen();
-            
-            console.log('✅ Factura cargada completamente');
-            
-        } catch (error) {
-            console.error('❌ Error cargando factura:', error);
-            alert(`Error al cargar la factura:\n${error.message}`);
-        } finally {
-            hideLoading();
         }
+        
+        // ESTADO
+        const estado = factura.estado || factura.estado_validacion || 'pendiente';
+        const estadoBadge = document.getElementById('estadoBadge');
+        estadoBadge.textContent = estado;
+        estadoBadge.className = 'validation-badge badge-' + estado.toLowerCase().replace(' ', '_');
+        
+        // PUNTAJE
+        if (factura.puntaje !== undefined && factura.puntaje !== null) {
+            document.getElementById('puntaje').textContent = factura.puntaje;
+        }
+        
+        // ====== PRODUCTOS - MAPEO DETALLADO ======
+        console.log('🔄 Iniciando mapeo de productos...');
+        
+        if (!factura.productos) {
+            console.error('❌ factura.productos es undefined o null');
+            productos = [];
+        } else if (!Array.isArray(factura.productos)) {
+            console.error('❌ factura.productos NO es un array:', typeof factura.productos);
+            productos = [];
+        } else if (factura.productos.length === 0) {
+            console.warn('⚠️ factura.productos está vacío (length = 0)');
+            productos = [];
+        } else {
+            console.log(`📦 Procesando ${factura.productos.length} productos...`);
+            
+            productos = factura.productos.map((p, index) => {
+                console.log(`  - Producto ${index + 1}:`, p);
+                
+                // Mapeo con fallbacks
+                const codigo = p.codigo || p.codigo_ean || p.codigo_local || '';
+                const nombre = p.nombre || p.nombre_producto || p.descripcion || 'Sin nombre';
+                const precio = parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || 0;
+                
+                const productoMapeado = {
+                    id: p.id,
+                    codigo: codigo,
+                    nombre: nombre,
+                    precio: precio,
+                    nuevo: false
+                };
+                
+                console.log(`    ✓ Mapeado:`, productoMapeado);
+                return productoMapeado;
+            });
+            
+            console.log('✅ Productos mapeados exitosamente:', productos);
+        }
+        
+        // RENDERIZAR PRODUCTOS
+        console.log('🎨 Llamando a renderProductos()...');
+        renderProductos();
+        console.log('✅ renderProductos() completado');
+        
+        // CARGAR IMAGEN
+        await cargarImagen();
+        
+        console.log('✅✅✅ Factura cargada COMPLETAMENTE ✅✅✅');
+        
+    } catch (error) {
+        console.error('❌❌❌ ERROR CRÍTICO:', error);
+        console.error('Stack trace:', error.stack);
+        alert(`Error al cargar la factura:\n${error.message}`);
+    } finally {
+        hideLoading();
     }
+}
 
     // CARGAR IMAGEN
     async function cargarImagen() {
