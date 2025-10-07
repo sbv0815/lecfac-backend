@@ -26,46 +26,18 @@
         
         .navbar-header {
             padding: 20px 30px;
-            border-bottom: 1px solid rgba(255,255,255,0.2);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         
-        .navbar h1 {
-            font-size: 24px;
-            font-weight: 600;
-        }
-        
-        .navbar-actions {
-            display: flex;
-            gap: 15px;
-        }
+        .navbar h1 { font-size: 24px; font-weight: 600; }
+        .navbar-actions { display: flex; gap: 15px; }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
             padding: 30px;
-        }
-        
-        .toolbar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        
-        .card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            overflow: hidden;
-            margin-bottom: 30px;
         }
         
         .btn {
@@ -76,48 +48,19 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
         }
         
-        .btn-primary {
-            background: #1a73e8;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #1557b0;
-        }
-        
-        .btn-secondary {
-            background: #f1f3f4;
-            color: #5f6368;
-        }
-        
-        .btn-secondary:hover {
-            background: #e8eaed;
-        }
-        
-        .btn-danger {
-            background: #ea4335;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #d93025;
-        }
-        
-        .btn-success {
-            background: #34a853;
-            color: white;
-        }
-        
-        .btn-success:hover {
-            background: #2d9148;
-        }
-        
-        .btn-sm {
-            padding: 6px 12px;
-            font-size: 13px;
-        }
+        .btn-primary { background: #1a73e8; color: white; }
+        .btn-primary:hover { background: #1557b0; }
+        .btn-secondary { background: #f1f3f4; color: #5f6368; }
+        .btn-secondary:hover { background: #e8eaed; }
+        .btn-danger { background: #ea4335; color: white; }
+        .btn-danger:hover { background: #d93025; }
+        .btn-success { background: #34a853; color: white; }
+        .btn-success:hover { background: #2d9148; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
         
         .tabs {
             display: flex;
@@ -125,7 +68,7 @@
             background: #fff;
             border-radius: 8px 8px 0 0;
             overflow: hidden;
-            margin-bottom: -1px;
+            margin-bottom: 20px;
         }
         
         .tab {
@@ -140,29 +83,52 @@
             transition: all 0.3s;
         }
         
-        .tab:hover {
-            background: rgba(0, 0, 0, 0.03);
-            color: #333;
-        }
+        .tab:hover { background: rgba(0, 0, 0, 0.03); color: #333; }
+        .tab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
         
-        .tab.active {
-            color: #1a73e8;
-            border-bottom-color: #1a73e8;
-            background: rgba(0, 0, 0, 0.02);
-        }
-        
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.3s;
-        }
-        
-        .tab-content.active {
-            display: block;
-        }
+        .tab-content { display: none; animation: fadeIn 0.3s; }
+        .tab-content.active { display: block; }
         
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .filters {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-label {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .filter-select {
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
         }
         
         .stat-grid {
@@ -192,35 +158,12 @@
             color: #1a73e8;
         }
         
-        .filters {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .filter-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .filter-label {
-            font-weight: 500;
-            font-size: 14px;
-        }
-        
-        .filter-select {
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        
         .empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #999;
+            background: white;
+            border-radius: 8px;
         }
         
         .loading {
@@ -248,10 +191,11 @@
         }
         
         .duplicate-container {
-            margin-top: 20px;
+            margin-bottom: 20px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             overflow: hidden;
+            background: white;
         }
         
         .duplicate-header {
@@ -272,10 +216,11 @@
         .duplicate-item {
             padding: 20px;
             position: relative;
+            border-right: 2px solid #e0e0e0;
         }
         
-        .duplicate-item:first-child {
-            border-right: 2px solid #e0e0e0;
+        .duplicate-item:last-child {
+            border-right: none;
         }
         
         .duplicate-metadata {
@@ -294,7 +239,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            flex-direction: column;
         }
         
         .duplicate-image img {
@@ -302,43 +246,6 @@
             max-height: 300px;
             border-radius: 4px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        
-        .product-list {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        
-        .product-item {
-            padding: 10px;
-            border-radius: 6px;
-            margin-bottom: 5px;
-            background: white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-        
-        .product-item.identical {
-            background: #e8f5e9;
-            border-left: 3px solid #34a853;
-        }
-        
-        .product-item.different {
-            background: #fff3e0;
-            border-left: 3px solid #f57c00;
-        }
-        
-        .product-item h4 {
-            margin-bottom: 5px;
-        }
-        
-        .product-meta {
-            display: flex;
-            gap: 15px;
-            font-size: 13px;
-            color: #666;
         }
         
         .selection-mark {
@@ -355,13 +262,8 @@
             font-weight: bold;
         }
         
-        .selected {
-            background: #34a853;
-        }
-        
-        .not-selected {
-            background: #ea4335;
-        }
+        .selected { background: #34a853; }
+        .not-selected { background: #ea4335; }
         
         .select-button {
             position: absolute;
@@ -378,20 +280,9 @@
             border-radius: 12px;
         }
         
-        .similarity-high {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-        
-        .similarity-medium {
-            background: #fff3e0;
-            color: #f57c00;
-        }
-        
-        .similarity-low {
-            background: #ffebee;
-            color: #c62828;
-        }
+        .similarity-high { background: #e8f5e9; color: #2e7d32; }
+        .similarity-medium { background: #fff3e0; color: #f57c00; }
+        .similarity-low { background: #ffebee; color: #c62828; }
         
         .criteria-tag {
             display: inline-block;
@@ -427,7 +318,6 @@
             to { opacity: 0; visibility: hidden; }
         }
         
-        /* Toggle switch */
         .toggle-switch {
             position: relative;
             display: inline-block;
@@ -469,24 +359,19 @@
             background-color: #1a73e8;
         }
         
-        input:focus + .toggle-slider {
-            box-shadow: 0 0 1px #1a73e8;
-        }
-        
         input:checked + .toggle-slider:before {
             transform: translateX(26px);
         }
         
-        /* AI settings section */
         .ai-settings {
-            background: #f1f3f4;
-            padding: 15px;
+            background: white;
+            padding: 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
 
         .ai-settings h3 {
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             font-size: 16px;
             color: #1a73e8;
         }
@@ -494,13 +379,7 @@
         .ai-settings .divider {
             height: 1px;
             background: #e0e0e0;
-            margin: 15px 0;
-        }
-
-        .ai-settings .btn-group {
-            display: flex;
-            gap: 8px;
-            margin-top: 15px;
+            margin: 20px 0;
         }
 
         .batch-actions {
@@ -532,13 +411,13 @@
             border-radius: 4px;
             margin: 5px 0;
             overflow: hidden;
-            position: relative;
         }
         
         .confidence-fill {
             height: 100%;
             background: linear-gradient(90deg, #ff9800 0%, #4caf50 100%);
             border-radius: 4px;
+            transition: width 0.3s;
         }
 
         .pagination {
@@ -569,14 +448,64 @@
             background: #1a73e8;
             color: white;
         }
-    </style>
 
-   
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .popup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .popup-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow: auto;
+            position: relative;
+        }
+
+        .popup-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            background: #f1f3f4;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            color: #666;
+        }
+
+        .popup-close:hover {
+            background: #e0e0e0;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
         <div class="navbar-header">
-            <h1>Gestor de Duplicados - LecFac</h1>
+            <h1>🔍 Gestor de Duplicados - LecFac</h1>
             <div class="navbar-actions">
                 <a href="/" class="btn btn-secondary">← Volver al Dashboard</a>
             </div>
@@ -584,19 +513,22 @@
     </nav>
 
     <div class="container">
+        <!-- PESTAÑAS -->
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('productos')">Productos Duplicados</button>
-            <button class="tab" onclick="switchTab('facturas')">Facturas Duplicadas</button>
-            <button class="tab" onclick="switchTab('configuracion')">Configuración IA</button>
+            <button class="tab active" onclick="switchTab('productos')">📦 Productos Duplicados</button>
+            <button class="tab" onclick="switchTab('facturas')">🧾 Facturas Duplicadas</button>
+            <button class="tab" onclick="switchTab('configuracion')">⚙️ Configuración IA</button>
         </div>
 
+        <!-- ========================================== -->
         <!-- TAB: PRODUCTOS DUPLICADOS -->
+        <!-- ========================================== -->
         <div id="tab-productos" class="tab-content active">
             <div class="toolbar">
                 <div class="filters">
                     <div class="filter-group">
                         <span class="filter-label">Umbral de Similitud:</span>
-                        <select id="umbralSimilitud" class="filter-select" onchange="detectarProductosDuplicados()">
+                        <select id="umbralSimilitud" class="filter-select">
                             <option value="90">Muy Alta (90%+)</option>
                             <option value="85" selected>Alta (85%+)</option>
                             <option value="75">Media (75%+)</option>
@@ -606,7 +538,7 @@
                     
                     <div class="filter-group">
                         <span class="filter-label">Criterios:</span>
-                        <select id="criteriosProductos" class="filter-select" onchange="detectarProductosDuplicados()">
+                        <select id="criteriosProductos" class="filter-select">
                             <option value="todos" selected>Todos los criterios</option>
                             <option value="codigo">Mismo código</option>
                             <option value="nombre">Nombre similar</option>
@@ -617,16 +549,17 @@
 
                 <div>
                     <button class="btn btn-primary" onclick="detectarProductosDuplicados()">
-                        <span>🔍 Detectar Duplicados</span>
+                        🔍 Detectar Duplicados
                     </button>
                     <button class="btn btn-secondary" onclick="mostrarAyudaProductos()">
-                        <span>❓ Ayuda</span>
+                        ❓ Ayuda
                     </button>
                 </div>
             </div>
 
-            <div class="batch-actions" id="productos-ia-panel">
-                <h3>Procesamiento con Inteligencia Artificial</h3>
+            <!-- PANEL DE IA -->
+            <div class="batch-actions" id="productos-ia-panel" style="display: none;">
+                <h3>🤖 Procesamiento con Inteligencia Artificial</h3>
                 <p>Usa IA para analizar y procesar automáticamente los duplicados detectados.</p>
                 
                 <div class="filter-group" style="margin-top: 10px;">
@@ -639,7 +572,7 @@
                 </div>
                 
                 <div class="batch-status" id="productos-batch-status" style="display: none;">
-                    <div>
+                    <div style="flex: 1;">
                         <p>Progreso: <span id="productos-progreso">0/0</span></p>
                         <div class="confidence-meter">
                             <div class="confidence-fill" id="productos-progress-bar" style="width: 0%;"></div>
@@ -649,11 +582,12 @@
                 </div>
                 
                 <div class="btn-group">
-                    <button class="btn btn-success" onclick="procesarDuplicadosIA('productos')">Procesar con IA</button>
-                    <button class="btn btn-primary" onclick="guardarResultadosIA('productos')">Guardar Resultados</button>
+                    <button class="btn btn-success" onclick="procesarDuplicadosIA('productos')">🤖 Procesar con IA</button>
+                    <button class="btn btn-primary" onclick="guardarResultadosIA('productos')">💾 Guardar Resultados</button>
                 </div>
             </div>
 
+            <!-- ESTADÍSTICAS -->
             <div class="stat-grid">
                 <div class="stat-card">
                     <div class="label">Productos Totales</div>
@@ -673,6 +607,7 @@
                 </div>
             </div>
 
+            <!-- CONTENEDOR DE DUPLICADOS -->
             <div id="productos-duplicados-container">
                 <div class="empty-state">
                     <h3>Haz clic en "Detectar Duplicados" para comenzar</h3>
@@ -680,18 +615,19 @@
                 </div>
             </div>
 
-            <div class="pagination" id="productos-pagination">
-                <!-- Paginación se genera dinámicamente -->
-            </div>
+            <!-- PAGINACIÓN -->
+            <div class="pagination" id="productos-pagination"></div>
         </div>
 
+        <!-- ========================================== -->
         <!-- TAB: FACTURAS DUPLICADAS -->
+        <!-- ========================================== -->
         <div id="tab-facturas" class="tab-content">
             <div class="toolbar">
                 <div class="filters">
                     <div class="filter-group">
                         <span class="filter-label">Criterio Principal:</span>
-                        <select id="criterioFacturas" class="filter-select" onchange="detectarFacturasDuplicadas()">
+                        <select id="criterioFacturas" class="filter-select">
                             <option value="all" selected>Todos los criterios</option>
                             <option value="same_establishment">Mismo establecimiento</option>
                             <option value="same_date">Misma fecha</option>
@@ -711,16 +647,17 @@
 
                 <div>
                     <button class="btn btn-primary" onclick="detectarFacturasDuplicadas()">
-                        <span>🔍 Detectar Duplicados</span>
+                        🔍 Detectar Duplicados
                     </button>
                     <button class="btn btn-secondary" onclick="mostrarAyudaFacturas()">
-                        <span>❓ Ayuda</span>
+                        ❓ Ayuda
                     </button>
                 </div>
             </div>
 
-            <div class="batch-actions" id="facturas-ia-panel">
-                <h3>Procesamiento con Inteligencia Artificial</h3>
+            <!-- PANEL DE IA -->
+            <div class="batch-actions" id="facturas-ia-panel" style="display: none;">
+                <h3>🤖 Procesamiento con Inteligencia Artificial</h3>
                 <p>Usa IA para analizar y procesar automáticamente las facturas duplicadas.</p>
                 
                 <div class="filter-group" style="margin-top: 10px;">
@@ -733,7 +670,7 @@
                 </div>
                 
                 <div class="batch-status" id="facturas-batch-status" style="display: none;">
-                    <div>
+                    <div style="flex: 1;">
                         <p>Progreso: <span id="facturas-progreso">0/0</span></p>
                         <div class="confidence-meter">
                             <div class="confidence-fill" id="facturas-progress-bar" style="width: 0%;"></div>
@@ -743,11 +680,12 @@
                 </div>
                 
                 <div class="btn-group">
-                    <button class="btn btn-success" onclick="procesarDuplicadosIA('facturas')">Procesar con IA</button>
-                    <button class="btn btn-primary" onclick="guardarResultadosIA('facturas')">Guardar Resultados</button>
+                    <button class="btn btn-success" onclick="procesarDuplicadosIA('facturas')">🤖 Procesar con IA</button>
+                    <button class="btn btn-primary" onclick="guardarResultadosIA('facturas')">💾 Guardar Resultados</button>
                 </div>
             </div>
 
+            <!-- ESTADÍSTICAS -->
             <div class="stat-grid">
                 <div class="stat-card">
                     <div class="label">Facturas Totales</div>
@@ -767,6 +705,7 @@
                 </div>
             </div>
 
+            <!-- CONTENEDOR DE DUPLICADOS -->
             <div id="facturas-duplicadas-container">
                 <div class="empty-state">
                     <h3>Haz clic en "Detectar Duplicados" para comenzar</h3>
@@ -774,60 +713,52 @@
                 </div>
             </div>
 
-            <div class="pagination" id="facturas-pagination">
-                <!-- Paginación se genera dinámicamente -->
-            </div>
+            <!-- PAGINACIÓN -->
+            <div class="pagination" id="facturas-pagination"></div>
         </div>
 
+        <!-- ========================================== -->
         <!-- TAB: CONFIGURACIÓN IA -->
+        <!-- ========================================== -->
         <div id="tab-configuracion" class="tab-content">
             <div class="ai-settings">
-                <h3>Configuración de la Inteligencia Artificial</h3>
+                <h3>⚙️ Configuración de la Inteligencia Artificial</h3>
                 
                 <div class="filter-group" style="margin-top: 15px;">
-    <span class="filter-label">API Key Anthropic:</span>
-    <input type="password" id="apiKey" class="filter-select" style="width: 350px;">
-</div>
+                    <span class="filter-label">API Key Anthropic:</span>
+                    <input type="password" id="apiKey" class="filter-select" 
+                           style="width: 350px;" placeholder="sk-ant-...">
+                </div>
 
                 <div class="filter-group" style="margin-top: 15px;">
                     <span class="filter-label">Modelo:</span>
                     <select id="modeloIA" class="filter-select">
-                        <option value="claude-3-haiku-20240307" selected>Claude 3 Haiku (rápido y económico)</option>
-                        <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (balanceado)</option>
+                        <option value="claude-3-5-sonnet-20241022" selected>Claude 3.5 Sonnet (recomendado)</option>
+                        <option value="claude-3-haiku-20240307">Claude 3 Haiku (rápido y económico)</option>
                         <option value="claude-3-opus-20240229">Claude 3 Opus (máxima precisión)</option>
                     </select>
                 </div>
                 
                 <div class="divider"></div>
 
-                <h3>Criterios de Fusión para Productos</h3>
+                <h3>📋 Criterios de Fusión para Productos</h3>
                 <div class="filter-group">
-                    <textarea id="criteriosProductosIA" class="filter-select" style="width: 100%; height: 120px; resize: vertical;">
-1. Si dos productos tienen el mismo código EAN y están en el mismo establecimiento, son duplicados.
-2. Si dos productos tienen nombres muy similares (>85% similitud) y están en el mismo establecimiento, son duplicados.
-3. Si los productos tienen la misma marca, mismo tamaño pero descritos de forma diferente, son duplicados.
-4. Para productos sin código EAN, evaluar si las descripciones se refieren al mismo producto con diferente formato.
-5. El producto con información más completa y actualizada debe ser conservado.
-6. En caso de duda, conservar el producto que tiene precio más actualizado o veces visto más alto.
-7. Considerar variaciones de formato como "500g" vs "1/2 kg" como el mismo producto.
+                    <textarea id="criteriosProductosIA" class="filter-select" 
+                              style="width: 100%; height: 150px; resize: vertical; font-family: monospace; font-size: 13px;">
                     </textarea>
                 </div>
                 
                 <div class="divider"></div>
 
-                <h3>Criterios de Eliminación para Facturas</h3>
+                <h3>🗑️ Criterios de Eliminación para Facturas</h3>
                 <div class="filter-group">
-                    <textarea id="criteriosFacturasIA" class="filter-select" style="width: 100%; height: 120px; resize: vertical;">
-1. Si dos facturas tienen la misma fecha, mismo establecimiento y mismo total, son duplicadas.
-2. Si dos facturas tienen la misma fecha, mismo establecimiento y productos idénticos o muy similares, son duplicadas.
-3. Si dos facturas del mismo establecimiento tienen el mismo número de referencia, son duplicadas.
-4. Para facturas con imagen, la imagen debe ser revisada para confirmar que es la misma factura.
-5. En caso de duplicados, conservar la factura con imagen sobre la que no tiene imagen.
-6. Si ambas tienen imagen, conservar la factura con mejor calidad de imagen o con procesamiento más completo.
-7. Si difieren ligeramente en productos, la factura más completa debe ser conservada.
+                    <textarea id="criteriosFacturasIA" class="filter-select" 
+                              style="width: 100%; height: 150px; resize: vertical; font-family: monospace; font-size: 13px;">
                     </textarea>
                 </div>
                 
+                <div class="divider"></div>
+
                 <div class="filter-group" style="margin-top: 15px;">
                     <span class="filter-label">Tamaño de lote para procesamiento:</span>
                     <select id="tamanoLote" class="filter-select">
@@ -840,1061 +771,71 @@
                 
                 <div class="filter-group" style="margin-top: 15px;">
                     <span class="filter-label">Intervalo de procesamiento (segundos):</span>
-                    <input type="number" id="intervaloLote" class="filter-select" value="5" min="1" max="60">
+                    <input type="number" id="intervaloLote" class="filter-select" 
+                           value="5" min="1" max="60" style="width: 100px;">
                 </div>
                 
                 <button class="btn btn-primary" onclick="guardarConfiguracionIA()" style="margin-top: 20px;">
-                    Guardar Configuración
+                    💾 Guardar Configuración
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- POPUP: AYUDA PRODUCTOS -->
-    <div id="popup-ayuda-productos" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
-        <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 800px; max-height: 90vh; overflow: auto; position: relative;">
-            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-ayuda-productos')">✕</div>
-            <h2 style="margin-bottom: 20px;">Ayuda: Detección de Productos Duplicados</h2>
-            
-            <p style="margin-bottom: 15px;">El sistema utiliza los siguientes criterios para detectar productos duplicados:</p>
-            
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h3 style="margin-bottom: 10px;">Criterios para considerar duplicados:</h3>
-                <ul style="list-style-type: none; padding-left: 0;">
-                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
-                        <strong>Mismo código + mismo establecimiento:</strong> Si dos productos tienen el mismo código EAN y están en el mismo establecimiento, se consideran duplicados.
-                    </li>
-                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
-                        <strong>Similitud en nombre + mismo establecimiento:</strong> Si dos productos tienen nombres muy similares y están en el mismo establecimiento, pueden ser duplicados aunque sus códigos sean diferentes.
-                    </li>
-                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #ea4335;">✗</span>
-                        <strong>No son duplicados:</strong> Productos con el mismo código pero en diferentes establecimientos, ya que pueden tener precios diferentes según la ubicación.
-                    </li>
+    <!-- ========================================== -->
+    <!-- POPUPS -->
+    <!-- ========================================== -->
+    
+    <!-- POPUP: Ayuda Productos -->
+    <div id="popup-ayuda-productos" class="popup">
+        <div class="popup-content">
+            <div class="popup-close" onclick="cerrarPopup('popup-ayuda-productos')">✕</div>
+            <h2>❓ Ayuda: Detección de Productos Duplicados</h2>
+            <p style="margin: 15px 0;">El sistema utiliza varios criterios para detectar productos duplicados y te ayuda a mantener tu base de datos limpia.</p>
+            <div style="background: #f5f7fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3>Criterios de Detección:</h3>
+                <ul style="list-style: none; padding-left: 0; margin-top: 10px;">
+                    <li style="margin-bottom: 8px;">✓ <strong>Mismo código EAN</strong> + mismo establecimiento</li>
+                    <li style="margin-bottom: 8px;">✓ <strong>Nombres similares</strong> (>85% similitud) + mismo establecimiento</li>
+                    <li>✓ <strong>Variaciones de formato</strong> (ej: "500g" vs "1/2 kg")</li>
                 </ul>
             </div>
-            
-            <h3 style="margin-bottom: 15px;">Proceso de fusión:</h3>
-            <ol style="padding-left: 20px; margin-bottom: 20px;">
-                <li style="margin-bottom: 10px;">Revisa las diferencias entre los productos duplicados.</li>
-                <li style="margin-bottom: 10px;">Selecciona el producto que contiene la información más precisa o completa.</li>
-                <li style="margin-bottom: 10px;">Al fusionar, los historiales de precios se combinan, manteniendo todos los registros.</li>
-                <li style="margin-bottom: 10px;">Si hay valores diferentes para el mismo día, se prioriza el valor más reciente.</li>
-            </ol>
-            
-            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h4 style="margin-bottom: 10px; color: #1976d2;">Consejos para obtener mejores resultados:</h4>
-                <ul style="list-style-type: none; padding-left: 0;">
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1976d2;">•</span>
-                        Ajusta el umbral de similitud según tus necesidades: más alto para mayor precisión, más bajo para encontrar más posibles duplicados.
-                    </li>
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1976d2;">•</span>
-                        Comienza revisando los duplicados con coincidencia exacta de código antes de pasar a los basados en similitud de nombre.
-                    </li>
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1976d2;">•</span>
-                        Mantén consistentes los nombres de establecimientos para evitar falsos duplicados.
-                    </li>
-                </ul>
-            </div>
-
-            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h4 style="margin-bottom: 10px; color: #2e7d32;">Procesamiento automático con IA:</h4>
-                <p>El sistema puede utilizar inteligencia artificial para analizar automáticamente los duplicados:</p>
-                <ul style="list-style-type: none; padding-left: 0;">
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #2e7d32;">•</span>
-                        La IA analiza cada par de productos y decide cuál mantener basado en los criterios configurados.
-                    </li>
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #2e7d32;">•</span>
-                        Establece el nivel de confianza mínimo según tus necesidades de precisión.
-                    </li>
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #2e7d32;">•</span>
-                        Revisa los resultados antes de aplicar cambios permanentes.
-                    </li>
-                </ul>
-            </div>
-            
-            <button class="btn btn-primary" onclick="cerrarPopup('popup-ayuda-productos')" style="float: right;">Entendido</button>
+            <button class="btn btn-primary" onclick="cerrarPopup('popup-ayuda-productos')">Entendido</button>
         </div>
     </div>
 
-    <!-- POPUP: AYUDA FACTURAS -->
-    <div id="popup-ayuda-facturas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
-        <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 800px; max-height: 90vh; overflow: auto; position: relative;">
-            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-ayuda-facturas')">✕</div>
-            <h2 style="margin-bottom: 20px;">Ayuda: Detección de Facturas Duplicadas</h2>
-            
-            <p style="margin-bottom: 15px;">El sistema utiliza múltiples criterios para detectar facturas que podrían ser duplicadas:</p>
-            
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h3 style="margin-bottom: 10px;">Criterios para considerar facturas duplicadas:</h3>
-                <ul style="list-style-type: none; padding-left: 0;">
-                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
-                        <strong>Misma fecha + mismo establecimiento + mismo total:</strong> Alta probabilidad de ser la misma factura cargada dos veces.
-                    </li>
-                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #1a73e8;">✓</span>
-                        <strong>Misma fecha + mismo establecimiento + productos similares:</strong> Posiblemente la misma factura con algunas diferencias en la captura.
-                    </li>
-                    <li style="margin-bottom: 10px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #f57c00;">⚠</span>
-                        <strong>Mismo establecimiento + productos idénticos + fechas cercanas:</strong> Podría ser una compra repetida o una factura duplicada con fecha mal leída.
-                    </li>
+    <!-- POPUP: Ayuda Facturas -->
+    <div id="popup-ayuda-facturas" class="popup">
+        <div class="popup-content">
+            <div class="popup-close" onclick="cerrarPopup('popup-ayuda-facturas')">✕</div>
+            <h2>❓ Ayuda: Detección de Facturas Duplicadas</h2>
+            <p style="margin: 15px 0;">El sistema busca facturas que probablemente sean duplicadas según múltiples criterios.</p>
+            <div style="background: #f5f7fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3>Criterios de Detección:</h3>
+                <ul style="list-style: none; padding-left: 0; margin-top: 10px;">
+                    <li style="margin-bottom: 8px;">✓ Misma <strong>fecha + establecimiento + total</strong></li>
+                    <li style="margin-bottom: 8px;">✓ Misma <strong>fecha + establecimiento + productos similares</strong></li>
+                    <li>✓ Mismo <strong>número de referencia</strong></li>
                 </ul>
             </div>
-            
-            <h3 style="margin-bottom: 15px;">Cómo verificar los duplicados:</h3>
-            <ol style="padding-left: 20px; margin-bottom: 20px;">
-                <li style="margin-bottom: 10px;"><strong>Revisa la imagen:</strong> La forma más confiable de verificar si dos facturas son realmente la misma.</li>
-                <li style="margin-bottom: 10px;"><strong>Compara productos:</strong> Revisa si los productos coinciden exactamente o hay variaciones.</li>
-                <li style="margin-bottom: 10px;"><strong>Verifica fechas y horas:</strong> A veces las facturas son del mismo día pero de compras diferentes.</li>
-                <li style="margin-bottom: 10px;"><strong>Números de referencia:</strong> Si están disponibles, los números de factura o transacción son definitivos.</li>
-            </ol>
-            
-            <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h4 style="margin-bottom: 10px; color: #c62828;">Importante:</h4>
-                <ul style="list-style-type: none; padding-left: 0;">
-                    <li style="padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #c62828;">!</span>
-                        Al eliminar una factura, se eliminan permanentemente sus datos y su imagen. Asegúrate de mantener la factura más completa y precisa cuando elimines duplicados.
-                    </li>
-                </ul>
+            <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <p><strong>⚠️ Importante:</strong> Al eliminar una factura, se borran permanentemente todos sus datos. Asegúrate de mantener la factura más completa.</p>
             </div>
-            
-            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h4 style="margin-bottom: 10px; color: #2e7d32;">Procesamiento automático con IA:</h4>
-                <p>El sistema puede utilizar inteligencia artificial para analizar automáticamente las facturas duplicadas:</p>
-                <ul style="list-style-type: none; padding-left: 0;">
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #2e7d32;">•</span>
-                        La IA analiza cada par de facturas y decide cuál mantener basado en los criterios configurados.
-                    </li>
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #2e7d32;">•</span>
-                        Para facturas con imágenes, se utilizan técnicas de visión por computadora para comparar el contenido.
-                    </li>
-                    <li style="margin-bottom: 5px; padding-left: 25px; position: relative;">
-                        <span style="position: absolute; left: 0; color: #2e7d32;">•</span>
-                        Revisa los resultados antes de aplicar cambios permanentes.
-                    </li>
-                </ul>
-            </div>
-            
-            <button class="btn btn-primary" onclick="cerrarPopup('popup-ayuda-facturas')" style="float: right;">Entendido</button>
+            <button class="btn btn-primary" onclick="cerrarPopup('popup-ayuda-facturas')">Entendido</button>
         </div>
     </div>
 
-    <!-- POPUP: VISTA IMAGEN -->
-    <div id="popup-imagen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
-        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 800px; max-height: 90vh; overflow: auto; position: relative; text-align: center;">
-            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-imagen')">✕</div>
-            <h3 id="popup-imagen-titulo" style="margin-bottom: 15px;">Vista Ampliada</h3>
-            <img id="popup-imagen-contenido" src="" alt="Imagen de factura" style="max-width: 100%; max-height: 70vh; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+    <!-- POPUP: Imagen Ampliada -->
+    <div id="popup-imagen" class="popup">
+        <div class="popup-content" style="text-align: center;">
+            <div class="popup-close" onclick="cerrarPopup('popup-imagen')">✕</div>
+            <h3 id="popup-imagen-titulo">Vista Ampliada</h3>
+            <img id="popup-imagen-contenido" src="" alt="Imagen de factura" 
+                 style="max-width: 100%; max-height: 70vh; border-radius: 8px; margin-top: 15px;">
         </div>
     </div>
 
-    <!-- POPUP: RESULTADOS IA -->
-    <div id="popup-resultados-ia" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 1000; padding: 20px;">
-        <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); width: 100%; max-width: 1000px; max-height: 90vh; overflow: auto; position: relative;">
-            <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; background: #f1f3f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="cerrarPopup('popup-resultados-ia')">✕</div>
-            <h2 style="margin-bottom: 20px;">Resultados del Procesamiento IA</h2>
-            
-            <div style="background: #f5f7fa; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 id="ia-resultados-titulo">Análisis de Duplicados</h3>
-                    <div>
-                        <span id="ia-total-procesados" class="criteria-tag" style="background: #e3f2fd; color: #1976d2;">0 procesados</span>
-                        <span id="ia-total-decisiones" class="criteria-tag" style="background: #e8f5e9; color: #2e7d32;">0 decisiones</span>
-                    </div>
-                </div>
-                <div id="ia-resultados-resumen"></div>
-            </div>
-            
-            <div id="ia-resultados-contenido" style="margin-bottom: 20px; max-height: 500px; overflow-y: auto;">
-                <!-- Contenido de resultados -->
-            </div>
-            
-            <div style="display: flex; justify-content: space-between;">
-                <button class="btn btn-secondary" onclick="cerrarPopup('popup-resultados-ia')">Cerrar</button>
-                <button class="btn btn-success" onclick="aplicarDecisionesIA()" id="btn-aplicar-decisiones">Aplicar Decisiones</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Configuración global
-        const API_URL = window.location.origin;
-        let productosDuplicados = [];
-        let facturasDuplicadas = [];
-        let paginaActualProductos = 1;
-        let paginaActualFacturas = 1;
-        const elementosPorPagina = 5;
-        let totalFusiones = 0;
-        let totalEliminaciones = 0;
-        let procesandoIA = false;
-        let procesoIACancelado = false;
-        
-        // Resultados de IA
-        let resultadosProductosIA = [];
-        let resultadosFacturasIA = [];
-        
-        // Configuración de IA
-        // Configuración de IA
-        let configuracionIA = {
-          apiKey: "", // Inicialmente vacío, se obtendrá del servidor
-          modelo: "claude-3-haiku-20240307",
-          tamanoLote: 10,
-          intervaloLote: 5, // segundos
-          criteriosProductos: "",
-      criteriosFacturas: ""
-        };
-
-    // Inicialización
-    document.addEventListener('DOMContentLoaded', function() {
-      verificarConexionAPI();
-      cargarEstadisticas();
-      cargarConfiguracionIA();
-      obtenerAPIKey(); // Nueva función para obtener la API key del servidor
-    });
-
-// Obtener API Key del servidor
-    // Implementar la función mostrarToast si no existe
-if (typeof window.mostrarToast !== 'function') {
-    window.mostrarToast = function(mensaje, tipo = 'success') {
-        const toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.textContent = mensaje;
-        
-        if (tipo === 'error') {
-            toast.style.background = '#ea4335';
-        } else if (tipo === 'info') {
-            toast.style.background = '#4285f4';
-        }
-        
-        document.body.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
-    };
-}
-
-// Modificar obtenerAPIKey para manejar errores
-// Modificación de la función obtenerAPIKey
-async function obtenerAPIKey() {
-    try {
-        // Establecer un timeout para evitar bloqueos
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        try {
-            const response = await fetch(`${API_URL}/api/config/anthropic-key`, {
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (response.ok) {
-                const data = await response.json();
-                configuracionIA.apiKey = data.apiKey || "";
-                // Actualizar el campo del formulario (si existe)
-                const apiKeyElement = document.getElementById('apiKey');
-                if (apiKeyElement) {
-                    apiKeyElement.value = configuracionIA.apiKey ? "********" : "";
-                }
-            } else {
-                console.warn(`No se pudo obtener API key del servidor. Código: ${response.status}`);
-                // Si falla la obtención, no modificar la key existente
-            }
-        } catch (fetchError) {
-            console.warn('No se pudo obtener API key del servidor. Usar configuración manual.', fetchError.message);
-            clearTimeout(timeoutId);
-            // Mantener la API key actual si existe
-        }
-    } catch (error) {
-        console.error('Error general obteniendo API key:', error);
-    }
-}
-
-// Modificación de la función detectarProductosDuplicados
-async function detectarProductosDuplicados() {
-    const container = document.getElementById('productos-duplicados-container');
-    container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados de productos...</p></div>';
-    
-    try {
-        const umbral = document.getElementById('umbralSimilitud').value;
-        const criterio = document.getElementById('criteriosProductos').value;
-        
-        console.log(`Detectando duplicados con umbral=${umbral} y criterio=${criterio}`);
-        
-        // Implementar reintentos (3 intentos máximo)
-        let response;
-        let intentos = 0;
-        const MAX_INTENTOS = 3;
-        
-        while (intentos < MAX_INTENTOS) {
-            try {
-                response = await fetch(`${API_URL}/admin/duplicados/productos?umbral=${umbral}&criterio=${criterio}`);
-                break; // Si tiene éxito, salir del bucle
-            } catch (e) {
-                intentos++;
-                if (intentos >= MAX_INTENTOS) throw e;
-                // Esperar antes de reintentar (backoff exponencial)
-                await new Promise(resolve => setTimeout(resolve, 1000 * intentos));
-            }
-        }
-        
-        if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        // Verificar si hay un error en la respuesta
-        if (data.error) {
-            throw new Error(`Error del servidor: ${data.error}`);
-        }
-        
-        productosDuplicados = data.duplicados || [];
-        
-        // Actualizar estadísticas
-        document.getElementById('total-duplicados').textContent = data.total || 0;
-        
-        if (productosDuplicados.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <h3>No se encontraron productos duplicados</h3>
-                    <p>Prueba con un umbral de similitud más bajo o diferentes criterios</p>
-                </div>
-            `;
-            document.getElementById('productos-pagination').innerHTML = '';
-            document.getElementById('productos-ia-panel').style.display = 'none';
-            return;
-        }
-        
-        // Mostrar panel de IA
-        document.getElementById('productos-ia-panel').style.display = 'block';
-        
-        // Renderizar la primera página
-        renderizarPaginaProductos(1);
-        
-    } catch (error) {
-        console.error('Error detectando duplicados de productos:', error);
-        
-        container.innerHTML = `
-            <div style="padding: 20px; background: #ffebee; border-radius: 8px; margin-bottom: 20px;">
-                <h3 style="color: #c62828; margin-bottom: 10px;">Error al buscar duplicados</h3>
-                <p>${error.message || 'Error desconocido'}</p>
-                <button class="btn btn-primary" onclick="detectarProductosDuplicados()" style="margin-top: 15px;">
-                    Intentar nuevamente
-                </button>
-            </div>
-        `;
-        document.getElementById('productos-ia-panel').style.display = 'none';
-    }
-}
-
-// Mejora de la función fusionarProductos
-async function fusionarProductos(dupId) {
-    const duplicado = productosDuplicados.find(d => d.id === dupId || productosDuplicados.indexOf(d) === parseInt(dupId));
-    if (!duplicado) return;
-    
-    // Si no hay seleccionado, por defecto es el producto1
-    const productoMantener = duplicado.seleccionado === duplicado.producto2.id ? 
-                            duplicado.producto2 : duplicado.producto1;
-    const productoEliminar = productoMantener === duplicado.producto1 ? 
-                            duplicado.producto2 : duplicado.producto1;
-    
-    // Validar códigos EAN antes de proceder
-    if (productoMantener.codigo && productoEliminar.codigo && 
-        productoMantener.codigo !== productoEliminar.codigo) {
-        mostrarToast('Error: No se pueden fusionar productos con códigos EAN diferentes', 'error');
-        return;
-    }
-    
-    if (!confirm(`¿Fusionar estos productos? Se mantendrá "${productoMantener.nombre}" (#${productoMantener.id}) y se eliminará "${productoEliminar.nombre}" (#${productoEliminar.id})`)) {
-        return;
-    }
-    
-    try {
-        // Mostrar estado de procesamiento
-        const elemento = document.getElementById(`duplicado-${dupId}`);
-        if (elemento) {
-            elemento.innerHTML = '<div class="loading"><div class="spinner"></div><p>Procesando fusión...</p></div>';
-        }
-        
-        const response = await fetch(`${API_URL}/admin/duplicados/productos/fusionar`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                producto_mantener_id: productoMantener.id,
-                producto_eliminar_id: productoEliminar.id
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Error al fusionar productos');
-        }
-        
-        // Actualizar contador de fusiones
-        totalFusiones++;
-        document.getElementById('total-fusiones').textContent = totalFusiones;
-        
-        // Eliminar el duplicado fusionado
-        productosDuplicados = productosDuplicados.filter(d => d.id !== dupId && productosDuplicados.indexOf(d) !== parseInt(dupId));
-        
-        // Actualizar estadísticas
-        document.getElementById('total-duplicados').textContent = productosDuplicados.length;
-        
-        // Mostrar mensaje de éxito
-        mostrarToast('Productos fusionados correctamente');
-        
-        // Actualizar vista
-        renderizarPaginaProductos(paginaActualProductos);
-        
-    } catch (error) {
-        console.error('Error fusionando productos:', error);
-        mostrarToast('Error al fusionar productos: ' + error.message, 'error');
-        
-        // Restaurar vista
-        renderizarPaginaProductos(paginaActualProductos);
-    }
-}
-
-// Función para mostrar ayuda de productos
-function mostrarAyudaProductos() {
-    const popupElement = document.getElementById('popup-ayuda-productos');
-    if (popupElement) {
-        popupElement.style.display = 'flex';
-    } else {
-        console.error('No se encontró el elemento popup-ayuda-productos');
-    }
-}
-
-// Función para mostrar ayuda de facturas
-function mostrarAyudaFacturas() {
-    const popupElement = document.getElementById('popup-ayuda-facturas');
-    if (popupElement) {
-        popupElement.style.display = 'flex';
-    } else {
-        console.error('No se encontró el elemento popup-ayuda-facturas');
-    }
-}
-
-// Función para eliminar factura
-async function eliminarFactura(facturaId, dupId) {
-    // Verificar si hay un resultado de IA para esta factura
-    const resultadoIA = resultadosFacturasIA.find(r => r.dupId === dupId || r.dupId === parseInt(dupId));
-    let mensajeConfirmacion = `¿Eliminar la factura #${facturaId} y todos sus productos?`;
-    
-    // Si hay un resultado de IA, mostrar más información
-    if (resultadoIA) {
-        const esRecomendadoPorIA = (resultadoIA.decision === 1 && facturaId === resultadoIA.factura2Id) || 
-                                  (resultadoIA.decision === 2 && facturaId === resultadoIA.factura1Id);
-        
-        if (esRecomendadoPorIA) {
-            mensajeConfirmacion = `ADVERTENCIA: La IA recomienda MANTENER esta factura y eliminar la otra.\n\n${mensajeConfirmacion}\n\n¿Estás seguro de que deseas continuar?`;
-        } else {
-            mensajeConfirmacion = `La IA recomienda eliminar esta factura.\n\n${mensajeConfirmacion}`;
-        }
-    }
-    
-    if (!confirm(mensajeConfirmacion)) return;
-    
-    try {
-        const response = await fetch(`${API_URL}/admin/duplicados/facturas/${facturaId}`, {
-            method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
-        }
-        
-        // Actualizar contador
-        totalEliminaciones++;
-        document.getElementById('total-eliminaciones').textContent = totalEliminaciones;
-        
-        // Eliminar de la lista de duplicados
-        if (dupId) {
-            facturasDuplicadas = facturasDuplicadas.filter(d => d.id !== dupId && facturasDuplicadas.indexOf(d) !== parseInt(dupId));
-            
-            // Eliminar de los resultados de IA si existe
-            resultadosFacturasIA = resultadosFacturasIA.filter(r => r.dupId !== dupId && r.dupId !== parseInt(dupId));
-            
-            // Actualizar estadísticas
-            const totalDuplicadosElement = document.getElementById('total-facturas-duplicadas');
-            if (totalDuplicadosElement) {
-                totalDuplicadosElement.textContent = facturasDuplicadas.length;
-                
-                const totalFacturasElement = document.getElementById('total-facturas');
-                const totalFacturas = totalFacturasElement ? parseInt(totalFacturasElement.textContent) : 0;
-                
-                const porcentaje = facturasDuplicadas.length > 0 && totalFacturas > 0 ? 
-                    ((facturasDuplicadas.length / totalFacturas) * 100).toFixed(1) + '%' : '0%';
-                
-                const porcentajeElement = document.getElementById('porcentaje-facturas-duplicadas');
-                if (porcentajeElement) {
-                    porcentajeElement.textContent = porcentaje;
-                }
-            }
-            
-            // Eliminar visualmente
-            const elemento = document.getElementById(`factura-dup-${dupId}`);
-            if (elemento) {
-                elemento.style.animation = 'fadeOut 0.5s forwards';
-                setTimeout(() => {
-                    renderizarPaginaFacturas(paginaActualFacturas);
-                }, 500);
-            } else {
-                renderizarPaginaFacturas(paginaActualFacturas);
-            }
-        }
-        
-        mostrarToast('Factura eliminada correctamente');
-        
-    } catch (error) {
-        console.error('Error eliminando factura:', error);
-        mostrarToast('Error al eliminar la factura: ' + error.message, 'error');
-    }
-}
-
-// Función para mostrar imagen ampliada
-function mostrarImagenAmpliada(facturaId, titulo) {
-    const tituloElement = document.getElementById('popup-imagen-titulo');
-    const imgElement = document.getElementById('popup-imagen-contenido');
-    const popupElement = document.getElementById('popup-imagen');
-    
-    if (!tituloElement || !imgElement || !popupElement) {
-        console.error('No se encontraron los elementos necesarios para mostrar la imagen ampliada');
-        return;
-    }
-    
-    tituloElement.textContent = titulo;
-    imgElement.src = `${API_URL}/admin/duplicados/facturas/${facturaId}/imagen`;
-    imgElement.onerror = function() {
-        this.onerror = null;
-        this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOTk5Ij5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD48L3N2Zz4=';
-    };
-    popupElement.style.display = 'flex';
-}
-
-// Función para comparar facturas
-function compararFacturas(factura1Id, factura2Id) {
-    window.open(`/comparador-facturas?id1=${factura1Id}&id2=${factura2Id}`, '_blank');
-}
-
-// Función para ver factura
-function verFactura(facturaId) {
-    window.open(`/editor?id=${facturaId}`, '_blank');
-}
-
-// Función para cerrar popup
-function cerrarPopup(id) {
-    const popupElement = document.getElementById(id);
-    if (popupElement) {
-        popupElement.style.display = 'none';
-    } else {
-        console.error(`No se encontró el elemento ${id}`);
-    }
-}
-
-// Función para procesar duplicados con IA
-async function procesarDuplicadosIA(tipo) {
-    if (procesandoIA) {
-        mostrarToast('Ya hay un proceso de IA en ejecución. Espera a que termine.', 'error');
-        return;
-    }
-    
-    let duplicados;
-    let confianzaMinima;
-    
-    if (tipo === 'productos') {
-        duplicados = [...productosDuplicados];
-        const confianzaElement = document.getElementById('confianzaProductos');
-        confianzaMinima = confianzaElement ? parseInt(confianzaElement.value) : 85;
-    } else { // facturas
-        duplicados = [...facturasDuplicadas];
-        const confianzaElement = document.getElementById('confianzaFacturas');
-        confianzaMinima = confianzaElement ? parseInt(confianzaElement.value) : 85;
-    }
-    
-    if (duplicados.length === 0) {
-        mostrarToast(`No se encontraron ${tipo} duplicados para procesar`, 'error');
-        return;
-    }
-    
-    // Dividir en lotes
-    const tamanoLote = configuracionIA.tamanoLote;
-    const lotes = [];
-    
-    for (let i = 0; i < duplicados.length; i += tamanoLote) {
-        lotes.push(duplicados.slice(i, i + tamanoLote));
-    }
-    
-    // Configurar panel de progreso
-    const batchStatusElement = document.getElementById(`${tipo}-batch-status`);
-    const progresoElement = document.getElementById(`${tipo}-progreso`);
-    const progressBarElement = document.getElementById(`${tipo}-progress-bar`);
-    
-    if (batchStatusElement) batchStatusElement.style.display = 'flex';
-    if (progresoElement) progresoElement.textContent = `0/${duplicados.length}`;
-    if (progressBarElement) progressBarElement.style.width = '0%';
-    
-    // Iniciar procesamiento
-    procesandoIA = true;
-    procesoIACancelado = false;
-    
-    // Limpiar resultados anteriores
-    if (tipo === 'productos') {
-        resultadosProductosIA = [];
-    } else {
-        resultadosFacturasIA = [];
-    }
-    
-    let procesados = 0;
-    
-    // Procesar lotes secuencialmente
-    for (let i = 0; i < lotes.length; i++) {
-        if (procesoIACancelado) {
-            break;
-        }
-        
-        const lote = lotes[i];
-        const resultadosLote = await procesarLoteIA(tipo, lote, confianzaMinima);
-        
-        // Almacenar resultados
-        if (tipo === 'productos') {
-            resultadosProductosIA = [...resultadosProductosIA, ...resultadosLote];
-        } else {
-            resultadosFacturasIA = [...resultadosFacturasIA, ...resultadosLote];
-        }
-        
-        // Actualizar progreso
-        procesados += lote.length;
-        const porcentaje = (procesados / duplicados.length) * 100;
-        if (progresoElement) progresoElement.textContent = `${procesados}/${duplicados.length}`;
-        if (progressBarElement) progressBarElement.style.width = `${porcentaje}%`;
-        
-        // Actualizar interfaz con las decisiones de IA
-        if (tipo === 'productos') {
-            renderizarPaginaProductos(paginaActualProductos);
-        } else {
-            renderizarPaginaFacturas(paginaActualFacturas);
-        }
-        
-        // Actualizar contador
-        const procesadosElement = document.getElementById(`${tipo}-procesados-ia`);
-        if (procesadosElement) procesadosElement.textContent = procesados;
-        
-        // Esperar antes del siguiente lote (a menos que sea el último)
-        if (i < lotes.length - 1 && !procesoIACancelado) {
-            await new Promise(resolve => setTimeout(resolve, configuracionIA.intervaloLote * 1000));
-        }
-    }
-    
-    // Finalizar procesamiento
-    procesandoIA = false;
-    
-    // Ocultar panel de progreso
-    setTimeout(() => {
-        if (batchStatusElement) batchStatusElement.style.display = 'none';
-    }, 1000);
-    
-    // Mostrar resumen
-    if (!procesoIACancelado) {
-        mostrarResumenIA(tipo);
-    }
-}
-        // ===== FUNCIONES FALTANTES PARA gestor_duplicados.html =====
-
-// Función para cambiar de pestaña
-function switchTab(tabName) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    
-    event.target.classList.add('active');
-    document.getElementById('tab-' + tabName).classList.add('active');
-    
-    if (tabName === 'productos') {
-        cargarEstadisticas();
-    }
-    if (tabName === 'facturas') {
-        cargarEstadisticas();
-    }
-}
-
-// Función para verificar conexión API
-async function verificarConexionAPI() {
-    try {
-        const response = await fetch(`${API_URL}/api/health-check`);
-        if (!response.ok) {
-            console.warn('API no respondió correctamente');
-        }
-    } catch (error) {
-        console.error('Error conectando con API:', error);
-    }
-}
-
-// Función para cargar estadísticas
-async function cargarEstadisticas() {
-    try {
-        const response = await fetch(`${API_URL}/admin/stats`);
-        const data = await response.json();
-        
-        document.getElementById('total-productos').textContent = data.productos_unicos || 0;
-        document.getElementById('total-facturas').textContent = data.total_facturas || 0;
-    } catch (error) {
-        console.error('Error cargando estadísticas:', error);
-    }
-}
-
-// Función para cargar configuración IA
-function cargarConfiguracionIA() {
-    const apiKeyElement = document.getElementById('apiKey');
-    const modeloElement = document.getElementById('modeloIA');
-    const criteriosProductosElement = document.getElementById('criteriosProductosIA');
-    const criteriosFacturasElement = document.getElementById('criteriosFacturasIA');
-    
-    if (apiKeyElement && configuracionIA.apiKey) {
-        apiKeyElement.value = "********";
-    }
-    if (modeloElement) {
-        modeloElement.value = configuracionIA.modelo;
-    }
-}
-
-// Función para guardar configuración IA
-async function guardarConfiguracionIA() {
-    const apiKeyElement = document.getElementById('apiKey');
-    const modeloElement = document.getElementById('modeloIA');
-    const criteriosProductosElement = document.getElementById('criteriosProductosIA');
-    const criteriosFacturasElement = document.getElementById('criteriosFacturasIA');
-    const tamanoLoteElement = document.getElementById('tamanoLote');
-    const intervaloLoteElement = document.getElementById('intervaloLote');
-    
-    if (apiKeyElement && apiKeyElement.value && apiKeyElement.value !== "********") {
-        configuracionIA.apiKey = apiKeyElement.value;
-    }
-    if (modeloElement) {
-        configuracionIA.modelo = modeloElement.value;
-    }
-    if (criteriosProductosElement) {
-        configuracionIA.criteriosProductos = criteriosProductosElement.value;
-    }
-    if (criteriosFacturasElement) {
-        configuracionIA.criteriosFacturas = criteriosFacturasElement.value;
-    }
-    if (tamanoLoteElement) {
-        configuracionIA.tamanoLote = parseInt(tamanoLoteElement.value);
-    }
-    if (intervaloLoteElement) {
-        configuracionIA.intervaloLote = parseInt(intervaloLoteElement.value);
-    }
-    
-    mostrarToast('Configuración guardada exitosamente');
-}
-
-// Función para renderizar página de productos
-function renderizarPaginaProductos(pagina) {
-    paginaActualProductos = pagina;
-    
-    const inicio = (pagina - 1) * elementosPorPagina;
-    const fin = inicio + elementosPorPagina;
-    const duplicadosPagina = productosDuplicados.slice(inicio, fin);
-    
-    const container = document.getElementById('productos-duplicados-container');
-    
-    if (duplicadosPagina.length === 0) {
-        container.innerHTML = '<div class="empty-state"><h3>No hay más duplicados</h3></div>';
-        return;
-    }
-    
-    let html = '';
-    duplicadosPagina.forEach((dup, idx) => {
-        const dupId = inicio + idx;
-        const seleccionado = dup.seleccionado || dup.producto1.id;
-        
-        html += `
-            <div class="duplicate-container" id="duplicado-${dupId}">
-                <div class="duplicate-header">
-                    <div>
-                        <span class="similarity-tag similarity-high">
-                            Similitud: ${dup.similitud}%
-                        </span>
-                        <span class="criteria-tag">${dup.razon}</span>
-                    </div>
-                    <button class="btn btn-success" onclick="fusionarProductos(${dupId})">
-                        Fusionar Seleccionado
-                    </button>
-                </div>
-                
-                <div class="duplicate-grid">
-                    <div class="duplicate-item ${seleccionado === dup.producto1.id ? 'selected' : ''}">
-                        <div class="duplicate-metadata">
-                            <h3>Producto #${dup.producto1.id}</h3>
-                            <p><strong>Nombre:</strong> ${dup.producto1.nombre}</p>
-                            <p><strong>Código:</strong> ${dup.producto1.codigo || 'Sin código'}</p>
-                            <p><strong>Veces visto:</strong> ${dup.producto1.veces_visto}</p>
-                            <p><strong>Precio:</strong> $${dup.producto1.precio ? dup.producto1.precio.toLocaleString() : '0'}</p>
-                        </div>
-                        <button class="btn btn-primary select-button" 
-                                onclick="seleccionarProducto(${dupId}, ${dup.producto1.id})">
-                            Mantener Este
-                        </button>
-                    </div>
-                    
-                    <div class="duplicate-item ${seleccionado === dup.producto2.id ? 'selected' : ''}">
-                        <div class="duplicate-metadata">
-                            <h3>Producto #${dup.producto2.id}</h3>
-                            <p><strong>Nombre:</strong> ${dup.producto2.nombre}</p>
-                            <p><strong>Código:</strong> ${dup.producto2.codigo || 'Sin código'}</p>
-                            <p><strong>Veces visto:</strong> ${dup.producto2.veces_visto}</p>
-                            <p><strong>Precio:</strong> $${dup.producto2.precio ? dup.producto2.precio.toLocaleString() : '0'}</p>
-                        </div>
-                        <button class="btn btn-primary select-button" 
-                                onclick="seleccionarProducto(${dupId}, ${dup.producto2.id})">
-                            Mantener Este
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    container.innerHTML = html;
-    
-    // Generar paginación
-    generarPaginacion('productos', productosDuplicados.length);
-}
-
-// Función para seleccionar producto a mantener
-function seleccionarProducto(dupId, productoId) {
-    const dup = productosDuplicados[dupId];
-    if (dup) {
-        dup.seleccionado = productoId;
-        renderizarPaginaProductos(paginaActualProductos);
-    }
-}
-
-// Función para renderizar página de facturas
-function renderizarPaginaFacturas(pagina) {
-    paginaActualFacturas = pagina;
-    
-    const inicio = (pagina - 1) * elementosPorPagina;
-    const fin = inicio + elementosPorPagina;
-    const duplicadosPagina = facturasDuplicadas.slice(inicio, fin);
-    
-    const container = document.getElementById('facturas-duplicadas-container');
-    const mostrarImagenes = document.getElementById('mostrarImagenes')?.checked;
-    
-    if (duplicadosPagina.length === 0) {
-        container.innerHTML = '<div class="empty-state"><h3>No hay más duplicados</h3></div>';
-        return;
-    }
-    
-    let html = '';
-    duplicadosPagina.forEach((dup, idx) => {
-        const dupId = inicio + idx;
-        
-        html += `
-            <div class="duplicate-container" id="factura-dup-${dupId}">
-                <div class="duplicate-header">
-                    <div>
-                        <span class="similarity-tag similarity-medium">
-                            ${dup.razon}
-                        </span>
-                    </div>
-                    <div class="btn-group">
-                        <button class="btn btn-secondary btn-sm" 
-                                onclick="compararFacturas(${dup.factura1.id}, ${dup.factura2.id})">
-                            Comparar
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="duplicate-grid">
-                    <div class="duplicate-item">
-                        <div class="duplicate-metadata">
-                            <h3>Factura #${dup.factura1.id}</h3>
-                            <p><strong>Establecimiento:</strong> ${dup.factura1.establecimiento}</p>
-                            <p><strong>Total:</strong> $${dup.factura1.total.toLocaleString()}</p>
-                            <p><strong>Productos:</strong> ${dup.factura1.num_productos}</p>
-                            <p><strong>Fecha:</strong> ${new Date(dup.factura1.fecha).toLocaleDateString()}</p>
-                        </div>
-                        ${mostrarImagenes ? `
-                            <div class="duplicate-image" onclick="mostrarImagenAmpliada(${dup.factura1.id}, 'Factura #${dup.factura1.id}')">
-                                <img src="${API_URL}/admin/duplicados/facturas/${dup.factura1.id}/imagen" 
-                                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOTk5Ij5TaW4gaW1hZ2VuPC90ZXh0Pjwvc3ZnPg=='">
-                            </div>
-                        ` : ''}
-                        <div class="btn-group">
-                            <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura1.id})">Ver</button>
-                            <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura1.id}, ${dupId})">Eliminar</button>
-                        </div>
-                    </div>
-                    
-                    <div class="duplicate-item">
-                        <div class="duplicate-metadata">
-                            <h3>Factura #${dup.factura2.id}</h3>
-                            <p><strong>Establecimiento:</strong> ${dup.factura2.establecimiento}</p>
-                            <p><strong>Total:</strong> $${dup.factura2.total.toLocaleString()}</p>
-                            <p><strong>Productos:</strong> ${dup.factura2.num_productos}</p>
-                            <p><strong>Fecha:</strong> ${new Date(dup.factura2.fecha).toLocaleDateString()}</p>
-                        </div>
-                        ${mostrarImagenes ? `
-                            <div class="duplicate-image" onclick="mostrarImagenAmpliada(${dup.factura2.id}, 'Factura #${dup.factura2.id}')">
-                                <img src="${API_URL}/admin/duplicados/facturas/${dup.factura2.id}/imagen" 
-                                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIiBmaWxsPSIjOTk5Ij5TaW4gaW1hZ2VuPC90ZXh0Pjwvc3ZnPg=='">
-                            </div>
-                        ` : ''}
-                        <div class="btn-group">
-                            <button class="btn btn-secondary btn-sm" onclick="verFactura(${dup.factura2.id})">Ver</button>
-                            <button class="btn btn-danger btn-sm" onclick="eliminarFactura(${dup.factura2.id}, ${dupId})">Eliminar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    container.innerHTML = html;
-    
-    // Generar paginación
-    generarPaginacion('facturas', facturasDuplicadas.length);
-}
-
-// Función para generar paginación
-function generarPaginacion(tipo, totalElementos) {
-    const totalPaginas = Math.ceil(totalElementos / elementosPorPagina);
-    const paginaActual = tipo === 'productos' ? paginaActualProductos : paginaActualFacturas;
-    const container = document.getElementById(`${tipo}-pagination`);
-    
-    if (totalPaginas <= 1) {
-        container.innerHTML = '';
-        return;
-    }
-    
-    let html = '';
-    
-    // Botón anterior
-    if (paginaActual > 1) {
-        html += `<div class="pagination-item" onclick="cambiarPagina('${tipo}', ${paginaActual - 1})">‹</div>`;
-    }
-    
-    // Números de página
-    for (let i = 1; i <= totalPaginas; i++) {
-        if (i === 1 || i === totalPaginas || (i >= paginaActual - 1 && i <= paginaActual + 1)) {
-            html += `<div class="pagination-item ${i === paginaActual ? 'active' : ''}" 
-                          onclick="cambiarPagina('${tipo}', ${i})">${i}</div>`;
-        } else if (i === paginaActual - 2 || i === paginaActual + 2) {
-            html += `<div class="pagination-item">...</div>`;
-        }
-    }
-    
-    // Botón siguiente
-    if (paginaActual < totalPaginas) {
-        html += `<div class="pagination-item" onclick="cambiarPagina('${tipo}', ${paginaActual + 1})">›</div>`;
-    }
-    
-    container.innerHTML = html;
-}
-
-// Función para cambiar página
-function cambiarPagina(tipo, pagina) {
-    if (tipo === 'productos') {
-        renderizarPaginaProductos(pagina);
-    } else {
-        renderizarPaginaFacturas(pagina);
-    }
-}
-
-// Función para detectar facturas duplicadas
-async function detectarFacturasDuplicadas() {
-    const container = document.getElementById('facturas-duplicadas-container');
-    container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando duplicados de facturas...</p></div>';
-    
-    try {
-        const criterio = document.getElementById('criterioFacturas')?.value || 'all';
-        
-        const response = await fetch(`${API_URL}/admin/duplicados/facturas?criterio=${criterio}`);
-        const data = await response.json();
-        
-        facturasDuplicadas = data.duplicados || [];
-        
-        document.getElementById('total-facturas-duplicadas').textContent = data.total || 0;
-        
-        if (facturasDuplicadas.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <h3>No se encontraron facturas duplicadas</h3>
-                    <p>Prueba con diferentes criterios</p>
-                </div>
-            `;
-            document.getElementById('facturas-ia-panel').style.display = 'none';
-            return;
-        }
-        
-        document.getElementById('facturas-ia-panel').style.display = 'block';
-        renderizarPaginaFacturas(1);
-        
-    } catch (error) {
-        console.error('Error detectando duplicados:', error);
-        container.innerHTML = `
-            <div class="empty-state">
-                <h3 style="color: #c62828;">Error al buscar duplicados</h3>
-                <p>${error.message}</p>
-            </div>
-        `;
-        document.getElementById('facturas-ia-panel').style.display = 'none';
-    }
-}
-
-// Función para cancelar procesamiento IA
-function cancelarProcesamientoIA(tipo) {
-    procesoIACancelado = true;
-    procesandoIA = false;
-    mostrarToast('Procesamiento cancelado', 'info');
-}
-
-// Funciones placeholder para procesamiento IA (agregar lógica real después)
-async function procesarLoteIA(tipo, lote, confianza) {
-    // TODO: Implementar lógica de procesamiento con IA
-    return lote.map((item, idx) => ({
-        dupId: idx,
-        decision: 1, // Por defecto mantener el primero
-        confidence: 85
-    }));
-}
-
-function mostrarResumenIA(tipo) {
-    // TODO: Implementar visualización de resumen
-    console.log(`Resumen de procesamiento ${tipo}`);
-}
-
-function guardarResultadosIA(tipo) {
-    // TODO: Implementar guardado de resultados
-    mostrarToast('Resultados guardados', 'success');
-}
-
-function aplicarDecisionesIA() {
-    // TODO: Implementar aplicación de decisiones
-    mostrarToast('Decisiones aplicadas', 'success');
-}
-
-console.log('✅ Funciones del gestor de duplicados cargadas correctamente');
-
-// Notificar que las funciones han sido cargadas
-console.log("Todas las funciones faltantes han sido definidas correctamente.");
- </script>                           
+    <!-- CARGAR JAVASCRIPT -->
+    <script src="/static/duplicados.js"></script>
 </body>
 </html>
