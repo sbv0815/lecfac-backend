@@ -449,28 +449,31 @@ async def parse_invoice(file: UploadFile = File(...)):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        data = result["data"]
-        establecimiento = data.get("establecimiento", "Desconocido")
-        total = data.get("total", 0)
-        productos = data.get("productos", [])
-        
         # Validar calidad
-        puntaje, estado, alertas = FacturaValidator.validar_factura(
-            establecimiento=establecimiento,
-            total=total,
-            tiene_imagen=True,
-            productos=productos
-        )
-        
-        # Crear factura
-        cursor.execute("""
-            INSERT INTO facturas (
-                usuario_id, establecimiento, total_factura,
-                fecha_cargue, estado_validacion, tiene_imagen,
-                puntaje_calidad
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-        """, (1, establecimiento, total, datetime.now(), estado, True, puntaje))
-        
+    data = result["data"]
+    establecimiento = data.get("establecimiento", "Desconocido")
+    total = data.get("total", 0)
+    productos = data.get("productos", [])
+
+# 🔑 IMPORTANTE: Detectar cadena ANTES de validar
+    cadena = detectar_cadena(establecimiento)
+
+    puntaje, estado, alertas = FacturaValidator.validar_factura(
+    establecimiento=establecimiento,
+    total=total,
+    tiene_imagen=True,
+    productos=productos,
+    cadena=cadena  # ← Parámetro que faltaba
+)
+
+# Crear factura
+cursor.execute("""
+    INSERT INTO facturas (
+        usuario_id, establecimiento, cadena, total_factura,
+        fecha_cargue, estado_validacion, tiene_imagen,
+        puntaje_calidad
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+""", (1, establecimiento, cadena, total, datetime.now(), estado, True, puntaje))
         factura_id = cursor.fetchone()[0]
         print(f"✅ Factura ID: {factura_id}, Estado: {estado}, Puntaje: {puntaje}")
         
@@ -1763,6 +1766,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
