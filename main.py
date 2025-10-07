@@ -1167,6 +1167,113 @@ async def marcar_como_validada(factura_id: int):
     except Exception as e:
         raise HTTPException(500, str(e))
 
+@app.delete("/admin/facturas/{factura_id}")
+async def eliminar_factura_admin(factura_id: int):
+    """Eliminar factura y todos sus datos relacionados"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar que la factura existe
+        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(404, "Factura no encontrada")
+        
+        print(f"Eliminando factura {factura_id}...")
+        
+        # PASO 1: Eliminar productos asociados
+        cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+        productos_eliminados = cursor.rowcount
+        print(f"  ✓ {productos_eliminados} productos eliminados")
+        
+        # PASO 2: Eliminar precios_productos asociados (si existen)
+        try:
+            cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+            precios_eliminados = cursor.rowcount
+            print(f"  ✓ {precios_eliminados} precios eliminados")
+        except Exception as e:
+            print(f"  ⚠️ No se pudieron eliminar precios: {e}")
+        
+        # PASO 3: Eliminar la factura
+        cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+        print(f"  ✓ Factura {factura_id} eliminada")
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": f"Factura {factura_id} eliminada exitosamente",
+            "productos_eliminados": productos_eliminados
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        print(f"❌ Error eliminando factura {factura_id}: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, f"Error al eliminar factura: {str(e)}")
+
+@app.post("/admin/facturas/eliminar-multiple")
+async def eliminar_facturas_multiple(datos: dict):
+    """Eliminar múltiples facturas"""
+    try:
+        ids = datos.get('ids', [])
+        
+        if not ids or not isinstance(ids, list):
+            raise HTTPException(400, "IDs inválidos")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        eliminadas = 0
+        errores = []
+        
+        for factura_id in ids:
+            try:
+                # Eliminar productos
+                cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+                
+                # Eliminar precios
+                try:
+                    cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+                except:
+                    pass
+                
+                # Eliminar factura
+                cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+                
+                if cursor.rowcount > 0:
+                    eliminadas += 1
+                    
+            except Exception as e:
+                errores.append(f"Factura {factura_id}: {str(e)}")
+                print(f"Error eliminando factura {factura_id}: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "eliminadas": eliminadas,
+            "errores": errores,
+            "message": f"{eliminadas} facturas eliminadas"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        print(f"Error en eliminación múltiple: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
 # ==========================================
 # ENDPOINTS DE AUDITORÍA
 # ==========================================
@@ -1656,5 +1763,6 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
