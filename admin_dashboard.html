@@ -501,37 +501,37 @@
     <div class="container">
         <!-- TAB: ESTADÍSTICAS -->
        
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="label">Total Facturas</div>
-                    <div class="value" id="stat-facturas">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Productos Únicos</div>
-                    <div class="value" id="stat-productos">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Alertas Activas</div>
-                    <div class="value" id="stat-alertas">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Pendientes Revisión</div>
-                    <div class="value" id="stat-pendientes">-</div>
-                </div>
-            </div>
-            <!-- TAB: AUDITORÍA -->
-     <div id="tab-auditoria" class="tab-content">
-    <div class="toolbar">
-        <button class="btn btn-primary" onclick="ejecutarAuditoriaCompleta()">
-            🔍 Ejecutar Auditoría Completa
-        </button>
-        <button class="btn btn-secondary" onclick="window.location.href='/reporte_auditoria'">
-            📊 Ver Reporte
-            </button>
-        <button class="btn btn-secondary" onclick="ejecutarLimpiezaDatos()">
-            🧹 Limpiar Datos
-        </button>
+            <!-- TAB: ESTADÍSTICAS -->
+<div id="tab-stats" class="tab-content active">
+    <div id="statsContainer">
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Cargando estadísticas...</p>
+        </div>
     </div>
+    
+    <div class="card" style="margin-top: 30px;">
+        <div class="card-header">
+            <h2>Resumen del Sistema</h2>
+        </div>
+        <div class="card-body">
+            <div style="padding: 30px;">
+                <p style="color: #666; line-height: 1.8;">
+                    Bienvenido al panel de administración de LecFac. Usa las pestañas superiores para:
+                </p>
+                <ul style="margin: 20px 0; padding-left: 20px; color: #666; line-height: 2;">
+                    <li><strong>Subir Factura:</strong> Cargar nuevas facturas con OCR automático</li>
+                    <li><strong>Alertas de Precios:</strong> Ver cambios significativos y comparar entre establecimientos</li>
+                    <li><strong>Facturas:</strong> Ver, editar y eliminar facturas subidas</li>
+                    <li><strong>Productos:</strong> Gestionar el catálogo de productos</li>
+                    <li><strong>Duplicados:</strong> Detectar y fusionar productos/facturas duplicadas</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+            <!-- TAB: AUDITORÍA -->
+     
 <div id="tab-auditoria" class="tab-content">
     <div class="card">
         <div class="card-header">
