@@ -443,37 +443,42 @@ async def parse_invoice(file: UploadFile = File(...)):
         result = parse_invoice_with_claude(temp_file.name)
         
         if not result["success"]:
+            # Limpiar archivo temporal
+            if os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
             return result
+        
+        # Extraer datos
+        data = result["data"]
+        establecimiento = data.get("establecimiento", "Desconocido")
+        total = data.get("total", 0)
+        productos = data.get("productos", [])
+        
+        # 🔑 IMPORTANTE: Detectar cadena ANTES de validar
+        cadena = detectar_cadena(establecimiento)
+        
+        # Validar calidad
+        puntaje, estado, alertas = FacturaValidator.validar_factura(
+            establecimiento=establecimiento,
+            total=total,
+            tiene_imagen=True,
+            productos=productos,
+            cadena=cadena  # ← Parámetro que faltaba
+        )
         
         # Guardar en BD
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Validar calidad
-    data = result["data"]
-    establecimiento = data.get("establecimiento", "Desconocido")
-    total = data.get("total", 0)
-    productos = data.get("productos", [])
-
-# 🔑 IMPORTANTE: Detectar cadena ANTES de validar
-    cadena = detectar_cadena(establecimiento)
-
-    puntaje, estado, alertas = FacturaValidator.validar_factura(
-    establecimiento=establecimiento,
-    total=total,
-    tiene_imagen=True,
-    productos=productos,
-    cadena=cadena  # ← Parámetro que faltaba
-)
-
-# Crear factura
-cursor.execute("""
-    INSERT INTO facturas (
-        usuario_id, establecimiento, cadena, total_factura,
-        fecha_cargue, estado_validacion, tiene_imagen,
-        puntaje_calidad
-    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-""", (1, establecimiento, cadena, total, datetime.now(), estado, True, puntaje))
+        # Crear factura
+        cursor.execute("""
+            INSERT INTO facturas (
+                usuario_id, establecimiento, cadena, total_factura,
+                fecha_cargue, estado_validacion, tiene_imagen,
+                puntaje_calidad
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (1, establecimiento, cadena, total, datetime.now(), estado, True, puntaje))
+        
         factura_id = cursor.fetchone()[0]
         print(f"✅ Factura ID: {factura_id}, Estado: {estado}, Puntaje: {puntaje}")
         
@@ -517,85 +522,15 @@ cursor.execute("""
     except Exception as e:
         print(f"❌ Error: {e}")
         traceback.print_exc()
-        if temp_file and os.path.exists(temp_file.name):
+        
+        # Limpieza en caso de error
+        if temp_file and hasattr(temp_file, 'name') and os.path.exists(temp_file.name):
             os.unlink(temp_file.name)
         if conn:
             conn.rollback()
             conn.close()
+        
         raise HTTPException(500, str(e))
-
-@app.post("/invoices/save")
-async def save_invoice(invoice: SaveInvoice):
-    """Guardar factura procesada (usado por el flujo antiguo)"""
-    try:
-        print(f"=== GUARDANDO FACTURA ===")
-        print(f"Usuario ID: {invoice.usuario_id}")
-        print(f"Establecimiento: {invoice.establecimiento}")
-        print(f"Productos: {len(invoice.productos)}")
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cadena = detectar_cadena(invoice.establecimiento)
-        
-        # Crear factura
-        cursor.execute(
-            """INSERT INTO facturas (usuario_id, establecimiento, cadena, fecha_cargue) 
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (invoice.usuario_id, invoice.establecimiento, cadena, datetime.now())
-        )
-        factura_id = cursor.fetchone()[0]
-        
-        # Guardar imagen si existe
-        if invoice.temp_file_path and os.path.exists(invoice.temp_file_path):
-            mime = "image/jpeg" if invoice.temp_file_path.endswith(('.jpg', '.jpeg')) else "image/png"
-            save_image_to_db(factura_id, invoice.temp_file_path, mime)
-            os.unlink(invoice.temp_file_path)
-            print(f"✓ Imagen guardada para factura {factura_id}")
-        
-        # Guardar productos
-        productos_guardados = 0
-        for i, producto in enumerate(invoice.productos):
-            codigo = producto.get('codigo')
-            nombre = producto.get('nombre') or "Producto sin descripción"
-            valor = int(producto.get('valor', 0))
-            
-            try:
-                codigo_valido = codigo and codigo != 'None' and len(codigo) >= 3
-                
-                if codigo_valido and es_codigo_peso_variable(codigo):
-                    codigo = generar_codigo_unico(nombre, factura_id, i)
-                
-                if not codigo_valido:
-                    codigo = generar_codigo_unico(nombre, factura_id, i)
-                
-                es_fresco = (
-                    (len(codigo) < 7 and codigo.isdigit()) or 
-                    codigo.startswith('PLU_') or 
-                    codigo.startswith('AUTO_')
-                )
-                
-                if es_fresco:
-                    producto_id = manejar_producto_fresco(cursor, codigo, nombre, cadena)
-                else:
-                    producto_id = manejar_producto_ean(cursor, codigo, nombre)
-                
-                cursor.execute("""
-                    INSERT INTO precios_productos (
-                        producto_id, factura_id, precio, establecimiento, cadena
-                    )
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (producto_id, factura_id, valor, invoice.establecimiento, cadena))
-                
-                cursor.execute(
-                    "INSERT INTO productos (factura_id, codigo, nombre, valor) VALUES (%s, %s, %s, %s)",
-                    (factura_id, codigo, nombre, valor)
-                )
-                
-                productos_guardados += 1
-                
-            except Exception as e:
-                print(f"Error producto {i+1}: {e}")
         
         conn.commit()
         conn.close()
@@ -1766,6 +1701,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
