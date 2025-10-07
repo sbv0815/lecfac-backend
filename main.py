@@ -83,6 +83,9 @@ async def lifespan(app: FastAPI):
 # ==========================================
 # CONFIGURACIÓN DE LA APP
 # ==========================================
+# ==========================================
+# CONFIGURACIÓN DE LA APP
+# ==========================================
 app = FastAPI(
     title="LecFac API", 
     version="3.0.0",
@@ -100,11 +103,42 @@ app.add_middleware(
 )
 
 # ==========================================
-# INCLUIR ROUTERS
+# INCLUIR ROUTERS CON LOGGING
 # ==========================================
-app.include_router(admin_dashboard_router)  # Rutas /admin/*
-app.include_router(auth_router)             # Rutas /auth/*
-app.include_router(image_handlers_router)   # Rutas /admin/facturas/*/imagen
+print("\n" + "=" * 60)
+print("📍 REGISTRANDO ROUTERS")
+print("=" * 60)
+
+# Router de imágenes - PRIMERO para evitar conflictos
+try:
+    app.include_router(image_handlers_router, tags=["images"])
+    print("✅ image_handlers_router registrado")
+    print("   Rutas disponibles:")
+    print("   - GET  /admin/facturas/{id}/imagen")
+    print("   - GET  /admin/facturas/{id}/debug-imagen")
+    print("   - GET  /admin/facturas/{id}/check-image")
+    print("   - POST /admin/facturas/{id}/subir-imagen")
+    print("   - POST /admin/facturas/{id}/fix-imagen")
+except Exception as e:
+    print(f"❌ Error registrando image_handlers_router: {e}")
+
+# Router de admin dashboard
+try:
+    app.include_router(admin_dashboard_router, tags=["admin"])
+    print("✅ admin_dashboard_router registrado")
+except Exception as e:
+    print(f"❌ Error registrando admin_dashboard_router: {e}")
+
+# Router de autenticación
+try:
+    app.include_router(auth_router, tags=["auth"])
+    print("✅ auth_router registrado")
+except Exception as e:
+    print(f"❌ Error registrando auth_router: {e}")
+
+print("=" * 60)
+print("✅ ROUTERS CONFIGURADOS")
+print("=" * 60 + "\n")
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -1617,6 +1651,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
