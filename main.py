@@ -652,6 +652,12 @@ async def save_invoice_with_image(
             os.unlink(temp_file.name)
         raise HTTPException(500, str(e))
 
+@app.get("/admin/facturas/{factura_id}/debug-imagen")
+async def debug_imagen(factura_id: int):
+    """Debug completo de imagen"""
+    from storage import verify_image_exists
+    return verify_image_exists(factura_id)
+
 @app.delete("/invoices/{factura_id}")
 async def delete_invoice(factura_id: int, usuario_id: int):
     """Eliminar factura de un usuario"""
@@ -1611,6 +1617,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
