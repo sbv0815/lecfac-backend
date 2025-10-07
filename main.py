@@ -999,126 +999,150 @@ async def actualizar_datos_generales(factura_id: int, datos: dict):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("""
-            UPDATE facturas
-            SET establecimiento = %s, 
-                total_factura = %s,
-                cadena = %s
-            WHERE id = %s
-        """, (
-            datos.get('establecimiento'),
-            datos.get('total'),
-            detectar_cadena(datos.get('establecimiento', '')),
-            factura_id
-        ))
+        establecimiento = datos.get('establecimiento')
+        total = datos.get('total', 0)
+        fecha = datos.get('fecha')  # Nueva: recibir fecha
+        
+        # Construir query dinámicamente
+        updates = []
+        params = []
+        
+        if establecimiento:
+            updates.append("establecimiento = %s")
+            params.append(establecimiento)
+            updates.append("cadena = %s")
+            params.append(detectar_cadena(establecimiento))
+        
+        if total is not None:
+            updates.append("total_factura = %s")
+            params.append(float(total))
+        
+        if fecha:
+            updates.append("fecha_cargue = %s")
+            params.append(fecha)
+        
+        # IMPORTANTE: Marcar como revisada después de editar
+        updates.append("estado_validacion = %s")
+        params.append('revisada')
+        
+        params.append(factura_id)
+        
+        query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, params)
         
         conn.commit()
         conn.close()
         
-        return {"success": True}
+        return {"success": True, "message": "Datos actualizados"}
     except Exception as e:
+        print(f"Error actualizando datos generales: {e}")
+        traceback.print_exc()
         raise HTTPException(500, str(e))
 
-@app.put("/admin/productos/{precio_producto_id}")
-async def actualizar_producto(precio_producto_id: int, datos: dict):
-    """Actualizar producto"""
+@app.put("/admin/productos/{producto_id}")
+async def actualizar_producto(producto_id: int, datos: dict):
+    """Actualizar producto en la tabla productos (no precios_productos)"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        codigo = datos.get('codigo')
-        nombre = datos.get('nombre')
-        precio = datos.get('precio')
+        codigo = datos.get('codigo', '').strip()
+        nombre = datos.get('nombre', '').strip()
+        precio = datos.get('precio', 0)
         
-        cursor.execute("SELECT id FROM productos_catalogo WHERE codigo_ean = %s", (codigo,))
-        producto = cursor.fetchone()
+        if not codigo or not nombre:
+            raise HTTPException(400, "Código y nombre son requeridos")
         
-        if producto:
-            producto_id = producto[0]
-            cursor.execute(
-                "UPDATE productos_catalogo SET nombre_producto = %s WHERE id = %s",
-                (nombre, producto_id)
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO productos_catalogo (codigo_ean, nombre_producto) VALUES (%s, %s) RETURNING id",
-                (codigo, nombre)
-            )
-            producto_id = cursor.fetchone()[0]
-        
+        # Actualizar en la tabla productos
         cursor.execute("""
-            UPDATE precios_productos
-            SET producto_id = %s, precio = %s
+            UPDATE productos
+            SET codigo = %s, nombre = %s, valor = %s
             WHERE id = %s
-        """, (producto_id, precio, precio_producto_id))
+        """, (codigo, nombre, float(precio), producto_id))
+        
+        affected = cursor.rowcount
+        
+        if affected == 0:
+            conn.close()
+            raise HTTPException(404, "Producto no encontrado")
         
         conn.commit()
         conn.close()
         
-        return {"success": True, "producto_id": producto_id}
+        return {"success": True, "message": "Producto actualizado"}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Error actualizando producto: {e}")
+        traceback.print_exc()
         raise HTTPException(500, str(e))
 
-@app.delete("/admin/productos/{precio_producto_id}")
-async def eliminar_producto(precio_producto_id: int):
-    """Eliminar producto"""
+@app.delete("/admin/productos/{producto_id}")
+async def eliminar_producto_factura(producto_id: int):
+    """Eliminar producto de una factura"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("DELETE FROM precios_productos WHERE id = %s", (precio_producto_id,))
+        cursor.execute("DELETE FROM productos WHERE id = %s", (producto_id,))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(404, "Producto no encontrado")
         
         conn.commit()
         conn.close()
         
-        return {"success": True}
+        return {"success": True, "message": "Producto eliminado"}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Error eliminando producto: {e}")
         raise HTTPException(500, str(e))
 
 @app.post("/admin/facturas/{factura_id}/productos")
-async def agregar_producto(factura_id: int, datos: dict):
-    """Agregar producto manualmente"""
+async def agregar_producto_a_factura(factura_id: int, datos: dict):
+    """Agregar producto a una factura"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT establecimiento, cadena FROM facturas WHERE id = %s", (factura_id,))
-        factura = cursor.fetchone()
-        
-        if not factura:
+        # Verificar que la factura existe
+        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        if not cursor.fetchone():
+            conn.close()
             raise HTTPException(404, "Factura no encontrada")
         
-        establecimiento, cadena = factura
+        codigo = datos.get('codigo', '').strip()
+        nombre = datos.get('nombre', '').strip()
+        precio = datos.get('precio', 0)
         
-        codigo = datos.get('codigo')
-        nombre = datos.get('nombre')
-        precio = datos.get('precio')
+        if not codigo or not nombre:
+            conn.close()
+            raise HTTPException(400, "Código y nombre son requeridos")
         
-        cursor.execute("SELECT id FROM productos_catalogo WHERE codigo_ean = %s", (codigo,))
-        producto = cursor.fetchone()
-        
-        if producto:
-            producto_id = producto[0]
-        else:
-            cursor.execute(
-                "INSERT INTO productos_catalogo (codigo_ean, nombre_producto) VALUES (%s, %s) RETURNING id",
-                (codigo, nombre)
-            )
-            producto_id = cursor.fetchone()[0]
-        
+        # Insertar en la tabla productos
         cursor.execute("""
-            INSERT INTO precios_productos (producto_id, factura_id, precio, establecimiento, cadena)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO productos (factura_id, codigo, nombre, valor)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
-        """, (producto_id, factura_id, precio, establecimiento, cadena))
+        """, (factura_id, codigo, nombre, float(precio)))
         
         nuevo_id = cursor.fetchone()[0]
         
         conn.commit()
         conn.close()
         
-        return {"success": True, "id": nuevo_id, "producto_id": producto_id}
+        return {
+            "success": True, 
+            "id": nuevo_id,
+            "message": "Producto agregado"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Error agregando producto: {e}")
+        traceback.print_exc()
         raise HTTPException(500, str(e))
 
 @app.post("/admin/facturas/{factura_id}/validar")
@@ -1632,4 +1656,5 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
