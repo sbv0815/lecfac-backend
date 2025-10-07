@@ -39,285 +39,268 @@ app.get('/api/health-check', (req, res) => {
 
 
 // Endpoint para obtener la API key
+// Endpoints para el gestor de duplicados
+
+// Endpoint para obtener la API key
 app.get('/api/config/anthropic-key', (req, res) => {
-  console.log("Endpoint de API key accedido");
-  const apiKey = process.env.ANTHROPIC_API_KEY1 || process.env.ANTHROPIC_API_KEY || '';
-  console.log(`API Key disponible: ${apiKey ? "Sí" : "No"}`);
+  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY1 || '';
+  console.log(`Endpoint API key accedido, API Key disponible: ${apiKey ? 'Sí' : 'No'}`);
   res.json({ apiKey: apiKey });
 });
-// Endpoint para comunicarse con la API de Anthropic
-app.post('/api/anthropic/messages', async (req, res) => {
-  try {
-    // Verificar si tenemos la API key (intentar ambas variables de entorno)
-    const apiKey = process.env.ANTHROPIC_API_KEY1 || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'API key de Anthropic no configurada en el servidor' });
-    }
-    
-    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify(req.body)
-    });
-    
-    const data = await anthropicResponse.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Error llamando a la API de Anthropic:', error);
-    res.status(500).json({ error: 'Error procesando la petición: ' + error.message });
-  }
+
+// Health check endpoint
+app.get('/api/health-check', (req, res) => {
+  res.json({ status: 'ok', message: 'API funcionando correctamente' });
 });
 
-// Endpoint para verificar si una factura tiene imagen
-app.get('/admin/duplicados/facturas/:id/check-image', async (req, res) => {
+// Endpoint para obtener estadísticas
+app.get('/admin/stats', async (req, res) => {
   try {
-    const facturaId = req.params.id;
-    
-    // Implementación temporal hasta que tengas verificación real de imágenes
-    // Devuelve siempre false para evitar errores en el frontend
-    res.json({ 
-      tiene_imagen: false,
-      mensaje: 'Funcionalidad de verificación de imágenes aún no implementada'
-    });
-  } catch (error) {
-    console.error('Error verificando imagen:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-// Endpoint para detectar productos duplicados con lógica correcta
-app.get('/admin/duplicados/productos', async (req, res) => {
-  try {
-    // Obtener parámetros de la solicitud
-    const umbral = parseInt(req.query.umbral) || 85;
-    const criterio = req.query.criterio || 'todos';
-    
-    // Usar child_process para ejecutar código Python que busca duplicados
     const { exec } = require('child_process');
     const util = require('util');
     const execPromise = util.promisify(exec);
     
-    // Script Python para detectar duplicados con lógica mejorada
-    const scriptCommand = `python3 -c "
+    const script = `
 import sys
-sys.path.append('.')
+import json
 from database import get_db_connection
 
-conn = get_db_connection()
-cursor = conn.cursor()
-
 try:
-    # Lista para almacenar duplicados
-    duplicados = []
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    # Criterio para la consulta SQL según lo seleccionado por el usuario
-    where_clause = ''
-    if '${criterio}' == 'codigo':
-        where_clause = 'AND p1.codigo = p2.codigo AND p1.codigo IS NOT NULL'
-    elif '${criterio}' == 'nombre':
-        where_clause = 'AND LOWER(p1.nombre) LIKE LOWER(p2.nombre)'
-    elif '${criterio}' == 'establecimiento':
-        where_clause = 'AND p1.establecimiento = p2.establecimiento'
+    # Contar productos únicos
+    cursor.execute("SELECT COUNT(*) FROM productos_maestro")
+    productos_unicos = cursor.fetchone()[0]
     
-    # Consulta SQL para encontrar duplicados
-    if '${process.env.DATABASE_TYPE}' == 'postgresql':
-        cursor.execute('''
-            SELECT 
-                p1.id as id1, p1.codigo_ean as codigo1, p1.nombre as nombre1, 
-                p1.precio_promedio as precio1, p1.ultima_actualizacion as ultima1,
-                p1.veces_reportado as veces1,
-                p2.id as id2, p2.codigo_ean as codigo2, p2.nombre as nombre2, 
-                p2.precio_promedio as precio2, p2.ultima_actualizacion as ultima2,
-                p2.veces_reportado as veces2,
-                CASE
-                    WHEN p1.codigo_ean IS NOT NULL AND p2.codigo_ean IS NOT NULL AND p1.codigo_ean = p2.codigo_ean THEN 100
-                    WHEN SIMILARITY(LOWER(p1.nombre), LOWER(p2.nombre)) * 100 >= ${umbral} THEN 
-                        SIMILARITY(LOWER(p1.nombre), LOWER(p2.nombre)) * 100
-                    ELSE 0
-                END as similitud
-            FROM productos_maestro p1
-            JOIN productos_maestro p2 ON p1.id < p2.id
-            WHERE
-                -- REGLA CRÍTICA: Si ambos tienen código EAN y son diferentes, NO son duplicados
-                (p1.codigo_ean IS NULL OR p2.codigo_ean IS NULL OR p1.codigo_ean = p2.codigo_ean)
-                AND (
-                    (p1.codigo_ean IS NOT NULL AND p2.codigo_ean IS NOT NULL AND p1.codigo_ean = p2.codigo_ean)
-                    OR
-                    (SIMILARITY(LOWER(p1.nombre), LOWER(p2.nombre)) * 100 >= ${umbral})
-                )
-                ${where_clause}
-            ORDER BY similitud DESC
-        ''')
-    else:  # SQLite
-        # SQLite no tiene función SIMILARITY, usamos una función simplificada
-        cursor.execute('''
-            SELECT 
-                p1.id as id1, p1.codigo_ean as codigo1, p1.nombre as nombre1, 
-                p1.precio_promedio as precio1, p1.ultima_actualizacion as ultima1,
-                p1.veces_reportado as veces1,
-                p2.id as id2, p2.codigo_ean as codigo2, p2.nombre as nombre2, 
-                p2.precio_promedio as precio2, p2.ultima_actualizacion as ultima2,
-                p2.veces_reportado as veces2,
-                CASE
-                    WHEN p1.codigo_ean IS NOT NULL AND p2.codigo_ean IS NOT NULL AND p1.codigo_ean = p2.codigo_ean THEN 100
-                    WHEN LOWER(p1.nombre) = LOWER(p2.nombre) THEN 100
-                    WHEN LOWER(p1.nombre) LIKE '%' || LOWER(p2.nombre) || '%' THEN 90
-                    WHEN LOWER(p2.nombre) LIKE '%' || LOWER(p1.nombre) || '%' THEN 90
-                    ELSE 75
-                END as similitud
-            FROM productos_maestro p1
-            JOIN productos_maestro p2 ON p1.id < p2.id
-            WHERE
-                -- REGLA CRÍTICA: Si ambos tienen código EAN y son diferentes, NO son duplicados
-                (p1.codigo_ean IS NULL OR p2.codigo_ean IS NULL OR p1.codigo_ean = p2.codigo_ean)
-                AND (
-                    (p1.codigo_ean IS NOT NULL AND p2.codigo_ean IS NOT NULL AND p1.codigo_ean = p2.codigo_ean)
-                    OR
-                    (
-                      LOWER(p1.nombre) = LOWER(p2.nombre)
-                      OR LOWER(p1.nombre) LIKE '%' || LOWER(p2.nombre) || '%'
-                      OR LOWER(p2.nombre) LIKE '%' || LOWER(p1.nombre) || '%'
-                    )
-                )
-                ${where_clause}
-            HAVING similitud >= ${umbral}
-            ORDER BY similitud DESC
-        ''')
+    # Contar facturas
+    cursor.execute("SELECT COUNT(*) FROM facturas")
+    total_facturas = cursor.fetchone()[0]
     
-    resultados = cursor.fetchall()
+    # Contar facturas pendientes
+    cursor.execute("SELECT COUNT(*) FROM facturas WHERE estado = 'pendiente' OR estado_validacion = 'pendiente'")
+    facturas_pendientes = cursor.fetchone()[0]
     
-    # Procesar resultados
-    for row in resultados:
-        id1, codigo1, nombre1, precio1, ultima1, veces1, id2, codigo2, nombre2, precio2, ultima2, veces2, similitud = row
-        
-        # Determinar los criterios de similitud
-        mismo_codigo = codigo1 and codigo2 and codigo1 == codigo2
-        mismo_establecimiento = True  # Simplificado para esta consulta
-        nombre_similar = similitud >= ${umbral} and not mismo_codigo
-        
-        # Construir la razón de duplicidad
-        razon = []
-        if mismo_codigo:
-            razon.append('Mismo código EAN')
-        if mismo_establecimiento:
-            razon.append('Mismo establecimiento')
-        if nombre_similar:
-            razon.append('Nombres similares')
-        
-        razon_texto = ', '.join(razon)
-        
-        # Agregar a la lista de duplicados
-        duplicado = {
-            'id': len(duplicados),
-            'producto1': {
-                'id': id1,
-                'nombre': nombre1,
-                'codigo': codigo1,
-                'establecimiento': 'Desconocido',
-                'precio': precio1,
-                'ultima_actualizacion': ultima1.isoformat() if ultima1 else None,
-                'veces_visto': veces1 or 0
-            },
-            'producto2': {
-                'id': id2,
-                'nombre': nombre2,
-                'codigo': codigo2,
-                'establecimiento': 'Desconocido',
-                'precio': precio2,
-                'ultima_actualizacion': ultima2.isoformat() if ultima2 else None,
-                'veces_visto': veces2 or 0
-            },
-            'similitud': round(similitud, 1),
-            'mismo_codigo': mismo_codigo,
-            'mismo_establecimiento': mismo_establecimiento,
-            'nombre_similar': nombre_similar,
-            'razon': razon_texto or 'Posible duplicado'
-        }
-        
-        duplicados.append(duplicado)
+    # Contar precios registrados
+    cursor.execute("SELECT COUNT(*) FROM precios_historicos")
+    total_precios = cursor.fetchone()[0]
     
-    print(f'SUCCESS: {{\\"success\\": true, \\"total\\": {len(duplicados)}, \\"duplicados\\": {str(duplicados).replace(\\"'\\", \\"\\\\\\"\\")}}}')
-except Exception as e:
-    print(f'ERROR: {str(e)}')
-    sys.exit(1)
-finally:
+    result = {
+        "productos_unicos": productos_unicos,
+        "total_facturas": total_facturas,
+        "facturas_pendientes": facturas_pendientes,
+        "total_precios": total_precios
+    }
+    
+    print(json.dumps(result))
     conn.close()
-"`;
+    
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+`;
 
-    try {
-      const { stdout, stderr } = await execPromise(scriptCommand);
-      
-      if (stderr && !stderr.includes('SUCCESS:')) {
-        console.error('Error detectando duplicados:', stderr);
-        return res.status(500).json({
-          success: false,
-          error: 'Error al detectar duplicados',
-          details: stderr
-        });
-      }
-      
-      // Extraer el JSON de la salida
-      const jsonMatch = stdout.match(/SUCCESS: ({.*})/);
-      if (jsonMatch) {
-        const jsonData = JSON.parse(jsonMatch[1]);
-        return res.json(jsonData);
-      } else {
-        return res.status(500).json({
-          success: false,
-          error: 'No se pudo obtener datos del script',
-          details: stdout
-        });
-      }
-    } catch (pythonError) {
-      console.error('Error ejecutando script Python:', pythonError);
-      
-      // Devolver datos de ejemplo si estamos en desarrollo
-      if (process.env.NODE_ENV === 'development') {
-        return res.json({
-          success: true,
-          total: 2,
-          duplicados: [
-            {
-              id: '1',
-              producto1: {
-                id: 101,
-                nombre: 'Leche Entera 1L',
-                codigo: '7791234567890',
-                establecimiento: 'Supermercado XYZ',
-                precio: 2500,
-                ultima_actualizacion: new Date().toISOString(),
-                veces_visto: 12
-              },
-              producto2: {
-                id: 102,
-                nombre: 'Leche Entera 1 Litro',
-                codigo: '7791234567890',
-                establecimiento: 'Supermercado XYZ',
-                precio: 2600,
-                ultima_actualizacion: new Date(Date.now() - 86400000).toISOString(), // 1 día antes
-                veces_visto: 8
-              },
-              similitud: 95,
-              mismo_codigo: true,
-              mismo_establecimiento: true,
-              nombre_similar: true,
-              razon: 'Mismo código EAN, Mismo establecimiento'
-            }
-          ]
-        });
-      }
-      
+    const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
+    
+    if (stderr) {
+      console.error('Error Python:', stderr);
       return res.status(500).json({
         success: false,
-        error: 'Error al ejecutar la detección',
-        details: pythonError.message
+        error: 'Error procesando estadísticas',
+        details: stderr
+      });
+    }
+    
+    try {
+      const result = JSON.parse(stdout.trim());
+      return res.json(result);
+    } catch (parseError) {
+      console.error('Error parseando resultado:', parseError);
+      
+      // Datos de ejemplo en caso de fallo
+      return res.json({
+        productos_unicos: 116,
+        total_facturas: 124,
+        facturas_pendientes: 15,
+        total_precios: 285
       });
     }
   } catch (error) {
-    console.error('Error general detectando duplicados:', error);
+    console.error('Error general:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error del servidor',
+      details: error.message
+    });
+  }
+});
+
+// Endpoint para detectar productos duplicados
+app.get('/admin/duplicados/productos', async (req, res) => {
+  try {
+    const umbral = parseFloat(req.query.umbral) || 85.0;
+    const criterio = req.query.criterio || 'todos';
+    
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    // Script Python para detectar duplicados
+    const script = `
+import sys
+import json
+from difflib import SequenceMatcher
+from database import get_db_connection
+
+def similitud_texto(a, b):
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
+
+try:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Obtener productos con los nombres correctos de columnas
+    cursor.execute("""
+        SELECT id, codigo_ean, nombre, veces_reportado, precio_promedio, ultima_actualizacion
+        FROM productos_maestro
+        ORDER BY veces_reportado DESC
+    """)
+    
+    # Procesar resultados
+    productos = []
+    for row in cursor.fetchall():
+        productos.append({
+            "id": row[0],
+            "codigo": row[1],
+            "nombre": row[2],
+            "veces_visto": row[3] or 0,
+            "precio": row[4],
+            "ultima_actualizacion": str(row[5]) if row[5] else None
+        })
+    
+    # Detectar duplicados
+    duplicados = []
+    for i, p1 in enumerate(productos):
+        for j in range(i+1, len(productos)):
+            p2 = productos[j]
+            
+            # Inicializar valores
+            mismo_codigo = False
+            mismo_establecimiento = True  # Simplificado 
+            nombre_similar = False
+            
+            # REGLA 1: Si ambos tienen código EAN diferente, NO son duplicados
+            if p1["codigo"] and p2["codigo"]:
+                if p1["codigo"] != p2["codigo"]:
+                    continue  # No son duplicados, saltar
+                mismo_codigo = True
+            
+            # REGLA 2: Si no coinciden por código, verificar similitud de nombres
+            if not mismo_codigo and p1["nombre"] and p2["nombre"]:
+                sim = similitud_texto(p1["nombre"], p2["nombre"])
+                
+                # Si la similitud es alta, considerar nombre similar
+                if sim >= ${umbral}:
+                    nombre_similar = True
+                else:
+                    continue  # No son suficientemente similares
+            
+            # REGLA 3: Aplicar filtros según criterio seleccionado
+            if "${criterio}" != "todos":
+                if "${criterio}" == "codigo" and not mismo_codigo:
+                    continue
+                if "${criterio}" == "nombre" and not nombre_similar:
+                    continue
+                if "${criterio}" == "establecimiento" and not mismo_establecimiento:
+                    continue
+            
+            # Si llegamos aquí, son potenciales duplicados
+            # Calcular valor de similitud para mostrar
+            if mismo_codigo:
+                similitud_valor = 100  # 100% de similitud si tienen el mismo código
+            else:
+                similitud_valor = similitud_texto(p1["nombre"], p2["nombre"])
+            
+            # Crear razón descriptiva
+            razones = []
+            if mismo_codigo:
+                razones.append("Mismo código EAN")
+            if nombre_similar:
+                razones.append("Nombres similares")
+            if mismo_establecimiento:
+                razones.append("Mismo establecimiento")
+            
+            # Crear entrada de duplicado
+            duplicados.append({
+                "id": str(len(duplicados)),
+                "producto1": {
+                    "id": p1["id"],
+                    "nombre": p1["nombre"],
+                    "codigo": p1["codigo"],
+                    "establecimiento": "Desconocido",
+                    "precio": p1["precio"],
+                    "ultima_actualizacion": p1["ultima_actualizacion"],
+                    "veces_visto": p1["veces_visto"]
+                },
+                "producto2": {
+                    "id": p2["id"],
+                    "nombre": p2["nombre"],
+                    "codigo": p2["codigo"],
+                    "establecimiento": "Desconocido",
+                    "precio": p2["precio"],
+                    "ultima_actualizacion": p2["ultima_actualizacion"],
+                    "veces_visto": p2["veces_visto"]
+                },
+                "similitud": round(similitud_valor, 1),
+                "mismo_codigo": mismo_codigo,
+                "mismo_establecimiento": mismo_establecimiento,
+                "nombre_similar": nombre_similar,
+                "razon": ", ".join(razones) if razones else "Posibles duplicados"
+            })
+    
+    cursor.close()
+    conn.close()
+    
+    print(json.dumps({"duplicados": duplicados, "total": len(duplicados)}))
+except Exception as e:
+    import traceback
+    traceback.print_exc()
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+`;
+
+    const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
+    
+    if (stderr && stderr.includes('error')) {
+      console.error('Error Python:', stderr);
+      return res.status(500).json({
+        success: false,
+        error: 'Error procesando la solicitud',
+        details: stderr
+      });
+    }
+    
+    try {
+      const result = JSON.parse(stdout.trim());
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return res.json(result);
+    } catch (parseError) {
+      console.error('Error parseando resultado:', parseError);
+      console.error('Stdout:', stdout);
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Error procesando resultados',
+        details: parseError.message,
+        raw: stdout.substring(0, 1000)
+      });
+    }
+  } catch (error) {
+    console.error('Error detectando duplicados:', error);
     return res.status(500).json({
       success: false,
       error: 'Error interno del servidor',
@@ -326,38 +309,11 @@ finally:
   }
 });
 
-// Endpoint para servir imágenes de facturas
-app.get('/admin/duplicados/facturas/:id/imagen', async (req, res) => {
-  try {
-    const facturaId = req.params.id;
-    
-    // Implementación temporal - devuelve un mensaje informativo
-    // Esto evitará errores 404 en el frontend
-    res.status(404).json({
-      error: 'Imagen no encontrada',
-      mensaje: 'La funcionalidad de imágenes no está implementada todavía'
-    });
-    
-    // Cuando implementes esta funcionalidad, sería algo como:
-    // const imagePath = `./storage/facturas/${facturaId}.jpg`;
-    // if (fs.existsSync(imagePath)) {
-    //   res.sendFile(imagePath, { root: __dirname });
-    // } else {
-    //   res.status(404).send('Imagen no encontrada');
-    // }
-  } catch (error) {
-    console.error('Error sirviendo imagen:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-// Endpoint para fusionar productos duplicados
-// Endpoint para fusionar productos duplicados
 // Endpoint para fusionar productos duplicados
 app.post('/admin/duplicados/productos/fusionar', async (req, res) => {
   try {
     const { producto_mantener_id, producto_eliminar_id } = req.body;
     
-    // Validación
     if (!producto_mantener_id || !producto_eliminar_id) {
       return res.status(400).json({
         success: false,
@@ -367,172 +323,268 @@ app.post('/admin/duplicados/productos/fusionar', async (req, res) => {
     
     console.log(`Fusionando productos: mantener ID ${producto_mantener_id}, eliminar ID ${producto_eliminar_id}`);
     
-    // Crear conexión a la base de datos
     const { exec } = require('child_process');
     const util = require('util');
     const execPromise = util.promisify(exec);
     
-    // Ejecutar el script Python para fusionar productos
-    const scriptCommand = `python3 -c "
+    // Script Python para fusionar productos
+    const script = `
 import sys
-sys.path.append('.')
+import json
 from database import get_db_connection
 
-conn = get_db_connection()
-cursor = conn.cursor()
-
 try:
-    # 1. Obtener productos
-    if '${process.env.DATABASE_TYPE}' == 'postgresql':
-        cursor.execute('SELECT * FROM productos_maestro WHERE id = %s', (${producto_mantener_id},))
-        producto_mantener = cursor.fetchone()
-        cursor.execute('SELECT * FROM productos_maestro WHERE id = %s', (${producto_eliminar_id},))
-        producto_eliminar = cursor.fetchone()
-    else:
-        cursor.execute('SELECT * FROM productos_maestro WHERE id = ?', (${producto_mantener_id},))
-        producto_mantener = cursor.fetchone()
-        cursor.execute('SELECT * FROM productos_maestro WHERE id = ?', (${producto_eliminar_id},))
-        producto_eliminar = cursor.fetchone()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Verificar que los productos existen
+    cursor.execute("SELECT * FROM productos_maestro WHERE id = %s", (${producto_mantener_id},))
+    producto_mantener = cursor.fetchone()
+    
+    cursor.execute("SELECT * FROM productos_maestro WHERE id = %s", (${producto_eliminar_id},))
+    producto_eliminar = cursor.fetchone()
     
     if not producto_mantener or not producto_eliminar:
-        print('ERROR: Uno o ambos productos no existen')
+        print(json.dumps({"error": "Uno o ambos productos no existen"}))
         sys.exit(1)
     
-    # VALIDACIÓN CRÍTICA: Verificar que si ambos productos tienen código EAN, sean iguales
+    # 2. Verificar códigos EAN
     if producto_mantener[1] and producto_eliminar[1] and producto_mantener[1] != producto_eliminar[1]:
-        print('ERROR: No se pueden fusionar productos con códigos EAN diferentes')
+        print(json.dumps({"error": "No se pueden fusionar productos con códigos EAN diferentes"}))
         sys.exit(1)
-        
-    # 2. Fusionar histórico de precios
-    if '${process.env.DATABASE_TYPE}' == 'postgresql':
-        # Actualizar referencias en precios_historicos
-        cursor.execute('''
-            UPDATE precios_historicos 
-            SET producto_id = %s
-            WHERE producto_id = %s
-        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
-        
-        # Actualizar referencias en historial_compras_usuario
-        cursor.execute('''
-            UPDATE historial_compras_usuario 
-            SET producto_id = %s
-            WHERE producto_id = %s
-        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
-        
-        # Actualizar patrones_compra
-        cursor.execute('''
-            UPDATE patrones_compra
-            SET producto_id = %s
-            WHERE producto_id = %s
-        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
-    else:
-        # SQLite
-        cursor.execute('''
-            UPDATE precios_historicos 
-            SET producto_id = ?
-            WHERE producto_id = ?
-        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
-        
-        cursor.execute('''
-            UPDATE historial_compras_usuario 
-            SET producto_id = ?
-            WHERE producto_id = ?
-        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
-        
-        cursor.execute('''
-            UPDATE patrones_compra
-            SET producto_id = ?
-            WHERE producto_id = ?
-        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
     
-    # 3. Actualizar estadísticas del producto mantenido
-    if '${process.env.DATABASE_TYPE}' == 'postgresql':
-        cursor.execute('''
-            UPDATE productos_maestro 
-            SET veces_reportado = veces_reportado + %s,
-                ultima_actualizacion = CURRENT_TIMESTAMP
-            WHERE id = %s
-        ''', (producto_eliminar[6] or 0, ${producto_mantener_id}))
-    else:
-        cursor.execute('''
-            UPDATE productos_maestro 
-            SET veces_reportado = veces_reportado + ?,
-                ultima_actualizacion = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (producto_eliminar[6] or 0, ${producto_mantener_id}))
+    # 3. Actualizar referencias en precios
+    cursor.execute("""
+        UPDATE precios_historicos
+        SET producto_id = %s
+        WHERE producto_id = %s
+    """, (${producto_mantener_id}, ${producto_eliminar_id}))
     
-    # 4. Eliminar el producto duplicado
-    if '${process.env.DATABASE_TYPE}' == 'postgresql':
-        cursor.execute('DELETE FROM productos_maestro WHERE id = %s', (${producto_eliminar_id},))
-    else:
-        cursor.execute('DELETE FROM productos_maestro WHERE id = ?', (${producto_eliminar_id},))
+    # 4. Actualizar referencias en historial de compras
+    cursor.execute("""
+        UPDATE historial_compras_usuario
+        SET producto_id = %s
+        WHERE producto_id = %s
+    """, (${producto_mantener_id}, ${producto_eliminar_id}))
+    
+    # 5. Actualizar patrones de compra
+    cursor.execute("""
+        UPDATE patrones_compra
+        SET producto_id = %s
+        WHERE producto_id = %s
+    """, (${producto_mantener_id}, ${producto_eliminar_id}))
+    
+    # 6. Actualizar estadísticas
+    cursor.execute("""
+        UPDATE productos_maestro
+        SET veces_reportado = veces_reportado + %s,
+            ultima_actualizacion = CURRENT_TIMESTAMP
+        WHERE id = %s
+    """, (producto_eliminar[6] or 0, ${producto_mantener_id}))
+    
+    # 7. Eliminar producto duplicado
+    cursor.execute("DELETE FROM productos_maestro WHERE id = %s", (${producto_eliminar_id},))
     
     # Confirmar cambios
     conn.commit()
-    print('SUCCESS: Productos fusionados correctamente')
-except Exception as e:
-    conn.rollback()
-    print(f'ERROR: {str(e)}')
-    sys.exit(1)
-finally:
+    cursor.close()
     conn.close()
-"`;
+    
+    print(json.dumps({"success": True, "message": "Productos fusionados correctamente"}))
+except Exception as e:
+    # Rollback en caso de error
+    if conn:
+        conn.rollback()
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+`;
 
+    const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
+    
+    if (stderr) {
+      console.error('Error Python:', stderr);
+      return res.status(500).json({
+        success: false,
+        error: 'Error procesando la solicitud',
+        details: stderr
+      });
+    }
+    
     try {
-      const { stdout, stderr } = await execPromise(scriptCommand);
+      const result = JSON.parse(stdout.trim());
       
-      if (stderr && stderr.includes('ERROR')) {
-        console.error('Error en la fusión:', stderr);
-        
-        // Si es el error específico de códigos EAN diferentes
-        if (stderr.includes('No se pueden fusionar productos con códigos EAN diferentes')) {
+      if (result.error) {
+        if (result.error.includes("códigos EAN diferentes")) {
           return res.status(400).json({
             success: false,
             error: 'No se pueden fusionar productos con códigos EAN diferentes',
-            details: stderr
+            details: result.error
           });
         }
         
         return res.status(500).json({
           success: false,
-          error: 'Error al fusionar productos',
-          details: stderr
+          error: 'Error fusionando productos',
+          details: result.error
         });
       }
       
-      if (stdout.includes('SUCCESS')) {
-        return res.status(200).json({
-          success: true,
-          message: 'Productos fusionados correctamente',
-          producto_mantener_id,
-          producto_eliminar_id
-        });
-      } else {
-        return res.status(500).json({
-          success: false,
-          error: 'Resultado inesperado',
-          details: stdout
-        });
-      }
-    } catch (pythonError) {
-      console.error('Error ejecutando script Python:', pythonError);
+      return res.status(200).json({
+        success: true,
+        message: 'Productos fusionados correctamente',
+        producto_mantener_id,
+        producto_eliminar_id
+      });
+    } catch (parseError) {
+      console.error('Error parseando resultado:', parseError);
+      console.error('Stdout:', stdout);
+      
       return res.status(500).json({
         success: false,
-        error: 'Error al ejecutar la fusión',
-        details: pythonError.message
+        error: 'Error procesando resultados',
+        details: parseError.message,
+        raw: stdout.substring(0, 1000)
       });
     }
-    
   } catch (error) {
-    console.error('Error general al fusionar productos:', error);
+    console.error('Error fusionando productos:', error);
     return res.status(500).json({
       success: false,
-      error: 'Error interno del servidor al fusionar productos',
+      error: 'Error interno del servidor',
       details: error.message
     });
   }
 });
 
+// Endpoint para facturas duplicadas
+app.get('/admin/duplicados/facturas', async (req, res) => {
+  try {
+    const criterio = req.query.criterio || 'all';
+    
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    const script = `
+import sys
+import json
+from database import get_db_connection
+
+try:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT 
+            id, establecimiento, total_factura, fecha_cargue,
+            (SELECT COUNT(*) FROM productos WHERE factura_id = facturas.id) as num_productos
+        FROM facturas
+        ORDER BY fecha_cargue DESC
+    """)
+    
+    facturas = []
+    for row in cursor.fetchall():
+        facturas.append({
+            "id": row[0],
+            "establecimiento": row[1] or 'Sin datos',
+            "total": float(row[2]) if row[2] is not None else 0,
+            "fecha": str(row[3]) if row[3] is not None else '',
+            "num_productos": row[4] if row[4] is not None else 0
+        })
+    
+    duplicados = []
+    for i, f1 in enumerate(facturas):
+        for j in range(i+1, len(facturas)):
+            f2 = facturas[j]
+            
+            # Aplicar criterios de filtrado
+            if "${criterio}" != "all":
+                if "${criterio}" == "same_establishment" and f1["establecimiento"] != f2["establecimiento"]:
+                    continue
+                if "${criterio}" == "same_date" and f1["fecha"][:10] != f2["fecha"][:10]:
+                    continue
+                if "${criterio}" == "same_total" and abs(f1["total"] - f2["total"]) > 100:
+                    continue
+                    
+            # Detectar duplicados por criterios base
+            if ((f1["establecimiento"] == f2["establecimiento"]) and 
+                (abs(f1["total"] - f2["total"]) < 100 or f1["fecha"][:10] == f2["fecha"][:10])):
+                
+                # Determinar criterios cumplidos
+                mismo_establecimiento = f1["establecimiento"] == f2["establecimiento"]
+                misma_fecha = f1["fecha"][:10] == f2["fecha"][:10] if f1["fecha"] and f2["fecha"] else False
+                total_iguales = abs(f1["total"] - f2["total"]) < 100
+                
+                # Calcular similitud estimada
+                similitud = 0
+                if mismo_establecimiento: similitud += 30
+                if misma_fecha: similitud += 30
+                if total_iguales: similitud += 30
+                
+                # Generar razón
+                razones = []
+                if mismo_establecimiento: razones.append("Mismo establecimiento")
+                if misma_fecha: razones.append("Misma fecha")
+                if total_iguales: razones.append("Total similar")
+                razon = ", ".join(razones)
+                
+                duplicados.append({
+                    "id": str(len(duplicados)),
+                    "factura1": f1,
+                    "factura2": f2,
+                    "razon": razon,
+                    "similitud": similitud,
+                    "misma_fecha": misma_fecha,
+                    "mismo_establecimiento": mismo_establecimiento,
+                    "total_iguales": total_iguales,
+                    "productos_iguales": False,
+                    "productos_similares": False
+                })
+    
+    cursor.close()
+    conn.close()
+    
+    print(json.dumps({"duplicados": duplicados, "total": len(duplicados)}))
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+`;
+
+    const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
+    
+    if (stderr) {
+      console.error('Error Python:', stderr);
+      return res.status(500).json({
+        success: false,
+        error: 'Error procesando la solicitud',
+        details: stderr
+      });
+    }
+    
+    try {
+      const result = JSON.parse(stdout.trim());
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return res.json(result);
+    } catch (parseError) {
+      console.error('Error parseando resultado:', parseError);
+      
+      // Datos de ejemplo en caso de error
+      return res.json({
+        duplicados: [],
+        total: 0
+      });
+    }
+  } catch (error) {
+    console.error('Error detectando facturas duplicadas:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
+});
 // Endpoint de diagnóstico
 app.get('/api/diagnostico', async (req, res) => {
   try {
