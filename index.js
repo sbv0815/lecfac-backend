@@ -23,13 +23,13 @@ app.get('/api/health-check', (req, res) => {
 });
 
 // Endpoint para obtener la API key
+// Endpoint para obtener la API key
 app.get('/api/config/anthropic-key', (req, res) => {
   // Recuperar la API key de las variables de entorno
   // Intentar primero ANTHROPIC_API_KEY1, luego ANTHROPIC_API_KEY como respaldo
   const apiKey = process.env.ANTHROPIC_API_KEY1 || process.env.ANTHROPIC_API_KEY || '';
   res.json({ apiKey: apiKey });
 });
-
 // Endpoint para comunicarse con la API de Anthropic
 app.post('/api/anthropic/messages', async (req, res) => {
   try {
@@ -113,6 +113,7 @@ app.post('/admin/duplicados/productos/fusionar', async (req, res) => {
     }
     
     console.log(`Fusionando productos: mantener ID ${producto_mantener_id}, eliminar ID ${producto_eliminar_id}`);
+    
     
     // Crear conexión a la base de datos
     const { exec } = require('child_process');
@@ -234,29 +235,14 @@ finally:
       
       if (stdout.includes('SUCCESS')) {
         return res.status(200).json({
-          success: true,
-          message: 'Productos fusionados correctamente',
-          producto_mantener_id,
-          producto_eliminar_id
-        });
-      } else {
-        return res.status(500).json({
-          success: false,
-          error: 'Resultado inesperado',
-          details: stdout
-        });
-      }
-    } catch (pythonError) {
-      console.error('Error ejecutando script Python:', pythonError);
-      return res.status(500).json({
-        success: false,
-        error: 'Error al ejecutar la fusión',
-        details: pythonError.message
-      });
-    }
+      success: true,
+      message: 'Productos fusionados correctamente',
+      producto_mantener_id,
+      producto_eliminar_id
+    });
     
   } catch (error) {
-    console.error('Error general al fusionar productos:', error);
+    console.error('Error al fusionar productos:', error);
     return res.status(500).json({
       success: false,
       error: 'Error interno del servidor al fusionar productos',
