@@ -487,13 +487,13 @@
             <h1>Dashboard de Administración - LecFac</h1>
         </div>
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('stats')">Estadísticas</button>
-            <button class="tab" onclick="switchTab('subir')">Subir Factura</button>
-            <button class="tab" onclick="switchTab('alertas')">Alertas de Precios</button>
-            <button class="tab" onclick="switchTab('facturas')">Facturas</button>
-            <button class="tab" onclick="switchTab('productos')">Productos</button>
-            <a href="gestor_duplicados.html" class="tab" style="text-decoration:none; display: inline-block; padding: 16px 20px;">Duplicados</a>
-            <button class="tab" onclick="switchTab('auditoria')">🔍 Auditoría</button>
+            <button class="tab active" onclick="switchTab('stats', this)">Estadísticas</button>
+            <button class="tab" onclick="switchTab('subir', this)">Subir Factura</button>
+            <button class="tab" onclick="switchTab('facturas', this)">Facturas</button>
+            <button class="tab" onclick="switchTab('productos', this)">Productos</button>
+            <button class="tab" onclick="switchTab('alertas', this)">Alertas</button>
+            <button class="tab" onclick="switchTab('duplicados', this)">Duplicados</button>
+            <button class="tab" onclick="switchTab('auditoria', this)">Auditoría</button>
             
         </div>
     </nav>
@@ -725,18 +725,34 @@
     let facturasSeleccionadas = new Set();
     let currentImageFile = null; // Variable global para mantener el archivo
 
-    function switchTab(tabName) {
+    // FUNCIÓN CORREGIDA - Reemplazar en admin_dashboard.html
+
+function switchTab(tabName, element) {
+    // Remover clase active de todos los tabs
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     
-    event.target.classList.add('active');
-    document.getElementById('tab-' + tabName).classList.add('active');
+    // Agregar clase active al tab clickeado
+    if (element) {
+        element.classList.add('active');
+    } else {
+        // Fallback: buscar el tab por el nombre
+        const tabButton = document.querySelector(`[onclick*="switchTab('${tabName}')"]`);
+        if (tabButton) tabButton.classList.add('active');
+    }
     
+    // Activar contenido del tab
+    const tabContent = document.getElementById('tab-' + tabName);
+    if (tabContent) {
+        tabContent.classList.add('active');
+    }
+    
+    // Cargar datos según el tab
     if (tabName === 'stats') cargarEstadisticas();
     if (tabName === 'alertas') cargarAlertas();
     if (tabName === 'facturas') cargarFacturas();
     if (tabName === 'productos') cargarProductos();
-    if (tabName === 'auditoria') cargarReporteAuditoria(); // <-- AGREGAR ESTA LÍNEA
+    if (tabName === 'auditoria') cargarReporteAuditoria();
 }
 
     // DRAG AND DROP
