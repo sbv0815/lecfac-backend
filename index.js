@@ -229,3 +229,17 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+const { spawn } = require('child_process');
+
+// Iniciar FastAPI como subproceso
+const fastapi = spawn('uvicorn', ['main:app', '--port', '8000'], {
+  stdio: 'inherit'
+});
+
+// Proxy a FastAPI
+app.use('/admin', async (req, res) => {
+  const fetch = (await import('node-fetch')).default;
+  const response = await fetch(`http://localhost:8000${req.url}`);
+  const data = await response.json();
+  res.json(data);
+});
