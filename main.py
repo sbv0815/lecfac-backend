@@ -191,12 +191,29 @@ async def editor(request: Request):
     return HTMLResponse("<h1>Editor</h1><p>Templates no configurados</p>")
 
 @app.get("/gestor-duplicados", response_class=HTMLResponse)
-async def gestor_duplicados(request: Request):
-    """Gestor de duplicados - NUEVO"""
-    if templates:
-        return templates.TemplateResponse("gestor_duplicados.html", {"request": request})
-    return HTMLResponse("<h1>Gestor de Duplicados</h1><p>Templates no configurados</p>")
-
+async def get_duplicados_page(request: Request):
+    """Gestor de duplicados"""
+    try:
+        # Intentar con templates
+        if templates:
+            return templates.TemplateResponse("gestor_duplicados.html", {"request": request})
+    except:
+        pass
+    
+    # Fallback: leer archivo directamente
+    possible_paths = [
+        Path("gestor_duplicados.html"),
+        Path("static/gestor_duplicados.html"),
+        Path("public/gestor_duplicados.html"),
+        Path("templates/gestor_duplicados.html")
+    ]
+    
+    for html_path in possible_paths:
+        if html_path.exists():
+            with open(html_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    
+    raise HTTPException(404, "gestor_duplicados.html no encontrado")
 # ==========================================
 # ENDPOINTS DE CONFIGURACIÓN Y UTILIDADES
 # ==========================================
@@ -2355,6 +2372,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
