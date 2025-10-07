@@ -1,4 +1,4 @@
-# admin_dashboard.py - VERSIÓN CORREGIDA
+# admin_dashboard.py - STATS CORREGIDO
 from fastapi import HTTPException, APIRouter
 from typing import List, Optional
 from difflib import SequenceMatcher
@@ -8,38 +8,53 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/stats")
 async def estadisticas():
-    """Obtener estadísticas generales del sistema"""
+    """Obtener estadísticas generales del sistema - CORREGIDO"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Productos únicos
-        cursor.execute("SELECT COUNT(*) FROM productos_maestro")
-        productos_unicos = cursor.fetchone()[0]
-        
-        # Facturas
+        # 1. Total de facturas
         cursor.execute("SELECT COUNT(*) FROM facturas")
         total_facturas = cursor.fetchone()[0]
         
-        # Facturas pendientes
+        # 2. Productos únicos (contar productos distintos por código O nombre)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT COALESCE(codigo, nombre)) 
+            FROM productos 
+            WHERE nombre IS NOT NULL AND nombre != ''
+        """)
+        productos_unicos = cursor.fetchone()[0]
+        
+        # 3. Facturas pendientes de revisión (no están 'revisada' ni 'validada')
         cursor.execute("""
             SELECT COUNT(*) FROM facturas 
-            WHERE estado_validacion = 'pendiente' OR estado_validacion IS NULL
+            WHERE estado_validacion NOT IN ('revisada', 'validada')
+               OR estado_validacion IS NULL
         """)
         facturas_pendientes = cursor.fetchone()[0]
         
-        # Precios registrados
-        cursor.execute("SELECT COUNT(*) FROM precios_historicos")
-        total_precios = cursor.fetchone()[0]
+        # 4. Alertas activas (productos con cambios de precio - simplificado)
+        # Contar productos que aparecen en múltiples facturas con precios diferentes
+        cursor.execute("""
+            SELECT COUNT(DISTINCT codigo) 
+            FROM (
+                SELECT codigo, COUNT(DISTINCT valor) as variaciones
+                FROM productos
+                WHERE codigo IS NOT NULL AND codigo != ''
+                GROUP BY codigo
+                HAVING COUNT(DISTINCT valor) > 1
+            ) AS cambios
+        """)
+        alertas_activas = cursor.fetchone()[0]
         
         cursor.close()
         conn.close()
         
         return {
+            "total_facturas": total_facturas,
             "productos_unicos": productos_unicos,
-            "total_facturas": total_facturas, 
-            "facturas_pendientes": facturas_pendientes,
-            "total_precios": total_precios
+            "alertas_activas": alertas_activas,
+            "pendientes_revision": facturas_pendientes
         }
     except Exception as e:
         import traceback
@@ -49,43 +64,41 @@ async def estadisticas():
 
 @router.get("/productos/catalogo")
 async def obtener_catalogo_productos():
-    """Obtener todos los productos del catálogo con estadísticas - CORREGIDO"""
+    """Obtener todos los productos únicos del sistema - CORREGIDO"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ✅ CORRECCIÓN: Usar precios_historicos en lugar de precios_productos
+        # Agrupar productos por código (o nombre si no tiene código)
         cursor.execute("""
             SELECT 
-                p.id,
-                p.codigo_ean,
+                MIN(p.id) as id,
+                COALESCE(p.codigo, 'SIN_CODIGO') as codigo,
                 p.nombre,
-                p.veces_reportado,
-                COALESCE(p.verificado, FALSE) as verificado,
-                COALESCE(p.necesita_revision, FALSE) as necesita_revision,
-                COUNT(DISTINCT ph.id) as num_registros,
-                MIN(ph.precio) as precio_min,
-                MAX(ph.precio) as precio_max,
-                AVG(ph.precio) as precio_promedio
-            FROM productos_maestro p
-            LEFT JOIN precios_historicos ph ON p.id = ph.producto_id
-            GROUP BY p.id, p.codigo_ean, p.nombre, p.veces_reportado, p.verificado, p.necesita_revision
-            ORDER BY p.veces_reportado DESC
+                COUNT(DISTINCT p.factura_id) as num_facturas,
+                COUNT(p.id) as veces_visto,
+                MIN(p.valor) as precio_min,
+                MAX(p.valor) as precio_max,
+                AVG(p.valor) as precio_promedio
+            FROM productos p
+            WHERE p.nombre IS NOT NULL AND p.nombre != ''
+            GROUP BY COALESCE(p.codigo, p.nombre), p.nombre
+            ORDER BY COUNT(p.id) DESC
         """)
         
         productos = []
         for row in cursor.fetchall():
             productos.append({
                 "id": row[0],
-                "codigo_ean": row[1] or "",
+                "codigo_ean": row[1],
                 "nombre": row[2] or "Sin nombre",
-                "veces_visto": row[3] or 0,
-                "verificado": row[4],
-                "necesita_revision": row[5],
-                "num_facturas": row[6] or 0,
-                "precio_min": float(row[7]) if row[7] else 0,
-                "precio_max": float(row[8]) if row[8] else 0,
-                "precio_promedio": float(row[9]) if row[9] else 0
+                "num_facturas": row[3] or 0,
+                "veces_visto": row[4] or 0,
+                "precio_min": float(row[5]) if row[5] else 0,
+                "precio_max": float(row[6]) if row[6] else 0,
+                "precio_promedio": float(row[7]) if row[7] else 0,
+                "verificado": False,
+                "necesita_revision": False
             })
         
         cursor.close()
@@ -168,16 +181,25 @@ async def eliminar_factura(factura_id: int):
 
 @router.get("/duplicados/productos")
 async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "todos"):
-    """Detectar productos duplicados - VERSIÓN CORREGIDA"""
+    """Detectar productos duplicados - CORREGIDO para tabla productos"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Obtener productos únicos agrupados
         cursor.execute("""
-            SELECT id, codigo_ean, nombre, veces_reportado, precio_promedio, ultima_actualizacion
-            FROM productos_maestro
+            SELECT 
+                MIN(id) as id,
+                codigo,
+                nombre,
+                COUNT(*) as veces_visto,
+                AVG(valor) as precio_promedio,
+                MAX(factura_id) as ultima_factura
+            FROM productos
             WHERE nombre IS NOT NULL AND nombre != ''
-            ORDER BY veces_reportado DESC
+            GROUP BY COALESCE(codigo, nombre), nombre
+            HAVING COUNT(*) >= 1
+            ORDER BY COUNT(*) DESC
         """)
         
         productos = []
@@ -188,7 +210,7 @@ async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "t
                 "nombre": row[2],
                 "veces_visto": row[3] or 0,
                 "precio": float(row[4]) if row[4] else 0,
-                "ultima_actualizacion": str(row[5]) if row[5] else None
+                "ultima_actualizacion": None
             })
         
         duplicados = []
@@ -196,7 +218,6 @@ async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "t
         
         for i, p1 in enumerate(productos):
             for j, p2 in enumerate(productos[i+1:], start=i+1):
-                # Evitar procesar el mismo par dos veces
                 par_key = tuple(sorted([p1["id"], p2["id"]]))
                 if par_key in procesados:
                     continue
@@ -204,12 +225,12 @@ async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "t
                 mismo_codigo = False
                 nombre_similar = False
                 
-                # REGLA 1: Mismo código EAN (ambos deben tener código)
+                # REGLA 1: Mismo código
                 if p1["codigo"] and p2["codigo"]:
                     if p1["codigo"] == p2["codigo"]:
                         mismo_codigo = True
                     else:
-                        continue  # Códigos diferentes, no son duplicados
+                        continue
                 
                 # REGLA 2: Similitud de nombres
                 if not mismo_codigo:
@@ -225,13 +246,11 @@ async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "t
                 if criterio == "nombre" and not nombre_similar:
                     continue
                 
-                # Calcular similitud para mostrar
                 similitud_valor = 100 if mismo_codigo else similitud_texto(p1["nombre"], p2["nombre"])
                 
-                # Generar razón
                 razones = []
                 if mismo_codigo:
-                    razones.append("Mismo código EAN")
+                    razones.append("Mismo código")
                 if nombre_similar:
                     razones.append(f"Nombres similares ({similitud_valor:.1f}%)")
                 
@@ -278,7 +297,7 @@ def similitud_texto(a: str, b: str) -> float:
 
 @router.post("/duplicados/productos/fusionar")
 async def fusionar_productos(request: dict):
-    """Fusionar dos productos duplicados - VERSIÓN CORREGIDA"""
+    """Fusionar dos productos duplicados - CORREGIDO"""
     try:
         producto_mantener_id = request.get("producto_mantener_id")
         producto_eliminar_id = request.get("producto_eliminar_id")
@@ -289,11 +308,11 @@ async def fusionar_productos(request: dict):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Verificar productos
-        cursor.execute("SELECT codigo_ean, nombre, veces_reportado FROM productos_maestro WHERE id = %s", (producto_mantener_id,))
+        # Obtener datos de ambos productos
+        cursor.execute("SELECT codigo, nombre FROM productos WHERE id = %s", (producto_mantener_id,))
         prod_mantener = cursor.fetchone()
         
-        cursor.execute("SELECT codigo_ean, nombre, veces_reportado FROM productos_maestro WHERE id = %s", (producto_eliminar_id,))
+        cursor.execute("SELECT codigo, nombre FROM productos WHERE id = %s", (producto_eliminar_id,))
         prod_eliminar = cursor.fetchone()
         
         if not prod_mantener or not prod_eliminar:
@@ -301,36 +320,12 @@ async def fusionar_productos(request: dict):
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         
-        # Validar códigos EAN
-        if prod_mantener[0] and prod_eliminar[0] and prod_mantener[0] != prod_eliminar[0]:
-            cursor.close()
-            conn.close()
-            raise HTTPException(status_code=400, detail="No se pueden fusionar productos con códigos EAN diferentes")
-        
-        # Actualizar referencias
-        cursor.execute("""
-            UPDATE precios_historicos
-            SET producto_id = %s
-            WHERE producto_id = %s
-        """, (producto_mantener_id, producto_eliminar_id))
-        
+        # Actualizar todos los productos con el ID a eliminar
         cursor.execute("""
             UPDATE productos
-            SET producto_maestro_id = %s
-            WHERE producto_maestro_id = %s
-        """, (producto_mantener_id, producto_eliminar_id))
-        
-        # Actualizar estadísticas
-        veces_eliminar = prod_eliminar[2] or 0
-        cursor.execute("""
-            UPDATE productos_maestro
-            SET veces_reportado = veces_reportado + %s,
-                ultima_actualizacion = CURRENT_TIMESTAMP
+            SET codigo = %s, nombre = %s
             WHERE id = %s
-        """, (veces_eliminar, producto_mantener_id))
-        
-        # Eliminar producto duplicado
-        cursor.execute("DELETE FROM productos_maestro WHERE id = %s", (producto_eliminar_id,))
+        """, (prod_mantener[0], prod_mantener[1], producto_eliminar_id))
         
         conn.commit()
         cursor.close()
@@ -348,64 +343,54 @@ async def fusionar_productos(request: dict):
 
 @router.get("/alertas/cambios-precio")
 async def detectar_cambios_precio(dias: int = 7):
-    """Detectar cambios significativos de precio"""
+    """Detectar cambios significativos de precio - CORREGIDO"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Detectar productos con variación de precio significativa
         cursor.execute("""
-            WITH precios_recientes AS (
-                SELECT DISTINCT ON (ph.producto_id, ph.establecimiento)
-                    ph.producto_id,
-                    pm.nombre,
-                    pm.codigo_ean,
-                    ph.establecimiento,
-                    ph.precio as precio_actual,
-                    ph.fecha_reporte
-                FROM precios_historicos ph
-                JOIN productos_maestro pm ON ph.producto_id = pm.id
-                WHERE ph.fecha_reporte >= CURRENT_TIMESTAMP - INTERVAL '%s days'
-                ORDER BY ph.producto_id, ph.establecimiento, ph.fecha_reporte DESC
-            ),
-            estadisticas AS (
+            WITH productos_con_precios AS (
                 SELECT 
-                    producto_id,
-                    establecimiento,
-                    AVG(precio) as precio_promedio,
-                    MIN(precio) as precio_min,
-                    MAX(precio) as precio_max
-                FROM precios_historicos
-                WHERE fecha_reporte >= CURRENT_TIMESTAMP - INTERVAL '%s days'
-                GROUP BY producto_id, establecimiento
-                HAVING COUNT(*) > 1
+                    p.codigo,
+                    p.nombre,
+                    f.establecimiento,
+                    p.valor as precio,
+                    f.fecha_cargue,
+                    AVG(p.valor) OVER (PARTITION BY p.codigo, f.establecimiento) as precio_promedio,
+                    MIN(p.valor) OVER (PARTITION BY p.codigo, f.establecimiento) as precio_min,
+                    MAX(p.valor) OVER (PARTITION BY p.codigo, f.establecimiento) as precio_max
+                FROM productos p
+                JOIN facturas f ON p.factura_id = f.id
+                WHERE p.codigo IS NOT NULL 
+                  AND p.codigo != ''
+                  AND f.fecha_cargue >= CURRENT_TIMESTAMP - INTERVAL '%s days'
             )
-            SELECT 
-                pr.producto_id,
-                pr.nombre,
-                pr.codigo_ean,
-                pr.establecimiento,
-                pr.precio_actual,
-                pr.fecha_reporte,
-                e.precio_promedio,
-                e.precio_min,
-                e.precio_max
-            FROM precios_recientes pr
-            JOIN estadisticas e ON pr.producto_id = e.producto_id 
-                AND pr.establecimiento = e.establecimiento
-            WHERE (pr.precio_actual > e.precio_max * 1.2 
-                OR pr.precio_actual < e.precio_min * 0.8
-                OR ABS(pr.precio_actual - e.precio_promedio) / e.precio_promedio > 0.2)
-            ORDER BY pr.fecha_reporte DESC
-        """ % (dias, dias))
+            SELECT DISTINCT
+                codigo,
+                nombre,
+                establecimiento,
+                precio as precio_actual,
+                fecha_cargue,
+                precio_promedio,
+                precio_min,
+                precio_max
+            FROM productos_con_precios
+            WHERE (precio > precio_max * 1.2 
+                OR precio < precio_min * 0.8
+                OR ABS(precio - precio_promedio) / precio_promedio > 0.2)
+            ORDER BY fecha_cargue DESC
+            LIMIT 50
+        """ % dias)
         
         alertas = []
         for row in cursor.fetchall():
-            precio_actual = float(row[4])
-            precio_promedio = float(row[6])
-            precio_min = float(row[7])
-            precio_max = float(row[8])
+            precio_actual = float(row[3])
+            precio_promedio = float(row[5])
+            precio_min = float(row[6])
+            precio_max = float(row[7])
             
-            cambio_porcentaje = ((precio_actual - precio_promedio) / precio_promedio) * 100
+            cambio_porcentaje = ((precio_actual - precio_promedio) / precio_promedio) * 100 if precio_promedio > 0 else 0
             
             # Determinar tipo de alerta
             if precio_actual > precio_max:
@@ -416,12 +401,11 @@ async def detectar_cambios_precio(dias: int = 7):
                 tipo_alerta = "CAMBIO_SIGNIFICATIVO"
             
             alertas.append({
-                "producto_id": row[0],
+                "codigo": row[0] or "N/A",
                 "nombre": row[1],
-                "codigo": row[2] or "N/A",
-                "establecimiento": row[3],
+                "establecimiento": row[2],
                 "precio_actual": precio_actual,
-                "fecha": str(row[5]),
+                "fecha": str(row[4]),
                 "precio_promedio": precio_promedio,
                 "precio_min": precio_min,
                 "precio_max": precio_max,
@@ -441,14 +425,15 @@ async def detectar_cambios_precio(dias: int = 7):
 
 @router.get("/productos/{producto_id}/comparar-establecimientos")
 async def comparar_precios_establecimientos(producto_id: int):
-    """Comparar precio actual de un producto en diferentes establecimientos"""
+    """Comparar precio de un producto en diferentes establecimientos - CORREGIDO"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Obtener info del producto
         cursor.execute("""
-            SELECT nombre, codigo_ean 
-            FROM productos_maestro 
+            SELECT nombre, codigo 
+            FROM productos 
             WHERE id = %s
         """, (producto_id,))
         
@@ -456,15 +441,17 @@ async def comparar_precios_establecimientos(producto_id: int):
         if not prod_info:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         
+        # Comparar precios por establecimiento
         cursor.execute("""
-            SELECT DISTINCT ON (establecimiento)
-                establecimiento,
-                cadena,
-                precio,
-                fecha_reporte
-            FROM precios_historicos
-            WHERE producto_id = %s
-            ORDER BY establecimiento, fecha_reporte DESC
+            SELECT DISTINCT ON (f.establecimiento)
+                f.establecimiento,
+                f.cadena,
+                p.valor as precio,
+                f.fecha_cargue
+            FROM productos p
+            JOIN facturas f ON p.factura_id = f.id
+            WHERE p.codigo = (SELECT codigo FROM productos WHERE id = %s)
+            ORDER BY f.establecimiento, f.fecha_cargue DESC
         """, (producto_id,))
         
         comparacion = []
