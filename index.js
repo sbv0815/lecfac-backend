@@ -17,6 +17,12 @@ app.get('/', (req, res) => {
   res.json({ message: 'LecFac API funcionando' });
 });
 
+// Middleware para registrar todas las solicitudes
+app.use((req, res, next) => {
+  console.log(`SOLICITUD: ${req.method} ${req.path}`);
+  next();
+});
+
 // Endpoint de salud para verificar que el servidor está funcionando
 app.get('/api/health-check', (req, res) => {
   res.json({ status: 'ok' });
