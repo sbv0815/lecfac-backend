@@ -4,7 +4,11 @@ const fetch = require('node-fetch'); // Asegúrate de tener este paquete instala
 
 const app = express();
 
-// Al inicio de tu app Express
+// Middlewares
+app.use(cors());
+app.use(express.json());
+
+// Middleware para evitar caché
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -13,9 +17,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
+// Middleware para registrar todas las solicitudes
+app.use((req, res, next) => {
+  console.log(`SOLICITUD: ${req.method} ${req.path}`);
+  next();
+});
 
 // Rutas
 const mobileRoutes = require('./routes/mobile');
@@ -26,20 +32,14 @@ app.get('/', (req, res) => {
   res.json({ message: 'LecFac API funcionando' });
 });
 
-// Middleware para registrar todas las solicitudes
-app.use((req, res, next) => {
-  console.log(`SOLICITUD: ${req.method} ${req.path}`);
-  next();
-});
+//==============================================
+// ENDPOINTS GENERALES
+//==============================================
 
-// Endpoint de salud para verificar que el servidor está funcionando
+// Endpoint de salud
 app.get('/api/health-check', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', message: 'API funcionando correctamente' });
 });
-
-
-// Endpoint para obtener la API key
-// Endpoints para el gestor de duplicados
 
 // Endpoint para obtener la API key
 app.get('/api/config/anthropic-key', (req, res) => {
@@ -48,10 +48,9 @@ app.get('/api/config/anthropic-key', (req, res) => {
   res.json({ apiKey: apiKey });
 });
 
-// Health check endpoint
-app.get('/api/health-check', (req, res) => {
-  res.json({ status: 'ok', message: 'API funcionando correctamente' });
-});
+//==============================================
+// ENDPOINTS DE ADMINISTRACIÓN
+//==============================================
 
 // Endpoint para obtener estadísticas
 app.get('/admin/stats', async (req, res) => {
@@ -66,6 +65,7 @@ import json
 from database import get_db_connection
 
 try:
+    conn = None
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -93,11 +93,16 @@ try:
     }
     
     print(json.dumps(result))
-    conn.close()
     
 except Exception as e:
+    if conn:
+        conn.rollback()
     print(json.dumps({"error": str(e)}))
     sys.exit(1)
+finally:
+    if conn:
+        cursor.close()
+        conn.close()
 `;
 
     const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
@@ -113,6 +118,12 @@ except Exception as e:
     
     try {
       const result = JSON.parse(stdout.trim());
+      
+      // Verificar si hay un error en la respuesta
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
       return res.json(result);
     } catch (parseError) {
       console.error('Error parseando resultado:', parseError);
@@ -134,6 +145,104 @@ except Exception as e:
     });
   }
 });
+
+// Endpoint de diagnóstico
+app.get('/api/diagnostico', async (req, res) => {
+  try {
+    // Recolectar información del sistema
+    const os = require('os');
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    // Información básica
+    const diagnostico = {
+      sistema: {
+        plataforma: os.platform(),
+        version: os.release(),
+        memoria_total: `${(os.totalmem() / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+        memoria_libre: `${(os.freemem() / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+        uptime: `${(os.uptime() / 3600).toFixed(2)} horas`
+      },
+      node: {
+        version: process.version,
+        entorno: process.env.NODE_ENV || 'no definido',
+        memoria: process.memoryUsage()
+      },
+      variables_entorno: {
+        database_type: process.env.DATABASE_TYPE || 'no definida',
+        anthropic_key_configurada: !!process.env.ANTHROPIC_API_KEY1 || !!process.env.ANTHROPIC_API_KEY,
+        puerto: process.env.PORT || '3000'
+      },
+      endpoints: {
+        configurados: [
+          '/', 
+          '/api/health-check', 
+          '/api/config/anthropic-key',
+          '/api/anthropic/messages',
+          '/admin/duplicados/facturas/:id/check-image',
+          '/admin/duplicados/facturas/:id/imagen',
+          '/admin/duplicados/productos/fusionar'
+        ]
+      }
+    };
+    
+    // Verificar rutas definidas
+    const rutas = [];
+    app._router.stack.forEach(middleware => {
+      if(middleware.route) {
+        rutas.push({
+          path: middleware.route.path,
+          method: Object.keys(middleware.route.methods)[0].toUpperCase()
+        });
+      }
+    });
+    diagnostico.endpoints.rutas_activas = rutas;
+    
+    // Verificar conexión a la base de datos
+    try {
+      const { stdout } = await execPromise(
+        'python3 -c "import sys; sys.path.append(\'.\'); from database import test_database_connection; print(test_database_connection())"'
+      );
+      
+      diagnostico.base_datos = {
+        test_conexion: stdout.includes('True') ? 'exitoso' : 'fallido',
+        detalles: stdout.trim()
+      };
+    } catch (dbError) {
+      diagnostico.base_datos = {
+        test_conexion: 'error',
+        error: dbError.message
+      };
+    }
+    
+    // Verificar si podemos ejecutar comandos Python
+    try {
+      const { stdout } = await execPromise('python3 --version');
+      
+      diagnostico.python = {
+        version: stdout.trim(),
+        disponible: true
+      };
+    } catch (pythonError) {
+      diagnostico.python = {
+        disponible: false,
+        error: pythonError.message
+      };
+    }
+    
+    res.json(diagnostico);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Error generando diagnóstico',
+      detalles: error.message
+    });
+  }
+});
+
+//==============================================
+// ENDPOINTS DE DUPLICADOS
+//==============================================
 
 // Endpoint para detectar productos duplicados
 app.get('/admin/duplicados/productos', async (req, res) => {
@@ -158,6 +267,7 @@ def similitud_texto(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
 
 try:
+    conn = None
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -260,15 +370,18 @@ try:
                 "razon": ", ".join(razones) if razones else "Posibles duplicados"
             })
     
-    cursor.close()
-    conn.close()
-    
     print(json.dumps({"duplicados": duplicados, "total": len(duplicados)}))
 except Exception as e:
     import traceback
     traceback.print_exc()
+    if conn:
+        conn.rollback()
     print(json.dumps({"error": str(e)}))
     sys.exit(1)
+finally:
+    if conn:
+        cursor.close()
+        conn.close()
 `;
 
     const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
@@ -334,6 +447,7 @@ import json
 from database import get_db_connection
 
 try:
+    conn = None
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -387,8 +501,6 @@ try:
     
     # Confirmar cambios
     conn.commit()
-    cursor.close()
-    conn.close()
     
     print(json.dumps({"success": True, "message": "Productos fusionados correctamente"}))
 except Exception as e:
@@ -397,6 +509,10 @@ except Exception as e:
         conn.rollback()
     print(json.dumps({"error": str(e)}))
     sys.exit(1)
+finally:
+    if conn:
+        cursor.close()
+        conn.close()
 `;
 
     const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
@@ -471,6 +587,7 @@ import json
 from database import get_db_connection
 
 try:
+    conn = None
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -541,13 +658,16 @@ try:
                     "productos_similares": False
                 })
     
-    cursor.close()
-    conn.close()
-    
     print(json.dumps({"duplicados": duplicados, "total": len(duplicados)}))
 except Exception as e:
+    if conn:
+        conn.rollback()
     print(json.dumps({"error": str(e)}))
     sys.exit(1)
+finally:
+    if conn:
+        cursor.close()
+        conn.close()
 `;
 
     const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
@@ -585,107 +705,164 @@ except Exception as e:
     });
   }
 });
-// Endpoint de diagnóstico
-app.get('/api/diagnostico', async (req, res) => {
+
+// Endpoint para verificar si una factura tiene imagen
+app.get('/admin/duplicados/facturas/:id/check-image', async (req, res) => {
   try {
-    // Recolectar información del sistema
-    const os = require('os');
+    const facturaId = req.params.id;
+    
     const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
     
-    // Información básica
-    const diagnostico = {
-      sistema: {
-        plataforma: os.platform(),
-        version: os.release(),
-        memoria_total: `${(os.totalmem() / (1024 * 1024 * 1024)).toFixed(2)} GB`,
-        memoria_libre: `${(os.freemem() / (1024 * 1024 * 1024)).toFixed(2)} GB`,
-        uptime: `${(os.uptime() / 3600).toFixed(2)} horas`
-      },
-      node: {
-        version: process.version,
-        entorno: process.env.NODE_ENV || 'no definido',
-        memoria: process.memoryUsage()
-      },
-      variables_entorno: {
-        database_type: process.env.DATABASE_TYPE || 'no definida',
-        anthropic_key_configurada: !!process.env.ANTHROPIC_API_KEY1 || !!process.env.ANTHROPIC_API_KEY,
-        puerto: process.env.PORT || '3000'
-      },
-      endpoints: {
-        configurados: [
-          '/', 
-          '/api/health-check', 
-          '/api/config/anthropic-key',
-          '/api/anthropic/messages',
-          '/admin/duplicados/facturas/:id/check-image',
-          '/admin/duplicados/facturas/:id/imagen',
-          '/admin/duplicados/productos/fusionar'
-        ]
-      }
-    };
+    const script = `
+import sys
+import json
+from database import get_db_connection
+
+try:
+    conn = None
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    // Verificar rutas definidas
-    const rutas = [];
-    app._router.stack.forEach(middleware => {
-      if(middleware.route) {
-        rutas.push({
-          path: middleware.route.path,
-          method: Object.keys(middleware.route.methods)[0].toUpperCase()
-        });
-      }
-    });
-    diagnostico.endpoints.rutas_activas = rutas;
+    cursor.execute("SELECT tiene_imagen FROM facturas WHERE id = %s", (${facturaId},))
+    result = cursor.fetchone()
     
-    // Verificar conexión a la base de datos
-    try {
-      const { stdout } = await new Promise((resolve, reject) => {
-        exec('python3 -c "import sys; sys.path.append(\'.\'); from database import test_database_connection; test_database_connection()"', 
-          (error, stdout, stderr) => {
-            if (error) {
-              reject(error);
-            }
-            resolve({ stdout, stderr });
-          });
+    if not result:
+        print(json.dumps({"tiene_imagen": False, "mensaje": "Factura no encontrada"}))
+    else:
+        print(json.dumps({"tiene_imagen": bool(result[0]), "mensaje": "Verificación exitosa"}))
+    
+except Exception as e:
+    if conn:
+        conn.rollback()
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+finally:
+    if conn:
+        cursor.close()
+        conn.close()
+`;
+    
+    const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
+    
+    if (stderr) {
+      console.error('Error Python:', stderr);
+      return res.status(500).json({
+        success: false,
+        error: 'Error verificando imagen',
+        details: stderr
       });
-      
-      diagnostico.base_datos = {
-        test_conexion: stdout.includes('✅') ? 'exitoso' : 'fallido',
-        detalles: stdout
-      };
-    } catch (dbError) {
-      diagnostico.base_datos = {
-        test_conexion: 'error',
-        error: dbError.message
-      };
     }
     
-    // Verificar si podemos ejecutar comandos Python
     try {
-      const { stdout } = await new Promise((resolve, reject) => {
-        exec('python3 --version', (error, stdout, stderr) => {
-          if (error) {
-            reject(error);
-          }
-          resolve({ stdout, stderr });
-        });
+      const result = JSON.parse(stdout.trim());
+      return res.json(result);
+    } catch (parseError) {
+      console.error('Error parseando resultado:', parseError);
+      return res.status(500).json({
+        success: false,
+        error: 'Error procesando resultados',
+        details: parseError.message
       });
-      
-      diagnostico.python = {
-        version: stdout.trim(),
-        disponible: true
-      };
-    } catch (pythonError) {
-      diagnostico.python = {
-        disponible: false,
-        error: pythonError.message
-      };
     }
-    
-    res.json(diagnostico);
   } catch (error) {
-    res.status(500).json({
-      error: 'Error generando diagnóstico',
-      detalles: error.message
+    console.error('Error verificando imagen:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
+});
+
+// Endpoint para obtener la imagen de una factura
+app.get('/admin/duplicados/facturas/:id/imagen', async (req, res) => {
+  try {
+    const facturaId = req.params.id;
+    
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    const script = `
+import sys
+import json
+import base64
+from database import get_db_connection
+
+try:
+    conn = None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s", (${facturaId},))
+    result = cursor.fetchone()
+    
+    if not result or not result[0]:
+        print(json.dumps({"error": "Imagen no encontrada"}))
+        sys.exit(1)
+    
+    # Codificar imagen en base64
+    imagen_base64 = base64.b64encode(result[0]).decode('utf-8')
+    mime_type = result[1] or 'image/jpeg'
+    
+    print(json.dumps({"imagen": imagen_base64, "mime": mime_type}))
+    
+except Exception as e:
+    if conn:
+        conn.rollback()
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+finally:
+    if conn:
+        cursor.close()
+        conn.close()
+`;
+    
+    const { stdout, stderr } = await execPromise(`python3 -c "${script}"`);
+    
+    if (stderr) {
+      console.error('Error Python:', stderr);
+      return res.status(500).json({
+        success: false,
+        error: 'Error obteniendo imagen',
+        details: stderr
+      });
+    }
+    
+    try {
+      const result = JSON.parse(stdout.trim());
+      
+      if (result.error) {
+        return res.status(404).json({
+          success: false,
+          error: result.error
+        });
+      }
+      
+      // Enviar imagen como respuesta
+      const img = Buffer.from(result.imagen, 'base64');
+      res.writeHead(200, {
+        'Content-Type': result.mime,
+        'Content-Length': img.length
+      });
+      res.end(img);
+      
+    } catch (parseError) {
+      console.error('Error parseando resultado:', parseError);
+      return res.status(500).json({
+        success: false,
+        error: 'Error procesando resultados',
+        details: parseError.message
+      });
+    }
+  } catch (error) {
+    console.error('Error obteniendo imagen:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
     });
   }
 });
