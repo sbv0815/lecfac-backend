@@ -39,7 +39,7 @@ from claude_invoice import parse_invoice_with_claude
 from admin_dashboard import router as admin_dashboard_router
 from auth_routes import router as auth_router
 from image_handlers import router as image_handlers_router
-from duplicados_routes import router as duplicados_router  # ← NUEVO
+from duplicados_routes import router as duplicados_router  # ← AGREGAR ESTA LÍNEA
 
 # Importar procesador OCR y auditoría
 from ocr_processor import processor, ocr_queue, processing
@@ -148,6 +148,7 @@ try:
 except Exception as e:
     print(f"❌ Error registrando admin_dashboard_router: {e}")
 
+
 # Router de autenticación
 try:
     app.include_router(auth_router, tags=["auth"])
@@ -155,7 +156,7 @@ try:
 except Exception as e:
     print(f"❌ Error registrando auth_router: {e}")
 
-# Router de duplicados - NUEVO
+    # Router de duplicados - NUEVO
 try:
     app.include_router(duplicados_router, tags=["duplicados"])
     print("✅ duplicados_router registrado")
@@ -1009,6 +1010,15 @@ async def get_duplicados_page():
                 return HTMLResponse(content=f.read())
     
     raise HTTPException(404, "gestor_duplicados.html no encontrado")
+
+@app.get("/duplicados.js")
+async def get_duplicados_js():
+    """Servir archivo JavaScript de duplicados"""
+    js_path = Path("duplicados.js")
+    if js_path.exists():
+        return FileResponse(str(js_path), media_type="application/javascript")
+    else:
+        raise HTTPException(status_code=404, detail="duplicados.js no encontrado")
 
 @app.get("/test", response_class=HTMLResponse)
 async def test_page():
@@ -2345,6 +2355,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
