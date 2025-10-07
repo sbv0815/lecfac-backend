@@ -8,7 +8,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/stats")
 async def estadisticas():
-    """Obtener estadísticas generales del sistema - CORREGIDO"""
+    """Obtener estadísticas generales del sistema - VERSIÓN SIMPLE"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -17,7 +17,7 @@ async def estadisticas():
         cursor.execute("SELECT COUNT(*) FROM facturas")
         total_facturas = cursor.fetchone()[0]
         
-        # 2. Productos únicos (contar productos distintos por código O nombre)
+        # 2. Productos únicos
         cursor.execute("""
             SELECT COUNT(DISTINCT COALESCE(codigo, nombre)) 
             FROM productos 
@@ -25,16 +25,14 @@ async def estadisticas():
         """)
         productos_unicos = cursor.fetchone()[0]
         
-        # 3. Facturas pendientes de revisión (no están 'revisada' ni 'validada')
+        # 3. Facturas pendientes de revisión
         cursor.execute("""
             SELECT COUNT(*) FROM facturas 
-            WHERE estado_validacion NOT IN ('revisada', 'validada')
-               OR estado_validacion IS NULL
+            WHERE COALESCE(estado_validacion, 'pendiente') NOT IN ('revisada', 'validada')
         """)
         facturas_pendientes = cursor.fetchone()[0]
         
-        # 4. Alertas activas (productos con cambios de precio - simplificado)
-        # Contar productos que aparecen en múltiples facturas con precios diferentes
+        # 4. Alertas activas
         cursor.execute("""
             SELECT COUNT(DISTINCT codigo) 
             FROM (
@@ -55,6 +53,76 @@ async def estadisticas():
             "productos_unicos": productos_unicos,
             "alertas_activas": alertas_activas,
             "pendientes_revision": facturas_pendientes
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stats-detailed")
+async def estadisticas_detalladas():
+    """Obtener estadísticas detalladas con desglose por estado"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Total de facturas
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        total_facturas = cursor.fetchone()[0]
+        
+        # 2. Productos únicos
+        cursor.execute("""
+            SELECT COUNT(DISTINCT COALESCE(codigo, nombre)) 
+            FROM productos 
+            WHERE nombre IS NOT NULL AND nombre != ''
+        """)
+        productos_unicos = cursor.fetchone()[0]
+        
+        # 3. Alertas activas
+        cursor.execute("""
+            SELECT COUNT(DISTINCT codigo) 
+            FROM (
+                SELECT codigo, COUNT(DISTINCT valor) as variaciones
+                FROM productos
+                WHERE codigo IS NOT NULL AND codigo != ''
+                GROUP BY codigo
+                HAVING COUNT(DISTINCT valor) > 1
+            ) AS cambios
+        """)
+        alertas_activas = cursor.fetchone()[0]
+        
+        # 4. Desglose por estado
+        cursor.execute("""
+            SELECT 
+                COALESCE(estado_validacion, 'sin_estado') as estado,
+                COUNT(*) as cantidad
+            FROM facturas
+            GROUP BY estado_validacion
+        """)
+        
+        por_estado = {}
+        for row in cursor.fetchall():
+            estado = row[0]
+            cantidad = row[1]
+            por_estado[estado] = cantidad
+        
+        # 5. Total pendientes (todo lo que NO sea revisada o validada)
+        cursor.execute("""
+            SELECT COUNT(*) FROM facturas 
+            WHERE COALESCE(estado_validacion, 'pendiente') NOT IN ('revisada', 'validada')
+        """)
+        pendientes_total = cursor.fetchone()[0]
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "total_facturas": total_facturas,
+            "productos_unicos": productos_unicos,
+            "alertas_activas": alertas_activas,
+            "por_estado": por_estado,
+            "pendientes_total": pendientes_total
         }
     except Exception as e:
         import traceback
