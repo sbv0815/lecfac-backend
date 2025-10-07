@@ -149,14 +149,15 @@ def similitud_texto(a: str, b: str) -> float:
 
 @router.get("/duplicados/productos")
 async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "todos"):
-    """Detectar productos con nombres similares"""
+    """Detectar productos con nombres similares considerando múltiples criterios"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Obtener todos los productos del catálogo
         cursor.execute("""
-            SELECT id, codigo_ean, nombre_producto, veces_visto
-            FROM productos_catalogo
+            SELECT id, codigo_ean, nombre_producto, veces_visto, precio_promedio, ultima_actualizacion
+            FROM productos_maestro
             ORDER BY veces_visto DESC
         """)
         
@@ -166,43 +167,94 @@ async def detectar_productos_duplicados(umbral: float = 85.0, criterio: str = "t
                 "id": row[0],
                 "codigo": row[1],
                 "nombre": row[2],
-                "veces_visto": row[3]
+                "veces_visto": row[3],
+                "precio": row[4],
+                "ultima_actualizacion": row[5]
             })
         
         duplicados = []
         for i, p1 in enumerate(productos):
             for p2 in productos[i+1:]:
-                # REGLA CRÍTICA: Si ambos tienen código EAN y son diferentes, NO son duplicados
-                if p1["codigo"] and p2["codigo"] and p1["codigo"] != p2["codigo"]:
-                    continue
-                    
-                if p1["nombre"] and p2["nombre"]:
+                # Inicializar valores
+                mismo_codigo = False
+                mismo_establecimiento = True  # Simplificado para esta versión
+                nombre_similar = False
+                
+                # REGLA 1: Si ambos tienen código EAN, solo son duplicados si son el mismo código
+                if p1["codigo"] and p2["codigo"]:
+                    if p1["codigo"] != p2["codigo"]:
+                        continue  # No son duplicados, saltar a la siguiente iteración
+                    mismo_codigo = True
+                
+                # REGLA 2: Si no coinciden por código, verificar similitud de nombres
+                if not mismo_codigo and p1["nombre"] and p2["nombre"]:
                     sim = similitud_texto(p1["nombre"], p2["nombre"])
                     
-                    # Aplicar filtro según criterio
-                    if criterio != "todos":
-                        if criterio == "codigo" and (not p1["codigo"] or not p2["codigo"] or p1["codigo"] != p2["codigo"]):
-                            continue
-                        # Agregar más filtros según tus criterios...
-                    
+                    # Si la similitud es alta, considerar nombre similar
                     if sim >= umbral:
-                        mismo_codigo = bool(p1["codigo"] and p2["codigo"] and p1["codigo"] == p2["codigo"])
-                        
-                        duplicados.append({
-                            "producto1": p1,
-                            "producto2": p2,
-                            "similitud": round(sim, 1),
-                            "mismo_codigo": mismo_codigo,
-                            "nombre_similar": True,
-                            "mismo_establecimiento": True,  # Simplificado para esta versión
-                            "razon": "Mismo código EAN" if mismo_codigo else "Nombres muy similares"
-                        })
+                        nombre_similar = True
+                    else:
+                        continue  # No son suficientemente similares
+                
+                # REGLA 3: Aplicar filtros según criterio seleccionado
+                if criterio != "todos":
+                    if criterio == "codigo" and not mismo_codigo:
+                        continue
+                    if criterio == "nombre" and not nombre_similar:
+                        continue
+                    if criterio == "establecimiento" and not mismo_establecimiento:
+                        continue
+                
+                # Si llegamos aquí, son potenciales duplicados
+                # Calcular valor de similitud para mostrar
+                if mismo_codigo:
+                    similitud_valor = 100  # 100% de similitud si tienen el mismo código
+                else:
+                    similitud_valor = similitud_texto(p1["nombre"], p2["nombre"])
+                
+                # Crear razón descriptiva
+                razones = []
+                if mismo_codigo:
+                    razones.append("Mismo código EAN")
+                if nombre_similar:
+                    razones.append("Nombres similares")
+                if mismo_establecimiento:
+                    razones.append("Mismo establecimiento")
+                
+                # Crear entrada de duplicado
+                duplicados.append({
+                    "id": str(len(duplicados)),  # ID único para este duplicado
+                    "producto1": {
+                        "id": p1["id"],
+                        "nombre": p1["nombre"],
+                        "codigo": p1["codigo"],
+                        "establecimiento": "Desconocido",  # Simplificado para esta versión
+                        "precio": p1["precio"],
+                        "ultima_actualizacion": p1["ultima_actualizacion"],
+                        "veces_visto": p1["veces_visto"]
+                    },
+                    "producto2": {
+                        "id": p2["id"],
+                        "nombre": p2["nombre"],
+                        "codigo": p2["codigo"],
+                        "establecimiento": "Desconocido",  # Simplificado para esta versión
+                        "precio": p2["precio"],
+                        "ultima_actualizacion": p2["ultima_actualizacion"],
+                        "veces_visto": p2["veces_visto"]
+                    },
+                    "similitud": round(similitud_valor, 1),
+                    "mismo_codigo": mismo_codigo,
+                    "mismo_establecimiento": mismo_establecimiento,
+                    "nombre_similar": nombre_similar,
+                    "razon": ", ".join(razones) if razones else "Posibles duplicados"
+                })
         
         cursor.close()
         conn.close()
         
         return {"duplicados": duplicados, "total": len(duplicados)}
     except Exception as e:
+        print(f"Error detectando duplicados: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
