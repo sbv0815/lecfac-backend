@@ -1410,12 +1410,13 @@ async function verEstadoColaMobile() {
         
         function getBadgeClass(estado) {
             const map = {
-                'validada': 'success',
-                'revision_requerida': 'warning',
-                'pendiente': 'danger'
-            };
-            return map[estado] || 'info';
-        }
+        'validada': 'success',
+        'revisada': 'success',  // ← AGREGAR ESTA LÍNEA
+        'revision_requerida': 'warning',
+        'pendiente': 'danger'
+        };
+        return map[estado] || 'info';
+            }
         
         function updateSeleccion() {
             facturasSeleccionadas.clear();
