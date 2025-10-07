@@ -443,7 +443,6 @@ async def parse_invoice(file: UploadFile = File(...)):
         result = parse_invoice_with_claude(temp_file.name)
         
         if not result["success"]:
-            # Limpiar archivo temporal
             if os.path.exists(temp_file.name):
                 os.unlink(temp_file.name)
             return result
@@ -454,9 +453,6 @@ async def parse_invoice(file: UploadFile = File(...)):
         total = data.get("total", 0)
         productos = data.get("productos", [])
         
-        print(f"📦 OCR detectó {len(productos)} productos")
-        
-        # Detectar cadena ANTES de validar
         cadena = detectar_cadena(establecimiento)
         
         # Validar calidad
@@ -482,9 +478,9 @@ async def parse_invoice(file: UploadFile = File(...)):
         """, (1, establecimiento, cadena, total, datetime.now(), estado, True, puntaje))
         
         factura_id = cursor.fetchone()[0]
-        print(f"✅ Factura ID: {factura_id}, Estado: {estado}, Puntaje: {puntaje}")
+        print(f"✅ Factura ID: {factura_id}")
         
-        # Guardar productos EN LA TABLA productos
+        # Guardar productos
         productos_guardados = 0
         for prod in productos:
             try:
@@ -492,26 +488,25 @@ async def parse_invoice(file: UploadFile = File(...)):
                 nombre = prod.get("nombre", "") or ""
                 precio = prod.get("precio", 0) or prod.get("valor", 0) or 0
                 
-                if nombre:  # Solo guardar si tiene nombre
+                if nombre:
                     cursor.execute("""
                         INSERT INTO productos (factura_id, codigo, nombre, valor)
                         VALUES (%s, %s, %s, %s)
                     """, (factura_id, codigo, nombre, precio))
-                    
                     productos_guardados += 1
-                    print(f"  ✅ Producto guardado: {nombre} (${precio})")
-                    
             except Exception as e:
                 print(f"⚠️ Error guardando producto: {e}")
         
-        print(f"✅ Total productos guardados: {productos_guardados}/{len(productos)}")
-        
-        # Guardar imagen
-        save_image_to_db(factura_id, temp_file.name, "image/jpeg")
-        
+        # ⚠️ IMPORTANTE: COMMIT ANTES DE GUARDAR IMAGEN
         conn.commit()
         cursor.close()
         conn.close()
+        conn = None  # ← Importante para evitar double-close
+        
+        # 🔑 GUARDAR IMAGEN - ESTO ES LO MÁS IMPORTANTE
+        print(f"📸 Guardando imagen para factura {factura_id}...")
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
+        print(f"✅ Imagen guardada: {imagen_guardada}")
         
         # Limpiar temporal
         os.unlink(temp_file.name)
@@ -521,19 +516,19 @@ async def parse_invoice(file: UploadFile = File(...)):
             "data": data,
             "factura_id": factura_id,
             "productos_guardados": productos_guardados,
+            "imagen_guardada": imagen_guardada,  # ← Incluir en respuesta
             "validacion": {
                 "puntaje": puntaje,
                 "estado": estado,
                 "alertas": alertas
             },
-            "message": f"Factura procesada correctamente. {productos_guardados} productos guardados."
+            "message": f"Factura procesada. {productos_guardados} productos guardados."
         }
         
     except Exception as e:
         print(f"❌ Error: {e}")
         traceback.print_exc()
         
-        # Limpieza en caso de error
         if temp_file and hasattr(temp_file, 'name') and os.path.exists(temp_file.name):
             os.unlink(temp_file.name)
         if conn:
@@ -1740,6 +1735,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
