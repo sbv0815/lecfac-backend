@@ -483,19 +483,21 @@ async def parse_invoice(file: UploadFile = File(...)):
         print(f"✅ Factura ID: {factura_id}, Estado: {estado}, Puntaje: {puntaje}")
         
         # Guardar productos
-        for prod in productos:
-            try:
-                cursor.execute("""
-                    INSERT INTO productos (factura_id, codigo, nombre, valor)
-                    VALUES (%s, %s, %s, %s)
-                """, (
-                    factura_id,
-                    prod.get("codigo", ""),
-                    prod.get("nombre", ""),
-                    prod.get("precio", 0)
-                ))
-            except Exception as e:
-                print(f"⚠️ Error guardando producto: {e}")
+        # Guardar productos
+for prod in productos:
+    try:
+        cursor.execute("""
+            INSERT INTO productos (factura_id, codigo, nombre, valor)
+            VALUES (%s, %s, %s, %s)
+        """, (
+            factura_id,
+            prod.get("codigo", ""),
+            prod.get("nombre", ""),
+            prod.get("precio", 0)  # ← AQUÍ: debe ser "precio" o "valor"?
+        ))
+        print(f"✅ Producto guardado: {prod.get('nombre')}")  # ← AGREGAR ESTE LOG
+    except Exception as e:
+        print(f"⚠️ Error guardando producto: {e}")
         
         # Guardar imagen
         save_image_to_db(factura_id, temp_file.name, "image/jpeg")
@@ -871,7 +873,7 @@ async def get_factura_detalle_completo(factura_id: int):
 async def get_factura_para_editor(factura_id: int):
     """
     Obtener factura completa para el editor
-    Este endpoint es llamado por editor.html
+    BUSCA PRODUCTOS EN MÚLTIPLES TABLAS
     """
     try:
         conn = get_db_connection()
@@ -889,15 +891,16 @@ async def get_factura_para_editor(factura_id: int):
             conn.close()
             raise HTTPException(404, "Factura no encontrada")
         
-        # 2. Obtener productos asociados
+        productos = []
+        
+        # 2A. INTENTAR TABLA productos PRIMERO
         cursor.execute("""
-            SELECT p.id, p.codigo, p.nombre, p.valor
-            FROM productos p
-            WHERE p.factura_id = %s
-            ORDER BY p.id
+            SELECT id, codigo, nombre, valor
+            FROM productos
+            WHERE factura_id = %s
+            ORDER BY id
         """, (factura_id,))
         
-        productos = []
         for p in cursor.fetchall():
             productos.append({
                 "id": p[0],
@@ -906,7 +909,32 @@ async def get_factura_para_editor(factura_id: int):
                 "precio": float(p[3]) if p[3] else 0
             })
         
+        print(f"📦 Productos en tabla 'productos': {len(productos)}")
+        
+        # 2B. SI ESTÁ VACÍA, BUSCAR EN precios_productos
+        if len(productos) == 0:
+            print("⚠️ Buscando en precios_productos...")
+            cursor.execute("""
+                SELECT pp.id, pc.codigo_ean, pc.nombre_producto, pp.precio
+                FROM precios_productos pp
+                LEFT JOIN productos_catalogo pc ON pp.producto_id = pc.id
+                WHERE pp.factura_id = %s
+                ORDER BY pp.id
+            """, (factura_id,))
+            
+            for p in cursor.fetchall():
+                productos.append({
+                    "id": p[0],
+                    "codigo": p[1] or "",
+                    "nombre": p[2] or "Producto sin nombre",
+                    "precio": float(p[3]) if p[3] else 0
+                })
+            
+            print(f"📦 Productos en 'precios_productos': {len(productos)}")
+        
         conn.close()
+        
+        print(f"✅ TOTAL a devolver: {len(productos)} productos")
         
         # 3. Construir respuesta
         return {
@@ -915,7 +943,7 @@ async def get_factura_para_editor(factura_id: int):
             "establecimiento": factura[2] or "",
             "cadena": factura[3],
             "total": float(factura[4]) if factura[4] else 0,
-            "total_factura": float(factura[4]) if factura[4] else 0,  # Alias para compatibilidad
+            "total_factura": float(factura[4]) if factura[4] else 0,
             "fecha": factura[5].isoformat() if factura[5] else None,
             "estado": factura[6] or "pendiente",
             "puntaje": factura[7] or 0,
@@ -927,53 +955,6 @@ async def get_factura_para_editor(factura_id: int):
         raise
     except Exception as e:
         print(f"❌ Error en get_factura_para_editor: {e}")
-        traceback.print_exc()
-        raise HTTPException(500, str(e))
-
-@app.put("/admin/facturas/{factura_id}/datos-generales")
-async def actualizar_datos_generales(factura_id: int, datos: dict):
-    """Actualizar datos generales de factura"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        establecimiento = datos.get('establecimiento')
-        total = datos.get('total', 0)
-        fecha = datos.get('fecha')  # Nueva: recibir fecha
-        
-        # Construir query dinámicamente
-        updates = []
-        params = []
-        
-        if establecimiento:
-            updates.append("establecimiento = %s")
-            params.append(establecimiento)
-            updates.append("cadena = %s")
-            params.append(detectar_cadena(establecimiento))
-        
-        if total is not None:
-            updates.append("total_factura = %s")
-            params.append(float(total))
-        
-        if fecha:
-            updates.append("fecha_cargue = %s")
-            params.append(fecha)
-        
-        # IMPORTANTE: Marcar como revisada después de editar
-        updates.append("estado_validacion = %s")
-        params.append('revisada')
-        
-        params.append(factura_id)
-        
-        query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = %s"
-        cursor.execute(query, params)
-        
-        conn.commit()
-        conn.close()
-        
-        return {"success": True, "message": "Datos actualizados"}
-    except Exception as e:
-        print(f"Error actualizando datos generales: {e}")
         traceback.print_exc()
         raise HTTPException(500, str(e))
 
@@ -1701,6 +1682,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
