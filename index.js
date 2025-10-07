@@ -99,6 +99,7 @@ app.get('/admin/duplicados/facturas/:id/imagen', async (req, res) => {
   }
 });
 // Endpoint para fusionar productos duplicados
+// Endpoint para fusionar productos duplicados
 app.post('/admin/duplicados/productos/fusionar', async (req, res) => {
   try {
     const { producto_mantener_id, producto_eliminar_id } = req.body;
@@ -110,219 +111,158 @@ app.post('/admin/duplicados/productos/fusionar', async (req, res) => {
         error: 'Se requieren ambos IDs: producto a mantener y producto a eliminar'
       });
     }
-
-    // En este punto harías las operaciones de base de datos para fusionar productos
-    // Como no tenemos acceso a tu modelo de datos, implementamos una respuesta simulada
     
     console.log(`Fusionando productos: mantener ID ${producto_mantener_id}, eliminar ID ${producto_eliminar_id}`);
     
-    // Simular un pequeño retraso para que parezca que está procesando
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Crear conexión a la base de datos
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
     
-    // Devolver respuesta exitosa
-    return res.status(200).json({
-      success: true,
-      message: 'Productos fusionados correctamente',
-      producto_mantener_id,
-      producto_eliminar_id
-    });
+    // Ejecutar el script Python para fusionar productos
+    const scriptCommand = `python3 -c "
+import sys
+sys.path.append('.')
+from database import get_db_connection
+
+conn = get_db_connection()
+cursor = conn.cursor()
+
+try:
+    # 1. Obtener productos
+    if '${process.env.DATABASE_TYPE}' == 'postgresql':
+        cursor.execute('SELECT * FROM productos_maestro WHERE id = %s', (${producto_mantener_id},))
+        producto_mantener = cursor.fetchone()
+        cursor.execute('SELECT * FROM productos_maestro WHERE id = %s', (${producto_eliminar_id},))
+        producto_eliminar = cursor.fetchone()
+    else:
+        cursor.execute('SELECT * FROM productos_maestro WHERE id = ?', (${producto_mantener_id},))
+        producto_mantener = cursor.fetchone()
+        cursor.execute('SELECT * FROM productos_maestro WHERE id = ?', (${producto_eliminar_id},))
+        producto_eliminar = cursor.fetchone()
+    
+    if not producto_mantener or not producto_eliminar:
+        print('ERROR: Uno o ambos productos no existen')
+        sys.exit(1)
+    
+    # 2. Fusionar histórico de precios
+    if '${process.env.DATABASE_TYPE}' == 'postgresql':
+        # Actualizar referencias en precios_historicos
+        cursor.execute('''
+            UPDATE precios_historicos 
+            SET producto_id = %s
+            WHERE producto_id = %s
+        ''', (producto_mantener_id, producto_eliminar_id))
+        
+        # Actualizar referencias en historial_compras_usuario
+        cursor.execute('''
+            UPDATE historial_compras_usuario 
+            SET producto_id = %s
+            WHERE producto_id = %s
+        ''', (producto_mantener_id, producto_eliminar_id))
+        
+        # Actualizar patrones_compra
+        cursor.execute('''
+            UPDATE patrones_compra
+            SET producto_id = %s
+            WHERE producto_id = %s
+        ''', (producto_mantener_id, producto_eliminar_id))
+    else:
+        # SQLite
+        cursor.execute('''
+            UPDATE precios_historicos 
+            SET producto_id = ?
+            WHERE producto_id = ?
+        ''', (producto_mantener_id, producto_eliminar_id))
+        
+        cursor.execute('''
+            UPDATE historial_compras_usuario 
+            SET producto_id = ?
+            WHERE producto_id = ?
+        ''', (producto_mantener_id, producto_eliminar_id))
+        
+        cursor.execute('''
+            UPDATE patrones_compra
+            SET producto_id = ?
+            WHERE producto_id = ?
+        ''', (producto_mantener_id, producto_eliminar_id))
+    
+    # 3. Actualizar estadísticas del producto mantenido
+    if '${process.env.DATABASE_TYPE}' == 'postgresql':
+        cursor.execute('''
+            UPDATE productos_maestro 
+            SET veces_reportado = veces_reportado + %s,
+                ultima_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        ''', (producto_eliminar[6] or 0, producto_mantener_id))
+    else:
+        cursor.execute('''
+            UPDATE productos_maestro 
+            SET veces_reportado = veces_reportado + ?,
+                ultima_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (producto_eliminar[6] or 0, producto_mantener_id))
+    
+    # 4. Eliminar el producto duplicado
+    if '${process.env.DATABASE_TYPE}' == 'postgresql':
+        cursor.execute('DELETE FROM productos_maestro WHERE id = %s', (producto_eliminar_id,))
+    else:
+        cursor.execute('DELETE FROM productos_maestro WHERE id = ?', (producto_eliminar_id,))
+    
+    # Confirmar cambios
+    conn.commit()
+    print('SUCCESS: Productos fusionados correctamente')
+except Exception as e:
+    conn.rollback()
+    print(f'ERROR: {str(e)}')
+    sys.exit(1)
+finally:
+    conn.close()
+"`;
+
+    try {
+      const { stdout, stderr } = await execPromise(scriptCommand);
+      
+      if (stderr && stderr.includes('ERROR')) {
+        console.error('Error en la fusión:', stderr);
+        return res.status(500).json({
+          success: false,
+          error: 'Error al fusionar productos',
+          details: stderr
+        });
+      }
+      
+      if (stdout.includes('SUCCESS')) {
+        return res.status(200).json({
+          success: true,
+          message: 'Productos fusionados correctamente',
+          producto_mantener_id,
+          producto_eliminar_id
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          error: 'Resultado inesperado',
+          details: stdout
+        });
+      }
+    } catch (pythonError) {
+      console.error('Error ejecutando script Python:', pythonError);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al ejecutar la fusión',
+        details: pythonError.message
+      });
+    }
     
   } catch (error) {
-    console.error('Error al fusionar productos:', error);
+    console.error('Error general al fusionar productos:', error);
     return res.status(500).json({
       success: false,
       error: 'Error interno del servidor al fusionar productos',
       details: error.message
     });
   }
-});
-
-// Endpoint para obtener duplicados de productos
-app.get('/admin/duplicados/productos', (req, res) => {
-  try {
-    const umbral = req.query.umbral || '85';
-    const criterio = req.query.criterio || 'todos';
-    
-    // Datos de ejemplo para el frontend
-    const duplicados = [
-      {
-        id: '1',
-        producto1: {
-          id: 101,
-          nombre: 'Leche Entera 1L',
-          codigo: '7791234567890',
-          establecimiento: 'Supermercado XYZ',
-          precio: 2500,
-          ultima_actualizacion: new Date().toISOString(),
-          veces_visto: 12
-        },
-        producto2: {
-          id: 102,
-          nombre: 'Leche Entera 1 Litro',
-          codigo: '7791234567890',
-          establecimiento: 'Supermercado XYZ',
-          precio: 2600,
-          ultima_actualizacion: new Date(Date.now() - 86400000).toISOString(), // 1 día antes
-          veces_visto: 8
-        },
-        similitud: 95,
-        mismo_codigo: true,
-        mismo_establecimiento: true,
-        nombre_similar: true,
-        razon: 'Mismo código de barras con nombres ligeramente diferentes'
-      },
-      {
-        id: '2',
-        producto1: {
-          id: 103,
-          nombre: 'Arroz Blanco 1kg',
-          codigo: '7795678901234',
-          establecimiento: 'Tienda ABC',
-          precio: 1800,
-          ultima_actualizacion: new Date().toISOString(),
-          veces_visto: 5
-        },
-        producto2: {
-          id: 104,
-          nombre: 'Arroz Integral 1kg',
-          codigo: '7795678901235',
-          establecimiento: 'Tienda ABC',
-          precio: 2200,
-          ultima_actualizacion: new Date().toISOString(),
-          veces_visto: 3
-        },
-        similitud: 88,
-        mismo_codigo: false,
-        mismo_establecimiento: true,
-        nombre_similar: true,
-        razon: 'Nombres similares en el mismo establecimiento'
-      }
-    ];
-    
-    res.json({
-      success: true,
-      total: duplicados.length,
-      duplicados
-    });
-  } catch (error) {
-    console.error('Error obteniendo duplicados:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint para obtener duplicados de facturas
-app.get('/admin/duplicados/facturas', (req, res) => {
-  try {
-    const criterio = req.query.criterio || 'all';
-    
-    // Datos de ejemplo para el frontend
-    const duplicados = [
-      {
-        id: '1',
-        factura1: {
-          id: 201,
-          establecimiento: 'Supermercado XYZ',
-          total: 15800,
-          fecha: new Date().toISOString(),
-          num_productos: 6,
-          estado: 'Procesada',
-          productos: [
-            { nombre: 'Leche Entera 1L', codigo: '7791234567890', precio: 2500 },
-            { nombre: 'Pan Blanco 500g', codigo: '7799876543210', precio: 1500 }
-          ]
-        },
-        factura2: {
-          id: 202,
-          establecimiento: 'Supermercado XYZ',
-          total: 15800,
-          fecha: new Date().toISOString(),
-          num_productos: 6,
-          estado: 'Procesada',
-          productos: [
-            { nombre: 'Leche Entera 1L', codigo: '7791234567890', precio: 2500 },
-            { nombre: 'Pan Blanco 500g', codigo: '7799876543210', precio: 1500 }
-          ]
-        },
-        misma_fecha: true,
-        mismo_establecimiento: true,
-        total_iguales: true,
-        productos_iguales: true,
-        razon: 'Facturas idénticas del mismo día'
-      },
-      {
-        id: '2',
-        factura1: {
-          id: 203,
-          establecimiento: 'Tienda ABC',
-          total: 8700,
-          fecha: new Date(Date.now() - 86400000).toISOString(), // 1 día antes
-          num_productos: 4,
-          estado: 'Procesada',
-          productos: [
-            { nombre: 'Arroz Blanco 1kg', codigo: '7795678901234', precio: 1800 },
-            { nombre: 'Aceite 900ml', codigo: '7794567890123', precio: 3200 }
-          ]
-        },
-        factura2: {
-          id: 204,
-          establecimiento: 'Tienda ABC',
-          total: 8900,
-          fecha: new Date(Date.now() - 86400000).toISOString(), // 1 día antes
-          num_productos: 4,
-          estado: 'Procesada',
-          productos: [
-            { nombre: 'Arroz Blanco 1kg', codigo: '7795678901234', precio: 1800 },
-            { nombre: 'Aceite 900ml', codigo: '7794567890123', precio: 3300 }
-          ]
-        },
-        misma_fecha: true,
-        mismo_establecimiento: true,
-        total_iguales: false,
-        productos_similares: true,
-        razon: 'Productos similares en la misma fecha'
-      }
-    ];
-    
-    res.json({
-      success: true,
-      total: duplicados.length,
-      duplicados
-    });
-  } catch (error) {
-    console.error('Error obteniendo facturas duplicadas:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint para eliminar facturas
-app.delete('/admin/duplicados/facturas/:id', (req, res) => {
-  try {
-    const facturaId = req.params.id;
-    
-    console.log(`Eliminando factura con ID: ${facturaId}`);
-    
-    // Simular procesamiento
-    setTimeout(() => {
-      res.json({
-        success: true,
-        message: `Factura #${facturaId} eliminada correctamente`
-      });
-    }, 300);
-    
-  } catch (error) {
-    console.error('Error eliminando factura:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint para obtener estadísticas generales
-app.get('/admin/stats', (req, res) => {
-  res.json({
-    productos_unicos: 358,
-    productos_duplicados: 12,
-    total_facturas: 124,
-    facturas_duplicadas: 8
-  });
 });
 
 // Puerto
