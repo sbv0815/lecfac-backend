@@ -114,7 +114,6 @@ app.post('/admin/duplicados/productos/fusionar', async (req, res) => {
     
     console.log(`Fusionando productos: mantener ID ${producto_mantener_id}, eliminar ID ${producto_eliminar_id}`);
     
-    
     // Crear conexión a la base de datos
     const { exec } = require('child_process');
     const util = require('util');
@@ -153,40 +152,40 @@ try:
             UPDATE precios_historicos 
             SET producto_id = %s
             WHERE producto_id = %s
-        ''', (producto_mantener_id, producto_eliminar_id))
+        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
         
         # Actualizar referencias en historial_compras_usuario
         cursor.execute('''
             UPDATE historial_compras_usuario 
             SET producto_id = %s
             WHERE producto_id = %s
-        ''', (producto_mantener_id, producto_eliminar_id))
+        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
         
         # Actualizar patrones_compra
         cursor.execute('''
             UPDATE patrones_compra
             SET producto_id = %s
             WHERE producto_id = %s
-        ''', (producto_mantener_id, producto_eliminar_id))
+        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
     else:
         # SQLite
         cursor.execute('''
             UPDATE precios_historicos 
             SET producto_id = ?
             WHERE producto_id = ?
-        ''', (producto_mantener_id, producto_eliminar_id))
+        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
         
         cursor.execute('''
             UPDATE historial_compras_usuario 
             SET producto_id = ?
             WHERE producto_id = ?
-        ''', (producto_mantener_id, producto_eliminar_id))
+        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
         
         cursor.execute('''
             UPDATE patrones_compra
             SET producto_id = ?
             WHERE producto_id = ?
-        ''', (producto_mantener_id, producto_eliminar_id))
+        ''', (${producto_mantener_id}, ${producto_eliminar_id}))
     
     # 3. Actualizar estadísticas del producto mantenido
     if '${process.env.DATABASE_TYPE}' == 'postgresql':
@@ -195,20 +194,20 @@ try:
             SET veces_reportado = veces_reportado + %s,
                 ultima_actualizacion = CURRENT_TIMESTAMP
             WHERE id = %s
-        ''', (producto_eliminar[6] or 0, producto_mantener_id))
+        ''', (producto_eliminar[6] or 0, ${producto_mantener_id}))
     else:
         cursor.execute('''
             UPDATE productos_maestro 
             SET veces_reportado = veces_reportado + ?,
                 ultima_actualizacion = CURRENT_TIMESTAMP
             WHERE id = ?
-        ''', (producto_eliminar[6] or 0, producto_mantener_id))
+        ''', (producto_eliminar[6] or 0, ${producto_mantener_id}))
     
     # 4. Eliminar el producto duplicado
     if '${process.env.DATABASE_TYPE}' == 'postgresql':
-        cursor.execute('DELETE FROM productos_maestro WHERE id = %s', (producto_eliminar_id,))
+        cursor.execute('DELETE FROM productos_maestro WHERE id = %s', (${producto_eliminar_id},))
     else:
-        cursor.execute('DELETE FROM productos_maestro WHERE id = ?', (producto_eliminar_id,))
+        cursor.execute('DELETE FROM productos_maestro WHERE id = ?', (${producto_eliminar_id},))
     
     # Confirmar cambios
     conn.commit()
@@ -235,14 +234,29 @@ finally:
       
       if (stdout.includes('SUCCESS')) {
         return res.status(200).json({
-      success: true,
-      message: 'Productos fusionados correctamente',
-      producto_mantener_id,
-      producto_eliminar_id
-    });
+          success: true,
+          message: 'Productos fusionados correctamente',
+          producto_mantener_id,
+          producto_eliminar_id
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          error: 'Resultado inesperado',
+          details: stdout
+        });
+      }
+    } catch (pythonError) {
+      console.error('Error ejecutando script Python:', pythonError);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al ejecutar la fusión',
+        details: pythonError.message
+      });
+    }
     
   } catch (error) {
-    console.error('Error al fusionar productos:', error);
+    console.error('Error general al fusionar productos:', error);
     return res.status(500).json({
       success: false,
       error: 'Error interno del servidor al fusionar productos',
