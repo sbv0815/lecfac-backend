@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte de Auditoría del Sistema</title>
+    <title>Reporte de Auditoría - LecFac</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
+        body { background-color: #f5f7fa; }
         .health-score {
             font-size: 3rem;
             font-weight: bold;
@@ -23,44 +24,6 @@
         .health-warning { background-color: #fd7e14; }
         .health-ok { background-color: #ffc107; }
         .health-good { background-color: #28a745; }
-        
-        .metric-card {
-            transition: transform 0.2s;
-            height: 100%;
-        }
-        .metric-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-        }
-        .anomaly-item {
-            border-left: 4px solid #dc3545;
-            padding-left: 15px;
-            margin-bottom: 10px;
-        }
-        .detail-row {
-            border-bottom: 1px solid #eee;
-            padding: 8px 0;
-        }
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        .action-taken {
-            background-color: #e8f4fd;
-            border-radius: 4px;
-            padding: 8px 12px;
-            margin-top: 5px;
-        }
-        .status-badge {
-            font-size: 0.8em;
-            padding: 3px 10px;
-            border-radius: 12px;
-        }
-        .chart-container {
-            height: 250px;
-        }
-        .alert-custom {
-            border-left: 4px solid #fd7e14;
-        }
         .section-title {
             border-bottom: 2px solid #eee;
             padding-bottom: 10px;
@@ -72,64 +35,76 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.9);
             display: flex;
             justify-content: center;
             align-items: center;
-            z-index: 1000;
+            z-index: 9999;
         }
-        .spinner {
-            width: 3rem;
-            height: 3rem;
+        .navbar-custom {
+            background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
     </style>
 </head>
 <body>
     <div id="loadingOverlay">
-        <div class="spinner-border text-primary spinner" role="status">
-            <span class="visually-hidden">Cargando...</span>
-        </div>
+        <div class="spinner-border text-primary" role="status"></div>
     </div>
+
+    <nav class="navbar navbar-custom navbar-dark mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-clipboard-data me-2"></i>Reporte de Auditoría
+            </span>
+            <a href="/" class="btn btn-light btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Volver
+            </a>
+        </div>
+    </nav>
 
     <div class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>Reporte de Auditoría</h1>
-            <span class="badge bg-secondary" id="fechaReporte"></span>
+            <div>
+                <h2>Reporte de Auditoría del Sistema</h2>
+                <span class="badge bg-secondary" id="fechaReporte">Cargando...</span>
+            </div>
+            <button class="btn btn-primary" onclick="recargarReporte()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+            </button>
         </div>
 
-        <!-- Resumen General -->
         <div class="row mb-4">
             <div class="col-md-4">
-                <div class="card h-100">
+                <div class="card h-100 shadow-sm">
                     <div class="card-body text-center">
                         <h5 class="card-title">Salud del Sistema</h5>
-                        <div id="healthScore" class="health-score">--</div>
+                        <div id="healthScore" class="health-score health-ok">--</div>
                         <h6 class="mt-3" id="healthStatus">Cargando...</h6>
-                        <p class="card-text text-muted">Puntaje basado en auditoría completa</p>
                     </div>
                 </div>
             </div>
             <div class="col-md-8">
-                <div class="card h-100">
+                <div class="card h-100 shadow-sm">
                     <div class="card-body">
                         <h5 class="card-title">Resumen de Problemas</h5>
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <div class="border rounded p-3 text-center">
-                                    <h3 id="duplicateGroups">--</h3>
-                                    <p class="mb-0">Grupos de Facturas Duplicadas</p>
+                                <div class="border rounded p-3 text-center bg-light">
+                                    <h3 class="text-primary" id="duplicateGroups">--</h3>
+                                    <p class="mb-0 small">Duplicados</p>
                                 </div>
                             </div>
                             <div class="col-md-4">
-                                <div class="border rounded p-3 text-center">
-                                    <h3 id="duplicatesProcessed">--</h3>
-                                    <p class="mb-0">Duplicados Procesados</p>
+                                <div class="border rounded p-3 text-center bg-light">
+                                    <h3 class="text-success" id="duplicatesProcessed">--</h3>
+                                    <p class="mb-0 small">Procesados</p>
                                 </div>
                             </div>
                             <div class="col-md-4">
-                                <div class="border rounded p-3 text-center">
-                                    <h3 id="mathErrors">--</h3>
-                                    <p class="mb-0">Errores Matemáticos</p>
+                                <div class="border rounded p-3 text-center bg-light">
+                                    <h3 class="text-warning" id="mathErrors">--</h3>
+                                    <p class="mb-0 small">Errores</p>
                                 </div>
                             </div>
                         </div>
@@ -142,161 +117,52 @@
             </div>
         </div>
 
-        <!-- Detalles de Problemas -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title section-title">Problemas Detectados y Soluciones</h5>
-                        
-                        <div class="mb-4" id="duplicatesSection">
-                            <h6 class="fw-bold"><i class="bi bi-files me-2"></i>Facturas Duplicadas</h6>
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Problema</th>
-                                            <th>Impacto</th>
-                                            <th>Acción Realizada</th>
-                                            <th>Estado</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="duplicatesTable">
-                                        <!-- Contenido dinámico -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div id="duplicatesAction" class="action-taken d-none">
-                                <strong>Acción Correctiva:</strong> <span id="duplicatesActionText"></span>
-                            </div>
-                        </div>
-
-                        <div class="mb-4" id="mathErrorsSection">
-                            <h6 class="fw-bold"><i class="bi bi-calculator me-2"></i>Validación Matemática</h6>
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Problema</th>
-                                            <th>Impacto</th>
-                                            <th>Acción Realizada</th>
-                                            <th>Estado</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="mathErrorsTable">
-                                        <!-- Contenido dinámico -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div id="mathErrorsAction" class="action-taken d-none">
-                                <strong>Acción Correctiva:</strong> <span id="mathErrorsActionText"></span>
-                            </div>
-                        </div>
-                        
-                        <div id="anomaliesSection" class="mb-4 d-none">
-                            <h6 class="fw-bold"><i class="bi bi-graph-up me-2"></i>Anomalías de Precios</h6>
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Problema</th>
-                                            <th>Impacto</th>
-                                            <th>Acción Realizada</th>
-                                            <th>Estado</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="anomaliesTable">
-                                        <!-- Contenido dinámico -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                        
-                        <div id="technicalErrorsSection" class="alert alert-info d-none">
-                            <h6 class="fw-bold">Error Técnico Resuelto</h6>
-                            <p class="mb-2">Se corrigió un error en el sistema de detección de duplicados:</p>
-                            <div class="bg-light p-2 rounded mb-2">
-                                <code id="technicalErrorCode"></code>
-                            </div>
-                            <p class="mb-0" id="technicalErrorSolution"></p>
-                        </div>
-                    </div>
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="card-title section-title">Problemas Detectados</h5>
+                <div class="mb-4">
+                    <h6 class="fw-bold"><i class="bi bi-files me-2"></i>Facturas Duplicadas</h6>
+                    <table class="table">
+                        <thead class="table-light">
+                            <tr><th>Problema</th><th>Impacto</th><th>Acción</th><th>Estado</th></tr>
+                        </thead>
+                        <tbody id="duplicatesTable">
+                            <tr><td colspan="4" class="text-center">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <h6 class="fw-bold"><i class="bi bi-calculator me-2"></i>Errores Matemáticos</h6>
+                    <table class="table">
+                        <thead class="table-light">
+                            <tr><th>Problema</th><th>Impacto</th><th>Acción</th><th>Estado</th></tr>
+                        </thead>
+                        <tbody id="mathErrorsTable">
+                            <tr><td colspan="4" class="text-center">Cargando...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
 
-        <!-- Calidad de Datos -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title section-title">Calidad de Datos</h5>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="table-responsive">
-                                    <table class="table">
-                                        <tbody>
-                                            <tr>
-                                                <th scope="row">Total de Facturas</th>
-                                                <td id="totalInvoices">--</td>
-                                            </tr>
-                                            <tr>
-                                                <th scope="row">Puntaje Promedio de Calidad</th>
-                                                <td id="avgQuality">--</td>
-                                            </tr>
-                                            <tr>
-                                                <th scope="row">Facturas con Imágenes</th>
-                                                <td id="withImages">--</td>
-                                            </tr>
-                                            <tr>
-                                                <th scope="row">Facturas Pendientes de Revisión</th>
-                                                <td id="pendingReview">--</td>
-                                            </tr>
-                                            <tr>
-                                                <th scope="row">Facturas con Errores</th>
-                                                <td id="withErrors">--</td>
-                                            </tr>
-                                            <tr>
-                                                <th scope="row">Facturas Procesadas Correctamente</th>
-                                                <td id="processedOk">--</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="alert alert-custom">
-                                    <h6 class="fw-bold">Recomendaciones de Mejora</h6>
-                                    <ol class="mb-0" id="recommendations">
-                                        <!-- Contenido dinámico -->
-                                    </ol>
-                                </div>
-                            </div>
-                        </div>
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title section-title">Calidad de Datos</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr><th>Total Facturas</th><td id="totalInvoices" class="fw-bold">--</td></tr>
+                                <tr><th>Puntaje Promedio</th><td id="avgQuality" class="fw-bold">--</td></tr>
+                                <tr><th>Con Imágenes</th><td id="withImages" class="fw-bold">--</td></tr>
+                                <tr><th>Pendientes</th><td id="pendingReview" class="fw-bold">--</td></tr>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Plan de Acción -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title section-title">Plan de Acción Recomendado</h5>
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Acción</th>
-                                        <th>Prioridad</th>
-                                        <th>Impacto Esperado</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="actionPlanTable">
-                                    <!-- Contenido dinámico -->
-                                </tbody>
-                            </table>
+                    <div class="col-md-6">
+                        <div class="alert alert-info">
+                            <h6 class="fw-bold">Recomendaciones</h6>
+                            <ol class="mb-0 small" id="recommendations"><li>Cargando...</li></ol>
                         </div>
                     </div>
                 </div>
@@ -306,397 +172,136 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Función para obtener datos de la auditoría
+        const API_URL = '';
+        console.log('🚀 Iniciando reporte...');
+
         async function cargarReporteAuditoria() {
             try {
-                // Mostrar overlay de carga
-                document.getElementById('loadingOverlay').style.display = 'flex';
+                mostrarCargando(true);
+                const urls = ['/admin/audit-report', '/api/admin/audit-report'];
+                let reportData = null;
                 
-                let reportData;
-                let response;
-                
-                try {
-                    // Primer intento - URL actual
-                    response = await fetch('/admin/audit-report');
-                    if (!response.ok) {
-                        throw new Error(`Error al cargar datos: ${response.status}`);
+                for (const url of urls) {
+                    try {
+                        console.log('📡 Intentando:', url);
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            reportData = await response.json();
+                            console.log('✅ Datos cargados desde:', url);
+                            break;
+                        }
+                    } catch (err) {
+                        console.warn('❌', url, ':', err.message);
                     }
-                    reportData = await response.json();
-                } catch (firstError) {
-                    console.warn('Primer intento fallido, probando URL alternativa:', firstError);
-                    
-                    // Segundo intento - URL alternativa
-                    response = await fetch('/api/admin/audit-report');
-                    if (!response.ok) {
-                        throw new Error(`Error al cargar datos: ${response.status}`);
-                    }
-                    reportData = await response.json();
                 }
                 
-                // Una vez tenemos los datos, actualizamos la UI
+                if (!reportData) throw new Error('No se pudo conectar al servidor');
                 renderizarReporte(reportData);
-                
             } catch (error) {
-                console.error('Error al cargar el reporte:', error);
-                mostrarError('No se pudo cargar el reporte. Por favor, intenta nuevamente.');
-                
-                // Mostrar información de depuración en consola
-                console.error('Detalles del error:', error);
-                
-                // Mostrar un reporte de error básico para que no quede vacío
+                console.error('❌ Error:', error);
+                mostrarError('Error: ' + error.message);
                 mostrarReporteBasico();
             } finally {
-                // Ocultar overlay de carga
-                document.getElementById('loadingOverlay').style.display = 'none';
+                mostrarCargando(false);
             }
         }
-        
-        // Función para renderizar los datos del reporte
+
         function renderizarReporte(data) {
-            const timestamp = new Date(data.generated_at || data.timestamp);
-            document.getElementById('fechaReporte').textContent = `Generado el ${timestamp.toLocaleString('es-ES')}`;
+            const timestamp = new Date(data.generated_at || Date.now());
+            document.getElementById('fechaReporte').textContent = timestamp.toLocaleString('es-ES');
             
-            // Renderizar calidad de datos
-            if (data.data_quality) {
-                const quality = data.data_quality;
-                const healthScore = quality.health_score || 0;
-                
-                // Establecer puntaje de salud y estado
-                const healthElement = document.getElementById('healthScore');
-                healthElement.textContent = typeof healthScore === 'number' ? healthScore.toFixed(1) : healthScore.toString();
-                
-                // Ajustar color según puntaje
-                healthElement.className = 'health-score';
-                let healthStatus = '';
-                
-                if (healthScore >= 90) {
-                    healthElement.classList.add('health-good');
-                    healthStatus = '🟢 Excelente';
-                } else if (healthScore >= 70) {
-                    healthElement.classList.add('health-ok');
-                    healthStatus = '🟡 Bueno';
-                } else if (healthScore >= 50) {
-                    healthElement.classList.add('health-warning');
-                    healthStatus = '🟠 Regular';
-                } else {
-                    healthElement.classList.add('health-critical');
-                    healthStatus = '🔴 Requiere Atención';
-                }
-                
-                document.getElementById('healthStatus').textContent = healthStatus;
-                
-                // Actualizar estadísticas
-                document.getElementById('totalInvoices').textContent = quality.total_invoices || 0;
-                document.getElementById('avgQuality').textContent = `${(quality.avg_quality || 0).toFixed(1)} / 100`;
-                
-                const withImagesCount = quality.with_images || 0;
-                const withImagesPercent = quality.total_invoices ? ((withImagesCount / quality.total_invoices) * 100).toFixed(1) : 0;
-                document.getElementById('withImages').textContent = `${withImagesCount} (${withImagesPercent}%)`;
-                
-                document.getElementById('pendingReview').textContent = quality.pending_review || 0;
-                document.getElementById('withErrors').textContent = quality.errors || 0;
-                document.getElementById('processedOk').textContent = quality.processed || 0;
+            const quality = data.data_quality || {};
+            const healthScore = quality.health_score || 0;
+            document.getElementById('healthScore').textContent = healthScore.toFixed(1);
+            
+            const healthEl = document.getElementById('healthScore');
+            healthEl.className = 'health-score';
+            if (healthScore >= 90) {
+                healthEl.classList.add('health-good');
+                document.getElementById('healthStatus').textContent = '🟢 Excelente';
+            } else if (healthScore >= 70) {
+                healthEl.classList.add('health-ok');
+                document.getElementById('healthStatus').textContent = '🟡 Bueno';
+            } else if (healthScore >= 50) {
+                healthEl.classList.add('health-warning');
+                document.getElementById('healthStatus').textContent = '🟠 Regular';
             } else {
-                // Valores por defecto si no hay datos de calidad
-                document.getElementById('totalInvoices').textContent = 0;
-                document.getElementById('avgQuality').textContent = "0.0 / 100";
-                document.getElementById('withImages').textContent = "0 (0.0%)";
-                document.getElementById('pendingReview').textContent = 0;
-                document.getElementById('withErrors').textContent = 0;
-                document.getElementById('processedOk').textContent = 0;
+                healthEl.classList.add('health-critical');
+                document.getElementById('healthStatus').textContent = '🔴 Crítico';
             }
             
-            // Renderizar duplicados
-            if (data.duplicates) {
-                document.getElementById('duplicateGroups').textContent = data.duplicates.found || 0;
-                document.getElementById('duplicatesProcessed').textContent = data.duplicates.processed || 0;
-            } else {
-                // Si no hay datos de duplicados, mostrar 0
-                document.getElementById('duplicateGroups').textContent = 0;
-                document.getElementById('duplicatesProcessed').textContent = 0;
-            }
+            document.getElementById('totalInvoices').textContent = quality.total_invoices || 0;
+            document.getElementById('avgQuality').textContent = (quality.avg_quality || 0).toFixed(1) + ' / 100';
             
-            // Siempre mostrar algo en la tabla de duplicados
-            const duplicatesTable = document.getElementById('duplicatesTable');
-            duplicatesTable.innerHTML = '';
+            const withImages = quality.with_images || 0;
+            const total = quality.total_invoices || 0;
+            const percent = total ? ((withImages / total) * 100).toFixed(1) : 0;
+            document.getElementById('withImages').textContent = withImages + ' (' + percent + '%)';
+            document.getElementById('pendingReview').textContent = quality.pending_review || 0;
+            
+            const dup = data.duplicates || {};
+            document.getElementById('duplicateGroups').textContent = dup.found || 0;
+            document.getElementById('duplicatesProcessed').textContent = dup.processed || 0;
+            
+            const dupTable = document.getElementById('duplicatesTable');
+            dupTable.innerHTML = '';
             const dupRow = document.createElement('tr');
-            
-            if (data.duplicates && (data.duplicates.found || 0) > 0) {
-                dupRow.innerHTML = `
-                    <td>${data.duplicates.found} grupo${data.duplicates.found !== 1 ? 's' : ''} de facturas duplicadas detectadas</td>
-                    <td>${data.duplicates.processed} registro${data.duplicates.processed !== 1 ? 's' : ''} afectados</td>
-                    <td>Actualización automática: Estado cambiado a 'duplicado', puntaje de calidad reducido</td>
-                    <td><span class="badge bg-success status-badge">Resuelto</span></td>
-                `;
-                
-                // Mostrar acción correctiva
-                document.getElementById('duplicatesAction').classList.remove('d-none');
-                document.getElementById('duplicatesActionText').textContent = 
-                    'Los duplicados fueron marcados en la base de datos y sus puntajes de calidad fueron ajustados automáticamente. ' + 
-                    'Esta acción ayuda a evitar el doble conteo en análisis financieros y reportes de precios.';
+            if (dup.found > 0) {
+                dupRow.innerHTML = '<td>' + dup.found + ' grupos</td><td>' + dup.processed + ' registros</td><td>Actualizado</td><td><span class="badge bg-success">Resuelto</span></td>';
             } else {
-                dupRow.innerHTML = `
-                    <td>No se encontraron facturas duplicadas</td>
-                    <td>0 registros afectados</td>
-                    <td>No se requirió acción</td>
-                    <td><span class="badge bg-success status-badge">Verificado</span></td>
-                `;
-                // Ocultar acción correctiva
-                document.getElementById('duplicatesAction').classList.add('d-none');
+                dupRow.innerHTML = '<td>Sin duplicados</td><td>0</td><td>--</td><td><span class="badge bg-success">OK</span></td>';
             }
-            duplicatesTable.appendChild(dupRow);
+            dupTable.appendChild(dupRow);
             
-            // Si hay error técnico, mostrar la sección
-            if (data.duplicates && data.duplicates.error) {
-                document.getElementById('technicalErrorsSection').classList.remove('d-none');
-                document.getElementById('technicalErrorCode').textContent = data.duplicates.error;
-                document.getElementById('technicalErrorSolution').textContent = 
-                    'Solución: Se implementó una conversión explícita de tipos para asegurar que los IDs de facturas fueran procesados correctamente.';
-            } else {
-                document.getElementById('technicalErrorsSection').classList.add('d-none');
-            }
+            const mathErr = data.math_errors || {};
+            document.getElementById('mathErrors').textContent = mathErr.errors || 0;
             
-            // Renderizar errores matemáticos
-            if (data.math_errors) {
-                document.getElementById('mathErrors').textContent = data.math_errors.errors || 0;
-            } else {
-                document.getElementById('mathErrors').textContent = 0;
-            }
-            
-            // Siempre mostrar algo en la tabla de errores matemáticos
-            const mathErrorsTable = document.getElementById('mathErrorsTable');
-            mathErrorsTable.innerHTML = '';
+            const mathTable = document.getElementById('mathErrorsTable');
+            mathTable.innerHTML = '';
             const mathRow = document.createElement('tr');
-            
-            if (data.math_errors && (data.math_errors.errors || 0) > 0) {
-                mathRow.innerHTML = `
-                    <td>Errores matemáticos en facturas</td>
-                    <td>${data.math_errors.errors} facturas con errores, ${data.math_errors.warnings || 0} con advertencias</td>
-                    <td>Se ajustó el puntaje de calidad y se marcaron para revisión</td>
-                    <td><span class="badge bg-warning text-dark status-badge">Requiere Revisión</span></td>
-                `;
-                
-                // Mostrar acción correctiva
-                document.getElementById('mathErrorsAction').classList.remove('d-none');
-                document.getElementById('mathErrorsActionText').textContent = 
-                    'Las facturas con discrepancias matemáticas fueron marcadas y su puntaje de calidad fue reducido. ' +
-                    'Se recomienda una revisión manual para corregir las diferencias.';
+            if (mathErr.errors > 0) {
+                mathRow.innerHTML = '<td>Errores</td><td>' + mathErr.errors + '</td><td>Revisión</td><td><span class="badge bg-warning text-dark">Revisar</span></td>';
             } else {
-                mathRow.innerHTML = `
-                    <td>No se encontraron errores matemáticos</td>
-                    <td>${data.math_errors ? data.math_errors.total_checked || 0 : 0} facturas verificadas</td>
-                    <td>No se requirió acción</td>
-                    <td><span class="badge bg-success status-badge">Verificado</span></td>
-                `;
-                
-                // Ocultar acción correctiva
-                document.getElementById('mathErrorsAction').classList.add('d-none');
+                mathRow.innerHTML = '<td>Sin errores</td><td>0</td><td>--</td><td><span class="badge bg-success">OK</span></td>';
             }
-            mathErrorsTable.appendChild(mathRow);
+            mathTable.appendChild(mathRow);
             
-            // Renderizar anomalías de precios si hay datos
-            if (data.price_anomalies && (data.price_anomalies.anomalies || 0) > 0) {
-                document.getElementById('anomaliesSection').classList.remove('d-none');
-                const anomalies = data.price_anomalies;
-                
-                const anomaliesTable = document.getElementById('anomaliesTable');
-                anomaliesTable.innerHTML = '';
-                
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>Anomalías de precios detectadas</td>
-                    <td>${anomalies.anomalies} productos con precios anómalos</td>
-                    <td>Marcados para revisión y análisis de precios</td>
-                    <td><span class="badge bg-warning text-dark status-badge">Pendiente</span></td>
-                `;
-                anomaliesTable.appendChild(row);
-            } else {
-                document.getElementById('anomaliesSection').classList.add('d-none');
-            }
-            
-            // Generar recomendaciones basadas en los datos
-            const recommendations = document.getElementById('recommendations');
-            recommendations.innerHTML = '';
-            
-            // Lista de posibles recomendaciones
-            const possibleRecommendations = [];
-            
-            // Recomendaciones basadas en duplicados
-            if (data.duplicates && (data.duplicates.found || 0) > 0) {
-                possibleRecommendations.push('Revisar el proceso de carga de facturas para evitar duplicados');
-            }
-            
-            // Recomendaciones basadas en calidad de datos
-            if (data.data_quality) {
-                const quality = data.data_quality;
-                
-                if (quality.with_images < quality.total_invoices * 0.7) {
-                    possibleRecommendations.push(`Aumentar el porcentaje de facturas con imágenes adjuntas (actualmente ${((quality.with_images / quality.total_invoices) * 100).toFixed(1)}%)`);
-                }
-                
-                if ((quality.errors || 0) > 0) {
-                    possibleRecommendations.push('Revisar manualmente las facturas con errores y corregir los problemas');
-                }
-                
-                if (quality.health_score < 50) {
-                    possibleRecommendations.push('Implementar validaciones adicionales antes de la carga de facturas');
-                }
-            }
-            
-            // Si no hay recomendaciones específicas, agregar una genérica
-            if (possibleRecommendations.length === 0) {
-                possibleRecommendations.push('Mantener el monitoreo regular del sistema');
-            }
-            
-            // Agregar recomendaciones a la lista
-            possibleRecommendations.forEach(rec => {
+            const recList = document.getElementById('recommendations');
+            recList.innerHTML = '';
+            const recs = [];
+            if (dup.found > 0) recs.push('Revisar proceso de carga');
+            if (quality.with_images < quality.total_invoices * 0.7) recs.push('Aumentar imágenes');
+            if (recs.length === 0) recs.push('Mantener monitoreo regular');
+            recs.forEach(rec => {
                 const li = document.createElement('li');
                 li.textContent = rec;
-                recommendations.appendChild(li);
+                recList.appendChild(li);
             });
-            
-            // Crear plan de acción basado en los problemas encontrados
-            const actionPlanTable = document.getElementById('actionPlanTable');
-            actionPlanTable.innerHTML = '';
-            
-            // Determinar acciones basadas en los problemas
-            const actions = [];
-            
-            if (data.duplicates && (data.duplicates.found || 0) > 0) {
-                actions.push({
-                    action: 'Implementar validación previa a la carga para detectar facturas potencialmente duplicadas',
-                    priority: 'Alta',
-                    impact: 'Reducción del 90% en facturas duplicadas'
-                });
-            }
-            
-            if (data.data_quality && data.data_quality.with_images < data.data_quality.total_invoices * 0.7) {
-                actions.push({
-                    action: 'Mejorar la captura de imágenes de facturas',
-                    priority: 'Media',
-                    impact: 'Aumento del puntaje de calidad en aproximadamente 30 puntos'
-                });
-            }
-            
-            if (data.price_anomalies && data.price_anomalies.checked === 0) {
-                actions.push({
-                    action: 'Revisar el módulo de detección de anomalías de precios',
-                    priority: 'Media',
-                    impact: 'Mejor detección de inconsistencias en precios'
-                });
-            }
-            
-            if (data.data_quality && data.data_quality.health_score < 50) {
-                actions.push({
-                    action: 'Programar revisión manual de facturas con baja calidad',
-                    priority: 'Baja',
-                    impact: 'Corrección de errores que no pueden ser detectados automáticamente'
-                });
-            }
-            
-            // Si no hay acciones específicas, agregar una genérica
-            if (actions.length === 0) {
-                actions.push({
-                    action: 'Mantener el monitoreo regular del sistema',
-                    priority: 'Baja',
-                    impact: 'Prevención proactiva de problemas potenciales'
-                });
-            }
-            
-            // Agregar acciones a la tabla
-            actions.forEach(action => {
-                const row = document.createElement('tr');
-                const priorityClass = 
-                    action.priority === 'Alta' ? 'danger' : 
-                    action.priority === 'Media' ? 'warning text-dark' : 'info';
-                
-                row.innerHTML = `
-                    <td>${action.action}</td>
-                    <td><span class="badge bg-${priorityClass}">${action.priority}</span></td>
-                    <td>${action.impact}</td>
-                `;
-                actionPlanTable.appendChild(row);
-            });
-            
-            // Mostrar alerta de resumen si es necesario
-            const summaryAlert = document.getElementById('summaryAlert');
-            const summaryMessage = document.getElementById('summaryMessage');
-            
-            if ((data.duplicates && data.duplicates.found > 0) || 
-                (data.math_errors && data.math_errors.errors > 0) ||
-                (data.data_quality && data.data_quality.health_score < 50)) {
-                
-                summaryAlert.classList.remove('d-none');
-                
-                if (data.data_quality && data.data_quality.health_score < 30) {
-                    summaryMessage.textContent = 'Se requiere atención inmediata debido a problemas críticos en la calidad de los datos.';
-                } else if (data.duplicates && data.duplicates.found > 5) {
-                    summaryMessage.textContent = 'Se requiere atención inmediata debido al alto número de facturas duplicadas detectadas.';
-                } else if (data.math_errors && data.math_errors.errors > 5) {
-                    summaryMessage.textContent = 'Se requiere atención debido a múltiples errores matemáticos en las facturas.';
-                } else {
-                    summaryMessage.textContent = 'Se encontraron problemas que requieren atención.';
-                }
-            } else {
-                summaryAlert.classList.add('d-none');
-            }
-            
-            // Agregar depuración en consola
-            console.log('Datos cargados:', data);
-            if (!data.duplicates) {
-                console.warn('Datos de duplicados no disponibles');
-            }
-            if (!data.math_errors) {
-                console.warn('Datos de errores matemáticos no disponibles');
-            }
-            if (!data.data_quality) {
-                console.warn('Datos de calidad no disponibles');
-            }
         }
-        
-        // Función para mostrar un reporte básico en caso de error
-        function mostrarReporteBasico() {
-            // Mostrar información mínima
-            document.getElementById('healthScore').textContent = "--";
-            document.getElementById('healthStatus').textContent = "Error al cargar datos";
-            document.getElementById('healthScore').className = 'health-score health-warning';
-            
-            // Mostrar mensajes informativos en las tablas
-            document.getElementById('duplicatesTable').innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center">No se pudieron cargar los datos de duplicados</td>
-                </tr>
-            `;
-            
-            document.getElementById('mathErrorsTable').innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center">No se pudieron cargar los datos de errores matemáticos</td>
-                </tr>
-            `;
-            
-            // Agregar recomendación de verificar conexión
-            document.getElementById('recommendations').innerHTML = `
-                <li>Verificar la conexión con el servidor de datos</li>
-                <li>Reintentar la carga del reporte</li>
-                <li>Contactar al administrador del sistema si el problema persiste</li>
-            `;
+
+        function mostrarCargando(show) {
+            document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
         }
-        
-        // Función para mostrar mensajes de error
+
         function mostrarError(mensaje) {
-            // Mostrar alerta con mensaje de error
-            const summaryAlert = document.getElementById('summaryAlert');
-            const summaryMessage = document.getElementById('summaryMessage');
-            summaryAlert.classList.remove('d-none');
-            summaryAlert.classList.remove('alert-warning');
-            summaryAlert.classList.add('alert-danger');
-            summaryMessage.textContent = mensaje;
-            
-            // También mostrar en consola para depuración
-            console.error(mensaje);
+            const alert = document.getElementById('summaryAlert');
+            alert.classList.remove('d-none', 'alert-warning');
+            alert.classList.add('alert-danger');
+            document.getElementById('summaryMessage').textContent = mensaje;
         }
-        
-        // Cargar el reporte al iniciar la página
+
+        function mostrarReporteBasico() {
+            document.getElementById('healthScore').textContent = "--";
+            document.getElementById('healthStatus').textContent = "Sin datos";
+            document.getElementById('duplicatesTable').innerHTML = '<tr><td colspan="4" class="text-center">No disponible</td></tr>';
+            document.getElementById('mathErrorsTable').innerHTML = '<tr><td colspan="4" class="text-center">No disponible</td></tr>';
+            document.getElementById('recommendations').innerHTML = '<li>Verificar servidor</li>';
+        }
+
+        function recargarReporte() {
+            cargarReporteAuditoria();
+        }
+
         document.addEventListener('DOMContentLoaded', cargarReporteAuditoria);
     </script>
 </body>
