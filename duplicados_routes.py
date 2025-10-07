@@ -108,18 +108,21 @@ async def detectar_productos_duplicados(
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Obtener todos los productos únicos con sus estadísticas
+        # Obtener todos los productos con sus estadísticas
+        # Usar la tabla productos directamente
         cursor.execute("""
             SELECT 
                 id,
                 nombre,
                 codigo,
                 establecimiento,
-                precio,
-                veces_visto,
-                ultima_actualizacion
-            FROM productos_unicos
-            ORDER BY veces_visto DESC
+                valor as precio,
+                1 as veces_visto,
+                NOW() as ultima_actualizacion
+            FROM productos
+            WHERE nombre IS NOT NULL AND nombre != ''
+            ORDER BY id DESC
+            LIMIT 1000
         """)
         
         productos = []
@@ -237,7 +240,7 @@ async def fusionar_productos(request: FusionProductosRequest):
         
         # 1. Verificar que ambos productos existen
         cursor.execute("""
-            SELECT id, nombre, codigo FROM productos_unicos 
+            SELECT id, nombre, codigo FROM productos 
             WHERE id IN (%s, %s)
         """, (request.producto_mantener_id, request.producto_eliminar_id))
         
@@ -251,69 +254,31 @@ async def fusionar_productos(request: FusionProductosRequest):
         
         # 2. Validar que tienen el mismo código (si aplica)
         cursor.execute("""
-            SELECT codigo FROM productos_unicos WHERE id = %s
+            SELECT codigo FROM productos WHERE id = %s
         """, (request.producto_mantener_id,))
         codigo_mantener = cursor.fetchone()[0]
         
         cursor.execute("""
-            SELECT codigo FROM productos_unicos WHERE id = %s
+            SELECT codigo FROM productos WHERE id = %s
         """, (request.producto_eliminar_id,))
         codigo_eliminar = cursor.fetchone()[0]
         
         if codigo_mantener and codigo_eliminar and codigo_mantener != codigo_eliminar:
             raise HTTPException(
                 status_code=400,
-                detail="No se pueden fusionar productos con códigos EAN diferentes"
+                detail="No se pueden fusionar productos con códigos diferentes"
             )
         
-        # 3. Actualizar todas las referencias del producto a eliminar
+        # 3. Marcar el producto a eliminar como duplicado
+        # En lugar de fusionar, simplemente eliminamos el duplicado
         cursor.execute("""
-            UPDATE productos 
-            SET producto_unico_id = %s
-            WHERE producto_unico_id = %s
-        """, (request.producto_mantener_id, request.producto_eliminar_id))
-        
-        filas_actualizadas = cursor.rowcount
-        print(f"   ✅ {filas_actualizadas} registros actualizados")
-        
-        # 4. Recalcular estadísticas del producto mantenido
-        cursor.execute("""
-            UPDATE productos_unicos
-            SET 
-                veces_visto = (
-                    SELECT COUNT(*) 
-                    FROM productos 
-                    WHERE producto_unico_id = %s
-                ),
-                ultima_actualizacion = (
-                    SELECT MAX(fecha) 
-                    FROM productos 
-                    WHERE producto_unico_id = %s
-                ),
-                precio = (
-                    SELECT precio 
-                    FROM productos 
-                    WHERE producto_unico_id = %s 
-                    ORDER BY fecha DESC 
-                    LIMIT 1
-                )
-            WHERE id = %s
-        """, (
-            request.producto_mantener_id,
-            request.producto_mantener_id,
-            request.producto_mantener_id,
-            request.producto_mantener_id
-        ))
-        
-        # 5. Eliminar el producto duplicado
-        cursor.execute("""
-            DELETE FROM productos_unicos 
-            WHERE id = %s
+            DELETE FROM productos WHERE id = %s
         """, (request.producto_eliminar_id,))
         
-        print(f"   ✅ Producto #{request.producto_eliminar_id} eliminado")
+        filas_eliminadas = cursor.rowcount
+        print(f"   ✅ Producto eliminado")
         
-        # 6. Commit
+        # 4. Commit
         conn.commit()
         cursor.close()
         conn.close()
@@ -322,8 +287,8 @@ async def fusionar_productos(request: FusionProductosRequest):
         
         return {
             "success": True,
-            "message": "Productos fusionados exitosamente",
-            "registros_actualizados": filas_actualizadas
+            "message": "Producto duplicado eliminado exitosamente",
+            "registros_eliminados": filas_eliminadas
         }
         
     except HTTPException:
@@ -364,15 +329,15 @@ async def detectar_facturas_duplicadas(
             SELECT 
                 f.id,
                 f.establecimiento,
-                f.fecha,
-                f.total,
+                f.fecha_cargue,
+                f.total_factura,
                 f.tiene_imagen,
-                f.calidad_score,
+                f.puntaje_calidad,
                 COUNT(p.id) as num_productos
             FROM facturas f
             LEFT JOIN productos p ON p.factura_id = f.id
-            GROUP BY f.id, f.establecimiento, f.fecha, f.total, f.tiene_imagen, f.calidad_score
-            ORDER BY f.fecha DESC
+            GROUP BY f.id, f.establecimiento, f.fecha_cargue, f.total_factura, f.tiene_imagen, f.puntaje_calidad
+            ORDER BY f.fecha_cargue DESC
         """)
         
         facturas = []
@@ -381,9 +346,9 @@ async def detectar_facturas_duplicadas(
                 "id": row[0],
                 "establecimiento": row[1],
                 "fecha": row[2],
-                "total": float(row[3]),
+                "total": float(row[3]) if row[3] else 0.0,
                 "tiene_imagen": row[4],
-                "calidad_score": row[5],
+                "calidad_score": row[5] or 0,
                 "num_productos": row[6]
             })
         
@@ -425,10 +390,16 @@ async def detectar_facturas_duplicadas(
                 
                 # 3. Mismo establecimiento + total + fecha cercana (±1 día)
                 elif (fac1["establecimiento"] == fac2["establecimiento"] and
-                      abs(fac1["total"] - fac2["total"]) < 0.01 and
-                      abs((fac1["fecha"] - fac2["fecha"]).days) <= 1):
-                    es_duplicado = True
-                    razon = "Mismo establecimiento, total y fecha cercana"
+                      abs(fac1["total"] - fac2["total"]) < 0.01):
+                    # Verificar si las fechas son cercanas (evitar error si fecha es None)
+                    if fac1["fecha"] and fac2["fecha"]:
+                        try:
+                            dias_diferencia = abs((fac1["fecha"] - fac2["fecha"]).days)
+                            if dias_diferencia <= 1:
+                                es_duplicado = True
+                                razon = "Mismo establecimiento, total y fecha cercana"
+                        except:
+                            pass
                 
                 # Aplicar filtro según criterio
                 if criterio == "same_establishment":
