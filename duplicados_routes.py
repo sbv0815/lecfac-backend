@@ -1,8 +1,6 @@
 """
 duplicados_routes.py - Sistema de Detección de Duplicados
-CONCEPTO CORRECTO: 
-- Duplicado = Mismo producto, mismo establecimiento (cargue repetido)
-- NO duplicado = Mismo producto, diferente establecimiento (comparación de precios)
+CORRECCIÓN: establecimiento está en facturas, NO en productos
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,14 +13,7 @@ import re
 
 from database import get_db_connection
 
-# ==========================================
-# CONFIGURACIÓN DEL ROUTER
-# ==========================================
 router = APIRouter()
-
-# ==========================================
-# MODELOS PYDANTIC
-# ==========================================
 
 class FusionProductosRequest(BaseModel):
     """Request para fusionar productos"""
@@ -38,58 +29,44 @@ def calcular_similitud(texto1: str, texto2: str) -> float:
     if not texto1 or not texto2:
         return 0.0
     
-    # Normalizar textos
     t1 = normalizar_nombre_producto(texto1)
     t2 = normalizar_nombre_producto(texto2)
     
-    # Calcular similitud
     return SequenceMatcher(None, t1, t2).ratio() * 100
 
 def normalizar_nombre_producto(nombre: str) -> str:
-    """
-    Normaliza nombre de producto para comparación
-    Elimina variaciones comunes que no cambian el producto
-    """
+    """Normaliza nombre de producto para comparación"""
     if not nombre:
         return ""
     
-    # Convertir a minúsculas
     nombre = nombre.lower().strip()
     
     # Eliminar acentos
     reemplazos = {
-        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
-        'ñ': 'n'
+        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ñ': 'n'
     }
     for old, new in reemplazos.items():
         nombre = nombre.replace(old, new)
     
-    # Normalizar unidades de medida comunes
+    # Normalizar unidades
     nombre = re.sub(r'\b(\d+)\s*ml\b', r'\1ml', nombre)
     nombre = re.sub(r'\b(\d+)\s*gr?\b', r'\1g', nombre)
     nombre = re.sub(r'\b(\d+)\s*kg\b', r'\1kg', nombre)
     nombre = re.sub(r'\b(\d+)\s*lt?\b', r'\1l', nombre)
     
-    # Convertir unidades equivalentes
-    # 1L = 1000ml
+    # Convertir equivalencias
     nombre = re.sub(r'\b1\s*l\b', '1000ml', nombre)
     nombre = re.sub(r'\b1\s*lt\b', '1000ml', nombre)
-    # 1kg = 1000g
     nombre = re.sub(r'\b1\s*kg\b', '1000g', nombre)
     
-    # Eliminar caracteres especiales
+    # Limpiar caracteres especiales
     nombre = re.sub(r'[.,\-_/\\]', ' ', nombre)
-    
-    # Eliminar espacios múltiples
     nombre = ' '.join(nombre.split())
     
     return nombre
 
 def son_precios_similares(precio1: float, precio2: float, tolerancia: float = 0.05) -> bool:
-    """
-    Verifica si dos precios son similares (dentro del % de tolerancia)
-    Por defecto 5% de diferencia (más estricto que antes)
-    """
+    """Verifica si dos precios son similares (dentro del % de tolerancia)"""
     if precio1 == 0 or precio2 == 0:
         return False
     
@@ -100,34 +77,33 @@ def son_precios_similares(precio1: float, precio2: float, tolerancia: float = 0.
     return diferencia_porcentual <= tolerancia
 
 # ==========================================
-# ENDPOINT DE DEBUG TEMPORAL
+# ENDPOINT DE DEBUG
 # ==========================================
 
 @router.get("/admin/duplicados/productos/debug")
 async def debug_productos():
-    """
-    Endpoint de prueba para ver qué productos hay en la BD
-    y detectar duplicados de forma simple
-    """
+    """Endpoint de prueba para ver estructura de datos"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Obtener productos agrupados por establecimiento
+        print("🔍 DEBUG: Verificando estructura de tablas...")
+        
+        # ✅ CORRECCIÓN: establecimiento está en facturas
         cursor.execute("""
             SELECT 
                 p.id,
                 p.nombre,
                 p.codigo,
-                p.establecimiento,
+                f.establecimiento,
                 p.valor,
                 f.fecha_cargue
             FROM productos p
             LEFT JOIN facturas f ON p.factura_id = f.id
             WHERE p.nombre IS NOT NULL 
               AND p.nombre != ''
-              AND p.establecimiento IS NOT NULL
-            ORDER BY p.establecimiento, p.nombre
+              AND f.establecimiento IS NOT NULL
+            ORDER BY f.establecimiento, p.nombre
             LIMIT 100
         """)
         
@@ -145,7 +121,7 @@ async def debug_productos():
         cursor.close()
         conn.close()
         
-        # Agrupar por establecimiento para análisis
+        # Agrupar por establecimiento
         por_establecimiento = {}
         for p in productos:
             est = p["establecimiento"]
@@ -153,23 +129,24 @@ async def debug_productos():
                 por_establecimiento[est] = []
             por_establecimiento[est].append(p)
         
+        print(f"✅ DEBUG: {len(productos)} productos obtenidos")
+        print(f"📊 Establecimientos únicos: {len(por_establecimiento)}")
+        
         return {
             "success": True,
             "total_productos": len(productos),
-            "productos_muestra": productos[:20],  # Primeros 20
+            "productos_muestra": productos[:20],
             "por_establecimiento": {k: len(v) for k, v in por_establecimiento.items()},
-            "message": "Endpoint de debug - Ver estructura de datos"
+            "message": "Debug exitoso - establecimiento viene de facturas"
         }
         
     except Exception as e:
         print(f"❌ Error en debug: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ==========================================
-# ENDPOINTS: PRODUCTOS DUPLICADOS
+# ENDPOINT PRINCIPAL: DETECTAR DUPLICADOS
 # ==========================================
 
 @router.get("/admin/duplicados/productos")
@@ -177,9 +154,7 @@ async def detectar_productos_duplicados(
     umbral: float = Query(90.0, ge=0, le=100, description="Umbral de similitud (%)"),
     criterio: str = Query("todos", description="Criterio de detección")
 ):
-    """
-    Detectar productos duplicados - VERSIÓN SIMPLIFICADA PARA DEBUG
-    """
+    """Detectar productos duplicados - VERSIÓN CORREGIDA"""
     
     conn = None
     cursor = None
@@ -194,21 +169,25 @@ async def detectar_productos_duplicados(
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Query super simple para evitar errores
         print("📊 Ejecutando query SQL...")
+        
+        # ✅ CORRECCIÓN: establecimiento desde facturas
         cursor.execute("""
             SELECT 
                 p.id,
                 p.nombre,
                 p.codigo,
-                p.establecimiento,
-                p.valor
+                f.establecimiento,
+                p.valor,
+                f.fecha_cargue
             FROM productos p
+            INNER JOIN facturas f ON p.factura_id = f.id
             WHERE p.nombre IS NOT NULL 
               AND p.nombre != ''
-              AND p.establecimiento IS NOT NULL
-              AND p.establecimiento != ''
-            LIMIT 200
+              AND f.establecimiento IS NOT NULL
+              AND f.establecimiento != ''
+            ORDER BY f.establecimiento, p.nombre
+            LIMIT 500
         """)
         
         productos_raw = cursor.fetchall()
@@ -237,17 +216,18 @@ async def detectar_productos_duplicados(
                 "codigo": row[2] or "",
                 "establecimiento": row[3] or "",
                 "precio": float(row[4]) if row[4] else 0.0,
-                "fecha_cargue": None,
-                "ultima_actualizacion": None
+                "fecha_cargue": row[5].isoformat() if row[5] else None,
+                "ultima_actualizacion": row[5].isoformat() if row[5] else None,
+                "veces_visto": 1
             })
         
         print(f"✅ Productos convertidos: {len(productos)}")
         print(f"\n📦 MUESTRA (primeros 3):")
         for i, p in enumerate(productos[:3]):
-            print(f"   {i+1}. ID={p['id']} | {p['nombre'][:30]} | {p['establecimiento']}")
+            print(f"   {i+1}. ID={p['id']} | {p['nombre'][:40]} | {p['establecimiento']}")
         print()
         
-        # Detectar duplicados de forma simple
+        # Detectar duplicados
         print("🔍 Buscando duplicados...")
         duplicados = []
         procesados = set()
@@ -257,7 +237,7 @@ async def detectar_productos_duplicados(
                 if prod1["id"] == prod2["id"]:
                     continue
                 
-                # SOLO comparar si es el MISMO establecimiento
+                # ⚠️ CRÍTICO: SOLO comparar si es el MISMO establecimiento
                 if prod1["establecimiento"] != prod2["establecimiento"]:
                     continue
                 
@@ -267,45 +247,50 @@ async def detectar_productos_duplicados(
                 
                 es_duplicado = False
                 razones = []
+                similitud = 0
                 
                 # 1. Mismo código EAN
                 if prod1["codigo"] and prod2["codigo"] and len(prod1["codigo"]) >= 8:
                     if prod1["codigo"] == prod2["codigo"]:
                         es_duplicado = True
                         razones.append("Mismo código EAN")
+                        similitud = 100
                 
                 # 2. Nombre muy similar
-                similitud = calcular_similitud(prod1["nombre"], prod2["nombre"])
-                if similitud >= umbral:
-                    razones.append(f"Nombre {similitud:.0f}% similar")
+                if not es_duplicado:
+                    similitud = calcular_similitud(prod1["nombre"], prod2["nombre"])
                     
-                    # Si precio también es similar
-                    if son_precios_similares(prod1["precio"], prod2["precio"], 0.05):
-                        es_duplicado = True
-                        razones.append("Precio similar")
+                    if similitud >= umbral:
+                        razones.append(f"Nombre {similitud:.0f}% similar")
+                        
+                        # Verificar precio también
+                        if son_precios_similares(prod1["precio"], prod2["precio"], 0.05):
+                            es_duplicado = True
+                            razones.append("Precio similar (±5%)")
                 
-                if es_duplicado:
+                if es_duplicado and razones:
                     duplicados.append({
                         "id": f"dup-{len(duplicados)}",
                         "producto1": prod1,
                         "producto2": prod2,
-                        "similitud": round(similitud, 1) if 'similitud' in locals() else 100,
-                        "mismo_codigo": prod1.get("codigo") == prod2.get("codigo"),
+                        "similitud": round(similitud, 1),
+                        "mismo_codigo": prod1.get("codigo") == prod2.get("codigo") if prod1.get("codigo") and prod2.get("codigo") else False,
                         "mismo_establecimiento": True,
-                        "nombre_similar": similitud >= umbral if 'similitud' in locals() else False,
+                        "nombre_similar": similitud >= umbral,
                         "razon": " + ".join(razones),
-                        "seleccionado": prod2["id"]  # Por defecto el segundo
+                        "seleccionado": prod2["id"]
                     })
                     
                     procesados.add(par_id)
                     
                     if len(duplicados) == 1:
                         print(f"   ✅ Primer duplicado encontrado:")
-                        print(f"      - {prod1['nombre'][:30]}")
-                        print(f"      - {prod2['nombre'][:30]}")
+                        print(f"      - {prod1['nombre'][:40]}")
+                        print(f"      - {prod2['nombre'][:40]}")
+                        print(f"      Razón: {' + '.join(razones)}")
         
         print(f"\n{'='*60}")
-        print(f"✅ RESULTADO: {len(duplicados)} pares encontrados")
+        print(f"✅ RESULTADO: {len(duplicados)} pares de duplicados encontrados")
         print(f"{'='*60}\n")
         
         return {
@@ -315,7 +300,8 @@ async def detectar_productos_duplicados(
             "debug_info": {
                 "productos_analizados": len(productos),
                 "umbral_usado": umbral,
-                "criterio": criterio
+                "criterio": criterio,
+                "establecimientos_unicos": len(set(p["establecimiento"] for p in productos))
             }
         }
         
@@ -323,12 +309,10 @@ async def detectar_productos_duplicados(
         print(f"\n❌ ERROR EN DETECCIÓN DE DUPLICADOS:")
         print(f"   Tipo: {type(e).__name__}")
         print(f"   Mensaje: {str(e)}")
-        import traceback
         print(f"\n📋 TRACEBACK COMPLETO:")
         traceback.print_exc()
         print(f"\n{'='*60}\n")
         
-        # Cerrar conexiones si están abiertas
         if cursor:
             try:
                 cursor.close()
@@ -342,12 +326,13 @@ async def detectar_productos_duplicados(
         
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+# ==========================================
+# FUSIONAR PRODUCTOS
+# ==========================================
+
 @router.post("/admin/duplicados/productos/fusionar")
 async def fusionar_productos(request: FusionProductosRequest):
-    """
-    Eliminar producto duplicado
-    Simplemente elimina el producto que no queremos mantener
-    """
+    """Eliminar producto duplicado"""
     
     try:
         conn = get_db_connection()
@@ -357,7 +342,7 @@ async def fusionar_productos(request: FusionProductosRequest):
         print(f"   Mantener: #{request.producto_mantener_id}")
         print(f"   Eliminar: #{request.producto_eliminar_id}")
         
-        # 1. Verificar que ambos productos existen
+        # Verificar que ambos productos existen
         cursor.execute("""
             SELECT id, nombre, codigo FROM productos 
             WHERE id IN (%s, %s)
@@ -371,15 +356,13 @@ async def fusionar_productos(request: FusionProductosRequest):
                 detail="Uno o ambos productos no encontrados"
             )
         
-        # 2. Eliminar el producto duplicado
+        # Eliminar el producto duplicado
         cursor.execute("""
             DELETE FROM productos WHERE id = %s
         """, (request.producto_eliminar_id,))
         
-        filas_eliminadas = cursor.rowcount
         print(f"   ✅ Producto eliminado")
         
-        # 3. Commit
         conn.commit()
         cursor.close()
         conn.close()
@@ -404,22 +387,19 @@ async def fusionar_productos(request: FusionProductosRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==========================================
-# ENDPOINTS: FACTURAS DUPLICADAS
+# FACTURAS DUPLICADAS
 # ==========================================
 
 @router.get("/admin/duplicados/facturas")
 async def detectar_facturas_duplicadas(
     criterio: str = Query("all", description="Criterio de detección")
 ):
-    """
-    Detectar facturas duplicadas
-    """
+    """Detectar facturas duplicadas"""
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Obtener todas las facturas con datos normalizados
         cursor.execute("""
             SELECT 
                 f.id,
@@ -454,7 +434,6 @@ async def detectar_facturas_duplicadas(
         
         print(f"🔍 Analizando {len(facturas)} facturas...")
         
-        # Detectar duplicados
         duplicados = []
         procesados = set()
         
@@ -470,21 +449,19 @@ async def detectar_facturas_duplicadas(
                 es_duplicado = False
                 razon = ""
                 
-                # 1. Mismo establecimiento + fecha + total EXACTO
+                # Criterios de duplicación
                 if (fac1["establecimiento"] == fac2["establecimiento"] and
                     fac1["fecha"] == fac2["fecha"] and
                     abs(fac1["total"] - fac2["total"]) < 0.01):
                     es_duplicado = True
                     razon = "Misma fecha, establecimiento y total"
                 
-                # 2. Mismo establecimiento + fecha + productos similares
                 elif (fac1["establecimiento"] == fac2["establecimiento"] and
                       fac1["fecha"] == fac2["fecha"] and
                       abs(fac1["num_productos"] - fac2["num_productos"]) <= 2):
                     es_duplicado = True
                     razon = "Misma fecha, establecimiento y productos similares"
                 
-                # 3. Mismo establecimiento + total + fecha cercana
                 elif (fac1["establecimiento"] == fac2["establecimiento"] and
                       abs(fac1["total"] - fac2["total"]) < 0.01):
                     if fac1["fecha"] and fac2["fecha"]:
@@ -496,7 +473,7 @@ async def detectar_facturas_duplicadas(
                         except:
                             pass
                 
-                # Filtro por criterio
+                # Filtros por criterio
                 if criterio == "same_establishment" and fac1["establecimiento"] != fac2["establecimiento"]:
                     continue
                 elif criterio == "same_date" and fac1["fecha"] != fac2["fecha"]:
@@ -528,9 +505,7 @@ async def detectar_facturas_duplicadas(
 
 @router.delete("/admin/facturas/{factura_id}")
 async def eliminar_factura(factura_id: int):
-    """
-    Eliminar una factura y todos sus productos
-    """
+    """Eliminar una factura y todos sus productos"""
     
     try:
         conn = get_db_connection()
@@ -538,16 +513,13 @@ async def eliminar_factura(factura_id: int):
         
         print(f"\n🗑️ ELIMINANDO FACTURA #{factura_id}")
         
-        # Verificar existencia
         cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Factura no encontrada")
         
-        # Eliminar productos
         cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
         productos_eliminados = cursor.rowcount
         
-        # Eliminar factura
         cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
         
         conn.commit()
@@ -571,4 +543,4 @@ async def eliminar_factura(factura_id: int):
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
 
-print("✅ duplicados_routes.py cargado correctamente - VERSIÓN CORREGIDA")
+print("✅ duplicados_routes.py cargado correctamente")
