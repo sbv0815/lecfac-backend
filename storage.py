@@ -4,7 +4,7 @@ from database import get_db_connection
 def save_image_to_db(factura_id: int, image_path: str, mime_type: str) -> bool:
     """
     Guarda imagen en PostgreSQL como BYTEA
-    Compatible con psycopg2
+    Compatible con psycopg3 (psycopg)
     """
     try:
         # 1. Leer archivo de imagen
@@ -21,7 +21,7 @@ def save_image_to_db(factura_id: int, image_path: str, mime_type: str) -> bool:
         
         print(f"📸 Leyendo imagen: {len(image_data)} bytes para factura {factura_id}")
         
-        # 2. Obtener conexión NUEVA (no rehusar la de parse)
+        # 2. Obtener conexión NUEVA
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -37,25 +37,23 @@ def save_image_to_db(factura_id: int, image_path: str, mime_type: str) -> bool:
         
         print(f"✅ Factura {factura_id} existe, procediendo a guardar imagen...")
         
-        # 4. IMPORTANTE: psycopg2 usa psycopg2.Binary, NO psycopg.Binary
-        import psycopg2
-        
-        # 5. UPDATE con Binary de psycopg2
+        # 4. IMPORTANTE: En psycopg3, los bytes se pasan directamente
+        # No necesitas psycopg2.Binary()
         cursor.execute("""
             UPDATE facturas 
             SET imagen_data = %s, 
                 imagen_mime = %s,
                 tiene_imagen = TRUE
             WHERE id = %s
-        """, (psycopg2.Binary(image_data), mime_type, factura_id))
+        """, (image_data, mime_type, factura_id))
         
         rows_affected = cursor.rowcount
         print(f"✅ UPDATE ejecutado, {rows_affected} fila(s) afectada(s)")
         
-        # 6. COMMIT
+        # 5. COMMIT
         conn.commit()
         
-        # 7. VERIFICAR que se guardó correctamente
+        # 6. VERIFICAR que se guardó correctamente
         cursor.execute("""
             SELECT 
                 LENGTH(imagen_data) as size_bytes,
@@ -92,6 +90,7 @@ def save_image_to_db(factura_id: int, image_path: str, mime_type: str) -> bool:
 def get_image_from_db(factura_id: int):
     """
     Recupera imagen de BD
+    Compatible con psycopg3
     Retorna (bytes, mime_type) o (None, None)
     """
     try:
@@ -109,8 +108,13 @@ def get_image_from_db(factura_id: int):
         conn.close()
         
         if result and result[0]:
-            # result[0] ya es bytes en psycopg2
-            image_bytes = bytes(result[0]) if not isinstance(result[0], bytes) else result[0]
+            # En psycopg3, los datos ya vienen como bytes
+            image_bytes = result[0]
+            
+            # Si por alguna razón viene como memoryview (puede pasar)
+            if isinstance(image_bytes, memoryview):
+                image_bytes = bytes(image_bytes)
+            
             mime_type = result[1] or "image/jpeg"
             
             print(f"✅ Imagen recuperada: {len(image_bytes)} bytes, tipo {mime_type}")
