@@ -879,102 +879,112 @@ function switchTab(tabName, element) {
     }
 
     // FUNCIÓN PARA GUARDAR CON IMAGEN
-    async function guardarFacturaConImagen(invoiceData) {
-        const statusDiv = document.getElementById('uploadStatus');
+    // FUNCIÓN PARA GUARDAR CON IMAGEN - VERSIÓN CORREGIDA
+async function guardarFacturaConImagen(invoiceData) {
+    const statusDiv = document.getElementById('uploadStatus');
+    
+    // Verificar que tenemos el archivo
+    if (!currentImageFile) {
+        alert('❌ No se encontró la imagen. Por favor, vuelve a cargar la factura.');
+        limpiarUpload();
+        return;
+    }
+    
+    statusDiv.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Guardando factura con imagen...</p>
+            <p style="font-size: 12px; color: #666;">Archivo: ${currentImageFile.name} (${(currentImageFile.size / 1024).toFixed(0)} KB)</p>
+        </div>
+    `;
+    
+    try {
+        const formData = new FormData();
         
-        // Verificar que tenemos el archivo
-        if (!currentImageFile) {
-            alert('No se encontró la imagen. Por favor, vuelve a cargar la factura.');
-            limpiarUpload();
-            return;
+        // IMPORTANTE: El archivo debe ir con el nombre correcto
+        formData.append('file', currentImageFile);  // ← 'file', no 'imagen'
+        formData.append('usuario_id', '1');
+        formData.append('establecimiento', invoiceData.establecimiento || 'Desconocido');
+        formData.append('total', String(invoiceData.total || 0));
+        
+        // Productos como JSON
+        const productosFormateados = invoiceData.productos.map(p => ({
+            codigo: p.codigo || '',
+            nombre: p.nombre || '',
+            precio: p.valor || p.precio || 0
+        }));
+        formData.append('productos', JSON.stringify(productosFormateados));
+        
+        console.log('📤 Enviando factura con imagen...');
+        console.log('  - Archivo:', currentImageFile.name);
+        console.log('  - Tamaño:', currentImageFile.size, 'bytes');
+        console.log('  - Productos:', productosFormateados.length);
+        
+        const response = await fetch(`${API_URL}/invoices/save-with-image`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('📥 Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Error response:', errorText);
+            throw new Error(`Error ${response.status}: ${errorText}`);
         }
         
+        const result = await response.json();
+        const facturaId = result.factura_id;
+        
+        console.log('✅ Factura guardada:', result);
+        
+        // Verificar que la imagen se guardó
+        const checkResponse = await fetch(`${API_URL}/admin/facturas/${facturaId}/debug-imagen`);
+        const checkData = await checkResponse.json();
+        
+        console.log('🔍 Verificación de imagen:', checkData);
+        
+        // Limpiar archivo guardado
+        currentImageFile = null;
+        
+        // Mostrar éxito
         statusDiv.innerHTML = `
-            <div class="loading">
-                <div class="spinner"></div>
-                <p>Guardando factura con imagen...</p>
+            <div class="result-box success">
+                <h3 style="color: #2e7d32;">✅ Factura guardada exitosamente</h3>
+                <p style="margin: 15px 0;">
+                    <strong>Factura #${facturaId}</strong><br>
+                    ${result.productos_guardados} productos guardados<br>
+                    ${checkData.estado_datos_imagen === 'PRESENTE' ? '✅ Imagen guardada' : '⚠️ Imagen NO guardada'}
+                </p>
+                <button class="btn btn-primary" onclick="window.open('/editor?id=${facturaId}', '_blank', 'width=1400,height=900')" style="margin: 10px 5px;">
+                    📝 Abrir Editor
+                </button>
+                <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin: 10px 5px;">
+                    📸 Subir Otra
+                </button>
             </div>
         `;
         
-        try {
-            // Crear FormData con el archivo y los datos
-            const formData = new FormData();
-            
-            // El archivo DEBE ir primero y llamarse 'file'
-            formData.append('file', currentImageFile);
-            
-            // Agregar los demás campos como strings
-            formData.append('usuario_id', '1');
-            formData.append('establecimiento', invoiceData.establecimiento || 'Desconocido');
-            formData.append('total', String(invoiceData.total || 0));
-            
-            // Los productos como JSON string
-            const productosFormateados = invoiceData.productos.map(p => ({
-                codigo: p.codigo || '',
-                nombre: p.nombre || '',
-                precio: p.valor || 0
-            }));
-            formData.append('productos', JSON.stringify(productosFormateados));
-            
-            console.log('Enviando factura con imagen...');
-            
-            // Enviar al endpoint
-            const response = await fetch(`${API_URL}/invoices/save-with-image`, {
-                method: 'POST',
-                body: formData
-            });
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Error ${response.status}: ${errorText}`);
-            }
-            
-            const result = await response.json();
-            const facturaId = result.factura_id;
-            
-            console.log('✅ Factura guardada con imagen, ID:', facturaId);
-            
-            // Limpiar el archivo guardado
-            currentImageFile = null;
-            
-            // Mostrar éxito
-            statusDiv.innerHTML = `
-                <div class="result-box success">
-                    <h3 style="color: #2e7d32;">✅ Factura guardada con imagen</h3>
-                    <p style="margin: 15px 0;">
-                        Factura #<strong>${facturaId}</strong> creada exitosamente
-                    </p>
-                    <p style="color: #666;">Abriendo el editor...</p>
-                </div>
-            `;
-            
-            // Abrir el editor
-            setTimeout(() => {
-                window.open(`/editor?id=${facturaId}`, '_blank', 'width=1400,height=900');
-                
-                // Actualizar y limpiar
-                setTimeout(() => {
-                    cargarEstadisticas();
-                    cargarFacturas();
-                    limpiarUpload();
-                }, 1000);
-            }, 500);
-            
-        } catch (error) {
-            console.error('Error guardando:', error);
-            statusDiv.innerHTML = `
-                <div class="result-box error">
-                    <h3 style="color: #c62828;">❌ Error al guardar</h3>
-                    <p style="color: #666; margin: 15px 0;">${error.message}</p>
-                    <p style="color: #999; font-size: 12px;">Verifica que el servidor esté funcionando correctamente</p>
-                    <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
-                        Intentar de Nuevo
-                    </button>
-                </div>
-            `;
-        }
+        // Actualizar estadísticas
+        setTimeout(() => {
+            cargarEstadisticas();
+            cargarFacturas();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('❌ Error guardando:', error);
+        statusDiv.innerHTML = `
+            <div class="result-box error">
+                <h3 style="color: #c62828;">❌ Error al guardar</h3>
+                <p style="color: #666; margin: 15px 0;">${error.message}</p>
+                <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 11px; overflow: auto; max-height: 200px;">${error.stack || 'Sin stack trace'}</pre>
+                <button class="btn btn-secondary" onclick="limpiarUpload()" style="margin-top: 10px;">
+                    🔄 Intentar de Nuevo
+                </button>
+            </div>
+        `;
     }
-
+}
     function limpiarUpload() {
         document.getElementById('invoiceFile').value = '';
         document.getElementById('uploadStatus').innerHTML = '';
