@@ -549,84 +549,14 @@ async def delete_item(item_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/facturas/{factura_id}")
-async def eliminar_factura_admin(factura_id: int):
-    """Eliminar una factura y todos sus datos asociados"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Verificar que existe
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
-        else:
-            cursor.execute("SELECT id FROM facturas WHERE id = ?", (factura_id,))
-        
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Factura no encontrada")
-        
-        # Eliminar items_factura (NUEVA TABLA)
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
-            items_eliminados = cursor.rowcount
-            
-            # Eliminar precios_productos
-            cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
-            precios_eliminados = cursor.rowcount
-            
-            # Eliminar productos legacy (por si acaso)
-            cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
-            
-            # Eliminar factura
-            cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
-        else:
-            cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
-            items_eliminados = cursor.rowcount
-            
-            cursor.execute("DELETE FROM precios_productos WHERE factura_id = ?", (factura_id,))
-            precios_eliminados = cursor.rowcount
-            
-            cursor.execute("DELETE FROM productos WHERE factura_id = ?", (factura_id,))
-            
-            cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return {
-            "success": True, 
-            "message": "Factura eliminada exitosamente", 
-            "id": factura_id,
-            "items_eliminados": items_eliminados,
-            "precios_eliminados": precios_eliminados
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        if conn:
-            conn.rollback()
-            conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def similitud_texto(a: str, b: str) -> float:
-    """Calcular similitud entre dos strings (0-100)"""
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
-
-
-# Agregar estos endpoints en admin_dashboard.py
-
+# Este archivo contiene SOLO el endpoint update_item corregido
+# Reemplaza el endpoint @router.put("/items/{item_id}") en tu admin_dashboard.py
 
 @router.put("/items/{item_id}")
 async def update_item(item_id: int, request: dict):
     """
     ✅ VERSIÓN CORREGIDA - Actualizar un item de factura
-    Solo actualiza precios_productos si hay código EAN VÁLIDO
+    Solo actualiza precios_productos si hay código VÁLIDO (3+ dígitos)
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -684,30 +614,31 @@ async def update_item(item_id: int, request: dict):
             # Limpiar el código nuevo
             codigo_limpio = str(codigo_nuevo).strip().upper()
             
-            # Validar que sea un código EAN válido
+            # Validar que sea un código válido
             if codigo_limpio and codigo_limpio not in CODIGOS_INVALIDOS:
-                # Validar longitud (códigos EAN son de 8, 12 o 13 dígitos)
-               if len(codigo_limpio) >= 3 and codigo_limpio.isdigit():
+                # 🔥 CORREGIDO: Aceptar códigos desde 3 dígitos
+                if len(codigo_limpio) >= 3 and codigo_limpio.isdigit():
                     codigo_final = codigo_limpio
                     print(f"✅ Usando nuevo código válido: {codigo_final}")
                 else:
                     print(f"⚠️ Código recibido no es válido (no numérico o muy corto): '{codigo_limpio}'")
                     print(f"   → Manteniendo código actual: {codigo_actual}")
-                else:
-                    print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
-                    print(f"   → Manteniendo código actual: {codigo_actual}")
-                else:
-                    print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
+            else:
+                print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
+                print(f"   → Manteniendo código actual: {codigo_actual}")
+        else:
+            print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
         
-                    print(f"📌 Código final a guardar: {codigo_final}")
+        print(f"📌 Código final a guardar: {codigo_final}")
         
         # 3. Determinar si el código final es VÁLIDO para precios_productos
+        # 🔥 CORREGIDO: Aceptar códigos de 3+ dígitos
         codigo_es_valido = (
-        codigo_final and 
-        str(codigo_final).strip() != '' and
-        str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS and
-        len(str(codigo_final)) >= 3 and  # ✅ Acepta códigos desde 3 dígitos
-        str(codigo_final).isdigit()
+            codigo_final and 
+            str(codigo_final).strip() != '' and
+            str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS and
+            len(str(codigo_final)) >= 3 and  # 🔥 Cambiado de >= 8 a >= 3
+            str(codigo_final).isdigit()
         )
         
         print(f"🔍 ¿Código válido para precios_productos? {codigo_es_valido}")
@@ -811,18 +742,18 @@ async def update_item(item_id: int, request: dict):
                 print(f"   - Establecimiento: {establecimiento_id}")
                 print(f"   - Precio: {precio}")
                 
-                # Verificar si ya existe un registro
+                # 🔥 IMPORTANTE: Usar producto_maestro_id (no producto_id)
                 if database_type == "postgresql":
                     cursor.execute("""
                         SELECT id FROM precios_productos
-                        WHERE producto_id = %s
+                        WHERE producto_maestro_id = %s
                           AND establecimiento_id = %s
                           AND factura_id = %s
                     """, (producto_maestro_id, establecimiento_id, factura_id))
                 else:
                     cursor.execute("""
                         SELECT id FROM precios_productos
-                        WHERE producto_id = ?
+                        WHERE producto_maestro_id = ?
                           AND establecimiento_id = ?
                           AND factura_id = ?
                     """, (producto_maestro_id, establecimiento_id, factura_id))
@@ -853,15 +784,15 @@ async def update_item(item_id: int, request: dict):
                     if database_type == "postgresql":
                         cursor.execute("""
                             INSERT INTO precios_productos 
-                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                             VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura or 'CURRENT_DATE', usuario_id, factura_id))
+                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura, usuario_id, factura_id))
                     else:
                         cursor.execute("""
                             INSERT INTO precios_productos 
-                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                             VALUES (?, ?, ?, ?, ?, ?)
-                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura or date('now'), usuario_id, factura_id))
+                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura, usuario_id, factura_id))
                     
                     print(f"✅ Precio insertado en precios_productos")
                     precio_actualizado = True
@@ -900,8 +831,8 @@ async def update_item(item_id: int, request: dict):
     finally:
         cursor.close()
         conn.close()
-
-
+        
+       
 @router.post("/facturas/{factura_id}/items")
 async def add_item(factura_id: int, request: dict):
     """
