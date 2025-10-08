@@ -332,6 +332,9 @@ async def get_factura_detalle(factura_id: int):
 # AGREGAR ESTE ENDPOINT en admin_dashboard.py
 # Colócalo después del endpoint @router.get("/facturas/{factura_id}")
 
+# REEMPLAZAR el endpoint @router.put("/facturas/{factura_id}") 
+# con esta versión CORREGIDA:
+
 @router.put("/facturas/{factura_id}")
 async def update_factura(factura_id: int, request: dict):
     """
@@ -357,20 +360,33 @@ async def update_factura(factura_id: int, request: dict):
             conn.close()
             raise HTTPException(status_code=404, detail="Factura no encontrada")
         
-        # Construir query dinámicamente
+        # Construir query dinámicamente según el tipo de BD
         updates = []
         params = []
+        param_index = 1
         
         if establecimiento:
-            updates.append("establecimiento = ?")
+            if database_type == "postgresql":
+                updates.append(f"establecimiento = ${param_index}")
+                param_index += 1
+            else:
+                updates.append("establecimiento = ?")
             params.append(establecimiento)
         
         if total is not None:
-            updates.append("total_factura = ?")
+            if database_type == "postgresql":
+                updates.append(f"total_factura = ${param_index}")
+                param_index += 1
+            else:
+                updates.append("total_factura = ?")
             params.append(float(total))
         
         if fecha:
-            updates.append("fecha_cargue = ?")
+            if database_type == "postgresql":
+                updates.append(f"fecha_cargue = ${param_index}")
+                param_index += 1
+            else:
+                updates.append("fecha_cargue = ?")
             params.append(fecha)
         
         if not updates:
@@ -382,11 +398,10 @@ async def update_factura(factura_id: int, request: dict):
         
         # Ejecutar update
         if database_type == "postgresql":
-            # Convertir placeholders ? a $1, $2, etc. para PostgreSQL
             query = f"""
                 UPDATE facturas 
-                SET {', '.join([u.replace('?', f'${i+1}') for i, u in enumerate(updates)])}
-                WHERE id = ${len(params)}
+                SET {', '.join(updates)}
+                WHERE id = ${param_index}
                 RETURNING id, establecimiento, total_factura, fecha_cargue
             """
             cursor.execute(query, params)
@@ -421,8 +436,9 @@ async def update_factura(factura_id: int, request: dict):
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
-        conn.close()
+        if conn:
+            conn.rollback()
+            conn.close()
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
