@@ -41,63 +41,59 @@ Ejemplo: "JUMBO BULEVAR NIZA" → usa "JUMBO"
 Los códigos están SIEMPRE a la IZQUIERDA del nombre del producto.
 
 EJEMPLOS REALES:
-✓ "116 BANANO URABA" → código: "116"
-✓ "1045 ZANAHORIA" → código: "1045"  
-✓ "7702993047842 LECHE ALPINA" → código: "7702993047842"
-✓ "23456 ARROZ DIANA X 500G" → código: "23456"
+✓ "116 BANANO URABA" → codigo: "116"
+✓ "1045 ZANAHORIA" → codigo: "1045"  
+✓ "7702993047842 LECHE ALPINA" → codigo: "7702993047842"
+✓ "23456 ARROZ DIANA X 500G" → codigo: "23456"
 
-CÓDIGOS INVÁLIDOS (tienen letras o símbolos especiales):
-✗ "343718DF.VD PRODUCTO" → NO copiar (tiene letras DF)
-✗ "344476DF.20% PRODUCTO" → NO copiar (tiene letras y %)
-✗ "REF123 PRODUCTO" → NO copiar (tiene letras REF)
-✗ "$5.425" → NO es código (es un precio con $)
-✗ "1kg" → NO es código (tiene letras kg)
+CÓDIGOS INVÁLIDOS (tienen letras o símbolos):
+✗ "343718DF.VD PRODUCTO" → "" (tiene letras DF)
+✗ "344476DF.20% PRODUCTO" → "" (tiene letras y %)
+✗ "REF123 PRODUCTO" → "" (tiene letras REF)
 
-REGLAS DE ORO:
-1. Busca el PRIMER número a la IZQUIERDA del nombre del producto
-2. Si ese número tiene SOLO DÍGITOS (sin letras, sin %, sin $, sin kg) → ES EL CÓDIGO
-3. Puede ser corto (3 dígitos) o largo (13 dígitos) → AMBOS SON VÁLIDOS
-4. Copia el código EXACTO, sin espacios ni caracteres extra
-5. Si NO hay número a la izquierda O tiene letras/símbolos → pon ""
+REGLAS:
+1. Busca el PRIMER número a la IZQUIERDA del nombre
+2. Si tiene SOLO DÍGITOS → ES EL CÓDIGO
+3. Si tiene letras o símbolos → pon ""
+4. Puede ser corto (3 dígitos) o largo (13 dígitos)
 
-# PRODUCTOS
-- Incluye TODOS los productos visibles
-- NO incluyas líneas de descuento, IVA, subtotales
-- NO incluyas líneas que empiecen con %, DESCUENTO, DTO, IVA
+# FORMATO CRÍTICO DE NÚMEROS
+⚠️ IMPORTANTE: Los precios deben estar SIN separadores de miles:
+- CORRECTO: 234890 (sin comas)
+- CORRECTO: 5425 (sin puntos)
+- INCORRECTO: 234,890
+- INCORRECTO: 5.425
+- Para cantidad con decimales SÍ usa punto: 0.878
 
 # FORMATO DE RESPUESTA
-Responde SOLO con este JSON (sin explicaciones):
+Responde SOLO con este JSON (sin explicaciones, sin texto adicional):
 
 {
-  "establecimiento": "NOMBRE_PRINCIPAL",
-  "fecha": "YYYY-MM-DD",
-  "total": 123456,
+  "establecimiento": "JUMBO",
+  "fecha": "2024-12-27",
+  "total": 234890,
   "productos": [
     {
       "codigo": "7702993047842",
-      "nombre": "LECHE ALPINA ENTERA X 1100ML",
+      "nombre": "CHOCOLATE BT",
       "cantidad": 1,
-      "precio": 5600
+      "precio": 2190
     },
     {
       "codigo": "116",
       "nombre": "BANANO URABA",
-      "cantidad": 1,
+      "cantidad": 0.878,
       "precio": 5425
-    },
-    {
-      "codigo": "1045",
-      "nombre": "ZANAHORIA",
-      "cantidad": 1,
-      "precio": 1166
     }
   ]
 }
 
-NOTAS:
-- Precios sin puntos ni comas (5600, no 5.600)
-- Códigos sin espacios ("116", no " 116 ")
-- Si no hay código válido a la izquierda: ""
+VALIDACIONES FINALES:
+- JSON válido sin errores de sintaxis
+- Precios como números enteros SIN separadores: 2190 (no 2,190)
+- Códigos como strings con solo dígitos: "116" o ""
+- Fecha formato YYYY-MM-DD
+- NO incluyas descuentos, IVA o subtotales en productos
 
 ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
@@ -161,11 +157,43 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         for prod in data.get("productos", []):
             productos_procesados += 1
             
-            # Normalizar precio
+            # ========== NORMALIZACIÓN DE PRECIO MEJORADA ==========
             if "precio" in prod:
                 try:
-                    prod["precio"] = int(float(str(prod["precio"]).replace(",", "").replace(".", "")))
-                except:
+                    precio_str = str(prod["precio"])
+                    
+                    # Si Claude ya envió sin separadores (como debe ser), usar directo
+                    if precio_str.isdigit():
+                        prod["precio"] = int(precio_str)
+                    else:
+                        # Backup: limpiar comas Y puntos de miles (pero NO decimales)
+                        # Primero eliminar espacios
+                        precio_str = precio_str.replace(" ", "")
+                        
+                        # Si tiene coma Y punto, asumir formato europeo: 1.234,56
+                        if "," in precio_str and "." in precio_str:
+                            # Formato: 1.234,56 → 1234.56
+                            precio_str = precio_str.replace(".", "").replace(",", ".")
+                            prod["precio"] = int(float(precio_str))
+                        # Si SOLO tiene coma, asumir decimal: 5,25
+                        elif "," in precio_str and "." not in precio_str:
+                            # Formato: 5,25 → 5.25
+                            precio_str = precio_str.replace(",", ".")
+                            prod["precio"] = int(float(precio_str))
+                        # Si tiene punto, podría ser miles o decimal
+                        elif "." in precio_str:
+                            # Si el precio tiene más de 3 dígitos después del punto, es miles
+                            parts = precio_str.split(".")
+                            if len(parts[-1]) >= 3:  # 5.425 → separador de miles
+                                precio_str = precio_str.replace(".", "")
+                                prod["precio"] = int(precio_str)
+                            else:  # 5.42 → decimal
+                                prod["precio"] = int(float(precio_str))
+                        else:
+                            # Ya es un número simple
+                            prod["precio"] = int(float(precio_str))
+                except Exception as e:
+                    print(f"⚠️ Error procesando precio '{prod.get('precio', 'N/A')}': {e}")
                     prod["precio"] = 0
             else:
                 prod["precio"] = 0
