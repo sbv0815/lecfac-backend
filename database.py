@@ -471,108 +471,89 @@ def create_postgresql_tables():
         ''')
         
         # ============================================
-        # ÍNDICES OPTIMIZADOS
+        # ÍNDICES OPTIMIZADOS (con manejo robusto de errores)
         # ============================================
         print("📊 Creando índices optimizados...")
         
-        try:
-            # Índices para establecimientos
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)')
-            cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)')
+        # Función helper para crear índices con rollback automático
+        def crear_indice_seguro(sql_statement, descripcion):
+            try:
+                cursor.execute(sql_statement)
+                conn.commit()
+                return True
+            except Exception as e:
+                conn.rollback()
+                print(f"⚠️ Saltando índice '{descripcion}': columna no existe")
+                return False
+        
+        # Índices para establecimientos
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)', 'establecimientos.cadena'):
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)', 'establecimientos.ciudad')
+            crear_indice_seguro('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)', 'establecimientos.nombre')
             print("✓ Índices de establecimientos creados")
-        except Exception as e:
-            print(f"⚠️ Error en índices establecimientos: {e}")
         
-        try:
-            # Índices para productos_maestros
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)')
+        # Índices para productos_maestros
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)', 'productos_maestros.codigo_ean'):
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)', 'productos_maestros.nombre')
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)', 'productos_maestros.categoria')
             print("✓ Índices de productos_maestros creados")
-        except Exception as e:
-            print(f"⚠️ Error en índices productos_maestros: {e}")
         
-        try:
-            # Índices para precios_productos (verificar que existan las columnas)
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'precios_productos' AND column_name = 'producto_maestro_id'
-            """)
-            if cursor.fetchone():
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)')
-                cursor.execute('''CREATE UNIQUE INDEX IF NOT EXISTS idx_precios_unico_dia 
-                    ON precios_productos(producto_maestro_id, establecimiento_id, fecha_registro, usuario_id)''')
-                print("✓ Índices de precios_productos creados")
-            else:
-                print("⚠️ Tabla precios_productos no tiene estructura nueva, saltando índices")
-        except Exception as e:
-            print(f"⚠️ Error en índices precios_productos: {e}")
+        # Índices para precios_productos (nueva estructura)
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_producto_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)', 'precios_productos nueva'):
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)', 'precios_productos.establecimiento')
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)', 'precios_productos.usuario')
+            crear_indice_seguro('''CREATE UNIQUE INDEX IF NOT EXISTS idx_precios_unico_dia 
+                ON precios_productos(producto_maestro_id, establecimiento_id, fecha_registro, usuario_id)''', 'precios_productos unique')
+            print("✓ Índices de precios_productos (nueva estructura) creados")
         
-        try:
-            # Índices para facturas
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario_fecha ON facturas(usuario_id, fecha_factura DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado_validacion)')
-            print("✓ Índices de facturas creados")
-        except Exception as e:
-            print(f"⚠️ Error en índices facturas: {e}")
+        # Índices para facturas (intentar con nueva estructura primero)
+        indices_facturas_creados = 0
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)', 'facturas.usuario'):
+            indices_facturas_creados += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)', 'facturas.fecha'):
+            indices_facturas_creados += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)', 'facturas.establecimiento_id'):
+            indices_facturas_creados += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_usuario_fecha ON facturas(usuario_id, fecha_factura DESC)', 'facturas.usuario_fecha'):
+            indices_facturas_creados += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado_validacion)', 'facturas.estado'):
+            indices_facturas_creados += 1
+        if indices_facturas_creados > 0:
+            print(f"✓ {indices_facturas_creados}/5 índices de facturas creados")
         
-        try:
-            # Índices para items_factura (verificar que exista la tabla)
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'items_factura' AND column_name = 'producto_maestro_id'
-            """)
-            if cursor.fetchone():
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_usuario_fecha ON items_factura(usuario_id, fecha_creacion DESC)')
-                print("✓ Índices de items_factura creados")
-            else:
-                print("⚠️ Tabla items_factura no disponible, saltando índices")
-        except Exception as e:
-            print(f"⚠️ Error en índices items_factura: {e}")
+        # Índices para items_factura
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)', 'items_factura.factura_id'):
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)', 'items_factura.producto')
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)', 'items_factura.usuario')
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_usuario_fecha ON items_factura(usuario_id, fecha_creacion DESC)', 'items_factura.usuario_fecha')
+            print("✓ Índices de items_factura creados")
         
-        try:
-            # Índices para gastos_mensuales
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_gastos_establecimiento ON gastos_mensuales(establecimiento_id)')
+        # Índices para gastos_mensuales
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)', 'gastos_mensuales.usuario'):
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_gastos_establecimiento ON gastos_mensuales(establecimiento_id)', 'gastos_mensuales.establecimiento')
             print("✓ Índices de gastos_mensuales creados")
-        except Exception as e:
-            print(f"⚠️ Error en índices gastos_mensuales: {e}")
         
-        try:
-            # Índices para patrones_compra (verificar columna producto_maestro_id)
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'patrones_compra' AND column_name = 'producto_maestro_id'
-            """)
-            if cursor.fetchone():
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_recordatorios ON patrones_compra(usuario_id, recordatorio_activo, proxima_compra_estimada)')
-                print("✓ Índices de patrones_compra creados")
-            else:
-                # Usar producto_id (legacy)
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)')
+        # Índices para patrones_compra
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario_maestro ON patrones_compra(usuario_id, producto_maestro_id)', 'patrones_compra nueva'):
+            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_recordatorios ON patrones_compra(usuario_id, recordatorio_activo, proxima_compra_estimada)', 'patrones_compra.recordatorios')
+            print("✓ Índices de patrones_compra (nueva estructura) creados")
+        else:
+            # Intentar con estructura legacy
+            if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)', 'patrones_compra legacy'):
                 print("✓ Índices de patrones_compra (legacy) creados")
-        except Exception as e:
-            print(f"⚠️ Error en índices patrones_compra: {e}")
         
-        try:
-            # Índices legacy
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_factura ON ocr_logs(factura_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_created ON ocr_logs(created_at DESC)')
-            print("✓ Índices legacy creados")
-        except Exception as e:
-            print(f"⚠️ Error en índices legacy: {e}")
+        # Índices legacy
+        indices_legacy = 0
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)', 'productos_maestro.ean'):
+            indices_legacy += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)', 'precios_historicos.fecha'):
+            indices_legacy += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_ocr_logs_factura ON ocr_logs(factura_id)', 'ocr_logs.factura'):
+            indices_legacy += 1
+        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_ocr_logs_created ON ocr_logs(created_at DESC)', 'ocr_logs.created'):
+            indices_legacy += 1
+        if indices_legacy > 0:
+            print(f"✓ {indices_legacy} índices legacy creados")
         
         conn.commit()
         conn.close()
@@ -1160,6 +1141,9 @@ def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usu
         
     except Exception as e:
         print(f"Error confirmando producto: {e}")
+        conn.rollback()
+        conn.close()
+        return False
         conn.rollback()
         conn.close()
         return False
