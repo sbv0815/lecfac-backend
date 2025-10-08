@@ -1,5 +1,7 @@
 # admin_dashboard.py - VERSIÓN ACTUALIZADA CON NUEVA ARQUITECTURA
-from fastapi import HTTPException, APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+router = APIRouter()
 from typing import List, Optional
 from difflib import SequenceMatcher
 from database import get_db_connection
@@ -329,7 +331,7 @@ async def get_factura_detalle(factura_id: int):
 
 
 
-@app.get("/admin/facturas/{factura_id}/imagen")
+@router.get("/admin/facturas/{factura_id}/imagen")
 async def get_factura_imagen(factura_id: int, db: Session = Depends(get_personal_db)):
     """Obtener imagen de factura en ALTA CALIDAD"""
     factura = db.query(Factura).filter(Factura.id == factura_id).first()
