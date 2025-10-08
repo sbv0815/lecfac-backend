@@ -687,7 +687,7 @@ async def update_item(item_id: int, request: dict):
             # Validar que sea un código EAN válido
             if codigo_limpio and codigo_limpio not in CODIGOS_INVALIDOS:
                 # Validar longitud (códigos EAN son de 8, 12 o 13 dígitos)
-                if len(codigo_limpio) >= 8 and codigo_limpio.isdigit():
+               if len(codigo_limpio) >= 3 and codigo_limpio.isdigit():
                     codigo_final = codigo_limpio
                     print(f"✅ Usando nuevo código válido: {codigo_final}")
                 else:
@@ -703,11 +703,11 @@ async def update_item(item_id: int, request: dict):
         
         # 3. Determinar si el código final es VÁLIDO para precios_productos
         codigo_es_valido = (
-            codigo_final and 
-            str(codigo_final).strip() != '' and
-            str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS and
-            len(str(codigo_final)) >= 8 and
-            str(codigo_final).isdigit()
+        codigo_final and 
+        str(codigo_final).strip() != '' and
+        str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS and
+        len(str(codigo_final)) >= 3 and  # ✅ Acepta códigos desde 3 dígitos
+        str(codigo_final).isdigit()
         )
         
         print(f"🔍 ¿Código válido para precios_productos? {codigo_es_valido}")
