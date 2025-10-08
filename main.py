@@ -29,7 +29,9 @@ from database import (
     test_database_connection,
     detectar_cadena,
     obtener_productos_frecuentes_faltantes,
-    confirmar_producto_manual
+    confirmar_producto_manual,
+    obtener_o_crear_establecimiento,      # ← NUEVO
+    obtener_o_crear_producto_maestro      # ← NUEVO
 )
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
@@ -2664,6 +2666,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
