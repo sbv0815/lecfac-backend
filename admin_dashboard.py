@@ -696,8 +696,8 @@ async def update_item(item_id: int, request: dict):
             else:
                 print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
                 print(f"   → Manteniendo código actual: {codigo_actual}")
-        else:
-            print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
+            else:
+                print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
         
         print(f"📌 Código final a guardar: {codigo_final}")
         
