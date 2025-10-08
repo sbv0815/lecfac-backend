@@ -452,451 +452,585 @@
     </div>
 
     <script>
-        const API_URL = 'https://lecfac-api.onrender.com';
-        const facturaId = new URLSearchParams(window.location.search).get('id');
+    const API_URL = 'https://lecfac-api.onrender.com';
+const facturaId = new URLSearchParams(window.location.search).get('id');
+
+let zoomLevel = 1;
+let rotation = 0;
+let productos = [];
+let facturaOriginal = null;
+
+let isResizing = false;
+const resizeHandle = document.getElementById('resizeHandle');
+const editorContainer = document.querySelector('.editor-container');
+
+// ========================================
+// RESIZE PANEL
+// ========================================
+resizeHandle.addEventListener('mousedown', () => {
+    isResizing = true;
+    document.body.style.cursor = 'col-resize';
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    const containerWidth = editorContainer.offsetWidth;
+    const leftWidth = (e.clientX / containerWidth) * 100;
+    
+    if (leftWidth > 30 && leftWidth < 70) {
+        editorContainer.style.gridTemplateColumns = `${leftWidth}% ${100 - leftWidth}%`;
+        resizeHandle.style.left = `${leftWidth}%`;
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = 'default';
+    }
+});
+
+// ========================================
+// UI HELPERS
+// ========================================
+function showLoading() {
+    const overlay = document.createElement('div');
+    overlay.className = 'loading';
+    overlay.id = 'loadingOverlay';
+    overlay.innerHTML = '<div class="spinner"></div>';
+    document.body.appendChild(overlay);
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) overlay.remove();
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.style.background = type === 'error' ? '#ea4335' : '#34a853';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function toggleDebugInfo() {
+    const debugContent = document.getElementById('debugInfo');
+    debugContent.style.display = debugContent.style.display === 'block' ? 'none' : 'block';
+}
+
+// ========================================
+// IMAGE CONTROLS
+// ========================================
+function zoomIn() {
+    zoomLevel *= 1.2;
+    updateZoom();
+}
+
+function zoomOut() {
+    zoomLevel /= 1.2;
+    updateZoom();
+}
+
+function resetZoom() {
+    zoomLevel = 1;
+    rotation = 0;
+    updateZoom();
+}
+
+function rotateImage() {
+    rotation = (rotation + 90) % 360;
+    updateZoom();
+}
+
+function updateZoom() {
+    const img = document.getElementById('facturaImage');
+    img.style.transform = `scale(${zoomLevel}) rotate(${rotation}deg)`;
+    document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
+}
+
+// ========================================
+// IMAGE PANNING
+// ========================================
+let isPanning = false;
+let startX, startY, scrollLeft, scrollTop;
+
+const imageContainer = document.getElementById('imageContainer');
+imageContainer.addEventListener('mousedown', (e) => {
+    if (e.target.tagName !== 'IMG') return;
+    isPanning = true;
+    startX = e.pageX - imageContainer.offsetLeft;
+    startY = e.pageY - imageContainer.offsetTop;
+    scrollLeft = imageContainer.scrollLeft;
+    scrollTop = imageContainer.scrollTop;
+});
+
+imageContainer.addEventListener('mouseleave', () => isPanning = false);
+imageContainer.addEventListener('mouseup', () => isPanning = false);
+
+imageContainer.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    e.preventDefault();
+    const x = e.pageX - imageContainer.offsetLeft;
+    const y = e.pageY - imageContainer.offsetTop;
+    imageContainer.scrollLeft = scrollLeft - (x - startX);
+    imageContainer.scrollTop = scrollTop - (y - startY);
+});
+
+// ========================================
+// PRODUCTOS MANAGEMENT
+// ========================================
+function renderProductos() {
+    const tbody = document.getElementById('productosBody');
+    
+    if (productos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999; padding: 20px;">No hay productos. Haz clic en "Agregar Producto"</td></tr>';
+        document.getElementById('productosCount').textContent = '0';
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    productos.forEach((prod, index) => {
+        const row = tbody.insertRow();
         
-        let zoomLevel = 1;
-        let rotation = 0;
-        let productos = [];
-        let facturaOriginal = null;
+        const codigo = prod.codigo || prod.codigo_ean || '';
+        const nombre = prod.nombre || '';
+        const precio = prod.precio || 0;
+        
+        row.innerHTML = `
+            <td><input type="text" value="${codigo}" onchange="actualizarProducto(${index}, 'codigo', this.value)"></td>
+            <td><input type="text" value="${nombre}" onchange="actualizarProducto(${index}, 'nombre', this.value)"></td>
+            <td><input type="number" step="0.01" value="${precio}" onchange="actualizarProducto(${index}, 'precio', parseFloat(this.value) || 0)"></td>
+            <td><button class="btn-delete" onclick="eliminarProducto(${index})">×</button></td>
+        `;
+    });
+    
+    document.getElementById('productosCount').textContent = productos.length;
+}
 
-        let isResizing = false;
-        const resizeHandle = document.getElementById('resizeHandle');
-        const editorContainer = document.querySelector('.editor-container');
+function actualizarProducto(index, campo, valor) {
+    if (index >= 0 && index < productos.length) {
+        productos[index][campo] = valor;
+        console.log(`✓ Producto ${index} actualizado:`, campo, '=', valor);
+    }
+}
 
-        resizeHandle.addEventListener('mousedown', () => {
-            isResizing = true;
-            document.body.style.cursor = 'col-resize';
-        });
+function agregarProducto() {
+    productos.push({ 
+        codigo: '', 
+        nombre: 'Nuevo Producto', 
+        precio: 0, 
+        nuevo: true 
+    });
+    
+    renderProductos();
+    
+    const tbody = document.getElementById('productosBody');
+    const lastRow = tbody.lastElementChild;
+    if (lastRow) {
+        const firstInput = lastRow.querySelector('input');
+        if (firstInput) {
+            firstInput.focus();
+            firstInput.select();
+        }
+    }
+    
+    showToast('Producto agregado');
+}
 
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
+async function eliminarProducto(index) {
+    if (!confirm('¿Eliminar este producto?')) return;
+    
+    const prod = productos[index];
+    console.log('🗑️ Intentando eliminar producto:', prod);
+    
+    // Si el producto existe en el servidor, eliminarlo primero
+    if (!prod.nuevo && prod.id) {
+        try {
+            showLoading();
+            console.log(`📡 DELETE ${API_URL}/admin/items/${prod.id}`);
             
-            const containerWidth = editorContainer.offsetWidth;
-            const leftWidth = (e.clientX / containerWidth) * 100;
-            
-            if (leftWidth > 30 && leftWidth < 70) {
-                editorContainer.style.gridTemplateColumns = `${leftWidth}% ${100 - leftWidth}%`;
-                resizeHandle.style.left = `${leftWidth}%`;
-            }
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                document.body.style.cursor = 'default';
-            }
-        });
-
-        function showLoading() {
-            const overlay = document.createElement('div');
-            overlay.className = 'loading';
-            overlay.id = 'loadingOverlay';
-            overlay.innerHTML = '<div class="spinner"></div>';
-            document.body.appendChild(overlay);
-        }
-        
-        function hideLoading() {
-            const overlay = document.getElementById('loadingOverlay');
-            if (overlay) overlay.remove();
-        }
-        
-        function showToast(message) {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-        }
-
-        function toggleDebugInfo() {
-            const debugContent = document.getElementById('debugInfo');
-            debugContent.style.display = debugContent.style.display === 'block' ? 'none' : 'block';
-        }
-        
-        function zoomIn() {
-            zoomLevel *= 1.2;
-            updateZoom();
-        }
-        
-        function zoomOut() {
-            zoomLevel /= 1.2;
-            updateZoom();
-        }
-        
-        function resetZoom() {
-            zoomLevel = 1;
-            rotation = 0;
-            updateZoom();
-        }
-        
-        function rotateImage() {
-            rotation = (rotation + 90) % 360;
-            updateZoom();
-        }
-        
-        function updateZoom() {
-            const img = document.getElementById('facturaImage');
-            img.style.transform = `scale(${zoomLevel}) rotate(${rotation}deg)`;
-            document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
-        }
-        
-        let isPanning = false;
-        let startX, startY, scrollLeft, scrollTop;
-        
-        const imageContainer = document.getElementById('imageContainer');
-        imageContainer.addEventListener('mousedown', (e) => {
-            if (e.target.tagName !== 'IMG') return;
-            isPanning = true;
-            startX = e.pageX - imageContainer.offsetLeft;
-            startY = e.pageY - imageContainer.offsetTop;
-            scrollLeft = imageContainer.scrollLeft;
-            scrollTop = imageContainer.scrollTop;
-        });
-        
-        imageContainer.addEventListener('mouseleave', () => isPanning = false);
-        imageContainer.addEventListener('mouseup', () => isPanning = false);
-        
-        imageContainer.addEventListener('mousemove', (e) => {
-            if (!isPanning) return;
-            e.preventDefault();
-            const x = e.pageX - imageContainer.offsetLeft;
-            const y = e.pageY - imageContainer.offsetTop;
-            imageContainer.scrollLeft = scrollLeft - (x - startX);
-            imageContainer.scrollTop = scrollTop - (y - startY);
-        });
-        
-        function renderProductos() {
-            const tbody = document.getElementById('productosBody');
-            
-            if (productos.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999; padding: 20px;">No hay productos. Haz clic en "Agregar Producto"</td></tr>';
-                document.getElementById('productosCount').textContent = '0';
-                return;
-            }
-            
-            tbody.innerHTML = '';
-            
-            productos.forEach((prod, index) => {
-                const row = tbody.insertRow();
-                
-                const codigo = prod.codigo || prod.codigo_ean || '';
-                const nombre = prod.nombre || '';
-                const precio = prod.precio || 0;
-                
-                row.innerHTML = `
-                    <td><input type="text" value="${codigo}" onchange="actualizarProducto(${index}, 'codigo', this.value)"></td>
-                    <td><input type="text" value="${nombre}" onchange="actualizarProducto(${index}, 'nombre', this.value)"></td>
-                    <td><input type="number" step="0.01" value="${precio}" onchange="actualizarProducto(${index}, 'precio', parseFloat(this.value) || 0)"></td>
-                    <td><button class="btn-delete" onclick="eliminarProducto(${index})">×</button></td>
-                `;
+            const response = await fetch(`${API_URL}/admin/items/${prod.id}`, { 
+                method: 'DELETE' 
             });
             
-            document.getElementById('productosCount').textContent = productos.length;
-        }
-        
-        function actualizarProducto(index, campo, valor) {
-            if (index >= 0 && index < productos.length) {
-                productos[index][campo] = valor;
-                console.log(`✓ Producto ${index} actualizado:`, campo, '=', valor);
+            console.log('📥 Response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Error ${response.status}: ${errorText}`);
             }
+            
+            console.log('✅ Producto eliminado del servidor');
+            showToast('✅ Producto eliminado');
+        } catch (e) {
+            console.error('❌ Error eliminando:', e);
+            showToast('Error al eliminar: ' + e.message, 'error');
+            hideLoading();
+            return;
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // Eliminar del array local
+    productos.splice(index, 1);
+    renderProductos();
+}
+
+// ========================================
+// CARGAR FACTURA
+// ========================================
+async function cargarFactura() {
+    console.log('🔄 Cargando factura ID:', facturaId);
+    
+    if (!facturaId) {
+        alert('❌ Error: No se especificó ID de factura');
+        return;
+    }
+
+    showLoading();
+    
+    try {
+        console.log(`📡 GET ${API_URL}/admin/facturas/${facturaId}`);
+        
+        const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`);
+        
+        console.log('📥 Status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Error ${response.status}: ${errorText}`);
         }
         
-        function agregarProducto() {
-            productos.push({ 
-                codigo: '', 
-                nombre: 'Nuevo Producto', 
-                precio: 0, 
-                nuevo: true 
-            });
-            
-            renderProductos();
-            
-            const tbody = document.getElementById('productosBody');
-            const lastRow = tbody.lastElementChild;
-            if (lastRow) {
-                const firstInput = lastRow.querySelector('input');
-                if (firstInput) {
-                    firstInput.focus();
-                    firstInput.select();
+        const factura = await response.json();
+        console.log('✅ Factura recibida:', factura);
+        
+        // Guardar factura original
+        facturaOriginal = factura;
+        document.getElementById('debugInfo').textContent = JSON.stringify(factura, null, 2);
+        
+        // Cargar datos generales
+        document.getElementById('facturaId').textContent = factura.id || '-';
+        document.getElementById('establecimiento').value = factura.establecimiento || '';
+        document.getElementById('total').value = factura.total || factura.total_factura || 0;
+        
+        // Cargar fecha
+        if (factura.fecha) {
+            try {
+                let fechaStr = factura.fecha;
+                if (typeof fechaStr === 'string') {
+                    if (fechaStr.includes('T')) {
+                        fechaStr = fechaStr.split('T')[0];
+                    }
                 }
+                document.getElementById('fecha').value = fechaStr;
+            } catch (e) {
+                console.warn('⚠️ Error parseando fecha:', e);
             }
-            
-            showToast('Producto agregado');
         }
         
-        async function eliminarProducto(index) {
-            if (!confirm('¿Eliminar este producto?')) return;
+        // Cargar estado
+        const estado = factura.estado || factura.estado_validacion || 'pendiente';
+        const estadoBadge = document.getElementById('estadoBadge');
+        estadoBadge.textContent = estado;
+        estadoBadge.className = 'validation-badge badge-' + estado.toLowerCase().replace(' ', '_');
+        
+        // Cargar puntaje
+        if (factura.puntaje !== undefined && factura.puntaje !== null) {
+            document.getElementById('puntaje').textContent = factura.puntaje;
+        }
+        
+        // Cargar productos
+        console.log('🔍 Procesando productos...');
+        console.log('factura.productos:', factura.productos);
+        console.log('Es array?', Array.isArray(factura.productos));
+        console.log('Cantidad:', factura.productos?.length || 0);
+        
+        if (!factura.productos || !Array.isArray(factura.productos)) {
+            console.warn('⚠️ No hay productos o no es array');
+            productos = [];
+        } else {
+            productos = factura.productos.map((p, index) => {
+                console.log(`  Producto ${index}:`, p);
+                
+                return {
+                    id: p.id,
+                    codigo: p.codigo || p.codigo_ean || p.codigo_local || '',
+                    nombre: p.nombre || p.nombre_producto || p.descripcion || 'Sin nombre',
+                    precio: parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || 0,
+                    nuevo: false
+                };
+            });
             
-            const prod = productos[index];
-            console.log('🗑️ Intentando eliminar producto:', prod);
-            
+            console.log('✅ Productos mapeados:', productos);
+        }
+        
+        renderProductos();
+        await cargarImagen();
+        
+        console.log('✅ Factura cargada completamente');
+        
+    } catch (error) {
+        console.error('❌ ERROR:', error);
+        alert(`Error al cargar:\n${error.message}`);
+    } finally {
+        hideLoading();
+    }
+}
+
+// ========================================
+// CARGAR IMAGEN
+// ========================================
+async function cargarImagen() {
+    const img = document.getElementById('facturaImage');
+    const container = document.getElementById('imageContainer');
+    
+    try {
+        console.log('📷 Cargando imagen...');
+        
+        const timestamp = Date.now();
+        const imageUrl = `${API_URL}/admin/facturas/${facturaId}/imagen?t=${timestamp}`;
+        
+        img.onload = () => {
+            console.log('✅ Imagen cargada');
+            img.style.display = 'block';
+            resetZoom();
+        };
+        
+        img.onerror = () => {
+            console.error('❌ No hay imagen');
+            img.style.display = 'none';
+            container.innerHTML = `
+                <div style="color: white; text-align: center; padding: 40px;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">📸</div>
+                    <h3>Esta factura no tiene imagen</h3>
+                    <p style="color: #999; margin-top: 10px;">La imagen no se guardó durante el procesamiento</p>
+                </div>
+            `;
+        };
+        
+        img.src = imageUrl;
+        
+    } catch (error) {
+        console.error('❌ Error en cargarImagen:', error);
+    }
+}
+
+// ========================================
+// 🔧 GUARDAR CAMBIOS - VERSIÓN CORREGIDA
+// ========================================
+async function guardarCambios() {
+    console.log('💾 ============================================');
+    console.log('💾 INICIANDO GUARDADO DE CAMBIOS');
+    console.log('💾 ============================================');
+    showLoading();
+    
+    try {
+        // ====================================
+        // 1. GUARDAR DATOS GENERALES
+        // ====================================
+        const fechaValue = document.getElementById('fecha').value || null;
+        
+        const datosGenerales = {
+            establecimiento: document.getElementById('establecimiento').value.trim(),
+            total: parseFloat(document.getElementById('total').value) || 0
+        };
+        
+        if (fechaValue) {
+            datosGenerales.fecha = fechaValue;
+        }
+        
+        console.log('📝 Datos generales a guardar:');
+        console.log('   - Establecimiento:', datosGenerales.establecimiento);
+        console.log('   - Total:', datosGenerales.total);
+        console.log('   - Fecha:', datosGenerales.fecha || 'sin cambios');
+        console.log(`📡 PUT ${API_URL}/admin/facturas/${facturaId}`);
+        
+        const respGeneral = await fetch(`${API_URL}/admin/facturas/${facturaId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datosGenerales)
+        });
+        
+        console.log('📥 Response status (datos generales):', respGeneral.status);
+        
+        if (!respGeneral.ok) {
+            const errorText = await respGeneral.text();
+            console.error('❌ Error en datos generales:', errorText);
+            throw new Error(`Error datos generales: ${errorText}`);
+        }
+        
+        console.log('✅ Datos generales guardados');
+        
+        // ====================================
+        // 2. ACTUALIZAR PRODUCTOS EXISTENTES
+        // ====================================
+        console.log('\n🔄 Actualizando productos existentes...');
+        let productosActualizados = 0;
+        
+        for (const prod of productos) {
             if (!prod.nuevo && prod.id) {
-                try {
-                    showLoading();
-                    console.log(`📡 DELETE ${API_URL}/admin/items/${prod.id}`);
-                    
-                    const response = await fetch(`${API_URL}/admin/items/${prod.id}`, { 
-                        method: 'DELETE' 
-                    });
-                    
-                    console.log('📥 Response status:', response.status);
-                    
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`Error ${response.status}: ${errorText}`);
-                    }
-                    
-                    console.log('✅ Producto eliminado del servidor');
-                    showToast('✅ Producto eliminado');
-                } catch (e) {
-                    console.error('❌ Error eliminando:', e);
-                    alert('Error al eliminar: ' + e.message);
-                    hideLoading();
-                    return;
-                } finally {
-                    hideLoading();
-                }
-            }
-            
-            productos.splice(index, 1);
-            renderProductos();
-        }
-        
-        async function cargarFactura() {
-            console.log('🔄 Cargando factura ID:', facturaId);
-            
-            if (!facturaId) {
-                alert('❌ Error: No se especificó ID de factura');
-                return;
-            }
-
-            showLoading();
-            
-            try {
-                console.log(`📡 GET ${API_URL}/admin/facturas/${facturaId}`);
+                console.log(`\n  📦 Producto #${prod.id}:`);
+                console.log(`     - Nombre: ${prod.nombre}`);
+                console.log(`     - Precio: ${prod.precio}`);
+                console.log(`     - Código: ${prod.codigo || '(vacío)'}`);
                 
-                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`);
+                // 🔧 FIX CRÍTICO: Solo enviar código si NO está vacío
+                const itemData = {
+                    nombre: prod.nombre.trim(),
+                    precio: parseFloat(prod.precio) || 0
+                };
                 
-                console.log('📥 Status:', response.status);
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Error ${response.status}: ${errorText}`);
-                }
-                
-                const factura = await response.json();
-                console.log('✅ Factura recibida:', factura);
-                
-                facturaOriginal = factura;
-                document.getElementById('debugInfo').textContent = JSON.stringify(factura, null, 2);
-                
-                document.getElementById('facturaId').textContent = factura.id || '-';
-                document.getElementById('establecimiento').value = factura.establecimiento || '';
-                document.getElementById('total').value = factura.total || factura.total_factura || 0;
-                
-                if (factura.fecha) {
-                    try {
-                        let fechaStr = factura.fecha;
-                        if (typeof fechaStr === 'string') {
-                            if (fechaStr.includes('T')) {
-                                fechaStr = fechaStr.split('T')[0];
-                            }
-                        }
-                        document.getElementById('fecha').value = fechaStr;
-                    } catch (e) {
-                        console.warn('⚠️ Error parseando fecha:', e);
-                    }
-                }
-                
-                const estado = factura.estado || factura.estado_validacion || 'pendiente';
-                const estadoBadge = document.getElementById('estadoBadge');
-                estadoBadge.textContent = estado;
-                estadoBadge.className = 'validation-badge badge-' + estado.toLowerCase().replace(' ', '_');
-                
-                if (factura.puntaje !== undefined && factura.puntaje !== null) {
-                    document.getElementById('puntaje').textContent = factura.puntaje;
-                }
-                
-                console.log('🔍 Procesando productos...');
-                console.log('factura.productos:', factura.productos);
-                console.log('Es array?', Array.isArray(factura.productos));
-                console.log('Cantidad:', factura.productos?.length || 0);
-                
-                if (!factura.productos || !Array.isArray(factura.productos)) {
-                    console.warn('⚠️ No hay productos o no es array');
-                    productos = [];
+                // Solo incluir código si tiene valor
+                if (prod.codigo && prod.codigo.trim() !== '') {
+                    itemData.codigo_ean = prod.codigo.trim();
+                    console.log(`     ✓ Enviando código: ${itemData.codigo_ean}`);
                 } else {
-                    productos = factura.productos.map((p, index) => {
-                        console.log(`  Producto ${index}:`, p);
-                        
-                        return {
-                            id: p.id,
-                            codigo: p.codigo || p.codigo_ean || p.codigo_local || '',
-                            nombre: p.nombre || p.nombre_producto || p.descripcion || 'Sin nombre',
-                            precio: parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || 0,
-                            nuevo: false
-                        };
-                    });
-                    
-                    console.log('✅ Productos mapeados:', productos);
+                    console.log(`     ⚠️ Código vacío - NO se enviará (se preserva el existente)`);
                 }
                 
-                renderProductos();
-                await cargarImagen();
+                console.log(`     📡 PUT ${API_URL}/admin/items/${prod.id}`);
+                console.log('     📤 Payload:', JSON.stringify(itemData));
                 
-                console.log('✅ Factura cargada completamente');
-                
-            } catch (error) {
-                console.error('❌ ERROR:', error);
-                alert(`Error al cargar:\n${error.message}`);
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function cargarImagen() {
-            const img = document.getElementById('facturaImage');
-            const container = document.getElementById('imageContainer');
-            
-            try {
-                console.log('📷 Cargando imagen...');
-                
-                const timestamp = Date.now();
-                const imageUrl = `${API_URL}/admin/facturas/${facturaId}/imagen?t=${timestamp}`;
-                
-                img.onload = () => {
-                    console.log('✅ Imagen cargada');
-                    img.style.display = 'block';
-                    resetZoom();
-                };
-                
-                img.onerror = () => {
-                    console.error('❌ No hay imagen');
-                    img.style.display = 'none';
-                    container.innerHTML = `
-                        <div style="color: white; text-align: center; padding: 40px;">
-                            <div style="font-size: 48px; margin-bottom: 20px;">📸</div>
-                            <h3>Esta factura no tiene imagen</h3>
-                            <p style="color: #999; margin-top: 10px;">La imagen no se guardó durante el procesamiento</p>
-                        </div>
-                    `;
-                };
-                
-                img.src = imageUrl;
-                
-            } catch (error) {
-                console.error('❌ Error en cargarImagen:', error);
-            }
-        }
-
-        async function guardarCambios() {
-            console.log('💾 Guardando cambios...');
-            showLoading();
-            
-            try {
-                const fechaValue = document.getElementById('fecha').value || null;
-                
-                const datosGenerales = {
-                    establecimiento: document.getElementById('establecimiento').value.trim(),
-                    total: parseFloat(document.getElementById('total').value) || 0
-                };
-                
-                if (fechaValue) {
-                    datosGenerales.fecha = fechaValue;
-                }
-                
-                console.log('📝 Datos generales:', datosGenerales);
-                console.log(`📡 PUT ${API_URL}/admin/facturas/${facturaId}`);
-                
-                const respGeneral = await fetch(`${API_URL}/admin/facturas/${facturaId}`, {
+                const respProd = await fetch(`${API_URL}/admin/items/${prod.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(datosGenerales)
+                    body: JSON.stringify(itemData)
                 });
                 
-                console.log('📥 Response status:', respGeneral.status);
+                console.log('     📥 Response status:', respProd.status);
                 
-                if (!respGeneral.ok) {
-                    const errorText = await respGeneral.text();
-                    throw new Error(`Error datos generales: ${errorText}`);
+                if (!respProd.ok) {
+                    const respText = await respProd.text();
+                    console.error(`     ❌ Error actualizando item ${prod.id}`);
+                    console.error('     ❌ Response:', respText);
+                    throw new Error(`Error actualizando producto ${prod.nombre}: ${respText}`);
+                } else {
+                    const respData = await respProd.json();
+                    console.log('     ✅ Item actualizado:', respData);
+                    productosActualizados++;
                 }
-                
-                for (const prod of productos) {
-                    if (!prod.nuevo && prod.id) {
-                        console.log(`🔄 Actualizando item #${prod.id}`);
-                        console.log(`📡 PUT ${API_URL}/admin/items/${prod.id}`);
-                        
-                        const respProd = await fetch(`${API_URL}/admin/items/${prod.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                codigo_ean: prod.codigo,
-                                nombre: prod.nombre,
-                                precio: prod.precio
-                            })
-                        });
-                        
-                        console.log('📥 Response status:', respProd.status);
-                        
-                        if (!respProd.ok) {
-                            console.error(`❌ Error actualizando item ${prod.id}`);
-                        }
-                    }
-                }
-                
-                for (const prod of productos) {
-                    if (prod.nuevo && prod.nombre) {
-                        console.log('➕ Creando nuevo item:', prod);
-                        console.log(`📡 POST ${API_URL}/admin/facturas/${facturaId}/items`);
-                        
-                        const respNuevo = await fetch(`${API_URL}/admin/facturas/${facturaId}/items`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                codigo_ean: prod.codigo || null,
-                                nombre: prod.nombre,
-                                precio: prod.precio
-                            })
-                        });
-                        
-                        console.log('📥 Response status:', respNuevo.status);
-                        
-                        if (!respNuevo.ok) {
-                            console.error('❌ Error creando item');
-                        }
-                    }
-                }
-                
-                console.log('✅ Cambios guardados exitosamente');
-                showToast('✅ Cambios guardados exitosamente');
-                
-                setTimeout(() => cargarFactura(), 1500);
-                
-            } catch (error) {
-                console.error('❌ Error guardando:', error);
-                alert(`Error al guardar:\n${error.message}`);
-            } finally {
-                hideLoading();
             }
         }
         
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 's') {
-                e.preventDefault();
-                guardarCambios();
+        console.log(`\n✅ ${productosActualizados} productos actualizados`);
+        
+        // ====================================
+        // 3. CREAR PRODUCTOS NUEVOS
+        // ====================================
+        console.log('\n➕ Creando productos nuevos...');
+        let productosCreados = 0;
+        
+        for (const prod of productos) {
+            if (prod.nuevo && prod.nombre && prod.nombre.trim() !== '') {
+                console.log(`\n  🆕 Nuevo producto:`);
+                console.log(`     - Nombre: ${prod.nombre}`);
+                console.log(`     - Precio: ${prod.precio}`);
+                console.log(`     - Código: ${prod.codigo || '(sin código)'}`);
+                
+                const nuevoItemData = {
+                    nombre: prod.nombre.trim(),
+                    precio: parseFloat(prod.precio) || 0
+                };
+                
+                // Solo incluir código si tiene valor
+                if (prod.codigo && prod.codigo.trim() !== '') {
+                    nuevoItemData.codigo_ean = prod.codigo.trim();
+                    console.log(`     ✓ Con código: ${nuevoItemData.codigo_ean}`);
+                }
+                
+                console.log(`     📡 POST ${API_URL}/admin/facturas/${facturaId}/items`);
+                console.log('     📤 Payload:', JSON.stringify(nuevoItemData));
+                
+                const respNuevo = await fetch(`${API_URL}/admin/facturas/${facturaId}/items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(nuevoItemData)
+                });
+                
+                console.log('     📥 Response status:', respNuevo.status);
+                
+                if (!respNuevo.ok) {
+                    const respText = await respNuevo.text();
+                    console.error('     ❌ Error creando item');
+                    console.error('     ❌ Response:', respText);
+                    throw new Error(`Error creando producto ${prod.nombre}: ${respText}`);
+                } else {
+                    const respData = await respNuevo.json();
+                    console.log('     ✅ Item creado:', respData);
+                    productosCreados++;
+                }
             }
-            
-            if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                agregarProducto();
-            }
-        });
-
-        window.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 DOM cargado, iniciando...');
+        }
+        
+        console.log(`\n✅ ${productosCreados} productos nuevos creados`);
+        
+        // ====================================
+        // 4. FINALIZAR
+        // ====================================
+        console.log('\n💾 ============================================');
+        console.log('💾 GUARDADO COMPLETADO EXITOSAMENTE');
+        console.log(`💾 - Datos generales: ✅`);
+        console.log(`💾 - Productos actualizados: ${productosActualizados}`);
+        console.log(`💾 - Productos nuevos: ${productosCreados}`);
+        console.log('💾 ============================================\n');
+        
+        showToast('✅ Cambios guardados exitosamente');
+        
+        // Recargar factura después de 1.5 segundos
+        setTimeout(() => {
+            console.log('🔄 Recargando factura...');
             cargarFactura();
-        });
+        }, 1500);
+        
+    } catch (error) {
+        console.error('\n❌ ============================================');
+        console.error('❌ ERROR AL GUARDAR');
+        console.error('❌ ============================================');
+        console.error('❌ Error:', error);
+        console.error('❌ Stack:', error.stack);
+        console.error('❌ ============================================\n');
+        
+        showToast('❌ Error al guardar: ' + error.message, 'error');
+        alert(`Error al guardar:\n\n${error.message}\n\nRevisa la consola para más detalles.`);
+    } finally {
+        hideLoading();
+    }
+}
+
+// ========================================
+// KEYBOARD SHORTCUTS
+// ========================================
+document.addEventListener('keydown', (e) => {
+    // Ctrl+S para guardar
+    if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        guardarCambios();
+    }
+    
+    // Ctrl+N para agregar producto
+    if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        agregarProducto();
+    }
+});
+
+// ========================================
+// INICIALIZAR
+// ========================================
+window.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 ============================================');
+    console.log('🚀 LECFAC EDITOR INICIADO');
+    console.log('🚀 ============================================');
+    console.log('🚀 Factura ID:', facturaId);
+    console.log('🚀 API URL:', API_URL);
+    console.log('🚀 ============================================\n');
+    cargarFactura();
+});
     </script>
 </body>
 </html>
