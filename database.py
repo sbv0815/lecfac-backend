@@ -197,87 +197,166 @@ def create_postgresql_tables():
         ''')
         print("✓ Tabla 'productos_maestros' creada")
         
-        # 1.3. PRECIOS_PRODUCTOS (NUEVA - Historial global)
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS precios_productos (
-            id SERIAL PRIMARY KEY,
-            producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestros(id),
-            establecimiento_id INTEGER NOT NULL REFERENCES establecimientos(id),
+        # ============================================
+        # 🔧 ARREGLAR TABLA precios_productos
+        # ============================================
+        print("🔧 Verificando/arreglando tabla precios_productos...")
+        
+        # Verificar si la tabla existe
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'precios_productos'
+            )
+        """)
+        tabla_existe = cursor.fetchone()[0]
+        
+        if tabla_existe:
+            print("⚠️ Tabla precios_productos existe, eliminando constraints viejos...")
             
-            precio INTEGER NOT NULL,
-            fecha_registro DATE NOT NULL,
+            # Eliminar TODOS los constraints de foreign key viejos
+            cursor.execute("""
+                SELECT con.conname
+                FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                WHERE rel.relname = 'precios_productos'
+                AND con.contype = 'f'
+            """)
+            constraints = cursor.fetchall()
             
-            -- Origen del dato
-            usuario_id INTEGER REFERENCES usuarios(id),
-            factura_id INTEGER,
+            for constraint in constraints:
+                constraint_name = constraint[0]
+                print(f"   🗑️ Eliminando constraint: {constraint_name}")
+                try:
+                    cursor.execute(f"ALTER TABLE precios_productos DROP CONSTRAINT IF EXISTS {constraint_name}")
+                    conn.commit()
+                except Exception as e:
+                    print(f"   ⚠️ Error eliminando {constraint_name}: {e}")
+                    conn.rollback()
             
-            -- Validación colaborativa
-            verificado BOOLEAN DEFAULT FALSE,
-            es_outlier BOOLEAN DEFAULT FALSE,
-            votos_confianza INTEGER DEFAULT 0,
+            # Verificar columnas existentes
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'precios_productos'
+            """)
+            columnas_existentes = [row[0] for row in cursor.fetchall()]
+            print(f"   📋 Columnas existentes: {columnas_existentes}")
             
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            # Agregar columnas faltantes si no existen
+            if 'producto_maestro_id' not in columnas_existentes:
+                print("   ➕ Agregando columna producto_maestro_id...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN producto_maestro_id INTEGER")
+                conn.commit()
             
-            CHECK (precio > 0)
-        )
-        ''')
+            if 'establecimiento_id' not in columnas_existentes:
+                print("   ➕ Agregando columna establecimiento_id...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN establecimiento_id INTEGER")
+                conn.commit()
+            
+            if 'fecha_registro' not in columnas_existentes:
+                print("   ➕ Agregando columna fecha_registro...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN fecha_registro DATE")
+                conn.commit()
+            
+            if 'usuario_id' not in columnas_existentes:
+                print("   ➕ Agregando columna usuario_id...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN usuario_id INTEGER")
+                conn.commit()
+            
+            if 'factura_id' not in columnas_existentes:
+                print("   ➕ Agregando columna factura_id...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN factura_id INTEGER")
+                conn.commit()
+            
+            if 'verificado' not in columnas_existentes:
+                print("   ➕ Agregando columna verificado...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN verificado BOOLEAN DEFAULT FALSE")
+                conn.commit()
+            
+            if 'es_outlier' not in columnas_existentes:
+                print("   ➕ Agregando columna es_outlier...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN es_outlier BOOLEAN DEFAULT FALSE")
+                conn.commit()
+            
+            if 'votos_confianza' not in columnas_existentes:
+                print("   ➕ Agregando columna votos_confianza...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN votos_confianza INTEGER DEFAULT 0")
+                conn.commit()
+            
+            if 'fecha_creacion' not in columnas_existentes:
+                print("   ➕ Agregando columna fecha_creacion...")
+                cursor.execute("ALTER TABLE precios_productos ADD COLUMN fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                conn.commit()
+            
+            # Agregar constraints CORRECTOS
+            print("   ✅ Agregando constraints correctos...")
+            try:
+                cursor.execute("""
+                    ALTER TABLE precios_productos 
+                    ADD CONSTRAINT precios_productos_producto_maestro_fkey 
+                    FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id)
+                """)
+                conn.commit()
+                print("   ✅ FK producto_maestro_id → productos_maestros")
+            except Exception as e:
+                print(f"   ⚠️ Constraint producto_maestro ya existe: {e}")
+                conn.rollback()
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE precios_productos 
+                    ADD CONSTRAINT precios_productos_establecimiento_fkey 
+                    FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id)
+                """)
+                conn.commit()
+                print("   ✅ FK establecimiento_id → establecimientos")
+            except Exception as e:
+                print(f"   ⚠️ Constraint establecimiento ya existe: {e}")
+                conn.rollback()
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE precios_productos 
+                    ADD CONSTRAINT precios_productos_usuario_fkey 
+                    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+                """)
+                conn.commit()
+                print("   ✅ FK usuario_id → usuarios")
+            except Exception as e:
+                print(f"   ⚠️ Constraint usuario ya existe: {e}")
+                conn.rollback()
+            
+        else:
+            # Crear tabla desde cero con estructura correcta
+            print("✨ Creando tabla precios_productos desde cero...")
+            cursor.execute('''
+            CREATE TABLE precios_productos (
+                id SERIAL PRIMARY KEY,
+                producto_maestro_id INTEGER NOT NULL,
+                establecimiento_id INTEGER NOT NULL,
+                precio INTEGER NOT NULL,
+                fecha_registro DATE NOT NULL,
+                usuario_id INTEGER,
+                factura_id INTEGER,
+                verificado BOOLEAN DEFAULT FALSE,
+                es_outlier BOOLEAN DEFAULT FALSE,
+                votos_confianza INTEGER DEFAULT 0,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                CONSTRAINT precios_productos_producto_maestro_fkey 
+                    FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id),
+                CONSTRAINT precios_productos_establecimiento_fkey 
+                    FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id),
+                CONSTRAINT precios_productos_usuario_fkey 
+                    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                
+                CHECK (precio > 0)
+            )
+            ''')
+            conn.commit()
         
-        # Agregar columnas si la tabla existe pero le faltan columnas
-        try:
-            cursor.execute("""
-                ALTER TABLE precios_productos 
-                ADD COLUMN IF NOT EXISTS producto_maestro_id INTEGER REFERENCES productos_maestros(id)
-            """)
-            print("✓ Columna 'producto_maestro_id' agregada a precios_productos")
-        except Exception as e:
-            print(f"⚠️ Columna producto_maestro_id: {e}")
-        
-        try:
-            cursor.execute("""
-                ALTER TABLE precios_productos 
-                ADD COLUMN IF NOT EXISTS establecimiento_id INTEGER REFERENCES establecimientos(id)
-            """)
-            print("✓ Columna 'establecimiento_id' agregada a precios_productos")
-        except Exception as e:
-            print(f"⚠️ Columna establecimiento_id: {e}")
-        
-        try:
-            cursor.execute("""
-                ALTER TABLE precios_productos 
-                ADD COLUMN IF NOT EXISTS fecha_registro DATE
-            """)
-            print("✓ Columna 'fecha_registro' agregada a precios_productos")
-        except Exception as e:
-            print(f"⚠️ Columna fecha_registro: {e}")
-        
-        try:
-            cursor.execute("""
-                ALTER TABLE precios_productos 
-                ADD COLUMN IF NOT EXISTS verificado BOOLEAN DEFAULT FALSE
-            """)
-            print("✓ Columna 'verificado' agregada a precios_productos")
-        except Exception as e:
-            print(f"⚠️ Columna verificado: {e}")
-        
-        try:
-            cursor.execute("""
-                ALTER TABLE precios_productos 
-                ADD COLUMN IF NOT EXISTS es_outlier BOOLEAN DEFAULT FALSE
-            """)
-            print("✓ Columna 'es_outlier' agregada a precios_productos")
-        except Exception as e:
-            print(f"⚠️ Columna es_outlier: {e}")
-        
-        try:
-            cursor.execute("""
-                ALTER TABLE precios_productos 
-                ADD COLUMN IF NOT EXISTS votos_confianza INTEGER DEFAULT 0
-            """)
-            print("✓ Columna 'votos_confianza' agregada a precios_productos")
-        except Exception as e:
-            print(f"⚠️ Columna votos_confianza: {e}")
-        
-        print("✓ Tabla 'precios_productos' creada/actualizada")
+        print("✅ Tabla 'precios_productos' configurada correctamente")
         
         # ============================================
         # NIVEL 2: BASE LOCAL (POR USUARIO)
@@ -327,9 +406,11 @@ def create_postgresql_tables():
                 ALTER TABLE facturas 
                 ADD COLUMN IF NOT EXISTS establecimiento_id INTEGER REFERENCES establecimientos(id)
             """)
-            print("✓ Columna 'establecimiento_id' agregada a facturas")
+            conn.commit()
+            print("✓ Columna 'establecimiento_id' verificada en facturas")
         except Exception as e:
-            print(f"⚠️ Columna establecimiento_id ya existe o error: {e}")
+            print(f"⚠️ Columna establecimiento_id: {e}")
+            conn.rollback()
         
         print("✓ Tabla 'facturas' actualizada")
         
@@ -410,35 +491,33 @@ def create_postgresql_tables():
         )
         ''')
         
-        # Agregar columna producto_maestro_id si no existe
+        # Agregar columnas faltantes en patrones_compra
         try:
             cursor.execute("""
                 ALTER TABLE patrones_compra 
                 ADD COLUMN IF NOT EXISTS producto_maestro_id INTEGER REFERENCES productos_maestros(id)
             """)
-            print("✓ Columna 'producto_maestro_id' agregada a patrones_compra")
+            conn.commit()
         except Exception as e:
-            print(f"⚠️ Columna producto_maestro_id ya existe: {e}")
+            conn.rollback()
         
-        # Agregar columna establecimiento_preferido_id si no existe
         try:
             cursor.execute("""
                 ALTER TABLE patrones_compra 
                 ADD COLUMN IF NOT EXISTS establecimiento_preferido_id INTEGER REFERENCES establecimientos(id)
             """)
-            print("✓ Columna 'establecimiento_preferido_id' agregada a patrones_compra")
+            conn.commit()
         except Exception as e:
-            print(f"⚠️ Columna establecimiento_preferido_id ya existe: {e}")
+            conn.rollback()
         
-        # Agregar columna precio_promedio_pagado si no existe
         try:
             cursor.execute("""
                 ALTER TABLE patrones_compra 
                 ADD COLUMN IF NOT EXISTS precio_promedio_pagado INTEGER
             """)
-            print("✓ Columna 'precio_promedio_pagado' agregada a patrones_compra")
+            conn.commit()
         except Exception as e:
-            print(f"⚠️ Columna precio_promedio_pagado ya existe: {e}")
+            conn.rollback()
         
         print("✓ Tabla 'patrones_compra' actualizada")
         
@@ -569,11 +648,10 @@ def create_postgresql_tables():
         ''')
         
         # ============================================
-        # ÍNDICES OPTIMIZADOS (con manejo robusto de errores)
+        # ÍNDICES OPTIMIZADOS
         # ============================================
         print("📊 Creando índices optimizados...")
         
-        # Función helper para crear índices con rollback automático
         def crear_indice_seguro(sql_statement, descripcion):
             try:
                 cursor.execute(sql_statement)
@@ -581,87 +659,51 @@ def create_postgresql_tables():
                 return True
             except Exception as e:
                 conn.rollback()
-                print(f"⚠️ Saltando índice '{descripcion}': columna no existe")
                 return False
         
         # Índices para establecimientos
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)', 'establecimientos.cadena'):
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)', 'establecimientos.ciudad')
-            crear_indice_seguro('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)', 'establecimientos.nombre')
-            print("✓ Índices de establecimientos creados")
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)', 'establecimientos.cadena')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)', 'establecimientos.ciudad')
+        crear_indice_seguro('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)', 'establecimientos.nombre')
         
         # Índices para productos_maestros
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)', 'productos_maestros.codigo_ean'):
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)', 'productos_maestros.nombre')
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)', 'productos_maestros.categoria')
-            print("✓ Índices de productos_maestros creados")
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)', 'productos_maestros.codigo_ean')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)', 'productos_maestros.nombre')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)', 'productos_maestros.categoria')
         
-        # Índices para precios_productos (nueva estructura)
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_producto_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)', 'precios_productos nueva'):
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)', 'precios_productos.establecimiento')
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)', 'precios_productos.usuario')
-            crear_indice_seguro('''CREATE UNIQUE INDEX IF NOT EXISTS idx_precios_unico_dia 
-                ON precios_productos(producto_maestro_id, establecimiento_id, fecha_registro, usuario_id)''', 'precios_productos unique')
-            print("✓ Índices de precios_productos (nueva estructura) creados")
+        # Índices para precios_productos
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_producto_maestro_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)', 'precios_productos.producto_fecha')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)', 'precios_productos.establecimiento')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)', 'precios_productos.usuario')
         
-        # Índices para facturas (intentar con nueva estructura primero)
-        indices_facturas_creados = 0
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)', 'facturas.usuario'):
-            indices_facturas_creados += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)', 'facturas.fecha'):
-            indices_facturas_creados += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)', 'facturas.establecimiento_id'):
-            indices_facturas_creados += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_usuario_fecha ON facturas(usuario_id, fecha_factura DESC)', 'facturas.usuario_fecha'):
-            indices_facturas_creados += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado_validacion)', 'facturas.estado'):
-            indices_facturas_creados += 1
-        if indices_facturas_creados > 0:
-            print(f"✓ {indices_facturas_creados}/5 índices de facturas creados")
+        # Índices para facturas
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)', 'facturas.usuario')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)', 'facturas.fecha')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)', 'facturas.establecimiento_id')
         
         # Índices para items_factura
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)', 'items_factura.factura_id'):
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)', 'items_factura.producto')
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)', 'items_factura.usuario')
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_usuario_fecha ON items_factura(usuario_id, fecha_creacion DESC)', 'items_factura.usuario_fecha')
-            print("✓ Índices de items_factura creados")
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)', 'items_factura.factura_id')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)', 'items_factura.producto')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)', 'items_factura.usuario')
         
         # Índices para gastos_mensuales
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)', 'gastos_mensuales.usuario'):
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_gastos_establecimiento ON gastos_mensuales(establecimiento_id)', 'gastos_mensuales.establecimiento')
-            print("✓ Índices de gastos_mensuales creados")
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)', 'gastos_mensuales.usuario')
         
         # Índices para patrones_compra
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario_maestro ON patrones_compra(usuario_id, producto_maestro_id)', 'patrones_compra nueva'):
-            crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_recordatorios ON patrones_compra(usuario_id, recordatorio_activo, proxima_compra_estimada)', 'patrones_compra.recordatorios')
-            print("✓ Índices de patrones_compra (nueva estructura) creados")
-        else:
-            # Intentar con estructura legacy
-            if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)', 'patrones_compra legacy'):
-                print("✓ Índices de patrones_compra (legacy) creados")
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario_maestro ON patrones_compra(usuario_id, producto_maestro_id)', 'patrones_compra.usuario_producto')
         
-        # Índices legacy
-        indices_legacy = 0
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)', 'productos_maestro.ean'):
-            indices_legacy += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)', 'precios_historicos.fecha'):
-            indices_legacy += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_ocr_logs_factura ON ocr_logs(factura_id)', 'ocr_logs.factura'):
-            indices_legacy += 1
-        if crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_ocr_logs_created ON ocr_logs(created_at DESC)', 'ocr_logs.created'):
-            indices_legacy += 1
-        if indices_legacy > 0:
-            print(f"✓ {indices_legacy} índices legacy creados")
+        print("✓ Índices creados")
         
         conn.commit()
         conn.close()
-        print("✅ Tablas PostgreSQL creadas/actualizadas con NUEVA ARQUITECTURA")
+        print("✅ Base de datos PostgreSQL configurada correctamente")
         
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
         import traceback
         traceback.print_exc()
         if conn:
+            conn.rollback()
             conn.close()
 
 def create_sqlite_tables():
