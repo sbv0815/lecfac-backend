@@ -99,7 +99,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
         # 🔥 ACTUALIZADO: Modelo Haiku 3.5 con 10k tokens
         message = client.messages.create(
-            model="claude-haiku-3-5",  # 🔥 Modelo correcto para volumen
+            model="claude-3-5-haiku-20241022",  # 🔥 Nombre correcto del modelo
             max_tokens=10000,  # 🔥 Haiku 3.5 soporta 10k tokens
             temperature=0,
             messages=[{
