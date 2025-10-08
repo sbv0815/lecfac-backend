@@ -710,50 +710,6 @@ def create_postgresql_tables():
         )
         ''')
 
-        -- Tabla para guardar correcciones manuales
-CREATE TABLE IF NOT EXISTS correcciones_productos (
-    id SERIAL PRIMARY KEY,
-    
-    -- Datos originales del OCR (lo que detectó mal)
-    nombre_ocr TEXT NOT NULL,           -- "BANANO URABA"
-    codigo_ocr TEXT,                    -- "" (vacío o código malo)
-    
-    -- Datos corregidos manualmente
-    codigo_correcto TEXT NOT NULL,      -- "7707240870101"
-    nombre_correcto TEXT,               -- Opcional: nombre normalizado
-    
-    -- Metadata para matching
-    nombre_normalizado TEXT,            -- "banano uraba" (lowercase, sin tildes)
-    establecimiento_id INTEGER REFERENCES establecimientos(id),
-    
-    -- Auditoría
-    factura_id INTEGER REFERENCES facturas(id),
-    usuario_id INTEGER,
-    fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    veces_aplicado INTEGER DEFAULT 0,   -- Contador de cuántas veces se reutilizó
-    
-    -- Índices para búsqueda rápida
-    UNIQUE(nombre_normalizado, establecimiento_id)
-);
-
--- Índices para búsquedas eficientes
-CREATE INDEX idx_correcciones_nombre ON correcciones_productos(nombre_normalizado);
-CREATE INDEX idx_correcciones_establecimiento ON correcciones_productos(establecimiento_id);
-
--- Función para normalizar nombres (quitar tildes, lowercase, trim)
-CREATE OR REPLACE FUNCTION normalizar_nombre(texto TEXT) 
-RETURNS TEXT AS $$
-BEGIN
-    RETURN LOWER(
-        TRIM(
-            TRANSLATE(texto, 
-                'áéíóúÁÉÍÓÚñÑ', 
-                'aeiouAEIOUnN'
-            )
-        )
-    );
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
         
         # ============================================
         # ÍNDICES OPTIMIZADOS
