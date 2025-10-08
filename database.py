@@ -475,49 +475,104 @@ def create_postgresql_tables():
         # ============================================
         print("📊 Creando índices optimizados...")
         
-        # Índices para establecimientos
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)')
-        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)')
+        try:
+            # Índices para establecimientos
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)')
+            cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)')
+            print("✓ Índices de establecimientos creados")
+        except Exception as e:
+            print(f"⚠️ Error en índices establecimientos: {e}")
         
-        # Índices para productos_maestros
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)')
+        try:
+            # Índices para productos_maestros
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)')
+            print("✓ Índices de productos_maestros creados")
+        except Exception as e:
+            print(f"⚠️ Error en índices productos_maestros: {e}")
         
-        # Índices para precios_productos
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)')
-        cursor.execute('''CREATE UNIQUE INDEX IF NOT EXISTS idx_precios_unico_dia 
-            ON precios_productos(producto_maestro_id, establecimiento_id, fecha_registro, usuario_id)''')
+        try:
+            # Índices para precios_productos (verificar que existan las columnas)
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'precios_productos' AND column_name = 'producto_maestro_id'
+            """)
+            if cursor.fetchone():
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_producto_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)')
+                cursor.execute('''CREATE UNIQUE INDEX IF NOT EXISTS idx_precios_unico_dia 
+                    ON precios_productos(producto_maestro_id, establecimiento_id, fecha_registro, usuario_id)''')
+                print("✓ Índices de precios_productos creados")
+            else:
+                print("⚠️ Tabla precios_productos no tiene estructura nueva, saltando índices")
+        except Exception as e:
+            print(f"⚠️ Error en índices precios_productos: {e}")
         
-        # Índices para facturas
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario_fecha ON facturas(usuario_id, fecha_factura DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado_validacion)')
+        try:
+            # Índices para facturas
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_usuario_fecha ON facturas(usuario_id, fecha_factura DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_facturas_estado ON facturas(estado_validacion)')
+            print("✓ Índices de facturas creados")
+        except Exception as e:
+            print(f"⚠️ Error en índices facturas: {e}")
         
-        # Índices para items_factura
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_usuario_fecha ON items_factura(usuario_id, fecha_creacion DESC)')
+        try:
+            # Índices para items_factura (verificar que exista la tabla)
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'items_factura' AND column_name = 'producto_maestro_id'
+            """)
+            if cursor.fetchone():
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_items_usuario_fecha ON items_factura(usuario_id, fecha_creacion DESC)')
+                print("✓ Índices de items_factura creados")
+            else:
+                print("⚠️ Tabla items_factura no disponible, saltando índices")
+        except Exception as e:
+            print(f"⚠️ Error en índices items_factura: {e}")
         
-        # Índices para gastos_mensuales
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_gastos_establecimiento ON gastos_mensuales(establecimiento_id)')
+        try:
+            # Índices para gastos_mensuales
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_gastos_establecimiento ON gastos_mensuales(establecimiento_id)')
+            print("✓ Índices de gastos_mensuales creados")
+        except Exception as e:
+            print(f"⚠️ Error en índices gastos_mensuales: {e}")
         
-        # Índices para patrones_compra
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_recordatorios ON patrones_compra(usuario_id, recordatorio_activo, proxima_compra_estimada)')
+        try:
+            # Índices para patrones_compra (verificar columna producto_maestro_id)
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'patrones_compra' AND column_name = 'producto_maestro_id'
+            """)
+            if cursor.fetchone():
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_recordatorios ON patrones_compra(usuario_id, recordatorio_activo, proxima_compra_estimada)')
+                print("✓ Índices de patrones_compra creados")
+            else:
+                # Usar producto_id (legacy)
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_patrones_usuario ON patrones_compra(usuario_id)')
+                print("✓ Índices de patrones_compra (legacy) creados")
+        except Exception as e:
+            print(f"⚠️ Error en índices patrones_compra: {e}")
         
-        # Índices legacy
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_factura ON ocr_logs(factura_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_created ON ocr_logs(created_at DESC)')
+        try:
+            # Índices legacy
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_ean ON productos_maestro(codigo_ean)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_precios_fecha ON precios_historicos(fecha_reporte DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_factura ON ocr_logs(factura_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ocr_logs_created ON ocr_logs(created_at DESC)')
+            print("✓ Índices legacy creados")
+        except Exception as e:
+            print(f"⚠️ Error en índices legacy: {e}")
         
         conn.commit()
         conn.close()
@@ -1107,7 +1162,4 @@ def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usu
         print(f"Error confirmando producto: {e}")
         conn.rollback()
         conn.close()
-        return False
-        if conn:
-            conn.close()
         return False
