@@ -562,6 +562,22 @@ async def detectar_cambios_precio(dias: int = 30):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# En admin_dashboard.py - AGREGAR este endpoint:
+
+@app.delete("/admin/items/{item_id}")
+async def delete_item(item_id: int, db: Session = Depends(get_personal_db)):
+    """Eliminar un item de factura"""
+    item = db.query(ItemFactura).filter(ItemFactura.id == item_id).first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+    
+    factura_id = item.factura_id
+    db.delete(item)
+    db.commit()
+    
+    return {"success": True, "factura_id": factura_id}
+
 
 @router.get("/productos/{producto_id}/comparar-establecimientos")
 async def comparar_precios_establecimientos(producto_id: int):
