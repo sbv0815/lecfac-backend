@@ -633,22 +633,22 @@ async def update_item(item_id: int, request: dict):
     try:
         # Obtener datos del request
         nombre = request.get("nombre")
-        codigo = request.get("codigo")
+        codigo = request.get("codigo")  # Puede ser None o vacío
         precio = request.get("precio")
         cantidad = request.get("cantidad", 1)
         
         if not nombre or precio is None:
             raise HTTPException(status_code=400, detail="Nombre y precio son requeridos")
         
-        # Verificar que el item existe
+        # Verificar que el item existe Y obtener el código actual
         if database_type == "postgresql":
             cursor.execute(
-                "SELECT factura_id, usuario_id FROM items_factura WHERE id = %s",
+                "SELECT factura_id, usuario_id, codigo_leido FROM items_factura WHERE id = %s",
                 (item_id,)
             )
         else:
             cursor.execute(
-                "SELECT factura_id, usuario_id FROM items_factura WHERE id = ?",
+                "SELECT factura_id, usuario_id, codigo_leido FROM items_factura WHERE id = ?",
                 (item_id,)
             )
         
@@ -659,6 +659,14 @@ async def update_item(item_id: int, request: dict):
         
         factura_id = resultado[0]
         usuario_id = resultado[1]
+        codigo_actual = resultado[2]
+        
+        # Si no viene código en el request O está vacío, mantener el actual
+        if not codigo or codigo.strip() == '':
+            codigo = codigo_actual
+            print(f"✓ Manteniendo código actual: {codigo_actual}")
+        else:
+            print(f"✓ Actualizando código: {codigo_actual} → {codigo}")
         
         # Si hay código, intentar vincular con producto maestro
         producto_maestro_id = None
@@ -752,6 +760,8 @@ async def update_item(item_id: int, request: dict):
         
         conn.commit()
         conn.close()
+        
+        print(f"✅ Item {item_id} actualizado: {nombre} - ${precio} - Código: {codigo}")
         
         return {
             "success": True,
