@@ -167,7 +167,6 @@ def create_postgresql_tables():
         print("✓ Tabla 'establecimientos' creada")
         
         # 1.2. PRODUCTOS_MAESTROS (NUEVA - Catálogo global unificado)
-        # 1.2. PRODUCTOS_MAESTROS (NUEVA - Catálogo global unificado)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_maestros (
             id SERIAL PRIMARY KEY,
@@ -199,17 +198,15 @@ def create_postgresql_tables():
         ''')
         print("✓ Tabla 'productos_maestros' creada")
         
-        # 🔥 AGREGAR DESPUÉS: Eliminar constraint viejo si existe y agregar el correcto
+        # 🔥 CORREGIR CONSTRAINT de productos_maestros si existe
         print("🔧 Corrigiendo constraints de productos_maestros...")
         try:
-            # Primero eliminar constraint viejo
             cursor.execute("""
                 ALTER TABLE productos_maestros 
                 DROP CONSTRAINT IF EXISTS productos_maestros_codigo_ean_check
             """)
             conn.commit()
             
-            # Agregar constraint correcto
             cursor.execute("""
                 ALTER TABLE productos_maestros 
                 ADD CONSTRAINT productos_maestros_codigo_ean_check 
@@ -218,8 +215,32 @@ def create_postgresql_tables():
             conn.commit()
             print("✅ Constraint actualizado: códigos PLU (3+ dígitos) permitidos")
         except Exception as e:
-            print(f"⚠️ Error actualizando constraint: {e}")
+            print(f"⚠️ Constraint ya correcto o error menor: {e}")
             conn.rollback()
+        
+        # 1.3. PRECIOS_PRODUCTOS (MIGRACIÓN INTELIGENTE)
+        print("🔧 Configurando tabla precios_productos...")
+        
+        # Verificar si la tabla existe
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'precios_productos'
+            )
+        """)
+        tabla_precios_existe = cursor.fetchone()[0]
+        
+        if tabla_precios_existe:
+            print("   📋 Tabla precios_productos existe, verificando estructura...")
+            
+            # Obtener columnas existentes
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns 
+                WHERE table_name = 'precios_productos'
+            """)
+            columnas_existentes = [row[0] for row in cursor.fetchall()]
+            print(f"   📊 Columnas actuales: {', '.join(columnas_existentes)}")
             
             # Agregar establecimiento_id si no existe
             if 'establecimiento_id' not in columnas_existentes:
@@ -232,24 +253,10 @@ def create_postgresql_tables():
                     conn.commit()
                     print("   ✅ Columna establecimiento_id agregada")
                 except Exception as e:
-                    print(f"   ❌ Error: {e}")
+                    print(f"   ⚠️ Error: {e}")
                     conn.rollback()
             
-            # Agregar producto_maestro_id si no existe (en lugar de producto_id)
-            if 'producto_maestro_id' not in columnas_existentes and 'producto_id' not in columnas_existentes:
-                print("   ➕ Agregando columna producto_maestro_id...")
-                try:
-                    cursor.execute("""
-                        ALTER TABLE precios_productos 
-                        ADD COLUMN producto_maestro_id INTEGER
-                    """)
-                    conn.commit()
-                    print("   ✅ Columna producto_maestro_id agregada")
-                except Exception as e:
-                    print(f"   ❌ Error: {e}")
-                    conn.rollback()
-            
-            # Si tiene producto_id, renombrarlo a producto_maestro_id
+            # Manejar producto_id vs producto_maestro_id
             if 'producto_id' in columnas_existentes and 'producto_maestro_id' not in columnas_existentes:
                 print("   🔄 Renombrando producto_id → producto_maestro_id...")
                 try:
@@ -259,8 +266,22 @@ def create_postgresql_tables():
                     """)
                     conn.commit()
                     print("   ✅ Columna renombrada")
+                    columnas_existentes.remove('producto_id')
+                    columnas_existentes.append('producto_maestro_id')
                 except Exception as e:
-                    print(f"   ❌ Error: {e}")
+                    print(f"   ⚠️ Error: {e}")
+                    conn.rollback()
+            elif 'producto_maestro_id' not in columnas_existentes and 'producto_id' not in columnas_existentes:
+                print("   ➕ Agregando columna producto_maestro_id...")
+                try:
+                    cursor.execute("""
+                        ALTER TABLE precios_productos 
+                        ADD COLUMN producto_maestro_id INTEGER
+                    """)
+                    conn.commit()
+                    print("   ✅ Columna producto_maestro_id agregada")
+                except Exception as e:
+                    print(f"   ⚠️ Error: {e}")
                     conn.rollback()
             
             # Agregar otras columnas faltantes
@@ -276,16 +297,8 @@ def create_postgresql_tables():
                 'fecha_creacion': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
             }
             
-            # Recargar columnas después de cambios
-            cursor.execute("""
-                SELECT column_name
-                FROM information_schema.columns 
-                WHERE table_name = 'precios_productos'
-            """)
-            columnas_existentes_actualizadas = [row[0] for row in cursor.fetchall()]
-            
             for columna, tipo in columnas_requeridas.items():
-                if columna not in columnas_existentes_actualizadas:
+                if columna not in columnas_existentes:
                     print(f"   ➕ Agregando columna {columna}...")
                     try:
                         cursor.execute(f"""
@@ -297,7 +310,7 @@ def create_postgresql_tables():
                         print(f"   ⚠️ {columna}: {e}")
                         conn.rollback()
             
-            # Eliminar constraints viejos
+            # Limpiar y recrear constraints
             print("   🔧 Limpiando constraints viejos...")
             cursor.execute("""
                 SELECT con.conname
@@ -354,22 +367,10 @@ def create_postgresql_tables():
             except Exception as e:
                 print(f"   ⚠️ FK usuario: {e}")
                 conn.rollback()
-            
-            # Verificar estructura final
-            cursor.execute("""
-                SELECT column_name, data_type
-                FROM information_schema.columns 
-                WHERE table_name = 'precios_productos'
-                ORDER BY ordinal_position
-            """)
-            columnas_finales = cursor.fetchall()
-            print("   📋 Estructura final:")
-            for col in columnas_finales:
-                print(f"      - {col[0]}: {col[1]}")
 
         else:
             # Crear tabla desde cero con estructura correcta
-            print("✨ Creando tabla precios_productos desde cero...")
+            print("   ✨ Creando tabla precios_productos desde cero...")
             cursor.execute('''
             CREATE TABLE precios_productos (
                 id SERIAL PRIMARY KEY,
@@ -390,7 +391,7 @@ def create_postgresql_tables():
                 CONSTRAINT precios_productos_establecimiento_fkey 
                     FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id),
                 CONSTRAINT precios_productos_usuario_fkey 
-                    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                    FOREIGN KEY (usuario_id) REFERENCIAS usuarios(id),
                 
                 CHECK (precio > 0)
             )
@@ -588,7 +589,6 @@ def create_postgresql_tables():
         ''')
         print("✓ Tabla 'matching_logs' creada")
         
-        # 3.3. CORRECCIONES_PRODUCTOS (NUEVA - Sistema de aprendizaje)
         # 3.3. CORRECCIONES_PRODUCTOS (Sistema de aprendizaje)
         print("🧠 Verificando tabla correcciones_productos...")
         
@@ -601,7 +601,7 @@ def create_postgresql_tables():
         tabla_correcciones_existe = cursor.fetchone()[0]
         
         if not tabla_correcciones_existe:
-            print("✨ Creando tabla correcciones_productos...")
+            print("   ✨ Creando tabla correcciones_productos...")
             cursor.execute('''
             CREATE TABLE correcciones_productos (
                 id SERIAL PRIMARY KEY,
@@ -645,9 +645,9 @@ def create_postgresql_tables():
             ''')
             
             conn.commit()
-            print("✅ Tabla 'correcciones_productos' creada")
+            print("   ✅ Tabla 'correcciones_productos' creada")
         else:
-            print("✅ Tabla 'correcciones_productos' ya existe")
+            print("   ✅ Tabla 'correcciones_productos' ya existe")
         
         # ============================================
         # TABLAS LEGACY (mantener para migración)
@@ -718,6 +718,17 @@ def create_postgresql_tables():
             establecimiento TEXT,
             cadena VARCHAR(50),
             factura_id INTEGER REFERENCES facturas(id)
+        )
+        ''')
+        
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ocr_logs (
+            id SERIAL PRIMARY KEY,
+            factura_id INTEGER REFERENCES facturas(id),
+            status TEXT,
+            message TEXT,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
 
@@ -1108,7 +1119,7 @@ def obtener_o_crear_producto_maestro(codigo_ean: str, nombre: str, precio: int =
     Obtiene el ID de un producto maestro o lo crea si no existe
     Retorna: producto_maestro_id
     """
-    if not codigo_ean or len(codigo_ean) < 8:
+    if not codigo_ean or len(codigo_ean) < 3:
         return None
     
     conn = get_db_connection()
