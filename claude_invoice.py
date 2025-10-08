@@ -8,7 +8,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+# 🔧 FIX: Strip whitespace/newlines de la API key
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 
 def parse_invoice_with_claude(image_path: str) -> dict:
     """
