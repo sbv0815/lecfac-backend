@@ -329,6 +329,105 @@ async def get_factura_detalle(factura_id: int):
         raise HTTPException(500, str(e))
 
 
+# AGREGAR ESTE ENDPOINT en admin_dashboard.py
+# Colócalo después del endpoint @router.get("/facturas/{factura_id}")
+
+@router.put("/facturas/{factura_id}")
+async def update_factura(factura_id: int, request: dict):
+    """
+    Actualizar datos generales de una factura (establecimiento, total, fecha)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    
+    try:
+        # Obtener datos del request
+        establecimiento = request.get("establecimiento", "").strip()
+        total = request.get("total")
+        fecha = request.get("fecha")
+        
+        # Verificar que la factura existe
+        if database_type == "postgresql":
+            cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        else:
+            cursor.execute("SELECT id FROM facturas WHERE id = ?", (factura_id,))
+        
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        # Construir query dinámicamente
+        updates = []
+        params = []
+        
+        if establecimiento:
+            updates.append("establecimiento = ?")
+            params.append(establecimiento)
+        
+        if total is not None:
+            updates.append("total_factura = ?")
+            params.append(float(total))
+        
+        if fecha:
+            updates.append("fecha_cargue = ?")
+            params.append(fecha)
+        
+        if not updates:
+            conn.close()
+            raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+        
+        # Agregar factura_id al final
+        params.append(factura_id)
+        
+        # Ejecutar update
+        if database_type == "postgresql":
+            # Convertir placeholders ? a $1, $2, etc. para PostgreSQL
+            query = f"""
+                UPDATE facturas 
+                SET {', '.join([u.replace('?', f'${i+1}') for i, u in enumerate(updates)])}
+                WHERE id = ${len(params)}
+                RETURNING id, establecimiento, total_factura, fecha_cargue
+            """
+            cursor.execute(query, params)
+            result = cursor.fetchone()
+        else:
+            query = f"""
+                UPDATE facturas 
+                SET {', '.join(updates)}
+                WHERE id = ?
+            """
+            cursor.execute(query, params)
+            
+            # Obtener resultado actualizado
+            cursor.execute("""
+                SELECT id, establecimiento, total_factura, fecha_cargue 
+                FROM facturas WHERE id = ?
+            """, (factura_id,))
+            result = cursor.fetchone()
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": "Factura actualizada correctamente",
+            "id": result[0],
+            "establecimiento": result[1],
+            "total": float(result[2]) if result[2] else 0,
+            "fecha": str(result[3]) if result[3] else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/facturas/{factura_id}/imagen")
 async def get_factura_imagen(factura_id: int):
     """Obtener imagen de factura en ALTA CALIDAD"""
