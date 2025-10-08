@@ -604,39 +604,65 @@ def create_postgresql_tables():
         print("✓ Tabla 'matching_logs' creada")
         
         # 3.3. CORRECCIONES_PRODUCTOS (NUEVA - Sistema de aprendizaje)
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS correcciones_productos (
-            id SERIAL PRIMARY KEY,
-            nombre_ocr VARCHAR(200) NOT NULL,
-            nombre_normalizado VARCHAR(200) NOT NULL,
-            codigo_ean_correcto VARCHAR(13) NOT NULL,
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-            
-            -- Estadísticas
-            veces_usado INTEGER DEFAULT 0,
-            confianza DECIMAL(3,2) DEFAULT 1.0,
-            
-            -- Metadatos
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            
-            CHECK (confianza >= 0 AND confianza <= 1)
-        )
-        ''')
-        print("✓ Tabla 'correcciones_productos' creada")
+        # 3.3. CORRECCIONES_PRODUCTOS (Sistema de aprendizaje)
+        print("🧠 Verificando tabla correcciones_productos...")
         
-        # 3.4. OCR_LOGS (mantener)
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS ocr_logs (
-            id SERIAL PRIMARY KEY,
-            factura_id INTEGER REFERENCES facturas(id) ON DELETE CASCADE,
-            status VARCHAR(20),
-            message TEXT,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        print("✓ Tabla 'ocr_logs' creada")
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'correcciones_productos'
+            )
+        """)
+        tabla_correcciones_existe = cursor.fetchone()[0]
+        
+        if not tabla_correcciones_existe:
+            print("✨ Creando tabla correcciones_productos...")
+            cursor.execute('''
+            CREATE TABLE correcciones_productos (
+                id SERIAL PRIMARY KEY,
+                
+                -- Datos originales del OCR
+                nombre_ocr TEXT NOT NULL,
+                codigo_ocr TEXT,
+                
+                -- Datos corregidos manualmente
+                codigo_correcto TEXT NOT NULL,
+                nombre_correcto TEXT,
+                
+                -- Metadata para matching
+                nombre_normalizado TEXT NOT NULL,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                
+                -- Auditoría
+                factura_id INTEGER REFERENCES facturas(id),
+                usuario_id INTEGER,
+                fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                veces_aplicado INTEGER DEFAULT 0,
+                
+                UNIQUE(nombre_normalizado, establecimiento_id)
+            )
+            ''')
+            
+            # Crear índices
+            cursor.execute('''
+            CREATE INDEX idx_correcciones_nombre 
+                ON correcciones_productos(nombre_normalizado)
+            ''')
+            
+            cursor.execute('''
+            CREATE INDEX idx_correcciones_establecimiento 
+                ON correcciones_productos(establecimiento_id)
+            ''')
+            
+            cursor.execute('''
+            CREATE INDEX idx_correcciones_veces 
+                ON correcciones_productos(veces_aplicado DESC)
+            ''')
+            
+            conn.commit()
+            print("✅ Tabla 'correcciones_productos' creada")
+        else:
+            print("✅ Tabla 'correcciones_productos' ya existe")
         
         # ============================================
         # TABLAS LEGACY (mantener para migración)
@@ -929,14 +955,26 @@ def create_sqlite_tables():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS correcciones_productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            
+            -- Datos originales del OCR
             nombre_ocr TEXT NOT NULL,
+            codigo_ocr TEXT,
+            
+            -- Datos corregidos
+            codigo_correcto TEXT NOT NULL,
+            nombre_correcto TEXT,
+            
+            -- Metadata para matching
             nombre_normalizado TEXT NOT NULL,
-            codigo_ean_correcto TEXT NOT NULL,
             establecimiento_id INTEGER REFERENCES establecimientos(id),
-            veces_usado INTEGER DEFAULT 0,
-            confianza REAL DEFAULT 1.0,
-            fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            
+            -- Auditoría
+            factura_id INTEGER REFERENCES facturas(id),
+            usuario_id INTEGER,
+            fecha_correccion DATETIME DEFAULT CURRENT_TIMESTAMP,
+            veces_aplicado INTEGER DEFAULT 0,
+            
+            UNIQUE(nombre_normalizado, establecimiento_id)
         )
         ''')
         
