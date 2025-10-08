@@ -25,43 +25,70 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         
         client = anthropic.Anthropic(api_key=api_key)
         
-        # Prompt mejorado
-        prompt = """Analiza esta imagen de factura o recibo. Extrae TODA la información visible.
+        # Prompt mejorado con lista de establecimientos
+        prompt = """Analiza esta imagen de factura o recibo de supermercado colombiano.
 
-IMPORTANTE:
+IMPORTANTE SOBRE EL ESTABLECIMIENTO:
+Identifica el establecimiento comparando con estos nombres comunes en Colombia:
+- JUMBO (variantes: Jumbo Bulevar, Jumbo Express, Jumbo Calle 80, etc.)
+- ÉXITO (variantes: Almacenes Éxito, Éxito Express, Supertiendas Éxito)
+- CARULLA (variantes: Carulla Fresh, Carulla Express)
+- OLÍMPICA (variantes: Supertiendas Olímpica, Olímpica S.A.)
+- ARA (variantes: Tiendas Ara)
+- D1 (variantes: Tiendas D1)
+- JUSTO & BUENO (variantes: Justo y Bueno)
+- CAMACHO
+- SURTIFRUVER
+- ALKOSTO
+- MAKRO
+- PRICESMART
+- CAFAM
+- COLSUBSIDIO
+- EURO (variantes: Supermercados Euro)
+- METRO (variantes: Almacenes Metro)
+- CRUZ VERDE (farmacia)
+- FARMATODO (farmacia)
+- LA REBAJA (farmacia - variantes: Drogas La Rebaja)
+- FALABELLA
+- HOME CENTER
+
+**Si el nombre en la factura es similar a uno de la lista (ej: "JUMBO BULEVAR NIZA"), usa SOLO el nombre principal (ej: "JUMBO").**
+
+REGLAS ESTRICTAS PARA PRODUCTOS:
 1. Si el texto está borroso, intenta deducir basándote en el contexto
-2. Los códigos de barras largos son códigos EAN (13 dígitos)
-3. Los códigos cortos (3-5 dígitos) son códigos PLU de productos frescos
-4. Si no puedes leer un código, usa "SIN_CODIGO"
-5. Incluye TODOS los productos, incluso si están repetidos
+2. Los códigos de barras largos (12-13 dígitos numéricos) son códigos EAN - CÓPIALOS COMPLETOS
+3. Los códigos cortos (3-5 dígitos) son códigos PLU de productos frescos - usa "SIN_CODIGO"
+4. Si no puedes leer un código claramente, usa "SIN_CODIGO"
+5. Incluye TODOS los productos visibles, incluso si están repetidos
+6. NO incluyas líneas con precio negativo (descuentos)
+7. NO incluyas líneas que empiecen con "%" o "DESCUENTO" o "DTO"
+8. NO incluyas líneas de "SUBTOTAL", "IVA", "TOTAL A PAGAR"
 
 Devuelve un JSON con esta estructura EXACTA:
 {
-  "establecimiento": "nombre del comercio o tienda",
-  "fecha": "YYYY-MM-DD o null si no es visible",
-  "total": numero_sin_puntos,
+  "establecimiento": "NOMBRE_CADENA_PRINCIPAL",
+  "fecha": "YYYY-MM-DD",
+  "total": numero_entero_sin_puntos,
   "productos": [
     {
-      "codigo": "codigo_de_barras o PLU o SIN_CODIGO",
+      "codigo": "codigo_ean_13_digitos o SIN_CODIGO",
       "nombre": "descripción completa del producto",
       "cantidad": 1,
-      "precio": precio_unitario_sin_puntos
+      "precio": precio_unitario_entero_sin_puntos
     }
   ]
 }
 
-REGLAS ESTRICTAS:
-- NO incluyas productos con precio negativo (descuentos)
-- NO incluyas líneas de subtotales
-- SI hay múltiples unidades del mismo producto, créalos como items separados
-- Los precios deben ser números enteros sin puntos ni comas
-- Si no puedes leer algo claramente, usa valores por defecto pero NUNCA omitas productos
+EJEMPLO:
+Si ves "JUMBO BULEVAR NIZA" → usa "JUMBO"
+Si ves código "7702993047842" → cópialo exacto
+Si ves "BANANO URABA $5,425" sin código → usa "SIN_CODIGO"
 
 RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
-        # Llamar API - NOTA: La indentación aquí es crucial
+        # Llamar API
         message = client.messages.create(
-        model="claude-3-haiku-20240307",  # Económico y funcional
+            model="claude-3-haiku-20240307",
             max_tokens=4096,
             temperature=0,
             messages=[{
@@ -82,7 +109,7 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
         # Parsear respuesta
         response_text = message.content[0].text
-        print(f"Respuesta de Claude: {response_text[:200]}...")  # Debug
+        print(f"Respuesta de Claude: {response_text[:200]}...")
         
         # Extraer JSON
         json_str = response_text
@@ -108,9 +135,10 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
         # Normalizar productos
         for prod in data.get("productos", []):
+            # Normalizar precio
             if "precio" in prod:
                 try:
-                    prod["precio"] = float(str(prod["precio"]).replace(",", "").replace(".", ""))
+                    prod["precio"] = int(float(str(prod["precio"]).replace(",", "").replace(".", "")))
                 except:
                     prod["precio"] = 0
             else:
@@ -118,13 +146,25 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
             
             prod["valor"] = prod["precio"]
             
+            # Cantidad
             if "cantidad" not in prod:
                 prod["cantidad"] = 1
             
+            # Código
             if "codigo" in prod and prod["codigo"]:
-                prod["codigo"] = str(prod["codigo"]).strip()
+                codigo_limpio = str(prod["codigo"]).strip()
+                # Validar que sea un código EAN válido (solo números, 8-13 dígitos)
+                if codigo_limpio.isdigit() and len(codigo_limpio) >= 8:
+                    prod["codigo"] = codigo_limpio
+                else:
+                    prod["codigo"] = "SIN_CODIGO"
             else:
                 prod["codigo"] = "SIN_CODIGO"
+        
+        # Normalizar establecimiento
+        establecimiento_raw = data.get("establecimiento", "Desconocido")
+        establecimiento_normalizado = normalizar_establecimiento(establecimiento_raw)
+        data["establecimiento"] = establecimiento_normalizado
         
         # Asegurar total
         if "total" not in data or not data["total"]:
@@ -141,7 +181,7 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-opus"
+                    "modelo": "claude-haiku"
                 }
             }
         }
@@ -156,7 +196,6 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         }
     except anthropic.NotFoundError as e:
         print(f"❌ Error de modelo: {e}")
-        # Si Opus no funciona, intentar con Haiku
         return {
             "success": False,
             "error": "Error con el modelo de IA. Contacta al administrador."
@@ -168,5 +207,47 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         return {
             "success": False, 
             "error": "Error procesando la imagen. Verifica que sea una factura legible."
-        
         }
+
+
+def normalizar_establecimiento(nombre_raw: str) -> str:
+    """
+    Normaliza el nombre del establecimiento basándose en palabras clave
+    """
+    nombre_lower = nombre_raw.lower()
+    
+    # Mapeo de palabras clave a nombres normalizados
+    establecimientos = {
+        'jumbo': 'JUMBO',
+        'exito': 'ÉXITO',
+        'éxito': 'ÉXITO',
+        'carulla': 'CARULLA',
+        'olimpica': 'OLÍMPICA',
+        'olímpica': 'OLÍMPICA',
+        'ara': 'ARA',
+        'd1': 'D1',
+        'justo': 'JUSTO & BUENO',
+        'camacho': 'CAMACHO',
+        'surtifruver': 'SURTIFRUVER',
+        'alkosto': 'ALKOSTO',
+        'makro': 'MAKRO',
+        'pricesmart': 'PRICESMART',
+        'cafam': 'CAFAM',
+        'colsubsidio': 'COLSUBSIDIO',
+        'euro': 'EURO',
+        'metro': 'METRO',
+        'cruz verde': 'CRUZ VERDE',
+        'farmatodo': 'FARMATODO',
+        'la rebaja': 'LA REBAJA',
+        'falabella': 'FALABELLA',
+        'home center': 'HOME CENTER',
+        'homecenter': 'HOME CENTER'
+    }
+    
+    # Buscar coincidencias
+    for clave, normalizado in establecimientos.items():
+        if clave in nombre_lower:
+            return normalizado
+    
+    # Si no encuentra coincidencia, retornar el original pero limpio
+    return nombre_raw.strip().upper()
