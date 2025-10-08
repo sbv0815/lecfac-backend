@@ -622,88 +622,141 @@ def similitud_texto(a: str, b: str) -> float:
 # Agregar estos endpoints en admin_dashboard.py
 
 @router.put("/items/{item_id}")
+@router.put("/items/{item_id}")
 async def update_item(item_id: int, request: dict):
     """
-    Actualizar un item de factura (nombre, código, precio, cantidad)
+    ✅ VERSIÓN CORREGIDA - Actualizar un item de factura
+    Solo actualiza precios_productos si hay código EAN VÁLIDO
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
     
     try:
+        print(f"📝 Actualizando item {item_id}")
+        print(f"📦 Data recibida: {request}")
+        
         # Obtener datos del request
         nombre = request.get("nombre")
-        codigo = request.get("codigo")  # Puede ser None o vacío
+        codigo_nuevo = request.get("codigo_ean")  # Puede ser None
         precio = request.get("precio")
         cantidad = request.get("cantidad", 1)
         
         if not nombre or precio is None:
             raise HTTPException(status_code=400, detail="Nombre y precio son requeridos")
         
-        # Verificar que el item existe Y obtener el código actual
+        # 1. Obtener datos actuales del item
         if database_type == "postgresql":
-            cursor.execute(
-                "SELECT factura_id, usuario_id, codigo_leido FROM items_factura WHERE id = %s",
-                (item_id,)
-            )
+            cursor.execute("""
+                SELECT factura_id, usuario_id, codigo_leido, nombre_leido, precio_pagado
+                FROM items_factura 
+                WHERE id = %s
+            """, (item_id,))
         else:
-            cursor.execute(
-                "SELECT factura_id, usuario_id, codigo_leido FROM items_factura WHERE id = ?",
-                (item_id,)
-            )
+            cursor.execute("""
+                SELECT factura_id, usuario_id, codigo_leido, nombre_leido, precio_pagado
+                FROM items_factura 
+                WHERE id = ?
+            """, (item_id,))
         
         resultado = cursor.fetchone()
         if not resultado:
             conn.close()
             raise HTTPException(status_code=404, detail="Item no encontrado")
         
-        factura_id = resultado[0]
-        usuario_id = resultado[1]
-        codigo_actual = resultado[2]
+        factura_id, usuario_id, codigo_actual, nombre_actual, precio_actual = resultado
         
-        # Si no viene código en el request O está vacío, mantener el actual
-        if not codigo or codigo.strip() == '':
-            codigo = codigo_actual
-            print(f"✓ Manteniendo código actual: {codigo_actual}")
+        print(f"🔍 Datos actuales:")
+        print(f"   - Nombre: {nombre_actual}")
+        print(f"   - Código: {codigo_actual}")
+        print(f"   - Precio: {precio_actual}")
+        
+        # 2. Determinar el código final a usar
+        codigo_final = codigo_actual  # Por defecto mantener el actual
+        
+        # Lista de códigos que se consideran INVÁLIDOS
+        CODIGOS_INVALIDOS = [
+            '', 'SIN_CODIGO', 'sin_codigo', 'SinCodigo', 
+            'null', 'None', 'undefined', 'N/A', 'n/a'
+        ]
+        
+        if codigo_nuevo is not None:
+            # Limpiar el código nuevo
+            codigo_limpio = str(codigo_nuevo).strip().upper()
+            
+            # Validar que sea un código EAN válido
+            if codigo_limpio and codigo_limpio not in CODIGOS_INVALIDOS:
+                # Validar longitud (códigos EAN son de 8, 12 o 13 dígitos)
+                if len(codigo_limpio) >= 8 and codigo_limpio.isdigit():
+                    codigo_final = codigo_limpio
+                    print(f"✅ Usando nuevo código válido: {codigo_final}")
+                else:
+                    print(f"⚠️ Código recibido no es válido (no numérico o muy corto): '{codigo_limpio}'")
+                    print(f"   → Manteniendo código actual: {codigo_actual}")
+            else:
+                print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
+                print(f"   → Manteniendo código actual: {codigo_actual}")
         else:
-            print(f"✓ Actualizando código: {codigo_actual} → {codigo}")
+            print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
         
-        # Si hay código, intentar vincular con producto maestro
+        print(f"📌 Código final a guardar: {codigo_final}")
+        
+        # 3. Determinar si el código final es VÁLIDO para precios_productos
+        codigo_es_valido = (
+            codigo_final and 
+            str(codigo_final).strip() != '' and
+            str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS and
+            len(str(codigo_final)) >= 8 and
+            str(codigo_final).isdigit()
+        )
+        
+        print(f"🔍 ¿Código válido para precios_productos? {codigo_es_valido}")
+        
+        # 4. Actualizar items_factura (SIEMPRE)
         producto_maestro_id = None
-        if codigo and len(codigo) >= 8:
+        
+        if codigo_es_valido:
+            # Buscar o crear producto maestro
             if database_type == "postgresql":
                 cursor.execute(
                     "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
-                    (codigo,)
+                    (codigo_final,)
                 )
             else:
                 cursor.execute(
                     "SELECT id FROM productos_maestros WHERE codigo_ean = ?",
-                    (codigo,)
+                    (codigo_final,)
                 )
             
             prod_result = cursor.fetchone()
+            
             if prod_result:
                 producto_maestro_id = prod_result[0]
+                print(f"✓ Producto maestro encontrado: {producto_maestro_id}")
             else:
                 # Crear nuevo producto maestro
+                print(f"➕ Creando nuevo producto maestro para código: {codigo_final}")
                 if database_type == "postgresql":
                     cursor.execute("""
                         INSERT INTO productos_maestros 
                         (codigo_ean, nombre_normalizado, total_reportes)
                         VALUES (%s, %s, 1)
                         RETURNING id
-                    """, (codigo, nombre))
+                    """, (codigo_final, nombre))
                     producto_maestro_id = cursor.fetchone()[0]
                 else:
                     cursor.execute("""
                         INSERT INTO productos_maestros 
                         (codigo_ean, nombre_normalizado, total_reportes)
                         VALUES (?, ?, 1)
-                    """, (codigo, nombre))
+                    """, (codigo_final, nombre))
                     producto_maestro_id = cursor.lastrowid
+                
+                print(f"✓ Producto maestro creado: {producto_maestro_id}")
+        else:
+            print(f"⚠️ Código NO válido - no se vinculará a producto maestro")
         
-        # Actualizar el item
+        # Actualizar el item en items_factura
         if database_type == "postgresql":
             cursor.execute("""
                 UPDATE items_factura
@@ -713,7 +766,8 @@ async def update_item(item_id: int, request: dict):
                     cantidad = %s,
                     producto_maestro_id = %s
                 WHERE id = %s
-            """, (nombre, codigo, precio, cantidad, producto_maestro_id, item_id))
+                RETURNING id, nombre_leido, codigo_leido, precio_pagado
+            """, (nombre, codigo_final, precio, cantidad, producto_maestro_id, item_id))
         else:
             cursor.execute("""
                 UPDATE items_factura
@@ -723,62 +777,129 @@ async def update_item(item_id: int, request: dict):
                     cantidad = ?,
                     producto_maestro_id = ?
                 WHERE id = ?
-            """, (nombre, codigo, precio, cantidad, producto_maestro_id, item_id))
+            """, (nombre, codigo_final, precio, cantidad, producto_maestro_id, item_id))
         
-        # Actualizar precio en precios_productos si hay producto_maestro_id
-        if producto_maestro_id:
-            # Obtener establecimiento_id
-            if database_type == "postgresql":
-                cursor.execute(
-                    "SELECT establecimiento_id FROM facturas WHERE id = %s",
-                    (factura_id,)
-                )
-            else:
-                cursor.execute(
-                    "SELECT establecimiento_id FROM facturas WHERE id = ?",
-                    (factura_id,)
-                )
+        print(f"✅ Item actualizado en items_factura")
+        
+        # 5. Actualizar precios_productos SOLO si hay código válido
+        precio_actualizado = False
+        
+        if codigo_es_valido and producto_maestro_id:
+            print(f"📊 Intentando actualizar precios_productos...")
             
-            est_result = cursor.fetchone()
-            if est_result and est_result[0]:
-                establecimiento_id = est_result[0]
+            # Obtener establecimiento_id de la factura
+            if database_type == "postgresql":
+                cursor.execute("""
+                    SELECT establecimiento_id, fecha_cargue 
+                    FROM facturas 
+                    WHERE id = %s
+                """, (factura_id,))
+            else:
+                cursor.execute("""
+                    SELECT establecimiento_id, fecha_cargue 
+                    FROM facturas 
+                    WHERE id = ?
+                """, (factura_id,))
+            
+            factura_info = cursor.fetchone()
+            
+            if factura_info and factura_info[0]:
+                establecimiento_id = factura_info[0]
+                fecha_factura = factura_info[1]
                 
-                # Insertar o actualizar precio
+                print(f"   - Producto maestro: {producto_maestro_id}")
+                print(f"   - Establecimiento: {establecimiento_id}")
+                print(f"   - Precio: {precio}")
+                
+                # Verificar si ya existe un registro
                 if database_type == "postgresql":
                     cursor.execute("""
-                        INSERT INTO precios_productos 
-                        (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
-                        VALUES (%s, %s, %s, CURRENT_DATE, %s, %s)
-                        ON CONFLICT DO NOTHING
-                    """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+                        SELECT id FROM precios_productos
+                        WHERE producto_id = %s
+                          AND establecimiento_id = %s
+                          AND factura_id = %s
+                    """, (producto_maestro_id, establecimiento_id, factura_id))
                 else:
                     cursor.execute("""
-                        INSERT OR IGNORE INTO precios_productos 
-                        (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
-                        VALUES (?, ?, ?, date('now'), ?, ?)
-                    """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+                        SELECT id FROM precios_productos
+                        WHERE producto_id = ?
+                          AND establecimiento_id = ?
+                          AND factura_id = ?
+                    """, (producto_maestro_id, establecimiento_id, factura_id))
+                
+                precio_existente = cursor.fetchone()
+                
+                if precio_existente:
+                    # Actualizar precio existente
+                    if database_type == "postgresql":
+                        cursor.execute("""
+                            UPDATE precios_productos
+                            SET precio = %s,
+                                fecha_actualizacion = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (precio, precio_existente[0]))
+                    else:
+                        cursor.execute("""
+                            UPDATE precios_productos
+                            SET precio = ?,
+                                fecha_actualizacion = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        """, (precio, precio_existente[0]))
+                    
+                    print(f"✅ Precio actualizado en precios_productos (ID: {precio_existente[0]})")
+                    precio_actualizado = True
+                else:
+                    # Insertar nuevo registro
+                    if database_type == "postgresql":
+                        cursor.execute("""
+                            INSERT INTO precios_productos 
+                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura or 'CURRENT_DATE', usuario_id, factura_id))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO precios_productos 
+                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura or date('now'), usuario_id, factura_id))
+                    
+                    print(f"✅ Precio insertado en precios_productos")
+                    precio_actualizado = True
+            else:
+                print(f"⚠️ No se pudo obtener establecimiento_id de la factura")
+                print(f"   → NO se actualizó precios_productos")
+        else:
+            print(f"⚠️ Sin código válido o sin producto_maestro_id")
+            print(f"   → NO se actualiza precios_productos")
         
         conn.commit()
-        conn.close()
         
-        print(f"✅ Item {item_id} actualizado: {nombre} - ${precio} - Código: {codigo}")
+        print(f"✅ Actualización completada exitosamente")
+        print(f"   - Item ID: {item_id}")
+        print(f"   - Código guardado: {codigo_final}")
+        print(f"   - Precio actualizado en catálogo: {precio_actualizado}")
         
         return {
             "success": True,
             "message": "Item actualizado correctamente",
             "item_id": item_id,
             "factura_id": factura_id,
-            "producto_maestro_id": producto_maestro_id
+            "producto_maestro_id": producto_maestro_id,
+            "codigo_guardado": codigo_final,
+            "precio_actualizado_catalogo": precio_actualizado
         }
         
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
-        conn.close()
+        print(f"❌ Error actualizando item: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.post("/facturas/{factura_id}/items")
