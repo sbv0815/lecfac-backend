@@ -25,70 +25,81 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         
         client = anthropic.Anthropic(api_key=api_key)
         
-        # Prompt mejorado con lista de establecimientos
-        prompt = """Analiza esta imagen de factura o recibo de supermercado colombiano.
+        # ========== PROMPT OPTIMIZADO ==========
+        prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
 
-IMPORTANTE SOBRE EL ESTABLECIMIENTO:
-Identifica el establecimiento comparando con estos nombres comunes en Colombia:
-- JUMBO (variantes: Jumbo Bulevar, Jumbo Express, Jumbo Calle 80, etc.)
-- ÉXITO (variantes: Almacenes Éxito, Éxito Express, Supertiendas Éxito)
-- CARULLA (variantes: Carulla Fresh, Carulla Express)
-- OLÍMPICA (variantes: Supertiendas Olímpica, Olímpica S.A.)
-- ARA (variantes: Tiendas Ara)
-- D1 (variantes: Tiendas D1)
-- JUSTO & BUENO (variantes: Justo y Bueno)
-- CAMACHO
-- SURTIFRUVER
-- ALKOSTO
-- MAKRO
-- PRICESMART
-- CAFAM
-- COLSUBSIDIO
-- EURO (variantes: Supermercados Euro)
-- METRO (variantes: Almacenes Metro)
-- CRUZ VERDE (farmacia)
-- FARMATODO (farmacia)
-- LA REBAJA (farmacia - variantes: Drogas La Rebaja)
-- FALABELLA
-- HOME CENTER
+# OBJETIVO
+Extraer: establecimiento, fecha, total y CADA producto con su código.
 
-**Si el nombre en la factura es similar a uno de la lista (ej: "JUMBO BULEVAR NIZA"), usa SOLO el nombre principal (ej: "JUMBO").**
+# ESTABLECIMIENTOS COMUNES
+Si el nombre contiene alguna de estas palabras, usa SOLO el nombre principal:
+JUMBO | ÉXITO | CARULLA | OLÍMPICA | ARA | D1 | ALKOSTO | MAKRO | PRICESMART | CAFAM | COLSUBSIDIO | EURO | METRO | CRUZ VERDE | FARMATODO | LA REBAJA | FALABELLA | HOME CENTER
 
-REGLAS ESTRICTAS PARA PRODUCTOS:
-1. Si el texto está borroso, intenta deducir basándote en el contexto
-2. Los códigos de barras largos (12-13 dígitos numéricos) son códigos EAN - CÓPIALOS COMPLETOS
-3. Los códigos cortos (3-5 dígitos) son códigos PLU de productos frescos - usa "SIN_CODIGO"
-4. Si no puedes leer un código claramente, usa "SIN_CODIGO"
-5. Incluye TODOS los productos visibles, incluso si están repetidos
-6. NO incluyas líneas con precio negativo (descuentos)
-7. NO incluyas líneas que empiecen con "%" o "DESCUENTO" o "DTO"
-8. NO incluyas líneas de  "IVA"
-9.Incluye SUBTOTAL/TOTAL como valor de lo comprado
-10.Mira MUY CUIDADOSAMENTE cada producto
-11.- REVISA DOS VECES cada producto para no perder ningún código
-12.Todo numero largo o corto cerca del nombre del  producto al lado izquierdo ES el código siempre y cuando no tenga caracteres especiales ejemplo %,kg,gr,etc
+Ejemplo: "JUMBO BULEVAR NIZA" → usa "JUMBO"
 
-Devuelve un JSON con esta estructura EXACTA:
+# CÓDIGOS DE PRODUCTOS - CRÍTICO
+Los códigos están SIEMPRE a la IZQUIERDA del nombre del producto.
+
+EJEMPLOS REALES:
+✓ "116 BANANO URABA" → código: "116"
+✓ "1045 ZANAHORIA" → código: "1045"  
+✓ "7702993047842 LECHE ALPINA" → código: "7702993047842"
+✓ "23456 ARROZ DIANA X 500G" → código: "23456"
+
+CÓDIGOS INVÁLIDOS (tienen letras o símbolos especiales):
+✗ "343718DF.VD PRODUCTO" → NO copiar (tiene letras DF)
+✗ "344476DF.20% PRODUCTO" → NO copiar (tiene letras y %)
+✗ "REF123 PRODUCTO" → NO copiar (tiene letras REF)
+✗ "$5.425" → NO es código (es un precio con $)
+✗ "1kg" → NO es código (tiene letras kg)
+
+REGLAS DE ORO:
+1. Busca el PRIMER número a la IZQUIERDA del nombre del producto
+2. Si ese número tiene SOLO DÍGITOS (sin letras, sin %, sin $, sin kg) → ES EL CÓDIGO
+3. Puede ser corto (3 dígitos) o largo (13 dígitos) → AMBOS SON VÁLIDOS
+4. Copia el código EXACTO, sin espacios ni caracteres extra
+5. Si NO hay número a la izquierda O tiene letras/símbolos → pon ""
+
+# PRODUCTOS
+- Incluye TODOS los productos visibles
+- NO incluyas líneas de descuento, IVA, subtotales
+- NO incluyas líneas que empiecen con %, DESCUENTO, DTO, IVA
+
+# FORMATO DE RESPUESTA
+Responde SOLO con este JSON (sin explicaciones):
+
 {
-  "establecimiento": "NOMBRE_CADENA_PRINCIPAL",
+  "establecimiento": "NOMBRE_PRINCIPAL",
   "fecha": "YYYY-MM-DD",
-  "total": numero_entero_sin_puntos,
+  "total": 123456,
   "productos": [
     {
-      "codigo": "codigo_ean_13_digitos o SIN_CODIGO",
-      "nombre": "descripción completa del producto",
+      "codigo": "7702993047842",
+      "nombre": "LECHE ALPINA ENTERA X 1100ML",
       "cantidad": 1,
-      "precio": precio_unitario_entero_sin_puntos
+      "precio": 5600
+    },
+    {
+      "codigo": "116",
+      "nombre": "BANANO URABA",
+      "cantidad": 1,
+      "precio": 5425
+    },
+    {
+      "codigo": "1045",
+      "nombre": "ZANAHORIA",
+      "cantidad": 1,
+      "precio": 1166
     }
   ]
 }
 
-EJEMPLO:
-Si ves "JUMBO BULEVAR NIZA" → usa "JUMBO"
-Si ves código "7702993047842" → cópialo exacto
-Si ves " 116 BANANO URABA $5,425" tiene código corto
+NOTAS:
+- Precios sin puntos ni comas (5600, no 5.600)
+- Códigos sin espacios ("116", no " 116 ")
+- Si no hay código válido a la izquierda: ""
 
-RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
+ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
         # Llamar API
         message = client.messages.create(
@@ -113,7 +124,7 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
         # Parsear respuesta
         response_text = message.content[0].text
-        print(f"Respuesta de Claude: {response_text[:200]}...")
+        print(f"📄 Respuesta de Claude: {response_text[:200]}...")
         
         # Extraer JSON
         json_str = response_text
@@ -133,12 +144,23 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         # Parsear JSON
         data = json.loads(json_str)
         
+        # LOG DEBUG: Ver JSON crudo
+        print("=" * 80)
+        print("🔍 JSON CRUDO PARSEADO:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print("=" * 80)
+        
         # Validar y normalizar
         if "productos" not in data:
             data["productos"] = []
         
-        # Normalizar productos
+        # ========== NORMALIZACIÓN DE PRODUCTOS ==========
+        productos_procesados = 0
+        codigos_validos = 0
+        
         for prod in data.get("productos", []):
+            productos_procesados += 1
+            
             # Normalizar precio
             if "precio" in prod:
                 try:
@@ -154,16 +176,25 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
             if "cantidad" not in prod:
                 prod["cantidad"] = 1
             
-            # Código
+            # ========== VALIDACIÓN DE CÓDIGO CORREGIDA ==========
             if "codigo" in prod and prod["codigo"]:
                 codigo_limpio = str(prod["codigo"]).strip()
-                # Validar que sea un código EAN válido (solo números, 8-13 dígitos)
-                if codigo_limpio.isdigit() and len(codigo_limpio) >= 8:
+                
+                # Validar que sea un código válido:
+                # 1. Solo dígitos (sin letras)
+                # 2. Sin caracteres especiales (%, $, kg, etc)
+                # 3. Puede tener cualquier longitud (desde 3 hasta 13 dígitos)
+                
+                if codigo_limpio.isdigit() and len(codigo_limpio) >= 3:
                     prod["codigo"] = codigo_limpio
+                    codigos_validos += 1
+                    print(f"   ✓ Código válido: {codigo_limpio} → {prod['nombre'][:30]}")
                 else:
-                    prod["codigo"] = "SIN_CODIGO"
+                    prod["codigo"] = ""
+                    print(f"   ✗ Código inválido descartado: '{codigo_limpio}' → {prod['nombre'][:30]}")
             else:
-                prod["codigo"] = "SIN_CODIGO"
+                prod["codigo"] = ""
+                print(f"   ⚠️ Producto sin código → {prod['nombre'][:30]}")
         
         # Normalizar establecimiento
         establecimiento_raw = data.get("establecimiento", "Desconocido")
@@ -174,10 +205,13 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         if "total" not in data or not data["total"]:
             data["total"] = sum(p.get("precio", 0) for p in data.get("productos", []))
         
-        print(f"Establecimiento: {data.get('establecimiento', 'N/A')}")
-        print(f"Total: ${data.get('total', 0):,.0f}")
-        print(f"Productos detectados: {len(data.get('productos', []))}")
-        print("======================================================================")
+        print("=" * 80)
+        print(f"📊 RESUMEN:")
+        print(f"   Establecimiento: {data.get('establecimiento', 'N/A')}")
+        print(f"   Total: ${data.get('total', 0):,.0f}")
+        print(f"   Productos detectados: {productos_procesados}")
+        print(f"   Códigos válidos: {codigos_validos} ({int(codigos_validos/productos_procesados*100) if productos_procesados > 0 else 0}%)")
+        print("=" * 80)
         
         return {
             "success": True,
@@ -185,7 +219,9 @@ RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-haiku"
+                    "modelo": "claude-haiku",
+                    "productos_detectados": productos_procesados,
+                    "codigos_validos": codigos_validos
                 }
             }
         }
