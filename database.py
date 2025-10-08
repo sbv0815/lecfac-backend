@@ -221,7 +221,63 @@ def create_postgresql_tables():
             CHECK (precio > 0)
         )
         ''')
-        print("✓ Tabla 'precios_productos' creada")
+        
+        # Agregar columnas si la tabla existe pero le faltan columnas
+        try:
+            cursor.execute("""
+                ALTER TABLE precios_productos 
+                ADD COLUMN IF NOT EXISTS producto_maestro_id INTEGER REFERENCES productos_maestros(id)
+            """)
+            print("✓ Columna 'producto_maestro_id' agregada a precios_productos")
+        except Exception as e:
+            print(f"⚠️ Columna producto_maestro_id: {e}")
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE precios_productos 
+                ADD COLUMN IF NOT EXISTS establecimiento_id INTEGER REFERENCES establecimientos(id)
+            """)
+            print("✓ Columna 'establecimiento_id' agregada a precios_productos")
+        except Exception as e:
+            print(f"⚠️ Columna establecimiento_id: {e}")
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE precios_productos 
+                ADD COLUMN IF NOT EXISTS fecha_registro DATE
+            """)
+            print("✓ Columna 'fecha_registro' agregada a precios_productos")
+        except Exception as e:
+            print(f"⚠️ Columna fecha_registro: {e}")
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE precios_productos 
+                ADD COLUMN IF NOT EXISTS verificado BOOLEAN DEFAULT FALSE
+            """)
+            print("✓ Columna 'verificado' agregada a precios_productos")
+        except Exception as e:
+            print(f"⚠️ Columna verificado: {e}")
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE precios_productos 
+                ADD COLUMN IF NOT EXISTS es_outlier BOOLEAN DEFAULT FALSE
+            """)
+            print("✓ Columna 'es_outlier' agregada a precios_productos")
+        except Exception as e:
+            print(f"⚠️ Columna es_outlier: {e}")
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE precios_productos 
+                ADD COLUMN IF NOT EXISTS votos_confianza INTEGER DEFAULT 0
+            """)
+            print("✓ Columna 'votos_confianza' agregada a precios_productos")
+        except Exception as e:
+            print(f"⚠️ Columna votos_confianza: {e}")
+        
+        print("✓ Tabla 'precios_productos' creada/actualizada")
         
         # ============================================
         # NIVEL 2: BASE LOCAL (POR USUARIO)
@@ -264,6 +320,17 @@ def create_postgresql_tables():
             cadena VARCHAR(50)
         )
         ''')
+        
+        # Agregar columna establecimiento_id si no existe
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS establecimiento_id INTEGER REFERENCES establecimientos(id)
+            """)
+            print("✓ Columna 'establecimiento_id' agregada a facturas")
+        except Exception as e:
+            print(f"⚠️ Columna establecimiento_id ya existe o error: {e}")
+        
         print("✓ Tabla 'facturas' actualizada")
         
         # 2.2. ITEMS_FACTURA (NUEVA - Reemplaza tabla 'productos')
@@ -342,6 +409,37 @@ def create_postgresql_tables():
             UNIQUE(usuario_id, producto_maestro_id)
         )
         ''')
+        
+        # Agregar columna producto_maestro_id si no existe
+        try:
+            cursor.execute("""
+                ALTER TABLE patrones_compra 
+                ADD COLUMN IF NOT EXISTS producto_maestro_id INTEGER REFERENCES productos_maestros(id)
+            """)
+            print("✓ Columna 'producto_maestro_id' agregada a patrones_compra")
+        except Exception as e:
+            print(f"⚠️ Columna producto_maestro_id ya existe: {e}")
+        
+        # Agregar columna establecimiento_preferido_id si no existe
+        try:
+            cursor.execute("""
+                ALTER TABLE patrones_compra 
+                ADD COLUMN IF NOT EXISTS establecimiento_preferido_id INTEGER REFERENCES establecimientos(id)
+            """)
+            print("✓ Columna 'establecimiento_preferido_id' agregada a patrones_compra")
+        except Exception as e:
+            print(f"⚠️ Columna establecimiento_preferido_id ya existe: {e}")
+        
+        # Agregar columna precio_promedio_pagado si no existe
+        try:
+            cursor.execute("""
+                ALTER TABLE patrones_compra 
+                ADD COLUMN IF NOT EXISTS precio_promedio_pagado INTEGER
+            """)
+            print("✓ Columna 'precio_promedio_pagado' agregada a patrones_compra")
+        except Exception as e:
+            print(f"⚠️ Columna precio_promedio_pagado ya existe: {e}")
+        
         print("✓ Tabla 'patrones_compra' actualizada")
         
         # ============================================
@@ -1141,9 +1239,6 @@ def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usu
         
     except Exception as e:
         print(f"Error confirmando producto: {e}")
-        conn.rollback()
-        conn.close()
-        return False
         conn.rollback()
         conn.close()
         return False
