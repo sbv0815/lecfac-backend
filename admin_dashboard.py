@@ -1,7 +1,6 @@
 # admin_dashboard.py - VERSIÓN ACTUALIZADA CON NUEVA ARQUITECTURA
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-router = APIRouter()
 from typing import List, Optional
 from difflib import SequenceMatcher
 from database import get_db_connection
@@ -330,36 +329,89 @@ async def get_factura_detalle(factura_id: int):
         raise HTTPException(500, str(e))
 
 
-
-@router.get("/admin/facturas/{factura_id}/imagen")
-async def get_factura_imagen(factura_id: int, db: Session = Depends(get_personal_db)):
+@router.get("/facturas/{factura_id}/imagen")
+async def get_factura_imagen(factura_id: int):
     """Obtener imagen de factura en ALTA CALIDAD"""
-    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    if not factura or not factura.imagen_path:
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    
+    if database_type == "postgresql":
+        cursor.execute(
+            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s",
+            (factura_id,)
+        )
+    else:
+        cursor.execute(
+            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = ?",
+            (factura_id,)
+        )
+    
+    resultado = cursor.fetchone()
+    conn.close()
+    
+    if not resultado or not resultado[0]:
         raise HTTPException(status_code=404, detail="Imagen no encontrada")
     
-    # Leer imagen
-    with open(factura.imagen_path, "rb") as f:
-        image_data = f.read()
-    
-    # Determinar tipo de imagen
-    if factura.imagen_path.lower().endswith('.png'):
-        media_type = "image/png"
-    elif factura.imagen_path.lower().endswith('.jpg') or factura.imagen_path.lower().endswith('.jpeg'):
-        media_type = "image/jpeg"
-    else:
-        media_type = "image/jpeg"
+    imagen_data = resultado[0]
+    imagen_mime = resultado[1] or "image/jpeg"
     
     # Retornar con headers para evitar compresión
     return Response(
-        content=image_data,
-        media_type=media_type,
+        content=bytes(imagen_data),
+        media_type=imagen_mime,
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Content-Disposition": "inline"  # ← Mostrar en navegador, no descargar
+            "Content-Disposition": "inline"
         }
     )
+
+
+@router.delete("/items/{item_id}")
+async def delete_item(item_id: int):
+    """Eliminar un item de factura duplicado"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    
+    try:
+        # Verificar que el item existe y obtener factura_id
+        if database_type == "postgresql":
+            cursor.execute(
+                "SELECT factura_id FROM items_factura WHERE id = %s",
+                (item_id,)
+            )
+        else:
+            cursor.execute(
+                "SELECT factura_id FROM items_factura WHERE id = ?",
+                (item_id,)
+            )
+        
+        resultado = cursor.fetchone()
+        
+        if not resultado:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Item no encontrado")
+        
+        factura_id = resultado[0]
+        
+        # Eliminar el item
+        if database_type == "postgresql":
+            cursor.execute("DELETE FROM items_factura WHERE id = %s", (item_id,))
+        else:
+            cursor.execute("DELETE FROM items_factura WHERE id = ?", (item_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "factura_id": factura_id, "message": "Item eliminado correctamente"}
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/facturas/{factura_id}")
@@ -434,7 +486,7 @@ def similitud_texto(a: str, b: str) -> float:
 
 @router.post("/duplicados/productos/fusionar")
 async def fusionar_productos_admin(request: dict):
-    """Fusionar dos productos duplicados (Deprecado, usar duplicados_routes)"""
+    """Fusionar dos productos duplicados"""
     try:
         producto_mantener_id = request.get("producto_mantener_id")
         producto_eliminar_id = request.get("producto_eliminar_id")
@@ -596,22 +648,6 @@ async def detectar_cambios_precio(dias: int = 30):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# En admin_dashboard.py - AGREGAR este endpoint:
-
-@app.delete("/admin/items/{item_id}")
-async def delete_item(item_id: int, db: Session = Depends(get_personal_db)):
-    """Eliminar un item de factura"""
-    item = db.query(ItemFactura).filter(ItemFactura.id == item_id).first()
-    
-    if not item:
-        raise HTTPException(status_code=404, detail="Item no encontrado")
-    
-    factura_id = item.factura_id
-    db.delete(item)
-    db.commit()
-    
-    return {"success": True, "factura_id": factura_id}
-
 
 @router.get("/productos/{producto_id}/comparar-establecimientos")
 async def comparar_precios_establecimientos(producto_id: int):
@@ -708,4 +744,4 @@ async def comparar_precios_establecimientos(producto_id: int):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-print("✅ admin_dashboard.py cargado - VERSIÓN ACTUALIZADA (items_factura)")
+print("✅ admin_dashboard.py cargado correctamente")
