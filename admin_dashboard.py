@@ -328,6 +328,38 @@ async def get_factura_detalle(factura_id: int):
         raise HTTPException(500, str(e))
 
 
+
+@app.get("/admin/facturas/{factura_id}/imagen")
+async def get_factura_imagen(factura_id: int, db: Session = Depends(get_personal_db)):
+    """Obtener imagen de factura en ALTA CALIDAD"""
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    
+    if not factura or not factura.imagen_path:
+        raise HTTPException(status_code=404, detail="Imagen no encontrada")
+    
+    # Leer imagen
+    with open(factura.imagen_path, "rb") as f:
+        image_data = f.read()
+    
+    # Determinar tipo de imagen
+    if factura.imagen_path.lower().endswith('.png'):
+        media_type = "image/png"
+    elif factura.imagen_path.lower().endswith('.jpg') or factura.imagen_path.lower().endswith('.jpeg'):
+        media_type = "image/jpeg"
+    else:
+        media_type = "image/jpeg"
+    
+    # Retornar con headers para evitar compresión
+    return Response(
+        content=image_data,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Content-Disposition": "inline"  # ← Mostrar en navegador, no descargar
+        }
+    )
+
+
 @router.delete("/facturas/{factura_id}")
 async def eliminar_factura_admin(factura_id: int):
     """Eliminar una factura y todos sus datos asociados"""
