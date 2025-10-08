@@ -19,7 +19,7 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         media_type = "image/png" if image_path.lower().endswith('.png') else "image/jpeg"
         
         # Cliente Anthropic con fix de API key
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()  # 🔧 FIX: strip whitespace
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()  # ✅ FIX: strip whitespace
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
         
@@ -97,10 +97,10 @@ VALIDACIONES FINALES:
 
 ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
-        # 🔥 ACTUALIZADO: Modelo Haiku 3.5 con 10k tokens
+        # ✅ CORREGIDO: Modelo Haiku 3.5 con límite correcto de tokens
         message = client.messages.create(
-            model="claude-3-5-haiku-20241022",  # 🔥 Nombre correcto del modelo
-            max_tokens=10000,  # 🔥 Haiku 3.5 soporta 10k tokens
+            model="claude-3-5-haiku-20241022",  # ✅ Nombre correcto del modelo
+            max_tokens=8192,  # ✅ Haiku 3.5 máximo: 8192 tokens (NO 10000)
             temperature=0,
             messages=[{
                 "role": "user",
@@ -247,7 +247,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-haiku-3-5",  # 🔥 Actualizado
+                    "modelo": "claude-3-5-haiku-20241022",  # ✅ Actualizado
                     "productos_detectados": productos_procesados,
                     "codigos_validos": codigos_validos
                 }
