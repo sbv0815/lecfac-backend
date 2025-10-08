@@ -556,7 +556,7 @@ async def delete_item(item_id: int):
 async def update_item(item_id: int, request: dict):
     """
     ✅ VERSIÓN CORREGIDA - Actualizar un item de factura
-    Solo actualiza precios_productos si hay código VÁLIDO (3+ dígitos)
+    Solo actualiza precios_productos si hay código EAN VÁLIDO
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -742,7 +742,7 @@ async def update_item(item_id: int, request: dict):
                 print(f"   - Establecimiento: {establecimiento_id}")
                 print(f"   - Precio: {precio}")
                 
-                # 🔥 IMPORTANTE: Usar producto_maestro_id (no producto_id)
+                # Verificar si ya existe un registro
                 if database_type == "postgresql":
                     cursor.execute("""
                         SELECT id FROM precios_productos
@@ -780,17 +780,17 @@ async def update_item(item_id: int, request: dict):
                     print(f"✅ Precio actualizado en precios_productos (ID: {precio_existente[0]})")
                     precio_actualizado = True
                 else:
-                    # Insertar nuevo registro
+                    # Insertar nuevo registro (usando producto_id)
                     if database_type == "postgresql":
                         cursor.execute("""
                             INSERT INTO precios_productos 
-                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                             VALUES (%s, %s, %s, %s, %s, %s)
                         """, (producto_maestro_id, establecimiento_id, precio, fecha_factura, usuario_id, factura_id))
                     else:
                         cursor.execute("""
                             INSERT INTO precios_productos 
-                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (producto_maestro_id, establecimiento_id, precio, fecha_factura, usuario_id, factura_id))
                     
