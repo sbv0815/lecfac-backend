@@ -482,78 +482,81 @@ async def parse_invoice(file: UploadFile = File(...)):
                 # C. REGISTRAR PRECIO EN BASE COMUNITARIA
                 # -------------------------------------------------------
                 # -------------------------------------------------------
-# C. REGISTRAR PRECIO EN BASE COMUNITARIA
 # -------------------------------------------------------
-if producto_maestro_id and establecimiento_id:
-    try:
-        fecha_hoy = datetime.now().date()
-        
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            # Verificar si ya existe registro de hoy
-            cursor.execute("""
-                SELECT id FROM precios_productos
-                WHERE producto_id = %s
-                  AND establecimiento = %s
-                  AND DATE(fecha_reporte) = %s
-                  AND usuario_id = %s
-            """, (producto_maestro_id, establecimiento_raw, fecha_hoy, usuario_id))
-            
-            if not cursor.fetchone():
-                cursor.execute("""
-                    INSERT INTO precios_productos (
-                        producto_id,
-                        establecimiento,
-                        cadena,
-                        precio,
-                        usuario_id,
-                        factura_id,
-                        fecha_reporte
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    producto_maestro_id,
-                    establecimiento_raw,
-                    cadena,
-                    precio,
-                    usuario_id,
-                    factura_id,
-                    datetime.now()
-                ))
-                print(f"      💰 Precio registrado en base comunitaria")
-        else:  # SQLite
-            cursor.execute("""
-                SELECT id FROM precios_productos
-                WHERE producto_id = ?
-                  AND establecimiento = ?
-                  AND DATE(fecha_reporte) = ?
-                  AND usuario_id = ?
-            """, (producto_maestro_id, establecimiento_raw, fecha_hoy, usuario_id))
-            
-            if not cursor.fetchone():
-                cursor.execute("""
-                    INSERT INTO precios_productos (
-                        producto_id,
-                        establecimiento,
-                        cadena,
-                        precio,
-                        usuario_id,
-                        factura_id,
-                        fecha_reporte
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    producto_maestro_id,
-                    establecimiento_raw,
-                    cadena,
-                    precio,
-                    usuario_id,
-                    factura_id,
-                    datetime.now()
-                ))
-                print(f"      💰 Precio registrado en base comunitaria")
-    except Exception as e:
-        print(f"      ⚠️ Error registrando precio: {e}")
-        # No romper el flujo, continuar con siguiente producto
-                continue
-        
+                # C. REGISTRAR PRECIO EN BASE COMUNITARIA
+                # -------------------------------------------------------
+                if producto_maestro_id and establecimiento_id:
+                    try:
+                        fecha_hoy = datetime.now().date()
+                        
+                        if os.environ.get("DATABASE_TYPE") == "postgresql":
+                            # Verificar si ya existe registro de hoy
+                            cursor.execute("""
+                                SELECT id FROM precios_productos
+                                WHERE producto_id = %s
+                                  AND establecimiento = %s
+                                  AND DATE(fecha_reporte) = %s
+                                  AND usuario_id = %s
+                            """, (producto_maestro_id, establecimiento_raw, fecha_hoy, usuario_id))
+                            
+                            if not cursor.fetchone():
+                                cursor.execute("""
+                                    INSERT INTO precios_productos (
+                                        producto_id,
+                                        establecimiento,
+                                        cadena,
+                                        precio,
+                                        usuario_id,
+                                        factura_id,
+                                        fecha_reporte
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """, (
+                                    producto_maestro_id,
+                                    establecimiento_raw,
+                                    cadena,
+                                    precio,
+                                    usuario_id,
+                                    factura_id,
+                                    datetime.now()
+                                ))
+                                print(f"      💰 Precio registrado en base comunitaria")
+                        else:  # SQLite
+                            cursor.execute("""
+                                SELECT id FROM precios_productos
+                                WHERE producto_id = ?
+                                  AND establecimiento = ?
+                                  AND DATE(fecha_reporte) = ?
+                                  AND usuario_id = ?
+                            """, (producto_maestro_id, establecimiento_raw, fecha_hoy, usuario_id))
+                            
+                            if not cursor.fetchone():
+                                cursor.execute("""
+                                    INSERT INTO precios_productos (
+                                        producto_id,
+                                        establecimiento,
+                                        cadena,
+                                        precio,
+                                        usuario_id,
+                                        factura_id,
+                                        fecha_reporte
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    producto_maestro_id,
+                                    establecimiento_raw,
+                                    cadena,
+                                    precio,
+                                    usuario_id,
+                                    factura_id,
+                                    datetime.now()
+                                ))
+                                print(f"      💰 Precio registrado en base comunitaria")
+                    except Exception as e:
+                        print(f"      ⚠️ Error registrando precio: {e}")
+                        # No romper el flujo, continuar con siguiente producto
+                
+            except Exception as e:
+                print(f"   ❌ Error procesando producto {idx}: {e}")
+                continue  # ← El continue va AQUÍ, al nivel del for loop
         # =========================================================
         # PASO 4: ACTUALIZAR GASTOS MENSUALES (Analytics Personal)
         # =========================================================
@@ -2670,6 +2673,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
