@@ -328,33 +328,33 @@ async def parse_invoice(file: UploadFile = File(...)):
         
         # Convertir fecha vacía a None (será NULL en PostgreSQL)
         fecha_factura = data.get("fecha") or None
-
-if os.environ.get("DATABASE_TYPE") == "postgresql":
-    cursor.execute("""
-        INSERT INTO facturas (
-            usuario_id, 
-            establecimiento_id,
-            establecimiento,
-            cadena,
-            total_factura,
-            fecha_factura,
-            fecha_cargue,
-            estado_validacion,
-            tiene_imagen,
-            productos_detectados
-        ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
-        RETURNING id
-    """, (
-        usuario_id,
-        establecimiento_id,
-        establecimiento_raw,
-        cadena,
-        total_factura,
-        fecha_factura,  # Ahora puede ser None
-        'procesado',
-        True,
-        len(productos_ocr)
-    ))
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO facturas (
+                    usuario_id, 
+                    establecimiento_id,
+                    establecimiento,
+                    cadena,
+                    total_factura,
+                    fecha_factura,
+                    fecha_cargue,
+                    estado_validacion,
+                    tiene_imagen,
+                    productos_detectados
+                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
+                RETURNING id
+            """, (
+                usuario_id,
+                establecimiento_id,
+                establecimiento_raw,
+                cadena,
+                total_factura,
+                fecha_factura,  # Ahora puede ser None
+                'procesado',
+                True,
+                len(productos_ocr)
+            ))
         else:  # SQLite
             cursor.execute("""
                 INSERT INTO facturas (
@@ -384,7 +384,6 @@ if os.environ.get("DATABASE_TYPE") == "postgresql":
         
         factura_id = cursor.fetchone()[0]
         print(f"   ✅ Factura creada con ID: {factura_id}")
-        
         # =========================================================
         # 🔥 PASO 2.5: APLICAR CORRECCIONES AUTOMÁTICAS (NUEVO)
         # =========================================================
@@ -2692,6 +2691,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
