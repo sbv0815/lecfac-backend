@@ -621,7 +621,7 @@ def similitud_texto(a: str, b: str) -> float:
 
 # Agregar estos endpoints en admin_dashboard.py
 
-@router.put("/items/{item_id}")
+
 @router.put("/items/{item_id}")
 async def update_item(item_id: int, request: dict):
     """
@@ -693,13 +693,13 @@ async def update_item(item_id: int, request: dict):
                 else:
                     print(f"⚠️ Código recibido no es válido (no numérico o muy corto): '{codigo_limpio}'")
                     print(f"   → Manteniendo código actual: {codigo_actual}")
-            else:
-                print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
-                print(f"   → Manteniendo código actual: {codigo_actual}")
-            else:
-                print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
+                else:
+                    print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
+                    print(f"   → Manteniendo código actual: {codigo_actual}")
+                else:
+                    print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
         
-        print(f"📌 Código final a guardar: {codigo_final}")
+                    print(f"📌 Código final a guardar: {codigo_final}")
         
         # 3. Determinar si el código final es VÁLIDO para precios_productos
         codigo_es_valido = (
