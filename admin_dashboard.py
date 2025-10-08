@@ -484,6 +484,364 @@ def similitud_texto(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() * 100
 
 
+# Agregar estos endpoints en admin_dashboard.py
+
+@router.put("/items/{item_id}")
+async def update_item(item_id: int, request: dict):
+    """
+    Actualizar un item de factura (nombre, código, precio, cantidad)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    
+    try:
+        # Obtener datos del request
+        nombre = request.get("nombre")
+        codigo = request.get("codigo")
+        precio = request.get("precio")
+        cantidad = request.get("cantidad", 1)
+        
+        if not nombre or precio is None:
+            raise HTTPException(status_code=400, detail="Nombre y precio son requeridos")
+        
+        # Verificar que el item existe
+        if database_type == "postgresql":
+            cursor.execute(
+                "SELECT factura_id, usuario_id FROM items_factura WHERE id = %s",
+                (item_id,)
+            )
+        else:
+            cursor.execute(
+                "SELECT factura_id, usuario_id FROM items_factura WHERE id = ?",
+                (item_id,)
+            )
+        
+        resultado = cursor.fetchone()
+        if not resultado:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Item no encontrado")
+        
+        factura_id = resultado[0]
+        usuario_id = resultado[1]
+        
+        # Si hay código, intentar vincular con producto maestro
+        producto_maestro_id = None
+        if codigo and len(codigo) >= 8:
+            if database_type == "postgresql":
+                cursor.execute(
+                    "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
+                    (codigo,)
+                )
+            else:
+                cursor.execute(
+                    "SELECT id FROM productos_maestros WHERE codigo_ean = ?",
+                    (codigo,)
+                )
+            
+            prod_result = cursor.fetchone()
+            if prod_result:
+                producto_maestro_id = prod_result[0]
+            else:
+                # Crear nuevo producto maestro
+                if database_type == "postgresql":
+                    cursor.execute("""
+                        INSERT INTO productos_maestros 
+                        (codigo_ean, nombre_normalizado, total_reportes)
+                        VALUES (%s, %s, 1)
+                        RETURNING id
+                    """, (codigo, nombre))
+                    producto_maestro_id = cursor.fetchone()[0]
+                else:
+                    cursor.execute("""
+                        INSERT INTO productos_maestros 
+                        (codigo_ean, nombre_normalizado, total_reportes)
+                        VALUES (?, ?, 1)
+                    """, (codigo, nombre))
+                    producto_maestro_id = cursor.lastrowid
+        
+        # Actualizar el item
+        if database_type == "postgresql":
+            cursor.execute("""
+                UPDATE items_factura
+                SET nombre_leido = %s,
+                    codigo_leido = %s,
+                    precio_pagado = %s,
+                    cantidad = %s,
+                    producto_maestro_id = %s
+                WHERE id = %s
+            """, (nombre, codigo, precio, cantidad, producto_maestro_id, item_id))
+        else:
+            cursor.execute("""
+                UPDATE items_factura
+                SET nombre_leido = ?,
+                    codigo_leido = ?,
+                    precio_pagado = ?,
+                    cantidad = ?,
+                    producto_maestro_id = ?
+                WHERE id = ?
+            """, (nombre, codigo, precio, cantidad, producto_maestro_id, item_id))
+        
+        # Actualizar precio en precios_productos si hay producto_maestro_id
+        if producto_maestro_id:
+            # Obtener establecimiento_id
+            if database_type == "postgresql":
+                cursor.execute(
+                    "SELECT establecimiento_id FROM facturas WHERE id = %s",
+                    (factura_id,)
+                )
+            else:
+                cursor.execute(
+                    "SELECT establecimiento_id FROM facturas WHERE id = ?",
+                    (factura_id,)
+                )
+            
+            est_result = cursor.fetchone()
+            if est_result and est_result[0]:
+                establecimiento_id = est_result[0]
+                
+                # Insertar o actualizar precio
+                if database_type == "postgresql":
+                    cursor.execute("""
+                        INSERT INTO precios_productos 
+                        (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                        VALUES (%s, %s, %s, CURRENT_DATE, %s, %s)
+                        ON CONFLICT DO NOTHING
+                    """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+                else:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO precios_productos 
+                        (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                        VALUES (?, ?, ?, date('now'), ?, ?)
+                    """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": "Item actualizado correctamente",
+            "item_id": item_id,
+            "factura_id": factura_id,
+            "producto_maestro_id": producto_maestro_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/facturas/{factura_id}/items")
+async def add_item(factura_id: int, request: dict):
+    """
+    Agregar un nuevo item a una factura
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    
+    try:
+        # Obtener datos del request
+        nombre = request.get("nombre")
+        codigo = request.get("codigo", "")
+        precio = request.get("precio")
+        cantidad = request.get("cantidad", 1)
+        
+        if not nombre or precio is None:
+            raise HTTPException(status_code=400, detail="Nombre y precio son requeridos")
+        
+        # Verificar que la factura existe y obtener usuario_id
+        if database_type == "postgresql":
+            cursor.execute(
+                "SELECT usuario_id, establecimiento_id FROM facturas WHERE id = %s",
+                (factura_id,)
+            )
+        else:
+            cursor.execute(
+                "SELECT usuario_id, establecimiento_id FROM facturas WHERE id = ?",
+                (factura_id,)
+            )
+        
+        factura_info = cursor.fetchone()
+        if not factura_info:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        usuario_id = factura_info[0]
+        establecimiento_id = factura_info[1]
+        
+        # Si hay código, buscar o crear producto maestro
+        producto_maestro_id = None
+        if codigo and len(codigo) >= 8:
+            if database_type == "postgresql":
+                cursor.execute(
+                    "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
+                    (codigo,)
+                )
+            else:
+                cursor.execute(
+                    "SELECT id FROM productos_maestros WHERE codigo_ean = ?",
+                    (codigo,)
+                )
+            
+            prod_result = cursor.fetchone()
+            if prod_result:
+                producto_maestro_id = prod_result[0]
+            else:
+                # Crear nuevo producto maestro
+                if database_type == "postgresql":
+                    cursor.execute("""
+                        INSERT INTO productos_maestros 
+                        (codigo_ean, nombre_normalizado, total_reportes)
+                        VALUES (%s, %s, 1)
+                        RETURNING id
+                    """, (codigo, nombre))
+                    producto_maestro_id = cursor.fetchone()[0]
+                else:
+                    cursor.execute("""
+                        INSERT INTO productos_maestros 
+                        (codigo_ean, nombre_normalizado, total_reportes)
+                        VALUES (?, ?, 1)
+                    """, (codigo, nombre))
+                    producto_maestro_id = cursor.lastrowid
+        
+        # Insertar el nuevo item
+        if database_type == "postgresql":
+            cursor.execute("""
+                INSERT INTO items_factura 
+                (factura_id, usuario_id, nombre_leido, codigo_leido, precio_pagado, cantidad, producto_maestro_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (factura_id, usuario_id, nombre, codigo, precio, cantidad, producto_maestro_id))
+            new_item_id = cursor.fetchone()[0]
+        else:
+            cursor.execute("""
+                INSERT INTO items_factura 
+                (factura_id, usuario_id, nombre_leido, codigo_leido, precio_pagado, cantidad, producto_maestro_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (factura_id, usuario_id, nombre, codigo, precio, cantidad, producto_maestro_id))
+            new_item_id = cursor.lastrowid
+        
+        # Si hay producto_maestro_id y establecimiento_id, agregar a precios_productos
+        if producto_maestro_id and establecimiento_id:
+            if database_type == "postgresql":
+                cursor.execute("""
+                    INSERT INTO precios_productos 
+                    (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                    VALUES (%s, %s, %s, CURRENT_DATE, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+            else:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO precios_productos 
+                    (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                    VALUES (?, ?, ?, date('now'), ?, ?)
+                """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+        
+        # Actualizar contador de productos en factura
+        if database_type == "postgresql":
+            cursor.execute("""
+                UPDATE facturas 
+                SET productos_guardados = (
+                    SELECT COUNT(*) FROM items_factura WHERE factura_id = %s
+                )
+                WHERE id = %s
+            """, (factura_id, factura_id))
+        else:
+            cursor.execute("""
+                UPDATE facturas 
+                SET productos_guardados = (
+                    SELECT COUNT(*) FROM items_factura WHERE factura_id = ?
+                )
+                WHERE id = ?
+            """, (factura_id, factura_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "message": "Item agregado correctamente",
+            "item_id": new_item_id,
+            "factura_id": factura_id,
+            "producto_maestro_id": producto_maestro_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================
+# EJEMPLO DE USO EN FRONTEND
+# ========================================
+
+"""
+// Editar un producto existente
+async function editarProducto(itemId, nombre, codigo, precio, cantidad) {
+    const response = await fetch(`/admin/items/${itemId}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            nombre: nombre,
+            codigo: codigo,
+            precio: parseFloat(precio),
+            cantidad: parseInt(cantidad)
+        })
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+        alert('Producto actualizado');
+        location.reload();
+    }
+}
+
+// Agregar un producto nuevo
+async function agregarProducto(facturaId, nombre, codigo, precio, cantidad) {
+    const response = await fetch(`/admin/facturas/${facturaId}/items`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            nombre: nombre,
+            codigo: codigo,
+            precio: parseFloat(precio),
+            cantidad: parseInt(cantidad)
+        })
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+        alert('Producto agregado');
+        location.reload();
+    }
+}
+
+// Eliminar un producto (ya existe)
+async function eliminarProducto(itemId) {
+    const response = await fetch(`/admin/items/${itemId}`, {
+        method: 'DELETE'
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+        alert('Producto eliminado');
+        location.reload();
+    }
+}
+"""
+
+
 @router.post("/duplicados/productos/fusionar")
 async def fusionar_productos_admin(request: dict):
     """Fusionar dos productos duplicados"""
