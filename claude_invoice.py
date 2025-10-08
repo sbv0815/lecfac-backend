@@ -62,7 +62,8 @@ REGLAS ESTRICTAS PARA PRODUCTOS:
 5. Incluye TODOS los productos visibles, incluso si están repetidos
 6. NO incluyas líneas con precio negativo (descuentos)
 7. NO incluyas líneas que empiecen con "%" o "DESCUENTO" o "DTO"
-8. NO incluyas líneas de "SUBTOTAL", "IVA", "TOTAL A PAGAR"
+8. NO incluyas líneas de  "IVA"
+9.Incluye SUBTOTAL/TOTAL como valor de lo comprado
 
 Devuelve un JSON con esta estructura EXACTA:
 {
