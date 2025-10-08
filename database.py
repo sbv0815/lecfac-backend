@@ -400,7 +400,7 @@ def create_postgresql_tables():
         )
         ''')
         
-        # Agregar columna establecimiento_id si no existe
+        # Agregar columnas faltantes si no existen
         try:
             cursor.execute("""
                 ALTER TABLE facturas 
@@ -410,6 +410,61 @@ def create_postgresql_tables():
             print("✓ Columna 'establecimiento_id' verificada en facturas")
         except Exception as e:
             print(f"⚠️ Columna establecimiento_id: {e}")
+            conn.rollback()
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS productos_guardados INTEGER DEFAULT 0
+            """)
+            conn.commit()
+            print("✓ Columna 'productos_guardados' verificada en facturas")
+        except Exception as e:
+            print(f"⚠️ Columna productos_guardados: {e}")
+            conn.rollback()
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS productos_detectados INTEGER DEFAULT 0
+            """)
+            conn.commit()
+            print("✓ Columna 'productos_detectados' verificada en facturas")
+        except Exception as e:
+            print(f"⚠️ Columna productos_detectados: {e}")
+            conn.rollback()
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS estado_validacion VARCHAR(20) DEFAULT 'pendiente'
+            """)
+            conn.commit()
+            print("✓ Columna 'estado_validacion' verificada en facturas")
+        except Exception as e:
+            print(f"⚠️ Columna estado_validacion: {e}")
+            conn.rollback()
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS puntaje_calidad INTEGER DEFAULT 0
+            """)
+            conn.commit()
+            print("✓ Columna 'puntaje_calidad' verificada en facturas")
+        except Exception as e:
+            print(f"⚠️ Columna puntaje_calidad: {e}")
+            conn.rollback()
+        
+        try:
+            cursor.execute("""
+                ALTER TABLE facturas 
+                ADD COLUMN IF NOT EXISTS porcentaje_lectura DECIMAL(5,2)
+            """)
+            conn.commit()
+            print("✓ Columna 'porcentaje_lectura' verificada en facturas")
+        except Exception as e:
+            print(f"⚠️ Columna porcentaje_lectura: {e}")
             conn.rollback()
         
         print("✓ Tabla 'facturas' actualizada")
