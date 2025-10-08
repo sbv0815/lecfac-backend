@@ -978,3 +978,136 @@ def test_database_connection():
         if conn:
             conn.close()
         return False
+
+def obtener_productos_frecuentes_faltantes(usuario_id: int, codigos_detectados: set, limite: int = 3):
+    """
+    Identifica productos que el usuario compra frecuentemente pero no están en la factura actual
+    """
+    from datetime import datetime, timedelta
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.veces_comprado,
+                pm.precio_promedio,
+                EXTRACT(DAY FROM (CURRENT_TIMESTAMP - pc.ultima_compra)) as dias_sin_comprar
+            FROM patrones_compra pc
+            JOIN productos_maestro pm ON pc.producto_id = pm.id
+            WHERE pc.usuario_id = %s 
+              AND pc.veces_comprado >= 3
+              AND pc.recordatorio_activo = TRUE
+              AND EXTRACT(DAY FROM (CURRENT_TIMESTAMP - pc.ultima_compra)) >= (pc.frecuencia_dias * 0.7)
+            ORDER BY pc.veces_comprado DESC, dias_sin_comprar DESC
+            LIMIT 10
+        """, (usuario_id,))
+    else:
+        cursor.execute("""
+            SELECT 
+                pm.codigo_ean,
+                pm.nombre,
+                pc.frecuencia_dias,
+                pc.ultima_compra,
+                pc.veces_comprado,
+                pm.precio_promedio,
+                julianday('now') - julianday(pc.ultima_compra) as dias_sin_comprar
+            FROM patrones_compra pc
+            JOIN productos_maestro pm ON pc.producto_maestro_id = pm.id
+            WHERE pc.usuario_id = ? 
+              AND pc.veces_comprado >= 3
+              AND julianday('now') - julianday(pc.ultima_compra) >= (pc.frecuencia_dias * 0.7)
+            ORDER BY pc.veces_comprado DESC, dias_sin_comprar DESC
+            LIMIT 10
+        """, (usuario_id,))
+    
+    candidatos = cursor.fetchall()
+    conn.close()
+    
+    productos_sugeridos = []
+    
+    for prod in candidatos:
+        codigo = prod[0]
+        nombre = prod[1]
+        frecuencia = prod[2]
+        veces_comprado = prod[4]
+        precio_promedio = prod[5]
+        dias_sin_comprar = int(prod[6])
+        
+        if codigo not in codigos_detectados:
+            relevancia = min(100, int((dias_sin_comprar / frecuencia) * 100))
+            
+            productos_sugeridos.append({
+                "codigo": codigo,
+                "nombre": nombre,
+                "precio_estimado": precio_promedio or 0,
+                "compras_anteriores": veces_comprado,
+                "relevancia": relevancia,
+                "mensaje": f"Normalmente compras este producto cada {frecuencia} días"
+            })
+    
+    productos_sugeridos.sort(key=lambda x: x['relevancia'], reverse=True)
+    return productos_sugeridos[:limite]
+
+def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usuario_id: int):
+    """Agrega un producto confirmado manualmente por el usuario"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("SELECT id FROM productos_maestro WHERE codigo_ean = %s", (codigo_ean,))
+        else:
+            cursor.execute("SELECT id FROM productos_maestro WHERE codigo_ean = ?", (codigo_ean,))
+        
+        resultado = cursor.fetchone()
+        if not resultado:
+            conn.close()
+            return False
+        
+        producto_id = resultado[0]
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("SELECT establecimiento FROM facturas WHERE id = %s", (factura_id,))
+        else:
+            cursor.execute("SELECT establecimiento FROM facturas WHERE id = ?", (factura_id,))
+        
+        factura_info = cursor.fetchone()
+        establecimiento = factura_info[0]
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO historial_compras_usuario 
+                (usuario_id, producto_id, precio_pagado, establecimiento, factura_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (usuario_id, producto_id, precio, establecimiento, factura_id))
+            
+            cursor.execute("""
+                INSERT INTO precios_historicos 
+                (producto_id, establecimiento, precio, usuario_id, factura_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (producto_id, establecimiento, precio, usuario_id, factura_id))
+        else:
+            cursor.execute("""
+                INSERT INTO historial_compras_usuario 
+                (usuario_id, producto_id, precio_pagado, establecimiento, factura_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (usuario_id, producto_id, precio, establecimiento, factura_id))
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Error confirmando producto: {e}")
+        conn.rollback()
+        conn.close()
+        return False
+        if conn:
+            conn.close()
+        return False
