@@ -1,321 +1,223 @@
 import anthropic
 import base64
 import os
+import re
 import json
-from typing import Dict
+from pathlib import Path
+import logging
 
-def parse_invoice_with_claude(image_path: str) -> Dict:
-    """Procesa factura con Claude Vision API"""
-    try:
-        print("======================================================================")
-        print("PROCESANDO FACTURA")
-        print("======================================================================")
-        
-        # Leer imagen
-        with open(image_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        # Tipo MIME
-        media_type = "image/png" if image_path.lower().endswith('.png') else "image/jpeg"
-        
-        # Cliente Anthropic
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY no configurada")
-        
-        client = anthropic.Anthropic(api_key=api_key)
-        
-        # ========== PROMPT OPTIMIZADO ==========
-        prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
+logger = logging.getLogger(__name__)
 
-# OBJETIVO
-Extraer: establecimiento, fecha, total y CADA producto con su código.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# ESTABLECIMIENTOS COMUNES
-Si el nombre contiene alguna de estas palabras, usa SOLO el nombre principal:
-JUMBO | ÉXITO | CARULLA | OLÍMPICA | ARA | D1 | ALKOSTO | MAKRO | PRICESMART | CAFAM | COLSUBSIDIO | EURO | METRO | CRUZ VERDE | FARMATODO | LA REBAJA | FALABELLA | HOME CENTER
-
-Ejemplo: "JUMBO BULEVAR NIZA" → usa "JUMBO"
-
-# CÓDIGOS DE PRODUCTOS - CRÍTICO
-Los códigos están SIEMPRE a la IZQUIERDA del nombre del producto.
-
-EJEMPLOS REALES:
-✓ "116 BANANO URABA" → codigo: "116"
-✓ "1045 ZANAHORIA" → codigo: "1045"  
-✓ "7702993047842 LECHE ALPINA" → codigo: "7702993047842"
-✓ "23456 ARROZ DIANA X 500G" → codigo: "23456"
-
-CÓDIGOS INVÁLIDOS (tienen letras o símbolos):
-✗ "343718DF.VD PRODUCTO" → "" (tiene letras DF)
-✗ "344476DF.20% PRODUCTO" → "" (tiene letras y %)
-✗ "REF123 PRODUCTO" → "" (tiene letras REF)
-
-REGLAS:
-1. Busca el PRIMER número a la IZQUIERDA del nombre
-2. Si tiene SOLO DÍGITOS → ES EL CÓDIGO
-3. Si tiene letras o símbolos → pon ""
-4. Puede ser corto (3 dígitos) o largo (13 dígitos)
-
-# FORMATO CRÍTICO DE NÚMEROS
-⚠️ IMPORTANTE: Los precios deben estar SIN separadores de miles:
-- CORRECTO: 234890 (sin comas)
-- CORRECTO: 5425 (sin puntos)
-- INCORRECTO: 234,890
-- INCORRECTO: 5.425
-- Para cantidad con decimales SÍ usa punto: 0.878
-
-# FORMATO DE RESPUESTA
-Responde SOLO con este JSON (sin explicaciones, sin texto adicional):
-
-{
-  "establecimiento": "JUMBO",
-  "fecha": "2024-12-27",
-  "total": 234890,
-  "productos": [
-    {
-      "codigo": "7702993047842",
-      "nombre": "CHOCOLATE BT",
-      "cantidad": 1,
-      "precio": 2190
-    },
-    {
-      "codigo": "116",
-      "nombre": "BANANO URABA",
-      "cantidad": 0.878,
-      "precio": 5425
+def parse_invoice_with_claude(image_path: str) -> dict:
+    """
+    Usa Claude Vision para extraer datos de una factura.
+    Optimizado para facturas de 100+ productos con JSON compacto.
+    """
+    if not ANTHROPIC_API_KEY:
+        raise ValueError("❌ ANTHROPIC_API_KEY no configurada")
+    
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    
+    # Leer y codificar imagen
+    image_data = base64.standard_b64encode(Path(image_path).read_bytes()).decode("utf-8")
+    
+    # Detectar tipo de imagen
+    ext = Path(image_path).suffix.lower()
+    media_types = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg', 
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif'
     }
-  ]
-}
+    media_type = media_types.get(ext, 'image/jpeg')
+    
+    logger.info(f"🤖 Procesando con Claude Vision API...")
+    
+    # 🔥 NUEVO: Prompt ultra-compacto para facturas grandes
+    prompt = """Extrae todos los productos de esta factura en formato JSON COMPACTO.
 
-VALIDACIONES FINALES:
-- JSON válido sin errores de sintaxis
-- Precios como números enteros SIN separadores: 2190 (no 2,190)
-- Códigos como strings con solo dígitos: "116" o ""
-- Fecha formato YYYY-MM-DD
-- NO incluyas descuentos, IVA o subtotales en productos
+⚡ FORMATO ULTRA-COMPACTO (sin espacios, sin saltos de línea innecesarios):
+{"e":"Nombre Establecimiento","f":"2024-12-27","t":512352,"p":[{"c":"7702993047842","n":"Chocolate BT","q":1,"pr":2190},{"c":"","n":"BANANO","q":0.678,"pr":5425}]}
 
-ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
-        
-        # Llamar API
+REGLAS CRÍTICAS:
+1. Usa claves cortas: e=establecimiento, f=fecha, t=total, p=productos, c=codigo, n=nombre, q=cantidad, pr=precio
+2. Código (c): SOLO códigos de 8+ dígitos, si no hay usa ""
+3. Precios (pr): SIN separadores de miles (5425 NO 5,425)
+4. Cantidad (q): número decimal si es fraccional (0.678)
+5. Nombre (n): máximo 30 caracteres, abrevia si es necesario
+6. NO uses saltos de línea ni espacios extra
+7. Responde SOLO con JSON en una línea
+
+Ejemplo respuesta correcta:
+{"e":"EXITO","f":"2024-12-27","t":45890,"p":[{"c":"7702993047842","n":"Chocolate","q":1,"pr":2190},{"c":"","n":"Banano","q":0.5,"pr":3400}]}"""
+
+    try:
+        # 🔥 Max tokens en 8192 (máximo para Sonnet)
         message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=4096,
-            temperature=0,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_data,
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=8192,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_data,
+                            },
                         },
-                    },
-                    {"type": "text", "text": prompt}
-                ],
-            }],
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ],
+                }
+            ],
         )
         
-        # Parsear respuesta
-        response_text = message.content[0].text
-        print(f"📄 Respuesta de Claude: {response_text[:200]}...")
+        response_text = message.content[0].text.strip()
         
-        # Extraer JSON
-        json_str = response_text
+        logger.info("=" * 70)
+        logger.info("PROCESANDO FACTURA")
+        logger.info("=" * 70)
+        logger.info(f"📄 Longitud respuesta: {len(response_text)} caracteres")
+        logger.info(f"📄 Primeros 300 chars: {response_text[:300]}...")
         
-        if "```json" in response_text:
-            json_str = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            json_str = response_text.split("```")[1].split("```")[0]
-        elif "{" in response_text:
-            start = response_text.find("{")
-            end = response_text.rfind("}") + 1
-            if start != -1 and end > start:
-                json_str = response_text[start:end]
+        # Limpiar respuesta
+        response_text = response_text.strip()
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.startswith('```'):
+            response_text = response_text[3:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        response_text = response_text.strip()
         
-        json_str = json_str.strip()
-        
-        # Parsear JSON
-        data = json.loads(json_str)
-        
-        # LOG DEBUG: Ver JSON crudo
-        print("=" * 80)
-        print("🔍 JSON CRUDO PARSEADO:")
-        print(json.dumps(data, indent=2, ensure_ascii=False))
-        print("=" * 80)
-        
-        # Validar y normalizar
-        if "productos" not in data:
-            data["productos"] = []
-        
-        # ========== NORMALIZACIÓN DE PRODUCTOS ==========
-        productos_procesados = 0
-        codigos_validos = 0
-        
-        for prod in data.get("productos", []):
-            productos_procesados += 1
+        # 🔥 Verificar que el JSON esté completo
+        if not response_text.endswith('}') and not response_text.endswith(']'):
+            logger.warning("⚠️ JSON parece incompleto")
+            logger.error(f"Últimos 300 caracteres: ...{response_text[-300:]}")
             
-            # ========== NORMALIZACIÓN DE PRECIO MEJORADA ==========
-            if "precio" in prod:
+            # Intentar cerrar el JSON inteligentemente
+            if '"p":[' in response_text or '"productos":[' in response_text:
+                # Cerrar último producto y array
+                response_text = re.sub(r',?\s*\{[^}]*$', '', response_text)  # Eliminar último producto incompleto
+                if not response_text.endswith(']}'):
+                    response_text = response_text.rstrip(',') + ']}'
+                logger.info("🔧 JSON reparado automáticamente")
+        
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Error parseando JSON: {e}")
+            logger.error(f"JSON recibido (primeros 1000 chars): {response_text[:1000]}")
+            
+            # 🔥 Intentar recuperación inteligente
+            logger.info("🔧 Intentando recuperación de productos...")
+            
+            # Buscar el array de productos
+            match = re.search(r'"p"\s*:\s*\[(.*)', response_text, re.DOTALL)
+            if not match:
+                match = re.search(r'"productos"\s*:\s*\[(.*)', response_text, re.DOTALL)
+            
+            if match:
                 try:
-                    precio_str = str(prod["precio"])
+                    productos_str = match.group(1)
+                    # Eliminar último producto incompleto
+                    productos_str = re.sub(r',?\s*\{[^}]*$', '', productos_str)
+                    # Cerrar array
+                    productos_str = productos_str.rstrip(',') + ']'
                     
-                    # Si Claude ya envió sin separadores (como debe ser), usar directo
-                    if precio_str.isdigit():
-                        prod["precio"] = int(precio_str)
-                    else:
-                        # Backup: limpiar comas Y puntos de miles (pero NO decimales)
-                        # Primero eliminar espacios
-                        precio_str = precio_str.replace(" ", "")
-                        
-                        # Si tiene coma Y punto, asumir formato europeo: 1.234,56
-                        if "," in precio_str and "." in precio_str:
-                            # Formato: 1.234,56 → 1234.56
-                            precio_str = precio_str.replace(".", "").replace(",", ".")
-                            prod["precio"] = int(float(precio_str))
-                        # Si SOLO tiene coma, asumir decimal: 5,25
-                        elif "," in precio_str and "." not in precio_str:
-                            # Formato: 5,25 → 5.25
-                            precio_str = precio_str.replace(",", ".")
-                            prod["precio"] = int(float(precio_str))
-                        # Si tiene punto, podría ser miles o decimal
-                        elif "." in precio_str:
-                            # Si el precio tiene más de 3 dígitos después del punto, es miles
-                            parts = precio_str.split(".")
-                            if len(parts[-1]) >= 3:  # 5.425 → separador de miles
-                                precio_str = precio_str.replace(".", "")
-                                prod["precio"] = int(precio_str)
-                            else:  # 5.42 → decimal
-                                prod["precio"] = int(float(precio_str))
-                        else:
-                            # Ya es un número simple
-                            prod["precio"] = int(float(precio_str))
-                except Exception as e:
-                    print(f"⚠️ Error procesando precio '{prod.get('precio', 'N/A')}': {e}")
-                    prod["precio"] = 0
+                    # Construir JSON mínimo
+                    partial_json = f'{{"e":"Desconocido","f":"","t":0,"p":{productos_str}}}'
+                    data = json.loads(partial_json)
+                    
+                    logger.info(f"✅ Recuperados {len(data.get('p', []))} productos")
+                except Exception as recovery_error:
+                    logger.error(f"❌ Fallo en recuperación: {recovery_error}")
+                    raise ValueError(f"JSON inválido y no se pudo recuperar: {str(e)}")
             else:
-                prod["precio"] = 0
-            
-            prod["valor"] = prod["precio"]
-            
-            # Cantidad
-            if "cantidad" not in prod:
-                prod["cantidad"] = 1
-            
-            # ========== VALIDACIÓN DE CÓDIGO CORREGIDA ==========
-            if "codigo" in prod and prod["codigo"]:
-                codigo_limpio = str(prod["codigo"]).strip()
-                
-                # Validar que sea un código válido:
-                # 1. Solo dígitos (sin letras)
-                # 2. Sin caracteres especiales (%, $, kg, etc)
-                # 3. Puede tener cualquier longitud (desde 3 hasta 13 dígitos)
-                
-                if codigo_limpio.isdigit() and len(codigo_limpio) >= 3:
-                    prod["codigo"] = codigo_limpio
-                    codigos_validos += 1
-                    print(f"   ✓ Código válido: {codigo_limpio} → {prod['nombre'][:30]}")
-                else:
-                    prod["codigo"] = ""
-                    print(f"   ✗ Código inválido descartado: '{codigo_limpio}' → {prod['nombre'][:30]}")
-            else:
-                prod["codigo"] = ""
-                print(f"   ⚠️ Producto sin código → {prod['nombre'][:30]}")
+                raise ValueError(f"No se pudo parsear JSON: {str(e)}")
         
-        # Normalizar establecimiento
-        establecimiento_raw = data.get("establecimiento", "Desconocido")
-        establecimiento_normalizado = normalizar_establecimiento(establecimiento_raw)
-        data["establecimiento"] = establecimiento_normalizado
+        # Expandir formato compacto a formato normal
+        return expand_compact_format(data)
         
-        # Asegurar total
-        if "total" not in data or not data["total"]:
-            data["total"] = sum(p.get("precio", 0) for p in data.get("productos", []))
-        
-        print("=" * 80)
-        print(f"📊 RESUMEN:")
-        print(f"   Establecimiento: {data.get('establecimiento', 'N/A')}")
-        print(f"   Total: ${data.get('total', 0):,.0f}")
-        print(f"   Productos detectados: {productos_procesados}")
-        print(f"   Códigos válidos: {codigos_validos} ({int(codigos_validos/productos_procesados*100) if productos_procesados > 0 else 0}%)")
-        print("=" * 80)
-        
-        return {
-            "success": True,
-            "data": {
-                **data,
-                "metadatos": {
-                    "metodo": "claude-vision",
-                    "modelo": "claude-haiku",
-                    "productos_detectados": productos_procesados,
-                    "codigos_validos": codigos_validos
-                }
-            }
-        }
-        
-    except json.JSONDecodeError as e:
-        print(f"❌ Error parseando JSON: {e}")
-        print(f"JSON recibido: {json_str[:500] if 'json_str' in locals() else 'No disponible'}")
-        return {
-            "success": False, 
-            "error": f"No se pudo procesar la factura. Intenta con una imagen más clara.",
-            "debug": str(e)
-        }
-    except anthropic.NotFoundError as e:
-        print(f"❌ Error de modelo: {e}")
-        return {
-            "success": False,
-            "error": "Error con el modelo de IA. Contacta al administrador."
-        }
     except Exception as e:
-        print(f"❌ Error general: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "success": False, 
-            "error": "Error procesando la imagen. Verifica que sea una factura legible."
-        }
+        logger.error(f"❌ Error en Claude Vision: {e}")
+        raise
 
 
-def normalizar_establecimiento(nombre_raw: str) -> str:
+def expand_compact_format(data: dict) -> dict:
     """
-    Normaliza el nombre del establecimiento basándose en palabras clave
+    Convierte formato compacto a formato normal y normaliza datos.
+    Maneja tanto formato compacto (c,n,q,pr) como formato normal.
     """
-    nombre_lower = nombre_raw.lower()
     
-    # Mapeo de palabras clave a nombres normalizados
-    establecimientos = {
-        'jumbo': 'JUMBO',
-        'exito': 'ÉXITO',
-        'éxito': 'ÉXITO',
-        'carulla': 'CARULLA',
-        'olimpica': 'OLÍMPICA',
-        'olímpica': 'OLÍMPICA',
-        'ara': 'ARA',
-        'd1': 'D1',
-        'justo': 'JUSTO & BUENO',
-        'camacho': 'CAMACHO',
-        'surtifruver': 'SURTIFRUVER',
-        'alkosto': 'ALKOSTO',
-        'makro': 'MAKRO',
-        'pricesmart': 'PRICESMART',
-        'cafam': 'CAFAM',
-        'colsubsidio': 'COLSUBSIDIO',
-        'euro': 'EURO',
-        'metro': 'METRO',
-        'cruz verde': 'CRUZ VERDE',
-        'farmatodo': 'FARMATODO',
-        'la rebaja': 'LA REBAJA',
-        'falabella': 'FALABELLA',
-        'home center': 'HOME CENTER',
-        'homecenter': 'HOME CENTER'
+    # Detectar si es formato compacto o normal
+    productos_raw = data.get("p") or data.get("productos", [])
+    
+    productos_normalizados = []
+    for p in productos_raw:
+        # Extraer datos (soporta ambos formatos)
+        codigo = str(p.get("c") or p.get("codigo", "")).strip()
+        nombre = str(p.get("n") or p.get("nombre", "")).strip()
+        cantidad = p.get("q") or p.get("cantidad", 1)
+        precio = p.get("pr") or p.get("precio", 0)
+        
+        # Normalizar código (solo dígitos)
+        codigo = re.sub(r'\D', '', codigo)
+        if len(codigo) < 8:
+            codigo = ""
+        
+        # Normalizar precio (quitar separadores)
+        precio_str = str(precio).replace(",", "").replace(".", "") if isinstance(precio, str) else str(int(precio))
+        try:
+            precio = int(precio_str) if precio_str else 0
+        except ValueError:
+            logger.warning(f"⚠️ Precio inválido '{precio}' para {nombre}, usando 0")
+            precio = 0
+        
+        # Normalizar cantidad
+        try:
+            cantidad = float(cantidad)
+        except (ValueError, TypeError):
+            cantidad = 1.0
+        
+        productos_normalizados.append({
+            "codigo": codigo,
+            "nombre": nombre[:100],  # Limitar longitud
+            "cantidad": cantidad,
+            "precio": precio
+        })
+    
+    # Normalizar total
+    total = data.get("t") or data.get("total", 0)
+    if isinstance(total, str):
+        total = total.replace(",", "").replace(".", "")
+    try:
+        total = int(total) if total else 0
+    except (ValueError, TypeError):
+        total = sum(p["precio"] * p["cantidad"] for p in productos_normalizados)
+    
+    # Normalizar fecha
+    fecha = data.get("f") or data.get("fecha", "")
+    
+    # Normalizar establecimiento
+    establecimiento = data.get("e") or data.get("establecimiento", "")
+    
+    logger.info(f"✅ Procesados {len(productos_normalizados)} productos")
+    logger.info(f"📊 Establecimiento: {establecimiento}")
+    logger.info(f"📅 Fecha: {fecha}")
+    logger.info(f"💰 Total: ${total:,}")
+    
+    return {
+        "establecimiento": establecimiento.strip(),
+        "fecha": fecha.strip(),
+        "total": total,
+        "productos": productos_normalizados
     }
-    
-    # Buscar coincidencias
-    for clave, normalizado in establecimientos.items():
-        if clave in nombre_lower:
-            return normalizado
-    
-    # Si no encuentra coincidencia, retornar el original pero limpio
-    return nombre_raw.strip().upper()
