@@ -263,7 +263,7 @@ class FacturaManual(BaseModel):
 async def parse_invoice(file: UploadFile = File(...)):
     """
     Procesar factura con OCR usando Claude Vision API
-    Versión mejorada con guardado de imagen
+    VERSIÓN NUEVA ARQUITECTURA - Alimenta base comunitaria + personal
     """
     print(f"\n{'='*60}")
     print(f"📸 NUEVA FACTURA RECIBIDA: {file.filename}")
@@ -293,98 +293,390 @@ async def parse_invoice(file: UploadFile = File(...)):
             )
         
         data = result["data"]
-        print(f"✅ Datos extraídos: {len(data.get('productos', []))} productos")
+        productos_ocr = data.get("productos", [])
+        establecimiento_raw = data.get("establecimiento", "Desconocido")
+        fecha_factura = data.get("fecha")
+        total_factura = data.get("total", 0)
         
-        # 3. Validar datos
-        validator = FacturaValidator()
-        validacion = validator.validate_complete_invoice(data)
+        print(f"✅ Datos extraídos:")
+        print(f"   - Establecimiento: {establecimiento_raw}")
+        print(f"   - Productos: {len(productos_ocr)}")
+        print(f"   - Total: ${total_factura:,.0f}")
         
-        print(f"📋 Validación: {validacion['score']}/100 puntos")
-        print(f"   Issues: {len(validacion['issues'])}")
-        print(f"   Warnings: {len(validacion['warnings'])}")
-        
-        # 4. Guardar en base de datos
+        # 3. Conectar a BD
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Detectar cadena
-        cadena = detectar_cadena(data.get("establecimiento", ""))
+        # =========================================================
+        # PASO 1: NORMALIZAR ESTABLECIMIENTO (Base Comunitaria)
+        # =========================================================
+        print("\n🏪 PASO 1: Normalizando establecimiento...")
+        cadena = detectar_cadena(establecimiento_raw)
+        establecimiento_id = obtener_o_crear_establecimiento(establecimiento_raw, cadena)
+        print(f"   ✅ Establecimiento ID: {establecimiento_id} (Cadena: {cadena})")
         
-        # Insertar factura
-        cursor.execute("""
-            INSERT INTO facturas (
-                establecimiento, fecha, total, 
-                calidad_score, tiene_imagen,
-                raw_ocr_data
-            ) VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            data.get("establecimiento"),
-            data.get("fecha"),
-            data.get("total", 0),
-            validacion["score"],
-            True,  # Siempre True porque tenemos la imagen
-            json.dumps(data)
-        ))
+        # =========================================================
+        # PASO 2: CREAR FACTURA (Base Personal del Usuario)
+        # =========================================================
+        print("\n📄 PASO 2: Creando factura...")
         
-        factura_id = cursor.fetchone()[0]
-        print(f"✅ Factura guardada con ID: {factura_id}")
+        # Usuario por defecto = 1 (temporal, debe venir del token)
+        usuario_id = 1
         
-        # Insertar productos
-        productos = data.get("productos", [])
-        for producto in productos:
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute("""
-                INSERT INTO productos (
-                    nombre, codigo, cantidad, precio, 
-                    precio_total, establecimiento, fecha, 
-                    factura_id, cadena
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO facturas (
+                    usuario_id, 
+                    establecimiento_id,
+                    establecimiento,
+                    cadena,
+                    total_factura,
+                    fecha_factura,
+                    fecha_cargue,
+                    estado_validacion,
+                    tiene_imagen,
+                    productos_detectados
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
-                producto.get("nombre"),
-                producto.get("codigo"),
-                producto.get("cantidad", 1),
-                producto.get("precio_unitario", 0),
-                producto.get("precio_total", 0),
-                data.get("establecimiento"),
-                data.get("fecha"),
-                factura_id,
-                cadena
+                usuario_id,
+                establecimiento_id,  # ← NUEVO: establecimientos normalizados
+                establecimiento_raw,  # ← Legacy: mantener por compatibilidad
+                cadena,
+                total_factura,
+                fecha_factura,
+                datetime.now(),
+                'procesado',
+                True,
+                len(productos_ocr)
+            ))
+        else:  # SQLite
+            cursor.execute("""
+                INSERT INTO facturas (
+                    usuario_id, 
+                    establecimiento_id,
+                    establecimiento,
+                    cadena,
+                    total_factura,
+                    fecha_factura,
+                    fecha_cargue,
+                    estado_validacion,
+                    tiene_imagen,
+                    productos_detectados
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                usuario_id,
+                establecimiento_id,
+                establecimiento_raw,
+                cadena,
+                total_factura,
+                fecha_factura,
+                datetime.now(),
+                'procesado',
+                True,
+                len(productos_ocr)
             ))
         
-        print(f"✅ {len(productos)} productos guardados")
+        factura_id = cursor.fetchone()[0]
+        print(f"   ✅ Factura creada con ID: {factura_id}")
         
-        # COMMIT y cerrar conexión
+        # =========================================================
+        # PASO 3: PROCESAR PRODUCTOS (Base Comunitaria + Personal)
+        # =========================================================
+        print(f"\n🏷️ PASO 3: Procesando {len(productos_ocr)} productos...")
+        
+        productos_guardados = 0
+        productos_contribuidos = 0
+        
+        for idx, prod in enumerate(productos_ocr, 1):
+            try:
+                codigo_ean = str(prod.get("codigo", "")).strip()
+                nombre = str(prod.get("nombre", "")).strip()
+                precio = int(prod.get("valor") or prod.get("precio") or 0)
+                cantidad = int(prod.get("cantidad", 1))
+                
+                # Validar datos mínimos
+                if not nombre or precio <= 0:
+                    print(f"   ⚠️ Producto {idx} incompleto, saltando...")
+                    continue
+                
+                # Validar código EAN (debe tener al menos 8 dígitos)
+                codigo_ean_valido = None
+                if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
+                    codigo_ean_valido = codigo_ean
+                
+                print(f"   📦 {idx}. {nombre[:30]}... (${precio:,})")
+                
+                # -------------------------------------------------------
+                # A. REGISTRAR EN CATÁLOGO GLOBAL (Base Comunitaria)
+                # -------------------------------------------------------
+                producto_maestro_id = None
+                
+                if codigo_ean_valido:
+                    # Tiene EAN válido → Buscar/crear en productos_maestros
+                    producto_maestro_id = obtener_o_crear_producto_maestro(
+                        codigo_ean=codigo_ean_valido,
+                        nombre=nombre,
+                        precio=precio
+                    )
+                    
+                    if producto_maestro_id:
+                        print(f"      ✅ Vinculado a catálogo global (ID: {producto_maestro_id})")
+                        productos_contribuidos += 1
+                else:
+                    print(f"      ⚠️ Sin EAN válido, no se vincula a catálogo")
+                
+                # -------------------------------------------------------
+                # B. CREAR ITEM_FACTURA (Base Personal)
+                # -------------------------------------------------------
+                if os.environ.get("DATABASE_TYPE") == "postgresql":
+                    cursor.execute("""
+                        INSERT INTO items_factura (
+                            factura_id,
+                            producto_maestro_id,
+                            usuario_id,
+                            codigo_leido,
+                            nombre_leido,
+                            precio_pagado,
+                            cantidad,
+                            matching_confianza
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        factura_id,
+                        producto_maestro_id,  # Puede ser NULL si no tiene EAN
+                        usuario_id,
+                        codigo_ean,
+                        nombre,
+                        precio,
+                        cantidad,
+                        100 if codigo_ean_valido else 50  # Confianza del matching
+                    ))
+                else:  # SQLite
+                    cursor.execute("""
+                        INSERT INTO items_factura (
+                            factura_id,
+                            producto_maestro_id,
+                            usuario_id,
+                            codigo_leido,
+                            nombre_leido,
+                            precio_pagado,
+                            cantidad,
+                            matching_confianza
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        factura_id,
+                        producto_maestro_id,
+                        usuario_id,
+                        codigo_ean,
+                        nombre,
+                        precio,
+                        cantidad,
+                        100 if codigo_ean_valido else 50
+                    ))
+                
+                productos_guardados += 1
+                
+                # -------------------------------------------------------
+                # C. REGISTRAR PRECIO EN BASE COMUNITARIA
+                # -------------------------------------------------------
+                if producto_maestro_id and establecimiento_id:
+                    try:
+                        fecha_hoy = datetime.now().date()
+                        
+                        if os.environ.get("DATABASE_TYPE") == "postgresql":
+                            # Verificar si ya existe registro de hoy
+                            cursor.execute("""
+                                SELECT id FROM precios_productos
+                                WHERE producto_maestro_id = %s
+                                  AND establecimiento_id = %s
+                                  AND fecha_registro = %s
+                                  AND usuario_id = %s
+                            """, (producto_maestro_id, establecimiento_id, fecha_hoy, usuario_id))
+                            
+                            if not cursor.fetchone():
+                                cursor.execute("""
+                                    INSERT INTO precios_productos (
+                                        producto_maestro_id,
+                                        establecimiento_id,
+                                        precio,
+                                        fecha_registro,
+                                        usuario_id,
+                                        factura_id
+                                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                                """, (
+                                    producto_maestro_id,
+                                    establecimiento_id,
+                                    precio,
+                                    fecha_hoy,
+                                    usuario_id,
+                                    factura_id
+                                ))
+                                print(f"      💰 Precio registrado en base comunitaria")
+                        else:  # SQLite
+                            cursor.execute("""
+                                SELECT id FROM precios_productos
+                                WHERE producto_maestro_id = ?
+                                  AND establecimiento_id = ?
+                                  AND fecha_registro = ?
+                                  AND usuario_id = ?
+                            """, (producto_maestro_id, establecimiento_id, fecha_hoy, usuario_id))
+                            
+                            if not cursor.fetchone():
+                                cursor.execute("""
+                                    INSERT INTO precios_productos (
+                                        producto_maestro_id,
+                                        establecimiento_id,
+                                        precio,
+                                        fecha_registro,
+                                        usuario_id,
+                                        factura_id
+                                    ) VALUES (?, ?, ?, ?, ?, ?)
+                                """, (
+                                    producto_maestro_id,
+                                    establecimiento_id,
+                                    precio,
+                                    fecha_hoy,
+                                    usuario_id,
+                                    factura_id
+                                ))
+                                print(f"      💰 Precio registrado en base comunitaria")
+                    except Exception as e:
+                        print(f"      ⚠️ Error registrando precio: {e}")
+                        # No romper el flujo, continuar con siguiente producto
+                
+            except Exception as e:
+                print(f"   ❌ Error procesando producto {idx}: {e}")
+                continue
+        
+        # =========================================================
+        # PASO 4: ACTUALIZAR GASTOS MENSUALES (Analytics Personal)
+        # =========================================================
+        print("\n📊 PASO 4: Actualizando gastos mensuales...")
+        
+        try:
+            if fecha_factura:
+                fecha_obj = datetime.strptime(fecha_factura, "%Y-%m-%d") if isinstance(fecha_factura, str) else fecha_factura
+            else:
+                fecha_obj = datetime.now()
+            
+            anio = fecha_obj.year
+            mes = fecha_obj.month
+            
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                # Usar UPSERT (INSERT ... ON CONFLICT)
+                cursor.execute("""
+                    INSERT INTO gastos_mensuales (
+                        usuario_id,
+                        anio,
+                        mes,
+                        establecimiento_id,
+                        total_gastado,
+                        total_facturas,
+                        total_productos
+                    ) VALUES (%s, %s, %s, %s, %s, 1, %s)
+                    ON CONFLICT (usuario_id, anio, mes, establecimiento_id)
+                    DO UPDATE SET
+                        total_gastado = gastos_mensuales.total_gastado + EXCLUDED.total_gastado,
+                        total_facturas = gastos_mensuales.total_facturas + 1,
+                        total_productos = gastos_mensuales.total_productos + EXCLUDED.total_productos,
+                        fecha_calculo = CURRENT_TIMESTAMP
+                """, (usuario_id, anio, mes, establecimiento_id, total_factura, productos_guardados))
+            else:  # SQLite
+                # Verificar si existe
+                cursor.execute("""
+                    SELECT id, total_gastado, total_facturas, total_productos
+                    FROM gastos_mensuales
+                    WHERE usuario_id = ? AND anio = ? AND mes = ? AND establecimiento_id = ?
+                """, (usuario_id, anio, mes, establecimiento_id))
+                
+                resultado = cursor.fetchone()
+                if resultado:
+                    # Actualizar
+                    cursor.execute("""
+                        UPDATE gastos_mensuales
+                        SET total_gastado = total_gastado + ?,
+                            total_facturas = total_facturas + 1,
+                            total_productos = total_productos + ?,
+                            fecha_calculo = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (total_factura, productos_guardados, resultado[0]))
+                else:
+                    # Crear
+                    cursor.execute("""
+                        INSERT INTO gastos_mensuales (
+                            usuario_id, anio, mes, establecimiento_id,
+                            total_gastado, total_facturas, total_productos
+                        ) VALUES (?, ?, ?, ?, ?, 1, ?)
+                    """, (usuario_id, anio, mes, establecimiento_id, total_factura, productos_guardados))
+            
+            print(f"   ✅ Gastos actualizados para {mes}/{anio}")
+        except Exception as e:
+            print(f"   ⚠️ Error actualizando gastos mensuales: {e}")
+            # No romper el flujo
+        
+        # =========================================================
+        # PASO 5: COMMIT Y GUARDAR IMAGEN
+        # =========================================================
+        print(f"\n💾 PASO 5: Guardando cambios...")
+        
+        # Actualizar contador de productos guardados en factura
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                UPDATE facturas 
+                SET productos_guardados = %s
+                WHERE id = %s
+            """, (productos_guardados, factura_id))
+        else:
+            cursor.execute("""
+                UPDATE facturas 
+                SET productos_guardados = ?
+                WHERE id = ?
+            """, (productos_guardados, factura_id))
+        
         conn.commit()
         cursor.close()
         conn.close()
-        conn = None  # Importante: marcar como cerrada
+        conn = None
         
-        # 5. GUARDAR IMAGEN (con nueva conexión)
-        print(f"📸 Guardando imagen para factura {factura_id}...")
+        # Guardar imagen
+        print(f"\n📸 PASO 6: Guardando imagen...")
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
         
         if imagen_guardada:
             print(f"✅✅✅ IMAGEN GUARDADA EXITOSAMENTE ✅✅✅")
         else:
-            print(f"⚠️ Advertencia: Imagen no se guardó, pero factura está registrada")
+            print(f"⚠️ Advertencia: Imagen no se guardó")
         
-        # 6. Limpiar archivo temporal
+        # Limpiar archivo temporal
         try:
             os.unlink(temp_file.name)
             print(f"✅ Archivo temporal eliminado")
         except Exception as e:
             print(f"⚠️ Error eliminando temporal: {e}")
         
-        print(f"{'='*60}")
+        print(f"\n{'='*60}")
         print(f"✅ FACTURA PROCESADA EXITOSAMENTE")
+        print(f"{'='*60}")
+        print(f"📊 Resumen:")
+        print(f"   - Factura ID: {factura_id}")
+        print(f"   - Productos guardados: {productos_guardados}/{len(productos_ocr)}")
+        print(f"   - Contribuciones al catálogo: {productos_contribuidos}")
+        print(f"   - Imagen: {'✅' if imagen_guardada else '❌'}")
         print(f"{'='*60}\n")
         
         return {
             "success": True,
             "factura_id": factura_id,
             "data": data,
-            "validation": validacion,
-            "imagen_guardada": imagen_guardada
+            "productos_guardados": productos_guardados,
+            "productos_contribuidos": productos_contribuidos,
+            "imagen_guardada": imagen_guardada,
+            "estadisticas": {
+                "total_detectados": len(productos_ocr),
+                "guardados_personal": productos_guardados,
+                "contribuidos_comunidad": productos_contribuidos,
+                "establecimiento_normalizado": establecimiento_id
+            }
         }
         
     except HTTPException:
@@ -2372,6 +2664,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
