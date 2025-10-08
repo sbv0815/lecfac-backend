@@ -46,6 +46,7 @@ from duplicados_routes import router as duplicados_router  # ← AGREGAR ESTA L�
 # Importar procesador OCR y auditoría
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
+from corrections_service import aplicar_correcciones_automaticas
 
 # ==========================================
 # CICLO DE VIDA DE LA APLICACIÓN
@@ -342,8 +343,8 @@ async def parse_invoice(file: UploadFile = File(...)):
                 RETURNING id
             """, (
                 usuario_id,
-                establecimiento_id,  # ← NUEVO: establecimientos normalizados
-                establecimiento_raw,  # ← Legacy: mantener por compatibilidad
+                establecimiento_id,
+                establecimiento_raw,
                 cadena,
                 total_factura,
                 fecha_factura,
@@ -383,14 +384,42 @@ async def parse_invoice(file: UploadFile = File(...)):
         print(f"   ✅ Factura creada con ID: {factura_id}")
         
         # =========================================================
+        # 🔥 PASO 2.5: APLICAR CORRECCIONES AUTOMÁTICAS (NUEVO)
+        # =========================================================
+        print(f"\n🔍 PASO 2.5: Aplicando correcciones automáticas...")
+        
+        try:
+            from corrections_service import aplicar_correcciones_automaticas
+            
+            productos_corregidos = aplicar_correcciones_automaticas(
+                conn,
+                productos_ocr,
+                establecimiento_id=establecimiento_id,
+                umbral_similitud=0.85
+            )
+            
+            correcciones_aplicadas = sum(1 for p in productos_corregidos if p.get('correccion_aplicada'))
+            print(f"   ✅ {correcciones_aplicadas}/{len(productos_ocr)} productos auto-corregidos")
+            
+        except ImportError:
+            # Si corrections_service no existe, usar productos originales
+            print(f"   ⚠️ Módulo de correcciones no disponible, usando datos OCR")
+            productos_corregidos = productos_ocr
+        except Exception as e:
+            # Si hay error, no romper el flujo
+            print(f"   ⚠️ Error aplicando correcciones: {e}")
+            productos_corregidos = productos_ocr
+        
+        # =========================================================
         # PASO 3: PROCESAR PRODUCTOS (Base Comunitaria + Personal)
         # =========================================================
-        print(f"\n🏷️ PASO 3: Procesando {len(productos_ocr)} productos...")
+        # 🔥 CAMBIO: Usar productos_corregidos en lugar de productos_ocr
+        print(f"\n🏷️ PASO 3: Procesando {len(productos_corregidos)} productos...")
         
         productos_guardados = 0
         productos_contribuidos = 0
         
-        for idx, prod in enumerate(productos_ocr, 1):
+        for idx, prod in enumerate(productos_corregidos, 1):  # ← ÚNICO CAMBIO AQUÍ
             try:
                 codigo_ean = str(prod.get("codigo", "")).strip()
                 nombre = str(prod.get("nombre", "")).strip()
@@ -407,7 +436,9 @@ async def parse_invoice(file: UploadFile = File(...)):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
                 
-                print(f"   📦 {idx}. {nombre[:30]}... (${precio:,})")
+                # 🔥 Mostrar si fue corregido automáticamente
+                marca_correccion = " ✨ AUTO-CORREGIDO" if prod.get('correccion_aplicada') else ""
+                print(f"   📦 {idx}. {nombre[:30]}... (${precio:,}){marca_correccion}")
                 
                 # -------------------------------------------------------
                 # A. REGISTRAR EN CATÁLOGO GLOBAL (Base Comunitaria)
@@ -445,13 +476,13 @@ async def parse_invoice(file: UploadFile = File(...)):
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         factura_id,
-                        producto_maestro_id,  # Puede ser NULL si no tiene EAN
+                        producto_maestro_id,
                         usuario_id,
                         codigo_ean,
                         nombre,
                         precio,
                         cantidad,
-                        100 if codigo_ean_valido else 50  # Confianza del matching
+                        100 if codigo_ean_valido else 50
                     ))
                 else:  # SQLite
                     cursor.execute("""
@@ -481,16 +512,11 @@ async def parse_invoice(file: UploadFile = File(...)):
                 # -------------------------------------------------------
                 # C. REGISTRAR PRECIO EN BASE COMUNITARIA
                 # -------------------------------------------------------
-                # -------------------------------------------------------
-# -------------------------------------------------------
-                # C. REGISTRAR PRECIO EN BASE COMUNITARIA
-                # -------------------------------------------------------
                 if producto_maestro_id and establecimiento_id:
                     try:
                         fecha_hoy = datetime.now().date()
                         
                         if os.environ.get("DATABASE_TYPE") == "postgresql":
-                            # Verificar si ya existe registro de hoy
                             cursor.execute("""
                                 SELECT id FROM precios_productos
                                 WHERE producto_id = %s
@@ -552,11 +578,11 @@ async def parse_invoice(file: UploadFile = File(...)):
                                 print(f"      💰 Precio registrado en base comunitaria")
                     except Exception as e:
                         print(f"      ⚠️ Error registrando precio: {e}")
-                        # No romper el flujo, continuar con siguiente producto
                 
             except Exception as e:
                 print(f"   ❌ Error procesando producto {idx}: {e}")
-                continue  # ← El continue va AQUÍ, al nivel del for loop
+                continue
+        
         # =========================================================
         # PASO 4: ACTUALIZAR GASTOS MENSUALES (Analytics Personal)
         # =========================================================
@@ -572,7 +598,6 @@ async def parse_invoice(file: UploadFile = File(...)):
             mes = fecha_obj.month
             
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                # Usar UPSERT (INSERT ... ON CONFLICT)
                 cursor.execute("""
                     INSERT INTO gastos_mensuales (
                         usuario_id,
@@ -591,7 +616,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                         fecha_calculo = CURRENT_TIMESTAMP
                 """, (usuario_id, anio, mes, establecimiento_id, total_factura, productos_guardados))
             else:  # SQLite
-                # Verificar si existe
                 cursor.execute("""
                     SELECT id, total_gastado, total_facturas, total_productos
                     FROM gastos_mensuales
@@ -600,7 +624,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                 
                 resultado = cursor.fetchone()
                 if resultado:
-                    # Actualizar
                     cursor.execute("""
                         UPDATE gastos_mensuales
                         SET total_gastado = total_gastado + ?,
@@ -610,7 +633,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                         WHERE id = ?
                     """, (total_factura, productos_guardados, resultado[0]))
                 else:
-                    # Crear
                     cursor.execute("""
                         INSERT INTO gastos_mensuales (
                             usuario_id, anio, mes, establecimiento_id,
@@ -621,14 +643,12 @@ async def parse_invoice(file: UploadFile = File(...)):
             print(f"   ✅ Gastos actualizados para {mes}/{anio}")
         except Exception as e:
             print(f"   ⚠️ Error actualizando gastos mensuales: {e}")
-            # No romper el flujo
         
         # =========================================================
         # PASO 5: COMMIT Y GUARDAR IMAGEN
         # =========================================================
         print(f"\n💾 PASO 5: Guardando cambios...")
         
-        # Actualizar contador de productos guardados en factura
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute("""
                 UPDATE facturas 
@@ -695,7 +715,6 @@ async def parse_invoice(file: UploadFile = File(...)):
         print(f"   {str(e)}")
         print(traceback.format_exc())
         
-        # Rollback si hay conexión abierta
         if conn:
             try:
                 conn.rollback()
@@ -703,7 +722,6 @@ async def parse_invoice(file: UploadFile = File(...)):
             except:
                 pass
         
-        # Limpiar archivo temporal
         if temp_file:
             try:
                 os.unlink(temp_file.name)
@@ -711,7 +729,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                 pass
         
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/invoices/save-manual")
 async def save_manual_invoice(factura: FacturaManual):
     """Guardar factura manualmente (sin imagen)"""
@@ -2673,6 +2690,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
