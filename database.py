@@ -167,6 +167,7 @@ def create_postgresql_tables():
         print("✓ Tabla 'establecimientos' creada")
         
         # 1.2. PRODUCTOS_MAESTROS (NUEVA - Catálogo global unificado)
+        # 1.2. PRODUCTOS_MAESTROS (NUEVA - Catálogo global unificado)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_maestros (
             id SERIAL PRIMARY KEY,
@@ -191,50 +192,34 @@ def create_postgresql_tables():
             primera_vez_reportado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             
-            CHECK (LENGTH(codigo_ean) >= 8),
+            -- 🔥 CORREGIDO: Permitir códigos PLU (3+ dígitos) y EAN (8-14 dígitos)
+            CHECK (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14),
             CHECK (total_reportes >= 0)
         )
         ''')
         print("✓ Tabla 'productos_maestros' creada")
         
-        # ============================================
-        # 🔧 ARREGLAR TABLA precios_productos
-        # ============================================
-        print("🔧 Verificando/arreglando tabla precios_productos...")
-        
-        # Verificar si la tabla existe
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'precios_productos'
-            )
-        """)
-        tabla_existe = cursor.fetchone()[0]
-        
-        if tabla_existe:
-            print("⚠️ Tabla precios_productos existe, verificando estructura...")
-            
-            # Verificar columnas existentes
+        # 🔥 AGREGAR DESPUÉS: Eliminar constraint viejo si existe y agregar el correcto
+        print("🔧 Corrigiendo constraints de productos_maestros...")
+        try:
+            # Primero eliminar constraint viejo
             cursor.execute("""
-                SELECT column_name, data_type
-                FROM information_schema.columns 
-                WHERE table_name = 'precios_productos'
-                ORDER BY ordinal_position
+                ALTER TABLE productos_maestros 
+                DROP CONSTRAINT IF EXISTS productos_maestros_codigo_ean_check
             """)
-            columnas_existentes = {row[0]: row[1] for row in cursor.fetchall()}
-            print(f"   📋 Columnas existentes: {list(columnas_existentes.keys())}")
+            conn.commit()
             
-            # 🔥 PROBLEMA: Si tiene "establecimiento" (texto), eliminarlo
-            if 'establecimiento' in columnas_existentes:
-                print("   ⚠️ PROBLEMA: Columna 'establecimiento' (texto) existe")
-                print("   🗑️ Eliminando columna 'establecimiento'...")
-                try:
-                    cursor.execute("ALTER TABLE precios_productos DROP COLUMN establecimiento")
-                    conn.commit()
-                    print("   ✅ Columna 'establecimiento' eliminada")
-                except Exception as e:
-                    print(f"   ❌ Error eliminando columna: {e}")
-                    conn.rollback()
+            # Agregar constraint correcto
+            cursor.execute("""
+                ALTER TABLE productos_maestros 
+                ADD CONSTRAINT productos_maestros_codigo_ean_check 
+                CHECK (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14)
+            """)
+            conn.commit()
+            print("✅ Constraint actualizado: códigos PLU (3+ dígitos) permitidos")
+        except Exception as e:
+            print(f"⚠️ Error actualizando constraint: {e}")
+            conn.rollback()
             
             # Agregar establecimiento_id si no existe
             if 'establecimiento_id' not in columnas_existentes:
