@@ -56,8 +56,13 @@ Ejemplo respuesta correcta:
 
     try:
         # 🔥 Max tokens en 8192 (máximo para Sonnet)
+        # Opciones de modelo:
+        # - "claude-3-5-haiku-20241022" = Más barato (74% ahorro), bueno para facturas simples
+        # - "claude-3-5-sonnet-20241022" = Balance (actual), mejor precisión
+        model_to_use = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+        
         message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model=model_to_use,
             max_tokens=8192,
             messages=[
                 {
