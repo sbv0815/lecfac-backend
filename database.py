@@ -1339,3 +1339,111 @@ def confirmar_producto_manual(factura_id: int, codigo_ean: str, precio: int, usu
         conn.rollback()
         conn.close()
         return False
+
+# 1. NUEVA TABLA en database.py:
+
+class CorreccionProducto(Base):
+    __tablename__ = 'correcciones_productos'
+    
+    id = Column(Integer, primary_key=True)
+    nombre_ocr = Column(String, index=True)  # Lo que leyó el OCR
+    nombre_normalizado = Column(String)       # Normalizado para matching
+    codigo_ean_correcto = Column(String)      # El código correcto
+    establecimiento_id = Column(Integer, ForeignKey('establecimientos.id'), nullable=True)  # Para productos frescos
+    veces_usado = Column(Integer, default=0)  # Contador de uso
+    confianza = Column(Float, default=1.0)    # Qué tan confiable es
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    
+    establecimiento = relationship("Establecimiento", backref="correcciones")
+
+# 2. FUNCIÓN para aplicar correcciones en ocr_service.py:
+
+def aplicar_correcciones_aprendidas(productos: list, establecimiento_id: int = None):
+    """Aplicar correcciones aprendidas a productos detectados por OCR"""
+    
+    db = next(get_community_db())
+    
+    for producto in productos:
+        if producto.get('codigo_barras'):
+            continue  # Ya tiene código, no tocar
+        
+        nombre = producto.get('nombre', '').strip()
+        if not nombre:
+            continue
+        
+        # Normalizar nombre para matching
+        nombre_norm = normalizar_nombre(nombre)
+        
+        # Buscar corrección exacta
+        correccion = db.query(CorreccionProducto).filter(
+            CorreccionProducto.nombre_normalizado == nombre_norm,
+            or_(
+                CorreccionProducto.establecimiento_id == establecimiento_id,
+                CorreccionProducto.establecimiento_id.is_(None)
+            )
+        ).order_by(CorreccionProducto.confianza.desc()).first()
+        
+        if correccion:
+            producto['codigo_barras'] = correccion.codigo_ean_correcto
+            producto['nombre'] = correccion.nombre_ocr  # Usar nombre corregido
+            correccion.veces_usado += 1
+            db.commit()
+            print(f"✅ Corrección aplicada: {nombre} → {correccion.codigo_ean_correcto}")
+    
+    db.close()
+    return productos
+
+# 3. FUNCIÓN para guardar nueva corrección:
+
+def guardar_correccion(nombre_original: str, codigo_ean: str, establecimiento_id: int = None):
+    """Guardar una corrección para futuras facturas"""
+    
+    db = next(get_community_db())
+    
+    nombre_norm = normalizar_nombre(nombre_original)
+    
+    # Verificar si ya existe
+    existe = db.query(CorreccionProducto).filter(
+        CorreccionProducto.nombre_normalizado == nombre_norm,
+        CorreccionProducto.establecimiento_id == establecimiento_id
+    ).first()
+    
+    if existe:
+        existe.codigo_ean_correcto = codigo_ean
+        existe.confianza += 0.1  # Aumentar confianza
+    else:
+        correccion = CorreccionProducto(
+            nombre_ocr=nombre_original,
+            nombre_normalizado=nombre_norm,
+            codigo_ean_correcto=codigo_ean,
+            establecimiento_id=establecimiento_id,
+            veces_usado=0,
+            confianza=1.0
+        )
+        db.add(correccion)
+    
+    db.commit()
+    db.close()
+    print(f"💾 Corrección guardada: {nombre_original} → {codigo_ean}")
+
+# 4. ENDPOINT para guardar corrección desde el editor:
+
+@app.post("/admin/correcciones")
+async def crear_correccion(
+    nombre: str,
+    codigo_ean: str,
+    establecimiento_id: int = None,
+    db: Session = Depends(get_community_db)
+):
+    """Guardar corrección de producto para futuras facturas"""
+    guardar_correccion(nombre, codigo_ean, establecimiento_id)
+    return {"success": True}
+
+# 5. INTEGRAR en el flujo de guardado (upload_routes.py):
+
+# Después de hacer OCR, ANTES de guardar:
+productos_detectados = extraer_datos_con_claude(image_path)
+productos_corregidos = aplicar_correcciones_aprendidas(
+    productos_detectados['productos'],
+    establecimiento_id=establecimiento.id
+)
