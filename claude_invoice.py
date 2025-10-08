@@ -64,6 +64,9 @@ REGLAS ESTRICTAS PARA PRODUCTOS:
 7. NO incluyas líneas que empiecen con "%" o "DESCUENTO" o "DTO"
 8. NO incluyas líneas de  "IVA"
 9.Incluye SUBTOTAL/TOTAL como valor de lo comprado
+10.Mira MUY CUIDADOSAMENTE cada producto
+11.- REVISA DOS VECES cada producto para no perder ningún código
+12.Todo numero largo o corto cerca del nombre del  producto al lado izquierdo ES el código siempre y cuando no tenga caracteres especiales ejemplo %,kg,gr,etc
 
 Devuelve un JSON con esta estructura EXACTA:
 {
@@ -83,7 +86,7 @@ Devuelve un JSON con esta estructura EXACTA:
 EJEMPLO:
 Si ves "JUMBO BULEVAR NIZA" → usa "JUMBO"
 Si ves código "7702993047842" → cópialo exacto
-Si ves "BANANO URABA $5,425" sin código → usa "SIN_CODIGO"
+Si ves " 116 BANANO URABA $5,425" tiene código corto
 
 RESPONDE SOLO CON JSON, sin explicaciones adicionales."""
         
