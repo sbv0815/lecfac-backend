@@ -350,6 +350,12 @@ async def update_factura(factura_id: int, request: dict):
         total = request.get("total")
         fecha = request.get("fecha")
         
+        print(f"📝 Actualizando factura {factura_id}")
+        print(f"   Establecimiento: {establecimiento}")
+        print(f"   Total: {total}")
+        print(f"   Fecha: {fecha}")
+        print(f"   DB Type: {database_type}")
+        
         # Verificar que la factura existe
         if database_type == "postgresql":
             cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
@@ -360,61 +366,73 @@ async def update_factura(factura_id: int, request: dict):
             conn.close()
             raise HTTPException(status_code=404, detail="Factura no encontrada")
         
-        # Construir query dinámicamente según el tipo de BD
-        updates = []
-        params = []
-        param_index = 1
-        
-        if establecimiento:
-            if database_type == "postgresql":
-                updates.append(f"establecimiento = ${param_index}")
-                param_index += 1
-            else:
-                updates.append("establecimiento = ?")
-            params.append(establecimiento)
-        
-        if total is not None:
-            if database_type == "postgresql":
-                updates.append(f"total_factura = ${param_index}")
-                param_index += 1
-            else:
-                updates.append("total_factura = ?")
-            params.append(float(total))
-        
-        if fecha:
-            if database_type == "postgresql":
-                updates.append(f"fecha_cargue = ${param_index}")
-                param_index += 1
-            else:
-                updates.append("fecha_cargue = ?")
-            params.append(fecha)
-        
-        if not updates:
-            conn.close()
-            raise HTTPException(status_code=400, detail="No hay datos para actualizar")
-        
-        # Agregar factura_id al final
-        params.append(factura_id)
-        
-        # Ejecutar update
+        # Para PostgreSQL, construir query con placeholders %s
         if database_type == "postgresql":
+            updates = []
+            params = []
+            
+            if establecimiento:
+                updates.append("establecimiento = %s")
+                params.append(establecimiento)
+            
+            if total is not None:
+                updates.append("total_factura = %s")
+                params.append(float(total))
+            
+            if fecha:
+                updates.append("fecha_cargue = %s")
+                params.append(fecha)
+            
+            if not updates:
+                conn.close()
+                raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+            
+            params.append(factura_id)
+            
             query = f"""
                 UPDATE facturas 
                 SET {', '.join(updates)}
-                WHERE id = ${param_index}
+                WHERE id = %s
                 RETURNING id, establecimiento, total_factura, fecha_cargue
             """
+            
+            print(f"🔍 Query: {query}")
+            print(f"🔍 Params: {params}")
+            
             cursor.execute(query, params)
             result = cursor.fetchone()
+            
         else:
+            # SQLite
+            updates = []
+            params = []
+            
+            if establecimiento:
+                updates.append("establecimiento = ?")
+                params.append(establecimiento)
+            
+            if total is not None:
+                updates.append("total_factura = ?")
+                params.append(float(total))
+            
+            if fecha:
+                updates.append("fecha_cargue = ?")
+                params.append(fecha)
+            
+            if not updates:
+                conn.close()
+                raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+            
+            params.append(factura_id)
+            
             query = f"""
                 UPDATE facturas 
                 SET {', '.join(updates)}
                 WHERE id = ?
             """
+            
             cursor.execute(query, params)
             
-            # Obtener resultado actualizado
             cursor.execute("""
                 SELECT id, establecimiento, total_factura, fecha_cargue 
                 FROM facturas WHERE id = ?
@@ -423,6 +441,8 @@ async def update_factura(factura_id: int, request: dict):
         
         conn.commit()
         conn.close()
+        
+        print(f"✅ Factura actualizada: {result}")
         
         return {
             "success": True,
