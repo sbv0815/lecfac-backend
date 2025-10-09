@@ -542,64 +542,80 @@ def create_postgresql_tables():
         # ============================================
         
         # 3.1. CODIGOS_LOCALES (NUEVA - Productos sin EAN)
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS codigos_locales (
-            id SERIAL PRIMARY KEY,
-            producto_maestro_id INTEGER REFERENCES productos_maestros(id),
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-            
-            codigo_local VARCHAR(20) NOT NULL,
-            descripcion_local TEXT,
-            activo BOOLEAN DEFAULT TRUE,
-            
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            
-            UNIQUE(establecimiento_id, codigo_local)
-        )
-        ''')
-        print("✓ Tabla 'codigos_locales' creada")
-        
-        # 3.2. MATCHING_LOGS (NUEVA - Auditoría de matching)
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS matching_logs (
-            id SERIAL PRIMARY KEY,
-            item_factura_id INTEGER REFERENCES items_factura(id),
-            
-            codigo_leido VARCHAR(20),
-            nombre_leido VARCHAR(200),
-            producto_maestro_sugerido_id INTEGER REFERENCES productos_maestros(id),
-            
-            confianza INTEGER,
-            metodo_matching VARCHAR(50),
-            fue_aceptado BOOLEAN,
-            
-            fecha_matching TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        print("✓ Tabla 'matching_logs' creada")
-        
         # 3.3. CORRECCIONES_PRODUCTOS (Sistema de aprendizaje)
         print("🧠 Verificando tabla correcciones_productos...")
-
+        
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'correcciones_productos'
+            )
+        """)
+        tabla_correcciones_existe = cursor.fetchone()[0]
+        
+        if not tabla_correcciones_existe:
+            print("   ✨ Creando tabla correcciones_productos...")
+            cursor.execute('''
+            CREATE TABLE correcciones_productos (
+                id SERIAL PRIMARY KEY,
+                
+                nombre_ocr TEXT NOT NULL,
+                codigo_ocr TEXT,
+                
+                codigo_correcto TEXT NOT NULL,
+                nombre_correcto TEXT,
+                
+                nombre_normalizado TEXT NOT NULL,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                
+                factura_id INTEGER REFERENCES facturas(id),
+                usuario_id INTEGER,
+                fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                veces_aplicado INTEGER DEFAULT 0,
+                
+                UNIQUE(nombre_normalizado, establecimiento_id)
+            )
+            ''')
+            
+            cursor.execute('''
+            CREATE INDEX idx_correcciones_nombre 
+                ON correcciones_productos(nombre_normalizado)
+            ''')
+            
+            cursor.execute('''
+            CREATE INDEX idx_correcciones_establecimiento 
+                ON correcciones_productos(establecimiento_id)
+            ''')
+            
+            cursor.execute('''
+            CREATE INDEX idx_correcciones_veces 
+                ON correcciones_productos(veces_aplicado DESC)
+            ''')
+            
+            conn.commit()
+            print("   ✅ Tabla 'correcciones_productos' creada")
+        else:
+            print("   ✅ Tabla 'correcciones_productos' ya existe")
+        
         # 3.4. PROCESSING_JOBS (Sistema de procesamiento asíncrono)
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS processing_jobs (
-        id VARCHAR(50) PRIMARY KEY,
-        usuario_id INTEGER REFERENCES usuarios(id),
-        video_path VARCHAR(255),
-        status VARCHAR(20) DEFAULT 'pending',
-        factura_id INTEGER REFERENCES facturas(id),
-        frames_procesados INTEGER DEFAULT 0,
-        frames_exitosos INTEGER DEFAULT 0,
-        productos_detectados INTEGER DEFAULT 0,
-        error_message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        started_at TIMESTAMP,
-        completed_at TIMESTAMP,
-        CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processing_jobs (
+            id VARCHAR(50) PRIMARY KEY,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            video_path VARCHAR(255),
+            status VARCHAR(20) DEFAULT 'pending',
+            factura_id INTEGER REFERENCES facturas(id),
+            frames_procesados INTEGER DEFAULT 0,
+            frames_exitosos INTEGER DEFAULT 0,
+            productos_detectados INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
         )
         ''')
-    print("✓ Tabla 'processing_jobs' creada")
+        print("✓ Tabla 'processing_jobs' creada")
 
 # Índices para processing_jobs
     crear_indice_seguro(
