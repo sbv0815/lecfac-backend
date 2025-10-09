@@ -1523,63 +1523,187 @@ async def health_check():
 # ============================================
 # ENDPOINT: PROCESAR VIDEO DE FACTURA
 # ============================================
+# ============================================
+# ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO)
+# ============================================
 
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
-    video: UploadFile = File(...)  # ✅ Sin autenticación
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...)
 ):
     """
-    Procesa un video de factura
-    - Extrae frames cada 0.5 segundos
-    - Procesa cada frame con Claude Vision
-    - Consolida y deduplica productos
+    Procesa un video de factura DE FORMA ASÍNCRONA
+    
+    FLUJO:
+    1. Guarda el video temporalmente
+    2. Crea un job en la base de datos
+    3. Responde INMEDIATAMENTE con job_id
+    4. Procesa en background (1-3 minutos)
+    
+    El usuario puede cerrar la app y consultar después.
     """
     
-    # ✅ Imports locales
+    print("=" * 80)
+    print("📹 NUEVO VIDEO RECIBIDO (PROCESAMIENTO ASÍNCRONO)")
+    print("=" * 80)
+    
     try:
-        from video_processor import extraer_frames_video, deduplicar_productos, limpiar_frames_temporales
-    except ImportError as e:
-        print(f"❌ Error importando video_processor: {e}")
-        return {
-            "success": False,
-            "error": "Procesamiento de video no disponible."
-        }
+        # 1. Generar ID único para el job
+        job_id = str(uuid.uuid4())
+        print(f"🆔 Job ID generado: {job_id}")
+        
+        # 2. Guardar video temporalmente
+        video_path = f"/tmp/lecfac_video_{job_id}.webm"
+        content = await video.read()
+        
+        with open(video_path, "wb") as f:
+            f.write(content)
+        
+        video_size_mb = len(content) / (1024 * 1024)
+        print(f"💾 Video guardado: {video_size_mb:.2f} MB")
+        print(f"📂 Ruta: {video_path}")
+        
+        # 3. Crear job en base de datos
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        usuario_id = 1  # Usuario por defecto (sin autenticación)
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO processing_jobs 
+                (id, usuario_id, video_path, status, created_at)
+                VALUES (%s, %s, %s, 'pending', CURRENT_TIMESTAMP)
+            """, (job_id, usuario_id, video_path))
+        else:
+            cursor.execute("""
+                INSERT INTO processing_jobs 
+                (id, usuario_id, video_path, status, created_at)
+                VALUES (?, ?, ?, 'pending', ?)
+            """, (job_id, usuario_id, video_path, datetime.now()))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        print(f"✅ Job creado en BD")
+        
+        # 4. Agregar tarea en background
+        background_tasks.add_task(
+            process_video_background_task,
+            job_id,
+            video_path,
+            usuario_id
+        )
+        
+        print(f"✅ Tarea agregada a background")
+        print("=" * 80)
+        print("📤 RESPUESTA INMEDIATA ENVIADA AL CLIENTE")
+        print(f"⏱️  El procesamiento continuará en background")
+        print("=" * 80)
+        
+        # 5. ✅ RESPUESTA INMEDIATA (en 2-3 segundos)
+        return JSONResponse(
+            status_code=202,  # 202 = Accepted (procesando)
+            content={
+                "success": True,
+                "job_id": job_id,
+                "status": "pending",
+                "message": "Video recibido. Procesando en background.",
+                "estimated_time_minutes": "1-3",
+                "poll_endpoint": f"/invoices/job-status/{job_id}"
+            }
+        )
+        
+    except Exception as e:
+        print(f"\n❌ ERROR CREANDO JOB:")
+        print(f"   {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+# ============================================
+# FUNCIÓN DE BACKGROUND: Procesa el video SIN bloquear
+# ============================================
+
+async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
+    """
+    Esta función se ejecuta en BACKGROUND.
+    El usuario YA recibió respuesta y puede cerrar la app.
     
-    from claude_invoice import parse_invoice_with_claude
-    from database import obtener_o_crear_establecimiento, detectar_cadena
+    FLUJO:
+    1. Actualiza status a "processing"
+    2. Extrae frames del video
+    3. Procesa cada frame con Claude Vision
+    4. Deduplica productos
+    5. Guarda factura en BD
+    6. Actualiza job a "completed"
+    """
     
-    video_path = None
+    conn = None
     frames_paths = []
     
     try:
-        print("=" * 80)
-        print("📹 PROCESANDO VIDEO DE FACTURA")
-        print("=" * 80)
+        print(f"\n{'='*80}")
+        print(f"🔄 INICIANDO PROCESAMIENTO EN BACKGROUND")
+        print(f"🆔 Job ID: {job_id}")
+        print(f"{'='*80}")
         
-        # Guardar video temporal
-        print("💾 Guardando video...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm', dir='/tmp') as tmp_video:
-            content = await video.read()
-            tmp_video.write(content)
-            video_path = tmp_video.name
+        # 1. Actualizar status a "processing"
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        video_size_mb = len(content) / (1024 * 1024)
-        print(f"📦 Video: {video_size_mb:.2f} MB")
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                UPDATE processing_jobs 
+                SET status = 'processing',
+                    started_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (job_id,))
+        else:
+            cursor.execute("""
+                UPDATE processing_jobs 
+                SET status = 'processing',
+                    started_at = ?
+                WHERE id = ?
+            """, (datetime.now(), job_id))
         
-        # Extraer frames
-        print("\n🎬 Extrayendo frames...")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        conn = None
+        
+        print(f"✅ Status actualizado a 'processing'")
+        
+        # 2. Importar funciones necesarias
+        try:
+            from video_processor import extraer_frames_video, deduplicar_productos, limpiar_frames_temporales
+            from claude_invoice import parse_invoice_with_claude
+            from database import obtener_o_crear_establecimiento, detectar_cadena
+        except ImportError as e:
+            raise Exception(f"Error importando módulos: {e}")
+        
+        # 3. Extraer frames
+        print(f"\n🎬 Extrayendo frames del video...")
         frames_paths = extraer_frames_video(video_path, intervalo=0.5)
         
         if not frames_paths:
-            return {
-                "success": False,
-                "error": "No se pudieron extraer frames"
-            }
+            raise Exception("No se pudieron extraer frames del video")
         
         print(f"✅ {len(frames_paths)} frames extraídos")
         
-        # Procesar frames
-        print("\n🤖 Procesando con Claude...")
+        # 4. Procesar cada frame con Claude
+        print(f"\n🤖 Procesando frames con Claude Vision...")
+        
         todos_productos = []
         establecimiento = None
         total = 0
@@ -1587,9 +1711,9 @@ async def parse_invoice_video(
         frames_exitosos = 0
         
         for i, frame_path in enumerate(frames_paths):
-            print(f"   📸 Frame {i+1}/{len(frames_paths)}...")
-            
             try:
+                print(f"   📸 Frame {i+1}/{len(frames_paths)}...")
+                
                 resultado = parse_invoice_with_claude(frame_path)
                 
                 if resultado.get('success') and resultado.get('data'):
@@ -1603,59 +1727,59 @@ async def parse_invoice_video(
                     
                     productos = data.get('productos', [])
                     todos_productos.extend(productos)
-                    print(f"      ✓ {len(productos)} productos")
+                    print(f"      ✓ {len(productos)} productos detectados")
                     
             except Exception as e:
-                print(f"      ❌ Error: {e}")
+                print(f"      ⚠️ Error en frame: {e}")
                 continue
         
-        print(f"\n✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
-        print(f"📊 Productos: {len(todos_productos)}")
+        print(f"\n✅ Procesamiento completado:")
+        print(f"   - Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
+        print(f"   - Productos detectados: {len(todos_productos)}")
         
         if not todos_productos:
-            return {
-                "success": False,
-                "error": "No se detectaron productos"
-            }
+            raise Exception("No se detectaron productos en el video")
         
-        # Deduplicar
-        print("\n🔍 Deduplicando...")
+        # 5. Deduplicar productos
+        print(f"\n🔍 Deduplicando productos...")
         productos_unicos = deduplicar_productos(todos_productos)
-        print(f"✅ Únicos: {len(productos_unicos)}")
+        print(f"✅ Productos únicos: {len(productos_unicos)}")
         
-        # Guardar en BD
-        print("\n💾 Guardando en BD...")
+        # 6. Guardar en base de datos
+        print(f"\n💾 Guardando factura en BD...")
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
-            establecimiento_id = obtener_o_crear_establecimiento(
-                establecimiento, 
-                detectar_cadena(establecimiento)
-            )
-            
-            usuario_id = 1  # ✅ Usuario por defecto (sin autenticación)
+            # Normalizar establecimiento
+            cadena = detectar_cadena(establecimiento)
+            establecimiento_id = obtener_o_crear_establecimiento(establecimiento, cadena)
             
             # Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute("""
                     INSERT INTO facturas (
-                        usuario_id, establecimiento_id, total_factura, 
-                        fecha_factura, productos_detectados, estado
-                    ) VALUES (%s, %s, %s, %s, %s, 'procesado')
+                        usuario_id, establecimiento_id, establecimiento, cadena,
+                        total_factura, fecha_factura, fecha_cargue,
+                        productos_detectados, estado_validacion
+                    ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
                     RETURNING id
-                """, (usuario_id, establecimiento_id, total, fecha, len(productos_unicos)))
+                """, (usuario_id, establecimiento_id, establecimiento, cadena, 
+                      total, fecha, len(productos_unicos)))
                 factura_id = cursor.fetchone()[0]
             else:
                 cursor.execute("""
                     INSERT INTO facturas (
-                        usuario_id, establecimiento_id, total_factura, 
-                        fecha_factura, productos_detectados, estado
-                    ) VALUES (?, ?, ?, ?, ?, 'procesado')
-                """, (usuario_id, establecimiento_id, total, fecha, len(productos_unicos)))
+                        usuario_id, establecimiento_id, establecimiento, cadena,
+                        total_factura, fecha_factura, fecha_cargue,
+                        productos_detectados, estado_validacion
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'procesado')
+                """, (usuario_id, establecimiento_id, establecimiento, cadena,
+                      total, fecha, datetime.now(), len(productos_unicos)))
                 factura_id = cursor.lastrowid
             
-            print(f"   ✓ Factura ID: {factura_id}")
+            print(f"✅ Factura creada con ID: {factura_id}")
             
             # Guardar productos
             productos_guardados = 0
@@ -1663,7 +1787,7 @@ async def parse_invoice_video(
                 try:
                     codigo = producto.get('codigo', '')
                     nombre = producto.get('nombre', 'Sin nombre')
-                    precio = producto.get('precio', 0)
+                    precio = producto.get('precio') or producto.get('valor', 0)
                     
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
                         cursor.execute("""
@@ -1678,70 +1802,279 @@ async def parse_invoice_video(
                     
                     productos_guardados += 1
                 except Exception as e:
-                    print(f"   ⚠️ Error producto: {e}")
+                    print(f"   ⚠️ Error guardando producto: {e}")
                     continue
             
             # Actualizar contador
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute("""
-                    UPDATE facturas SET productos_guardados = %s WHERE id = %s
+                    UPDATE facturas 
+                    SET productos_guardados = %s 
+                    WHERE id = %s
                 """, (productos_guardados, factura_id))
             else:
                 cursor.execute("""
-                    UPDATE facturas SET productos_guardados = ? WHERE id = ?
+                    UPDATE facturas 
+                    SET productos_guardados = ? 
+                    WHERE id = ?
                 """, (productos_guardados, factura_id))
             
             conn.commit()
-            print(f"   ✓ {productos_guardados} productos guardados")
+            print(f"✅ {productos_guardados} productos guardados")
             
-            print("\n✅ PROCESAMIENTO COMPLETO")
+            # 7. Actualizar job como COMPLETADO
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    UPDATE processing_jobs 
+                    SET status = 'completed',
+                        factura_id = %s,
+                        completed_at = CURRENT_TIMESTAMP,
+                        productos_procesados = %s
+                    WHERE id = %s
+                """, (factura_id, productos_guardados, job_id))
+            else:
+                cursor.execute("""
+                    UPDATE processing_jobs 
+                    SET status = 'completed',
+                        factura_id = ?,
+                        completed_at = ?,
+                        productos_procesados = ?
+                    WHERE id = ?
+                """, (factura_id, datetime.now(), productos_guardados, job_id))
             
-            return {
-                "success": True,
-                "factura_id": factura_id,
-                "data": {
-                    "establecimiento": establecimiento,
-                    "fecha": fecha,
-                    "total": total,
-                    "productos": productos_unicos,
-                    "frames_procesados": len(frames_paths),
-                    "frames_exitosos": frames_exitosos
-                }
-            }
+            conn.commit()
+            
+            print(f"\n{'='*80}")
+            print(f"✅ JOB COMPLETADO EXITOSAMENTE")
+            print(f"{'='*80}")
+            print(f"📊 Resumen:")
+            print(f"   - Job ID: {job_id}")
+            print(f"   - Factura ID: {factura_id}")
+            print(f"   - Establecimiento: {establecimiento}")
+            print(f"   - Productos: {productos_guardados}")
+            print(f"   - Total: ${total:,.0f}")
+            print(f"{'='*80}\n")
             
         except Exception as e:
             conn.rollback()
-            print(f"❌ Error BD: {e}")
-            raise
+            raise e
         finally:
             cursor.close()
             conn.close()
+            conn = None
         
-    except Exception as e:
-        print(f"\n❌ ERROR:")
-        print(f"   {str(e)}")
-        import traceback
-        traceback.print_exc()
+        # 8. Limpiar archivos temporales
+        print(f"🧹 Limpiando archivos temporales...")
         
-        return {
-            "success": False,
-            "error": f"Error: {str(e)}"
-        }
-        
-    finally:
-        # Limpiar
-        print("\n🧹 Limpiando...")
-        
-        if video_path and os.path.exists(video_path):
-            try:
-                os.remove(video_path)
-                print("   ✓ Video eliminado")
-            except Exception as e:
-                print(f"   ⚠️ {e}")
+        if os.path.exists(video_path):
+            os.remove(video_path)
+            print(f"   ✓ Video eliminado")
         
         if frames_paths:
             limpiar_frames_temporales(frames_paths)
-            print(f"   ✓ Frames eliminados")
+            print(f"   ✓ {len(frames_paths)} frames eliminados")
+        
+    except Exception as e:
+        # Si hay error, guardarlo en BD
+        print(f"\n{'='*80}")
+        print(f"❌ ERROR EN PROCESAMIENTO EN BACKGROUND")
+        print(f"{'='*80}")
+        print(f"Job ID: {job_id}")
+        print(f"Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*80}\n")
+        
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    UPDATE processing_jobs 
+                    SET status = 'failed',
+                        error_message = %s,
+                        completed_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (str(e)[:500], job_id))
+            else:
+                cursor.execute("""
+                    UPDATE processing_jobs 
+                    SET status = 'failed',
+                        error_message = ?,
+                        completed_at = ?
+                    WHERE id = ?
+                """, (str(e)[:500], datetime.now(), job_id))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as db_error:
+            print(f"❌ Error actualizando job con error: {db_error}")
+        
+        # Limpiar archivos en caso de error
+        try:
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
+            if frames_paths:
+                limpiar_frames_temporales(frames_paths)
+        except:
+            pass
+
+
+# ============================================
+# ENDPOINT: Consultar status del job
+# ============================================
+
+@app.get("/invoices/job-status/{job_id}")
+async def get_job_status(job_id: str):
+    """
+    Consultar el estado de un job de procesamiento.
+    
+    Estados posibles:
+    - pending: En cola, aún no ha comenzado
+    - processing: Procesando frames
+    - completed: Finalizado exitosamente
+    - failed: Error durante el procesamiento
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT id, status, factura_id, error_message, 
+                       created_at, started_at, completed_at, productos_procesados
+                FROM processing_jobs
+                WHERE id = %s
+            """, (job_id,))
+        else:
+            cursor.execute("""
+                SELECT id, status, factura_id, error_message,
+                       created_at, started_at, completed_at, productos_procesados
+                FROM processing_jobs
+                WHERE id = ?
+            """, (job_id,))
+        
+        job = cursor.fetchone()
+        
+        if not job:
+            cursor.close()
+            conn.close()
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "Job no encontrado"
+                }
+            )
+        
+        response = {
+            "success": True,
+            "job_id": job[0],
+            "status": job[1],
+            "factura_id": job[2],
+            "error_message": job[3],
+            "created_at": job[4].isoformat() if job[4] else None,
+            "started_at": job[5].isoformat() if job[5] else None,
+            "completed_at": job[6].isoformat() if job[6] else None,
+            "productos_procesados": job[7]
+        }
+        
+        # Si está completado, obtener datos de la factura
+        if job[1] == 'completed' and job[2]:
+            cursor.execute("""
+                SELECT establecimiento, total_factura, productos_guardados
+                FROM facturas
+                WHERE id = %s
+            """, (job[2],)) if os.environ.get("DATABASE_TYPE") == "postgresql" else cursor.execute("""
+                SELECT establecimiento, total_factura, productos_guardados
+                FROM facturas
+                WHERE id = ?
+            """, (job[2],))
+            
+            factura = cursor.fetchone()
+            if factura:
+                response['factura'] = {
+                    "establecimiento": factura[0],
+                    "total": float(factura[1]) if factura[1] else 0,
+                    "productos": factura[2]
+                }
+        
+        cursor.close()
+        conn.close()
+        
+        return JSONResponse(content=response)
+        
+    except Exception as e:
+        print(f"❌ Error consultando job status: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+# ============================================
+# ENDPOINT: Listar jobs pendientes del usuario
+# ============================================
+
+@app.get("/invoices/pending-jobs")
+async def get_pending_jobs(usuario_id: int = 1):
+    """
+    Lista los últimos 10 jobs del usuario.
+    Útil para mostrar en la app los videos que están procesando.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT id, status, created_at, completed_at, factura_id
+                FROM processing_jobs
+                WHERE usuario_id = %s
+                ORDER BY created_at DESC
+                LIMIT 10
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT id, status, created_at, completed_at, factura_id
+                FROM processing_jobs
+                WHERE usuario_id = ?
+                ORDER BY created_at DESC
+                LIMIT 10
+            """, (usuario_id,))
+        
+        jobs = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return JSONResponse(content={
+            "success": True,
+            "jobs": [
+                {
+                    "job_id": job[0],
+                    "status": job[1],
+                    "created_at": job[2].isoformat() if job[2] else None,
+                    "completed_at": job[3].isoformat() if job[3] else None,
+                    "factura_id": job[4]
+                }
+                for job in jobs
+            ]
+        })
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
 # ==========================================
 # PÁGINAS HTML
 # ==========================================
@@ -3123,6 +3456,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
