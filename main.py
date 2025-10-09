@@ -1033,6 +1033,498 @@ async def get_invoice_status(factura_id: int):
     return {"status": "not_found"}
 
 # ==========================================
+# ENDPOINTS DE EDICIÓN Y CONTROL DE CALIDAD (ADMIN)
+# ==========================================
+
+@app.get("/admin/facturas/{factura_id}")
+async def get_factura_para_editor(factura_id: int):
+    """Obtener factura completa para el editor - BUSCA EN MÚLTIPLES TABLAS"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, usuario_id, establecimiento, cadena, total_factura, 
+                   fecha_cargue, estado_validacion, puntaje_calidad, tiene_imagen
+            FROM facturas WHERE id = %s
+        """, (factura_id,))
+        
+        factura = cursor.fetchone()
+        if not factura:
+            conn.close()
+            raise HTTPException(404, "Factura no encontrada")
+        
+        productos = []
+        
+        # Buscar en tabla productos primero
+        cursor.execute("""
+            SELECT id, codigo, nombre, valor
+            FROM productos
+            WHERE factura_id = %s
+            ORDER BY id
+        """, (factura_id,))
+        
+        for p in cursor.fetchall():
+            productos.append({
+                "id": p[0],
+                "codigo": p[1] or "",
+                "nombre": p[2] or "",
+                "precio": float(p[3]) if p[3] else 0
+            })
+        
+        # Si está vacía, buscar en items_factura
+        if len(productos) == 0:
+            cursor.execute("""
+                SELECT id, codigo_leido, nombre_leido, precio_pagado
+                FROM items_factura
+                WHERE factura_id = %s
+                ORDER BY id
+            """, (factura_id,))
+            
+            for p in cursor.fetchall():
+                productos.append({
+                    "id": p[0],
+                    "codigo": p[1] or "",
+                    "nombre": p[2] or "",
+                    "precio": float(p[3]) if p[3] else 0
+                })
+        
+        conn.close()
+        
+        return {
+            "id": factura[0],
+            "usuario_id": factura[1],
+            "establecimiento": factura[2] or "",
+            "cadena": factura[3],
+            "total": float(factura[4]) if factura[4] else 0,
+            "total_factura": float(factura[4]) if factura[4] else 0,
+            "fecha": factura[5].isoformat() if factura[5] else None,
+            "estado": factura[6] or "pendiente",
+            "puntaje": factura[7] or 0,
+            "tiene_imagen": factura[8] or False,
+            "productos": productos
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error en get_factura_para_editor: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+@app.put("/admin/productos/{producto_id}")
+async def actualizar_producto(producto_id: int, datos: dict):
+    """Actualizar producto en la factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        codigo = datos.get('codigo', '').strip()
+        nombre = datos.get('nombre', '').strip()
+        precio = datos.get('precio', 0)
+        
+        if not nombre:
+            raise HTTPException(400, "Nombre es requerido")
+        
+        # Intentar actualizar en tabla productos
+        cursor.execute("""
+            UPDATE productos
+            SET codigo = %s, nombre = %s, valor = %s
+            WHERE id = %s
+        """, (codigo, nombre, float(precio), producto_id))
+        
+        affected = cursor.rowcount
+        
+        # Si no está en productos, intentar en items_factura
+        if affected == 0:
+            cursor.execute("""
+                UPDATE items_factura
+                SET codigo_leido = %s, nombre_leido = %s, precio_pagado = %s
+                WHERE id = %s
+            """, (codigo, nombre, float(precio), producto_id))
+            affected = cursor.rowcount
+        
+        if affected == 0:
+            conn.close()
+            raise HTTPException(404, "Producto no encontrado")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Producto actualizado"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error actualizando producto: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, str(e))
+
+@app.delete("/admin/productos/{producto_id}")
+async def eliminar_producto_factura(producto_id: int):
+    """Eliminar producto de una factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Intentar eliminar de tabla productos
+        cursor.execute("DELETE FROM productos WHERE id = %s", (producto_id,))
+        affected = cursor.rowcount
+        
+        # Si no está en productos, intentar en items_factura
+        if affected == 0:
+            cursor.execute("DELETE FROM items_factura WHERE id = %s", (producto_id,))
+            affected = cursor.rowcount
+        
+        if affected == 0:
+            conn.close()
+            raise HTTPException(404, "Producto no encontrado")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Producto eliminado"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error eliminando producto: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, str(e))
+
+@app.post("/admin/facturas/{factura_id}/productos")
+async def agregar_producto_a_factura(factura_id: int, datos: dict):
+    """Agregar nuevo producto a una factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar que la factura existe
+        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(404, "Factura no encontrada")
+        
+        codigo = datos.get('codigo', '').strip()
+        nombre = datos.get('nombre', '').strip()
+        precio = datos.get('precio', 0)
+        
+        if not nombre:
+            conn.close()
+            raise HTTPException(400, "Nombre es requerido")
+        
+        # Agregar a tabla productos
+        cursor.execute("""
+            INSERT INTO productos (factura_id, codigo, nombre, valor)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """, (factura_id, codigo, nombre, float(precio)))
+        
+        nuevo_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True, 
+            "id": nuevo_id,
+            "message": "Producto agregado"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error agregando producto: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, str(e))
+
+@app.put("/admin/facturas/{factura_id}/datos-generales")
+async def actualizar_datos_generales(factura_id: int, datos: dict):
+    """Actualizar datos generales de la factura (establecimiento, total, fecha)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        establecimiento = datos.get('establecimiento')
+        total = datos.get('total', 0)
+        fecha = datos.get('fecha')
+        
+        print(f"📝 Actualizando factura {factura_id}:")
+        print(f"  - Establecimiento: {establecimiento}")
+        print(f"  - Total: {total}")
+        print(f"  - Fecha: {fecha}")
+        
+        updates = []
+        params = []
+        
+        if establecimiento:
+            updates.append("establecimiento = %s")
+            params.append(establecimiento)
+            updates.append("cadena = %s")
+            params.append(detectar_cadena(establecimiento))
+        
+        if total is not None:
+            updates.append("total_factura = %s")
+            params.append(float(total))
+        
+        if fecha:
+            updates.append("fecha_cargue = %s")
+            params.append(fecha)
+        
+        # Marcar como revisada después de editar
+        updates.append("estado_validacion = %s")
+        params.append('revisada')
+        
+        params.append(factura_id)
+        
+        query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, params)
+        
+        affected = cursor.rowcount
+        print(f"✅ {affected} fila(s) actualizada(s)")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Datos actualizados", "affected": affected}
+        
+    except Exception as e:
+        print(f"❌ Error actualizando datos generales: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, str(e))
+
+@app.post("/admin/facturas/{factura_id}/validar")
+async def marcar_como_validada(factura_id: int):
+    """Marcar factura como validada (100% calidad)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE facturas
+            SET estado_validacion = 'validada',
+                puntaje_calidad = 100
+            WHERE id = %s
+        """, (factura_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Factura validada"}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, str(e))
+
+@app.delete("/admin/facturas/{factura_id}")
+async def eliminar_factura_admin(factura_id: int):
+    """Eliminar factura completa y todos sus productos"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar que existe
+        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(404, "Factura no encontrada")
+        
+        print(f"🗑️ Eliminando factura {factura_id}...")
+        
+        # Eliminar productos
+        cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+        productos_eliminados = cursor.rowcount
+        
+        # Eliminar items_factura
+        cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
+        items_eliminados = cursor.rowcount
+        
+        # Eliminar precios_productos (si existen)
+        try:
+            cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+        except:
+            pass
+        
+        # Eliminar la factura
+        cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Eliminados: {productos_eliminados} productos, {items_eliminados} items")
+        
+        return {
+            "success": True,
+            "message": f"Factura {factura_id} eliminada",
+            "productos_eliminados": productos_eliminados + items_eliminados
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        print(f"❌ Error eliminando factura: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+@app.post("/admin/facturas/eliminar-multiple")
+async def eliminar_facturas_multiple(datos: dict):
+    """Eliminar múltiples facturas en batch"""
+    try:
+        ids = datos.get('ids', [])
+        
+        if not ids or not isinstance(ids, list):
+            raise HTTPException(400, "IDs inválidos")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        eliminadas = 0
+        errores = []
+        
+        for factura_id in ids:
+            try:
+                # Eliminar productos
+                cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+                cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
+                
+                # Eliminar precios
+                try:
+                    cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+                except:
+                    pass
+                
+                # Eliminar factura
+                cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+                
+                if cursor.rowcount > 0:
+                    eliminadas += 1
+                    
+            except Exception as e:
+                errores.append(f"Factura {factura_id}: {str(e)}")
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "eliminadas": eliminadas,
+            "errores": errores,
+            "message": f"{eliminadas} facturas eliminadas"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+@app.post("/invoices/save-manual")
+async def save_manual_invoice(factura: FacturaManual):
+    """Guardar factura manualmente (sin OCR, sin imagen)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cadena = detectar_cadena(factura.establecimiento)
+        
+        cursor.execute("""
+            INSERT INTO facturas (
+                establecimiento, fecha_cargue, total_factura, 
+                puntaje_calidad, tiene_imagen, estado_validacion
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            factura.establecimiento,
+            datetime.now(),
+            factura.total,
+            100,  # Score perfecto para entrada manual
+            False,
+            'validada'
+        ))
+        
+        factura_id = cursor.fetchone()[0]
+        
+        # Insertar productos
+        for producto in factura.productos:
+            cursor.execute("""
+                INSERT INTO productos (
+                    nombre, codigo, valor, factura_id
+                ) VALUES (%s, %s, %s, %s)
+            """, (
+                producto.get("nombre"),
+                producto.get("codigo", ""),
+                producto.get("precio", 0),
+                factura_id
+            ))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "message": "Factura guardada correctamente"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error guardando factura manual: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(500, str(e))
+
+@app.get("/admin/facturas/{factura_id}/check-image")
+async def check_image(factura_id: int):
+    """Debug: verificar si imagen existe en BD"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT 
+            id,
+            imagen_mime,
+            CASE 
+                WHEN imagen_data IS NULL THEN 'NULL'
+                ELSE 'EXISTS'
+            END as status,
+            LENGTH(imagen_data) as size_bytes
+        FROM facturas 
+        WHERE id = %s
+    """, (factura_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        return {"error": "Factura no encontrada"}
+    
+    return {
+        "factura_id": result[0],
+        "imagen_mime": result[1],
+        "imagen_status": result[2],
+        "imagen_size": result[3]
+    }
+
+# ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
 if __name__ == "__main__":
