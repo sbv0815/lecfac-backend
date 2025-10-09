@@ -580,6 +580,36 @@ def create_postgresql_tables():
         
         # 3.3. CORRECCIONES_PRODUCTOS (Sistema de aprendizaje)
         print("🧠 Verificando tabla correcciones_productos...")
+
+        # 3.4. PROCESSING_JOBS (Sistema de procesamiento asíncrono)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS processing_jobs (
+        id VARCHAR(50) PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        video_path VARCHAR(255),
+        status VARCHAR(20) DEFAULT 'pending',
+        factura_id INTEGER REFERENCES facturas(id),
+        frames_procesados INTEGER DEFAULT 0,
+        frames_exitosos INTEGER DEFAULT 0,
+        productos_detectados INTEGER DEFAULT 0,
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+        )
+        ''')
+    print("✓ Tabla 'processing_jobs' creada")
+
+# Índices para processing_jobs
+    crear_indice_seguro(
+        'CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status, created_at DESC)',
+        'processing_jobs.status'
+    )
+    crear_indice_seguro(
+        'CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario ON processing_jobs(usuario_id, created_at DESC)',
+        'processing_jobs.usuario'
+    )
         
         cursor.execute("""
             SELECT EXISTS (
@@ -794,6 +824,33 @@ def create_sqlite_tables():
             puntos_contribucion INTEGER DEFAULT 0,
             fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
         )
+        ''')
+            cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processing_jobs (
+            id TEXT PRIMARY KEY,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            video_path TEXT,
+            status TEXT DEFAULT 'pending',
+            factura_id INTEGER REFERENCES facturas(id),
+            frames_procesados INTEGER DEFAULT 0,
+            frames_exitosos INTEGER DEFAULT 0,
+            productos_detectados INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            completed_at DATETIME,
+            CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+        )
+        ''')
+
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_processing_jobs_status 
+         ON processing_jobs(status, created_at DESC)
+        ''')
+
+        cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario 
+         ON processing_jobs(usuario_id, created_at DESC)
         ''')
         
         cursor.execute('''
@@ -1349,85 +1406,7 @@ def test_database_connection():
             conn.close()
         return False
 
-def create_processing_jobs_table():
-    """Crea tabla para procesamiento asíncrono de videos"""
-    conn = get_db_connection()
-    if not conn:
-        return False
-    
-    cursor = conn.cursor()
-    
-    try:
-        print("🎬 Creando tabla processing_jobs...")
-        
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS processing_jobs (
-                id VARCHAR(50) PRIMARY KEY,
-                usuario_id INTEGER REFERENCES usuarios(id),
-                video_path VARCHAR(255),
-                status VARCHAR(20) DEFAULT 'pending',
-                factura_id INTEGER REFERENCES facturas(id),
-                frames_procesados INTEGER DEFAULT 0,
-                frames_exitosos INTEGER DEFAULT 0,
-                productos_detectados INTEGER DEFAULT 0,
-                error_message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
-            )
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_processing_jobs_status 
-                ON processing_jobs(status, created_at DESC)
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario 
-                ON processing_jobs(usuario_id, created_at DESC)
-            ''')
-            
-        else:
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS processing_jobs (
-                id TEXT PRIMARY KEY,
-                usuario_id INTEGER REFERENCES usuarios(id),
-                video_path TEXT,
-                status TEXT DEFAULT 'pending',
-                factura_id INTEGER REFERENCES facturas(id),
-                frames_procesados INTEGER DEFAULT 0,
-                frames_exitosos INTEGER DEFAULT 0,
-                productos_detectados INTEGER DEFAULT 0,
-                error_message TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                started_at DATETIME,
-                completed_at DATETIME,
-                CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
-            )
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_processing_jobs_status 
-                ON processing_jobs(status, created_at DESC)
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario 
-                ON processing_jobs(usuario_id, created_at DESC)
-            ''')
-        
-        conn.commit()
-        print("✅ Tabla processing_jobs creada exitosamente")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error creando tabla processing_jobs: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
+
 
 def crear_processing_job(usuario_id: int, video_path: str) -> str:
     """Crea un nuevo job de procesamiento"""
@@ -1667,6 +1646,5 @@ def obtener_jobs_pendientes(usuario_id: int, limit: int = 10) -> list:
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
     test_database_connection()
-    create_tables()
-    create_processing_jobs_table()
+    create_tables()  # Ya incluye processing_jobs ahora
     print("✅ Sistema inicializado")
