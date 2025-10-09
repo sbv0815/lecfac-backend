@@ -3,7 +3,6 @@ main.py - Servidor FastAPI Principal para LecFac
 VERSIÓN COMPLETA - Incluye TODOS los endpoints necesarios + Gestor de Duplicados
 """
 from claude_invoice import parse_invoice_with_claude
-
 import tempfile
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request
 from database import obtener_o_crear_establecimiento, detectar_cadena
@@ -52,6 +51,9 @@ from duplicados_routes import router as duplicados_router  # ← AGREGAR ESTA L�
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi.responses import JSONResponse
+import uuid
 
 
 
@@ -1111,6 +1113,206 @@ async def save_manual_invoice(factura: FacturaManual):
             conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ✅ NUEVO ENDPOINT: Sube video y responde INMEDIATAMENTE
+@app.post("/invoices/upload-video")
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...)
+):
+    """
+    1. Guarda el video
+    2. Crea un job en BD
+    3. Responde INMEDIATAMENTE con job_id
+    4. Procesa en background
+    """
+    try:
+        # Generar ID único para el job
+        job_id = str(uuid.uuid4())
+        
+        # Guardar video temporalmente
+        video_path = f"/tmp/{job_id}.mp4"
+        with open(video_path, "wb") as f:
+            f.write(await video.read())
+        
+        # Crear job en base de datos
+        conn = get_db_connection()
+        conn.execute("""
+            INSERT INTO processing_jobs 
+            (id, usuario_id, video_path, status, created_at)
+            VALUES (?, ?, ?, 'pending', ?)
+        """, (job_id, 1, video_path, datetime.now()))
+        conn.commit()
+        conn.close()
+        
+        # ✅ Procesar en BACKGROUND (no espera)
+        background_tasks.add_task(process_video_background, job_id, video_path)
+        
+        # ✅ RESPUESTA INMEDIATA (en 2-3 segundos)
+        return JSONResponse(
+            status_code=202,  # 202 = Accepted (procesando)
+            content={
+                "success": True,
+                "job_id": job_id,
+                "status": "processing",
+                "message": "Video subido. Procesando en background.",
+                "estimated_time": "1-3 minutos"
+            }
+        )
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+# ✅ FUNCIÓN DE BACKGROUND: Procesa el video SIN bloquear
+async def process_video_background(job_id: str, video_path: str):
+    """
+    Esta función se ejecuta en background.
+    El usuario YA recibió respuesta y puede cerrar la app.
+    """
+    try:
+        # Actualizar status a "processing"
+        conn = get_db_connection()
+        conn.execute("""
+            UPDATE processing_jobs 
+            SET status = 'processing' 
+            WHERE id = ?
+        """, (job_id,))
+        conn.commit()
+        
+        # ✅ PROCESAR VIDEO (tarda 1-3 minutos, pero no importa)
+        from video_processor import extraer_frames_video, deduplicar_productos
+        
+        # Extraer frames
+        frames = extraer_frames_video(video_path)
+        
+        # Procesar cada frame con Claude
+        productos_totales = []
+        establecimiento = None
+        total = 0
+        
+        for frame in frames:
+            result = await parse_invoice_with_claude(frame)
+            if result and result.get('productos'):
+                productos_totales.extend(result['productos'])
+                if not establecimiento:
+                    establecimiento = result.get('establecimiento')
+                if result.get('total'):
+                    total = result['total']
+        
+        # Deduplicar productos
+        productos_unicos = deduplicar_productos(productos_totales)
+        
+        # Guardar en base de datos
+        factura_id = guardar_factura_en_bd(
+            establecimiento=establecimiento,
+            total=total,
+            productos=productos_unicos
+        )
+        
+        # ✅ Actualizar job como COMPLETADO
+        conn.execute("""
+            UPDATE processing_jobs 
+            SET status = 'completed',
+                factura_id = ?,
+                completed_at = ?
+            WHERE id = ?
+        """, (factura_id, datetime.now(), job_id))
+        conn.commit()
+        conn.close()
+        
+        # Limpiar archivos temporales
+        os.remove(video_path)
+        for frame in frames:
+            os.remove(frame)
+        
+        print(f"✅ Job {job_id} completado. Factura ID: {factura_id}")
+        
+    except Exception as e:
+        # Si hay error, guardarlo en BD
+        conn = get_db_connection()
+        conn.execute("""
+            UPDATE processing_jobs 
+            SET status = 'failed',
+                error_message = ?,
+                completed_at = ?
+            WHERE id = ?
+        """, (str(e), datetime.now(), job_id))
+        conn.commit()
+        conn.close()
+        
+        print(f"❌ Job {job_id} falló: {e}")
+
+
+# ✅ ENDPOINT: Consultar status del job
+@app.get("/invoices/job-status/{job_id}")
+async def get_job_status(job_id: str):
+    """
+    Usuario puede consultar el status cuando quiera
+    """
+    conn = get_db_connection()
+    job = conn.execute("""
+        SELECT id, status, factura_id, error_message, created_at, completed_at
+        FROM processing_jobs
+        WHERE id = ?
+    """, (job_id,)).fetchone()
+    conn.close()
+    
+    if not job:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Job no encontrado"}
+        )
+    
+    response = {
+        "job_id": job[0],
+        "status": job[1],  # pending, processing, completed, failed
+        "factura_id": job[2],
+        "error_message": job[3],
+        "created_at": job[4],
+        "completed_at": job[5]
+    }
+    
+    # Si está completado, obtener datos de la factura
+    if job[1] == 'completed' and job[2]:
+        factura = obtener_factura_completa(job[2])
+        response['factura'] = factura
+    
+    return JSONResponse(content=response)
+
+
+# ✅ ENDPOINT: Listar facturas pendientes del usuario
+@app.get("/invoices/pending-jobs")
+async def get_pending_jobs():
+    """
+    Muestra jobs que están procesando o completados recientemente
+    """
+    conn = get_db_connection()
+    jobs = conn.execute("""
+        SELECT id, status, created_at, completed_at
+        FROM processing_jobs
+        WHERE usuario_id = 1
+        ORDER BY created_at DESC
+        LIMIT 10
+    """).fetchall()
+    conn.close()
+    
+    return JSONResponse(content={
+        "jobs": [
+            {
+                "job_id": job[0],
+                "status": job[1],
+                "created_at": job[2],
+                "completed_at": job[3]
+            }
+            for job in jobs
+        ]
+    })
 
 # ==========================================
 # ARRANQUE DEL SERVIDOR
@@ -2921,6 +3123,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
