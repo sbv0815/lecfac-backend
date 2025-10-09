@@ -191,14 +191,13 @@ def create_postgresql_tables():
             primera_vez_reportado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             
-            -- 🔥 CORREGIDO: Permitir códigos PLU (3+ dígitos) y EAN (8-14 dígitos)
             CHECK (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14),
             CHECK (total_reportes >= 0)
         )
         ''')
         print("✓ Tabla 'productos_maestros' creada")
         
-        # 🔥 CORREGIR CONSTRAINT de productos_maestros si existe
+        # Corregir constraint de productos_maestros si existe
         print("🔧 Corrigiendo constraints de productos_maestros...")
         try:
             cursor.execute("""
@@ -390,8 +389,8 @@ def create_postgresql_tables():
                     FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id),
                 CONSTRAINT precios_productos_establecimiento_fkey 
                     FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id),
-                CONSTRAINT precios_productos_usuario_fkey 
-                    FOREIGN KEY (usuario_id) REFERENCIAS usuarios(id),
+                CONSTRAINT precios_productos_usuario_fkey
+                    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
                 
                 CHECK (precio > 0)
             )
@@ -412,13 +411,11 @@ def create_postgresql_tables():
             usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
             establecimiento_id INTEGER REFERENCES establecimientos(id),
             
-            -- Datos de la factura
             numero_factura VARCHAR(50),
             total_factura INTEGER,
             fecha_factura DATE,
             fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             
-            -- Metadatos de procesamiento
             estado VARCHAR(20) DEFAULT 'procesado',
             estado_validacion VARCHAR(20) DEFAULT 'pendiente',
             puntaje_calidad INTEGER DEFAULT 0,
@@ -426,18 +423,15 @@ def create_postgresql_tables():
             productos_guardados INTEGER DEFAULT 0,
             porcentaje_lectura DECIMAL(5,2),
             
-            -- Imagen
             tiene_imagen BOOLEAN DEFAULT FALSE,
             imagen_data BYTEA,
             imagen_mime VARCHAR(20),
             
-            -- Auditoría
             fecha_procesamiento TIMESTAMP,
             fecha_validacion TIMESTAMP,
             procesado_por VARCHAR(50),
             notas TEXT,
             
-            -- LEGACY: mantener temporalmente para migración
             establecimiento TEXT,
             cadena VARCHAR(50)
         )
@@ -470,18 +464,15 @@ def create_postgresql_tables():
         CREATE TABLE IF NOT EXISTS items_factura (
             id SERIAL PRIMARY KEY,
             
-            -- Relaciones
             factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
             producto_maestro_id INTEGER REFERENCES productos_maestros(id),
             usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
             
-            -- Datos del item en la factura
             codigo_leido VARCHAR(20),
             nombre_leido VARCHAR(200),
             precio_pagado INTEGER NOT NULL,
             cantidad INTEGER DEFAULT 1,
             
-            -- Matching con catálogo
             matching_confianza INTEGER,
             matching_manual BOOLEAN DEFAULT FALSE,
             
@@ -523,13 +514,11 @@ def create_postgresql_tables():
             usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
             producto_maestro_id INTEGER REFERENCES productos_maestros(id),
             
-            -- Análisis de frecuencia
             frecuencia_dias INTEGER,
             ultima_compra DATE,
             proxima_compra_estimada DATE,
             veces_comprado INTEGER DEFAULT 1,
             
-            -- Preferencias
             establecimiento_preferido_id INTEGER REFERENCES establecimientos(id),
             precio_promedio_pagado INTEGER,
             
@@ -606,19 +595,15 @@ def create_postgresql_tables():
             CREATE TABLE correcciones_productos (
                 id SERIAL PRIMARY KEY,
                 
-                -- Datos originales del OCR
                 nombre_ocr TEXT NOT NULL,
                 codigo_ocr TEXT,
                 
-                -- Datos corregidos manualmente
                 codigo_correcto TEXT NOT NULL,
                 nombre_correcto TEXT,
                 
-                -- Metadata para matching
                 nombre_normalizado TEXT NOT NULL,
                 establecimiento_id INTEGER REFERENCES establecimientos(id),
                 
-                -- Auditoría
                 factura_id INTEGER REFERENCES facturas(id),
                 usuario_id INTEGER,
                 fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -628,7 +613,6 @@ def create_postgresql_tables():
             )
             ''')
             
-            # Crear índices
             cursor.execute('''
             CREATE INDEX idx_correcciones_nombre 
                 ON correcciones_productos(nombre_normalizado)
@@ -747,38 +731,30 @@ def create_postgresql_tables():
                 conn.rollback()
                 return False
         
-        # Índices para establecimientos
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_cadena ON establecimientos(cadena)', 'establecimientos.cadena')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_ciudad ON establecimientos(ciudad)', 'establecimientos.ciudad')
-        crear_indice_seguro('CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)', 'establecimientos.nombre')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)', 'establecimientos.nombre')
         
-        # Índices para productos_maestros
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)', 'productos_maestros.codigo_ean')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_nombre ON productos_maestros(nombre_normalizado)', 'productos_maestros.nombre')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)', 'productos_maestros.categoria')
         
-        # Índices para precios_productos
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_producto_maestro_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)', 'precios_productos.producto_fecha')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_establecimiento ON precios_productos(establecimiento_id, fecha_registro DESC)', 'precios_productos.establecimiento')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)', 'precios_productos.usuario')
         
-        # Índices para facturas
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)', 'facturas.usuario')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha_factura DESC)', 'facturas.fecha')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)', 'facturas.establecimiento_id')
         
-        # Índices para items_factura
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)', 'items_factura.factura_id')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_producto_maestro ON items_factura(producto_maestro_id)', 'items_factura.producto')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)', 'items_factura.usuario')
         
-        # Índices para gastos_mensuales
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)', 'gastos_mensuales.usuario')
         
-        # Índices para patrones_compra
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario_maestro ON patrones_compra(usuario_id, producto_maestro_id)', 'patrones_compra.usuario_producto')
         
-        # Índices para correcciones_productos
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_correcciones_nombre ON correcciones_productos(nombre_normalizado)', 'correcciones_productos.nombre')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_correcciones_establecimiento ON correcciones_productos(establecimiento_id)', 'correcciones_productos.establecimiento')
         
@@ -807,7 +783,6 @@ def create_sqlite_tables():
         
         print("🏗️ Creando tablas SQLite con nueva arquitectura...")
         
-        # Usuarios
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -821,7 +796,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Establecimientos
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS establecimientos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -839,7 +813,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Productos maestros
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos_maestros (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -862,7 +835,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Facturas
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS facturas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -891,7 +863,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Items factura
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS items_factura (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -910,7 +881,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Precios productos
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS precios_productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -929,7 +899,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Gastos mensuales
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS gastos_mensuales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -947,24 +916,19 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Correcciones productos
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS correcciones_productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             
-            -- Datos originales del OCR
             nombre_ocr TEXT NOT NULL,
             codigo_ocr TEXT,
             
-            -- Datos corregidos
             codigo_correcto TEXT NOT NULL,
             nombre_correcto TEXT,
             
-            -- Metadata para matching
             nombre_normalizado TEXT NOT NULL,
             establecimiento_id INTEGER REFERENCES establecimientos(id),
             
-            -- Auditoría
             factura_id INTEGER REFERENCES facturas(id),
             usuario_id INTEGER,
             fecha_correccion DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -974,7 +938,6 @@ def create_sqlite_tables():
         )
         ''')
         
-        # Tablas legacy
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1021,19 +984,13 @@ def create_sqlite_tables():
         if conn:
             conn.close()
 
-# ============================================
-# FUNCIONES HELPER PARA NUEVA ARQUITECTURA
-# ============================================
-
 def normalizar_nombre_establecimiento(nombre_raw: str) -> str:
     """Normaliza el nombre de un establecimiento"""
     if not nombre_raw:
         return ""
     
-    # Convertir a minúsculas y quitar espacios extra
     nombre = nombre_raw.strip().lower()
     
-    # Normalizar cadenas conocidas
     normalizaciones = {
         'éxito': 'exito',
         'olímpica': 'olimpica',
@@ -1048,7 +1005,6 @@ def normalizar_nombre_establecimiento(nombre_raw: str) -> str:
         if clave in nombre:
             nombre = nombre.replace(clave, valor)
     
-    # Capitalizar primera letra de cada palabra
     return ' '.join(word.capitalize() for word in nombre.split())
 
 def obtener_o_crear_establecimiento(nombre_raw: str, cadena: str = None) -> int:
@@ -1065,7 +1021,6 @@ def obtener_o_crear_establecimiento(nombre_raw: str, cadena: str = None) -> int:
     
     try:
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            # Buscar existente
             cursor.execute(
                 "SELECT id FROM establecimientos WHERE nombre_normalizado = %s",
                 (nombre_normalizado,)
@@ -1076,7 +1031,6 @@ def obtener_o_crear_establecimiento(nombre_raw: str, cadena: str = None) -> int:
                 conn.close()
                 return resultado[0]
             
-            # Crear nuevo
             cursor.execute("""
                 INSERT INTO establecimientos (nombre_normalizado, cadena)
                 VALUES (%s, %s)
@@ -1088,7 +1042,7 @@ def obtener_o_crear_establecimiento(nombre_raw: str, cadena: str = None) -> int:
             conn.close()
             return establecimiento_id
             
-        else:  # SQLite
+        else:
             cursor.execute(
                 "SELECT id FROM establecimientos WHERE nombre_normalizado = ?",
                 (nombre_normalizado,)
@@ -1127,7 +1081,6 @@ def obtener_o_crear_producto_maestro(codigo_ean: str, nombre: str, precio: int =
     
     try:
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            # Buscar existente
             cursor.execute(
                 "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
                 (codigo_ean,)
@@ -1135,7 +1088,6 @@ def obtener_o_crear_producto_maestro(codigo_ean: str, nombre: str, precio: int =
             resultado = cursor.fetchone()
             
             if resultado:
-                # Actualizar estadísticas
                 cursor.execute("""
                     UPDATE productos_maestros 
                     SET total_reportes = total_reportes + 1,
@@ -1146,7 +1098,6 @@ def obtener_o_crear_producto_maestro(codigo_ean: str, nombre: str, precio: int =
                 conn.close()
                 return resultado[0]
             
-            # Crear nuevo
             cursor.execute("""
                 INSERT INTO productos_maestros 
                 (codigo_ean, nombre_normalizado, precio_promedio_global, total_reportes)
@@ -1159,7 +1110,7 @@ def obtener_o_crear_producto_maestro(codigo_ean: str, nombre: str, precio: int =
             conn.close()
             return producto_id
             
-        else:  # SQLite
+        else:
             cursor.execute(
                 "SELECT id FROM productos_maestros WHERE codigo_ean = ?",
                 (codigo_ean,)
@@ -1192,10 +1143,6 @@ def obtener_o_crear_producto_maestro(codigo_ean: str, nombre: str, precio: int =
         print(f"Error obteniendo/creando producto maestro: {e}")
         conn.close()
         return None
-
-# ============================================
-# FUNCIONES LEGACY (mantener compatibilidad)
-# ============================================
 
 def hash_password(password: str) -> str:
     """Hashea una contraseña usando bcrypt"""
@@ -1402,20 +1349,8 @@ def test_database_connection():
             conn.close()
         return False
 
-# ============================================
-# COPIAR ESTE CÓDIGO AL FINAL DE database.py
-# (Después de la función test_database_connection)
-# ============================================
-
-# ============================================
-# PROCESAMIENTO ASÍNCRONO DE VIDEOS
-# ============================================
-
 def create_processing_jobs_table():
-    """
-    ✅ NUEVA TABLA: processing_jobs
-    Para procesamiento asíncrono de videos
-    """
+    """Crea tabla para procesamiento asíncrono de videos"""
     conn = get_db_connection()
     if not conn:
         return False
@@ -1431,20 +1366,15 @@ def create_processing_jobs_table():
                 id VARCHAR(50) PRIMARY KEY,
                 usuario_id INTEGER REFERENCES usuarios(id),
                 video_path VARCHAR(255),
-                
                 status VARCHAR(20) DEFAULT 'pending',
-                
                 factura_id INTEGER REFERENCES facturas(id),
-                
                 frames_procesados INTEGER DEFAULT 0,
                 frames_exitosos INTEGER DEFAULT 0,
                 productos_detectados INTEGER DEFAULT 0,
                 error_message TEXT,
-                
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 started_at TIMESTAMP,
                 completed_at TIMESTAMP,
-                
                 CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
             )
             ''')
@@ -1459,26 +1389,21 @@ def create_processing_jobs_table():
                 ON processing_jobs(usuario_id, created_at DESC)
             ''')
             
-        else:  # SQLite
+        else:
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS processing_jobs (
                 id TEXT PRIMARY KEY,
                 usuario_id INTEGER REFERENCES usuarios(id),
                 video_path TEXT,
-                
                 status TEXT DEFAULT 'pending',
-                
                 factura_id INTEGER REFERENCES facturas(id),
-                
                 frames_procesados INTEGER DEFAULT 0,
                 frames_exitosos INTEGER DEFAULT 0,
                 productos_detectados INTEGER DEFAULT 0,
                 error_message TEXT,
-                
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 started_at DATETIME,
                 completed_at DATETIME,
-                
                 CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
             )
             ''')
@@ -1503,7 +1428,6 @@ def create_processing_jobs_table():
         return False
     finally:
         conn.close()
-
 
 def crear_processing_job(usuario_id: int, video_path: str) -> str:
     """Crea un nuevo job de procesamiento"""
@@ -1536,7 +1460,6 @@ def crear_processing_job(usuario_id: int, video_path: str) -> str:
         return None
     finally:
         conn.close()
-
 
 def actualizar_job_status(job_id: str, status: str, **kwargs):
     """Actualiza el status de un job"""
@@ -1577,7 +1500,6 @@ def actualizar_job_status(job_id: str, status: str, **kwargs):
         return False
     finally:
         conn.close()
-
 
 def obtener_job_info(job_id: str) -> dict:
     """Obtiene información completa de un job"""
@@ -1633,7 +1555,6 @@ def obtener_job_info(job_id: str) -> dict:
         return None
     finally:
         conn.close()
-
 
 def obtener_factura_completa(factura_id: int) -> dict:
     """Obtiene datos completos de una factura"""
@@ -1703,7 +1624,6 @@ def obtener_factura_completa(factura_id: int) -> dict:
     finally:
         conn.close()
 
-
 def obtener_jobs_pendientes(usuario_id: int, limit: int = 10) -> list:
     """Obtiene los últimos jobs del usuario"""
     conn = get_db_connection()
@@ -1743,11 +1663,6 @@ def obtener_jobs_pendientes(usuario_id: int, limit: int = 10) -> list:
         return []
     finally:
         conn.close()
-
-
-# ============================================
-# EJECUTAR AL INICIAR (OPCIONAL)
-# ============================================
 
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
