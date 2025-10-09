@@ -135,7 +135,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         # Llamada a Claude API
         message = client.messages.create(
             model="claude-3-5-haiku-20241022",
-            max_tokens=8192,
+            max_tokens=16384,  # ✅ Máximo permitido por Haiku 3.5 (16K)
             temperature=0,
             messages=[{
                 "role": "user",
