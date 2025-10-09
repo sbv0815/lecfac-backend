@@ -3,6 +3,8 @@ main.py - Servidor FastAPI Principal para LecFac
 VERSIÓN COMPLETA - Incluye TODOS los endpoints necesarios + Gestor de Duplicados
 """
 from video_processor import extraer_frames_video, deduplicar_productos, limpiar_frames_temporales
+from claude_invoice import parse_invoice_with_claude
+from database import obtener_o_crear_establecimiento, detectar_cadena
 import tempfile
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -1325,11 +1327,9 @@ async def parse_invoice_video(
 ):
     """
     Procesa un video de factura
-    - Extrae frames cada 0.5 segundos
-    - Procesa cada frame con Claude Vision
-    - Consolida y deduplica productos
-    - Guarda en base de datos
     """
+    
+    
     video_path = None
     frames_paths = []
     
@@ -1338,13 +1338,6 @@ async def parse_invoice_video(
         print("📹 PROCESANDO VIDEO DE FACTURA")
         print("=" * 80)
         
-        # Validar que sea un archivo de video
-        if not video.content_type or not video.content_type.startswith('video/'):
-            return {
-                "success": False,
-                "error": "El archivo debe ser un video"
-            }
-        
         # Guardar video temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp_video:
             content = await video.read()
@@ -1352,232 +1345,113 @@ async def parse_invoice_video(
             video_path = tmp_video.name
         
         video_size_mb = len(content) / (1024 * 1024)
-        print(f"📦 Video recibido: {video_size_mb:.2f} MB")
+        print(f"📦 Video: {video_size_mb:.2f} MB")
         
-        # PASO 1: Extraer frames del video
-        print("\n🎬 PASO 1: Extrayendo frames...")
+        # Extraer frames
+        print("🎬 Extrayendo frames...")
         frames_paths = extraer_frames_video(video_path, intervalo=0.5)
         
         if not frames_paths:
-            return {
-                "success": False,
-                "error": "No se pudieron extraer frames del video. Verifica que el archivo sea válido."
-            }
+            return {"success": False, "error": "No se pudieron extraer frames"}
         
         print(f"✅ {len(frames_paths)} frames extraídos")
         
-        # PASO 2: Procesar cada frame con Claude Vision
-        print("\n🤖 PASO 2: Procesando frames con Claude Vision...")
-        
+        # Procesar frames
         todos_productos = []
         establecimiento = None
         total = 0
         fecha = None
-        frames_exitosos = 0
         
         for i, frame_path in enumerate(frames_paths):
-            print(f"\n   📸 Frame {i+1}/{len(frames_paths)}...")
+            print(f"📸 Frame {i+1}/{len(frames_paths)}...")
             
-            try:
-                # Importar la función de OCR
-                from claude_invoice import parse_invoice_with_claude
+            resultado = parse_invoice_with_claude(frame_path)
+            
+            if resultado.get('success'):
+                data = resultado['data']
                 
-                resultado = parse_invoice_with_claude(frame_path)
+                if not establecimiento:
+                    establecimiento = data.get('establecimiento', 'Desconocido')
+                    total = data.get('total', 0)
+                    fecha = data.get('fecha')
                 
-                if resultado.get('success') and resultado.get('data'):
-                    data = resultado['data']
-                    frames_exitosos += 1
-                    
-                    # Capturar datos del primer frame exitoso
-                    if i == 0 or not establecimiento:
-                        establecimiento = data.get('establecimiento', 'Desconocido')
-                        total = data.get('total', 0)
-                        fecha = data.get('fecha')
-                    
-                    # Agregar productos de este frame
-                    productos_frame = data.get('productos', [])
-                    todos_productos.extend(productos_frame)
-                    
-                    print(f"      ✓ {len(productos_frame)} productos detectados")
-                else:
-                    print(f"      ⚠️ Frame sin datos útiles")
-                    
-            except Exception as e:
-                print(f"      ❌ Error procesando frame: {e}")
-                continue
+                todos_productos.extend(data.get('productos', []))
         
-        print(f"\n✅ Frames procesados exitosamente: {frames_exitosos}/{len(frames_paths)}")
-        print(f"📊 Total productos detectados (con duplicados): {len(todos_productos)}")
-        
-        # PASO 3: Deduplicar productos
-        print("\n🔍 PASO 3: Eliminando duplicados...")
+        # Deduplicar
         productos_unicos = deduplicar_productos(todos_productos)
         
-        # PASO 4: Guardar en base de datos
-        print("\n💾 PASO 4: Guardando en base de datos...")
-        
+        # Guardar en BD
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        try:
-            # Obtener o crear establecimiento
-            from database import obtener_o_crear_establecimiento
-            establecimiento_id = obtener_o_crear_establecimiento(establecimiento, detectar_cadena(establecimiento))
-            
-            print(f"   ✓ Establecimiento ID: {establecimiento_id}")
-            
-            # Crear factura
-            usuario_id = current_user['id']
-            
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    INSERT INTO facturas (
-                        usuario_id, establecimiento_id, total_factura, 
-                        fecha_factura, productos_detectados, estado
-                    ) VALUES (%s, %s, %s, %s, %s, 'procesado')
-                    RETURNING id
-                """, (
-                    usuario_id,
-                    establecimiento_id,
-                    total,
-                    fecha if fecha else None,
-                    len(productos_unicos)
-                ))
-                factura_id = cursor.fetchone()[0]
-            else:
-                cursor.execute("""
-                    INSERT INTO facturas (
-                        usuario_id, establecimiento_id, total_factura, 
-                        fecha_factura, productos_detectados, estado
-                    ) VALUES (?, ?, ?, ?, ?, 'procesado')
-                """, (
-                    usuario_id,
-                    establecimiento_id,
-                    total,
-                    fecha if fecha else None,
-                    len(productos_unicos)
-                ))
-                factura_id = cursor.lastrowid
-            
-            print(f"   ✓ Factura creada con ID: {factura_id}")
-            
-            # Guardar productos
-            productos_guardados = 0
-            
-            for producto in productos_unicos:
-                try:
-                    codigo = producto.get('codigo', '')
-                    nombre = producto.get('nombre', 'Producto sin nombre')
-                    precio = producto.get('precio', 0)
-                    cantidad = producto.get('cantidad', 1)
-                    
-                    # Guardar en tabla productos (legacy)
-                    if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute("""
-                            INSERT INTO productos (factura_id, codigo, nombre, valor)
-                            VALUES (%s, %s, %s, %s)
-                        """, (factura_id, codigo or None, nombre, precio))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO productos (factura_id, codigo, nombre, valor)
-                            VALUES (?, ?, ?, ?)
-                        """, (factura_id, codigo or None, nombre, precio))
-                    
-                    productos_guardados += 1
-                    
-                    # Si tiene código EAN válido, agregar a catálogo global
-                    if codigo and len(codigo) >= 8:
-                        from database import obtener_o_crear_producto_maestro
-                        producto_maestro_id = obtener_o_crear_producto_maestro(
-                            codigo, nombre, precio
-                        )
-                        
-                        if producto_maestro_id:
-                            # Registrar precio
-                            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                                cursor.execute("""
-                                    INSERT INTO precios_productos (
-                                        producto_maestro_id, establecimiento_id, 
-                                        precio, fecha_registro, usuario_id, factura_id
-                                    ) VALUES (%s, %s, %s, CURRENT_DATE, %s, %s)
-                                """, (
-                                    producto_maestro_id, establecimiento_id,
-                                    precio, usuario_id, factura_id
-                                ))
-                
-                except Exception as e:
-                    print(f"   ⚠️ Error guardando producto: {e}")
-                    continue
-            
-            # Actualizar contador de productos guardados
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE facturas 
-                    SET productos_guardados = %s
-                    WHERE id = %s
-                """, (productos_guardados, factura_id))
-            else:
-                cursor.execute("""
-                    UPDATE facturas 
-                    SET productos_guardados = ?
-                    WHERE id = ?
-                """, (productos_guardados, factura_id))
-            
-            conn.commit()
-            
-            print(f"   ✓ {productos_guardados} productos guardados")
-            print("\n" + "=" * 80)
-            print("✅ PROCESAMIENTO COMPLETO")
-            print("=" * 80)
-            
-            return {
-                "success": True,
-                "factura_id": factura_id,
-                "data": {
-                    "establecimiento": establecimiento,
-                    "fecha": fecha,
-                    "total": total,
-                    "productos": productos_unicos,
-                    "frames_procesados": len(frames_paths),
-                    "frames_exitosos": frames_exitosos,
-                    "productos_detectados_total": len(todos_productos),
-                    "productos_unicos": len(productos_unicos),
-                    "duplicados_eliminados": len(todos_productos) - len(productos_unicos)
-                }
-            }
-            
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            cursor.close()
-            conn.close()
+        establecimiento_id = obtener_o_crear_establecimiento(
+            establecimiento, 
+            detectar_cadena(establecimiento)
+        )
         
-    except Exception as e:
-        print(f"\n❌ ERROR PROCESANDO VIDEO:")
-        print(f"   {str(e)}")
-        import traceback
-        traceback.print_exc()
+        usuario_id = current_user['id']
+        
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO facturas (
+                    usuario_id, establecimiento_id, total_factura, 
+                    fecha_factura, productos_detectados, estado
+                ) VALUES (%s, %s, %s, %s, %s, 'procesado')
+                RETURNING id
+            """, (usuario_id, establecimiento_id, total, fecha, len(productos_unicos)))
+            factura_id = cursor.fetchone()[0]
+        else:
+            cursor.execute("""
+                INSERT INTO facturas (
+                    usuario_id, establecimiento_id, total_factura, 
+                    fecha_factura, productos_detectados, estado
+                ) VALUES (?, ?, ?, ?, ?, 'procesado')
+            """, (usuario_id, establecimiento_id, total, fecha, len(productos_unicos)))
+            factura_id = cursor.lastrowid
+        
+        # Guardar productos
+        for producto in productos_unicos:
+            codigo = producto.get('codigo', '')
+            nombre = producto.get('nombre', 'Sin nombre')
+            precio = producto.get('precio', 0)
+            
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    INSERT INTO productos (factura_id, codigo, nombre, valor)
+                    VALUES (%s, %s, %s, %s)
+                """, (factura_id, codigo or None, nombre, precio))
+            else:
+                cursor.execute("""
+                    INSERT INTO productos (factura_id, codigo, nombre, valor)
+                    VALUES (?, ?, ?, ?)
+                """, (factura_id, codigo or None, nombre, precio))
+        
+        conn.commit()
+        conn.close()
         
         return {
-            "success": False,
-            "error": f"Error procesando video: {str(e)}"
+            "success": True,
+            "factura_id": factura_id,
+            "data": {
+                "establecimiento": establecimiento,
+                "fecha": fecha,
+                "total": total,
+                "productos": productos_unicos,
+                "frames_procesados": len(frames_paths)
+            }
         }
         
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+        
     finally:
-        # Limpiar archivos temporales
-        print("\n🧹 Limpiando archivos temporales...")
-        
         if video_path and os.path.exists(video_path):
-            try:
-                os.remove(video_path)
-                print("   ✓ Video temporal eliminado")
-            except:
-                pass
-        
+            os.remove(video_path)
         if frames_paths:
             limpiar_frames_temporales(frames_paths)
-            print(f"   ✓ {len(frames_paths)} frames temporales eliminados")
 
 # ==========================================
 # PÁGINAS HTML
@@ -2960,6 +2834,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
