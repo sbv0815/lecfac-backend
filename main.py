@@ -1156,6 +1156,89 @@ async def get_invoice_status(factura_id: int):
 # ENDPOINTS DE EDICIÓN Y CONTROL DE CALIDAD (ADMIN)
 # ==========================================
 
+@app.put("/admin/facturas/{factura_id}")
+async def actualizar_factura(factura_id: int, request: Request):
+    """Actualizar datos de una factura"""
+    try:
+        data = await request.json()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Campos actualizables
+            establecimiento = data.get('establecimiento')
+            cadena = data.get('cadena')
+            fecha_factura = data.get('fecha_factura')
+            total_factura = data.get('total_factura')
+            estado_validacion = data.get('estado_validacion')
+            
+            # Construir query dinámicamente
+            updates = []
+            params = []
+            
+            if establecimiento:
+                updates.append("establecimiento = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "establecimiento = ?")
+                params.append(establecimiento)
+            
+            if cadena:
+                updates.append("cadena = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "cadena = ?")
+                params.append(cadena)
+            
+            if fecha_factura:
+                updates.append("fecha_factura = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "fecha_factura = ?")
+                params.append(fecha_factura)
+            
+            if total_factura is not None:
+                updates.append("total_factura = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "total_factura = ?")
+                params.append(total_factura)
+            
+            if estado_validacion:
+                updates.append("estado_validacion = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "estado_validacion = ?")
+                params.append(estado_validacion)
+            
+            if not updates:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "error": "No hay campos para actualizar"}
+                )
+            
+            # Agregar factura_id al final
+            params.append(factura_id)
+            
+            query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = {'%s' if os.environ.get('DATABASE_TYPE') == 'postgresql' else '?'}"
+            
+            cursor.execute(query, params)
+            
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "error": "Factura no encontrada"}
+                )
+            
+            conn.commit()
+            
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Factura {factura_id} actualizada correctamente"
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+            
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        print(f"❌ Error actualizando factura {factura_id}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
 @app.get("/admin/facturas/{factura_id}")
 async def get_factura_para_editor(factura_id: int):
     """Obtener factura completa para el editor - BUSCA EN MÚLTIPLES TABLAS"""
@@ -1449,57 +1532,57 @@ async def marcar_como_validada(factura_id: int):
         raise HTTPException(500, str(e))
 
 @app.delete("/admin/facturas/{factura_id}")
-async def eliminar_factura_admin(factura_id: int):
-    """Eliminar factura completa y todos sus productos"""
+async def eliminar_factura(factura_id: int):
+    """Eliminar factura y sus productos asociados"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Verificar que existe
-        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
-        if not cursor.fetchone():
-            conn.close()
-            raise HTTPException(404, "Factura no encontrada")
-        
-        print(f"🗑️ Eliminando factura {factura_id}...")
-        
-        # Eliminar productos
-        cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
-        productos_eliminados = cursor.rowcount
-        
-        # Eliminar items_factura
-        cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
-        items_eliminados = cursor.rowcount
-        
-        # Eliminar precios_productos (si existen)
         try:
-            cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
-        except:
-            pass
-        
-        # Eliminar la factura
-        cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"✅ Eliminados: {productos_eliminados} productos, {items_eliminados} items")
-        
-        return {
-            "success": True,
-            "message": f"Factura {factura_id} eliminada",
-            "productos_eliminados": productos_eliminados + items_eliminados
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        if conn:
+            # ✅ PASO 1: Eliminar items_factura PRIMERO (foreign key)
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
+                deleted_items = cursor.rowcount
+                
+                # PASO 2: Eliminar la factura
+                cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+                deleted_factura = cursor.rowcount
+            else:
+                cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
+                deleted_items = cursor.rowcount
+                
+                cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
+                deleted_factura = cursor.rowcount
+            
+            if deleted_factura == 0:
+                conn.rollback()
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "error": "Factura no encontrada"}
+                )
+            
+            conn.commit()
+            
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Factura {factura_id} eliminada correctamente",
+                "productos_eliminados": deleted_items
+            })
+            
+        except Exception as e:
             conn.rollback()
+            raise e
+            
+        finally:
+            cursor.close()
             conn.close()
-        print(f"❌ Error eliminando factura: {e}")
-        traceback.print_exc()
-        raise HTTPException(500, str(e))
+        
+    except Exception as e:
+        print(f"❌ Error eliminando factura {factura_id}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
 @app.post("/admin/facturas/eliminar-multiple")
 async def eliminar_facturas_multiple(datos: dict):
@@ -1651,6 +1734,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
