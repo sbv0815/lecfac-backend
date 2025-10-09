@@ -103,17 +103,19 @@ def extraer_frames_video(video_path: str, intervalo: float = 0.5) -> List[str]:
 def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     """
     Elimina productos duplicados detectados en múltiples frames
+    MEJORADO: Detecta descuentos residuales y los elimina
     
     Usa una combinación de:
     - Código de barras (si existe)
     - Similitud de nombre
     - Precio similar
+    - Filtrado de descuentos
     
     Args:
         productos: Lista de productos detectados en todos los frames
         
     Returns:
-        Lista de productos únicos sin duplicados
+        Lista de productos únicos sin duplicados ni descuentos
     """
     from difflib import SequenceMatcher
     
@@ -122,6 +124,34 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     
     logger.info(f"🔍 Deduplicando {len(productos)} productos...")
     
+    # ========== PASO 1: FILTRADO PREVIO DE DESCUENTOS ==========
+    palabras_descuento = [
+        'ahorro', 'descuento', 'desc', 'dto', 'rebaja', 'promocion', 'promo', 
+        'oferta', '2x1', '3x2', 'precio final', 'valor final', 'dto',
+        'dcto', 'descu', 'dcto.', 'ahorro%', 'desc%', 'ahorro ', ' ahorro',
+        'descto', 'descuent'
+    ]
+    
+    productos_limpios = []
+    descuentos_filtrados = 0
+    
+    for prod in productos:
+        nombre = str(prod.get('nombre', '')).lower().strip()
+        
+        # Verificar si es descuento
+        es_descuento = any(palabra in nombre for palabra in palabras_descuento)
+        
+        if es_descuento:
+            descuentos_filtrados += 1
+        else:
+            productos_limpios.append(prod)
+    
+    if descuentos_filtrados > 0:
+        logger.info(f"   🗑️ {descuentos_filtrados} descuentos eliminados en pre-filtrado")
+    
+    productos = productos_limpios
+    
+    # ========== PASO 2: DEDUPLICACIÓN POR CÓDIGO ==========
     productos_unicos = {}
     productos_sin_codigo = []
     
@@ -130,7 +160,7 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         nombre = str(prod.get('nombre', '')).strip().lower()
         precio = prod.get('precio', 0)
         
-        # CASO 1: Producto con código válido (8+ dígitos)
+        # CASO 1: Producto con código válido (8+ dígitos = EAN)
         if codigo and len(codigo) >= 8 and codigo.isdigit():
             key = f"codigo_{codigo}"
             
@@ -146,8 +176,8 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
                     productos_unicos[key] = prod
                     logger.info(f"   ↻ Actualizado: {codigo} (mejor nombre)")
         
-        # CASO 2: Producto con código PLU corto (3-7 dígitos)
-        elif codigo and 3 <= len(codigo) <= 7 and codigo.isdigit():
+        # CASO 2: Producto con código PLU (1-7 dígitos)
+        elif codigo and 1 <= len(codigo) <= 7 and codigo.isdigit():
             key = f"plu_{codigo}"
             
             if key not in productos_unicos:
@@ -157,12 +187,13 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
                 prod_existente = productos_unicos[key]
                 if len(nombre) > len(prod_existente.get('nombre', '')):
                     productos_unicos[key] = prod
+                    logger.info(f"   ↻ Actualizado: {codigo} (mejor nombre)")
         
         # CASO 3: Producto sin código - usar nombre + precio
         else:
             productos_sin_codigo.append(prod)
     
-    # Deduplicar productos sin código usando similitud de nombre
+    # ========== PASO 3: DEDUPLICAR PRODUCTOS SIN CÓDIGO ==========
     logger.info(f"🔍 Analizando {len(productos_sin_codigo)} productos sin código...")
     
     for prod in productos_sin_codigo:
@@ -211,12 +242,12 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     resultado = list(productos_unicos.values())
     
     logger.info(f"✅ Deduplicación completa:")
-    logger.info(f"   Productos originales: {len(productos)}")
+    logger.info(f"   Productos originales: {len(productos) + descuentos_filtrados}")
+    logger.info(f"   Descuentos filtrados: {descuentos_filtrados}")
     logger.info(f"   Productos únicos: {len(resultado)}")
     logger.info(f"   Duplicados eliminados: {len(productos) - len(resultado)}")
     
     return resultado
-
 
 def limpiar_frames_temporales(frames_paths: List[str]):
     """
