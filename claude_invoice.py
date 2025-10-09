@@ -1,4 +1,5 @@
-import anthropic
+
+    import anthropic
 import base64
 import os
 import json
@@ -25,9 +26,8 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         
         client = anthropic.Anthropic(api_key=api_key)
         
-        # ========== PROMPT OPTIMIZADO ==========
-       # ========== PROMPT OPTIMIZADO CON DETECCIÓN DE DESCUENTOS ==========
-prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
+        # ========== PROMPT OPTIMIZADO CON DETECCIÓN DE DESCUENTOS ==========
+        prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
 
 # OBJETIVO
 Extraer: establecimiento, fecha, total y CADA producto REAL con su código.
@@ -176,6 +176,40 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         # Parsear JSON
         data = json.loads(json_str)
         
+        # ========== NUEVO: FILTRADO INTELIGENTE DE DESCUENTOS ==========
+        # Agregar ANTES de la validación de productos
+        if "productos" in data and data["productos"]:
+            productos_originales = len(data["productos"])
+            
+            # Palabras clave de descuentos (case insensitive)
+            palabras_descuento = [
+                'ahorro', 'descuento', 'desc', 'dto', 'rebaja', 'promocion', 'promo', 
+                'oferta', '2x1', '3x2', 'precio final', 'valor final', 'dto',
+                'dcto', 'descu', 'dcto.', 'ahorro%', 'desc%'
+            ]
+            
+            productos_filtrados = []
+            descuentos_eliminados = 0
+            
+            for prod in data["productos"]:
+                nombre = str(prod.get('nombre', '')).lower().strip()
+                
+                # Verificar si el nombre contiene palabras de descuento
+                es_descuento = any(palabra in nombre for palabra in palabras_descuento)
+                
+                if es_descuento:
+                    descuentos_eliminados += 1
+                    print(f"   🗑️ Descuento eliminado: {prod.get('codigo', 'N/A')} - {prod.get('nombre', 'N/A')[:40]}")
+                else:
+                    productos_filtrados.append(prod)
+            
+            data["productos"] = productos_filtrados
+            
+            if descuentos_eliminados > 0:
+                print(f"✅ Filtrado inteligente: {descuentos_eliminados} descuentos eliminados de {productos_originales} entradas")
+        
+        # ========== FIN FILTRADO ==========
+        
         # LOG DEBUG: Ver JSON crudo
         print("=" * 80)
         print("🔍 JSON CRUDO PARSEADO:")
@@ -240,25 +274,34 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
             if "cantidad" not in prod:
                 prod["cantidad"] = 1
             
-            # ========== VALIDACIÓN DE CÓDIGO CORREGIDA ==========
+            # ========== VALIDACIÓN DE CÓDIGO MEJORADA ==========
             if "codigo" in prod and prod["codigo"]:
                 codigo_limpio = str(prod["codigo"]).strip()
                 
                 # Validar que sea un código válido:
                 # 1. Solo dígitos (sin letras)
                 # 2. Sin caracteres especiales (%, $, kg, etc)
-                # 3. Puede tener cualquier longitud (desde 3 hasta 13 dígitos)
+                # 3. Longitud: 1-13 dígitos (acepta PLU cortos como "7" o "09")
                 
-                if codigo_limpio.isdigit() and len(codigo_limpio) >= 3:
+                if codigo_limpio.isdigit() and 1 <= len(codigo_limpio) <= 13:  # ✅ CAMBIADO: antes era >= 3
                     prod["codigo"] = codigo_limpio
                     codigos_validos += 1
-                    print(f"   ✓ Código válido: {codigo_limpio} → {prod['nombre'][:30]}")
+                    
+                    # Clasificar tipo de código para logging
+                    if len(codigo_limpio) >= 8:
+                        tipo = "EAN"
+                    elif len(codigo_limpio) >= 3:
+                        tipo = "PLU"
+                    else:
+                        tipo = "PLU corto"
+                    
+                    print(f"   ✓ {tipo}: {codigo_limpio} - {prod['nombre'][:40]}")
                 else:
                     prod["codigo"] = ""
-                    print(f"   ✗ Código inválido descartado: '{codigo_limpio}' → {prod['nombre'][:30]}")
+                    print(f"   ✗ Código inválido descartado: '{codigo_limpio}' → {prod['nombre'][:40]}")
             else:
                 prod["codigo"] = ""
-                print(f"   ⚠️ Producto sin código → {prod['nombre'][:30]}")
+                print(f"   ⚠️ Producto sin código → {prod['nombre'][:40]}")
         
         # Normalizar establecimiento
         establecimiento_raw = data.get("establecimiento", "Desconocido")
