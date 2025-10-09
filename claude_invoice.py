@@ -134,24 +134,24 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
         # Llamada a Claude API
         message = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=16384,  # ✅ Máximo permitido por Haiku 3.5 (16K)
+            model="claude-sonnet-4-20250514",  # ✅ Cambiar modelo
+            max_tokens=16000,  # ✅ Soporta hasta 16K
             temperature=0,
             messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_data,
-                        },
-                    },
-                    {"type": "text", "text": prompt}
-                ],
-            }],
-        )
+            "role": "user",
+            "content": [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": image_data,
+                },
+            },
+            {"type": "text", "text": prompt}
+        ],
+    }],
+)
         
         # Parsear respuesta
         response_text = message.content[0].text
