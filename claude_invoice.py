@@ -1,5 +1,4 @@
-
-    import anthropic
+import anthropic
 import base64
 import os
 import json
@@ -20,7 +19,7 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         media_type = "image/png" if image_path.lower().endswith('.png') else "image/jpeg"
         
         # Cliente Anthropic con fix de API key
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()  # ✅ FIX: strip whitespace
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
         
@@ -133,10 +132,10 @@ VALIDACIONES FINALES:
 
 ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
-        # ✅ CORREGIDO: Modelo Haiku 3.5 con límite correcto de tokens
+        # Llamada a Claude API
         message = client.messages.create(
-            model="claude-3-5-haiku-20241022",  # ✅ Nombre correcto del modelo
-            max_tokens=8192,  # ✅ Haiku 3.5 máximo: 8192 tokens (NO 10000)
+            model="claude-3-5-haiku-20241022",
+            max_tokens=8192,
             temperature=0,
             messages=[{
                 "role": "user",
@@ -176,12 +175,10 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         # Parsear JSON
         data = json.loads(json_str)
         
-        # ========== NUEVO: FILTRADO INTELIGENTE DE DESCUENTOS ==========
-        # Agregar ANTES de la validación de productos
+        # ========== FILTRADO INTELIGENTE DE DESCUENTOS ==========
         if "productos" in data and data["productos"]:
             productos_originales = len(data["productos"])
             
-            # Palabras clave de descuentos (case insensitive)
             palabras_descuento = [
                 'ahorro', 'descuento', 'desc', 'dto', 'rebaja', 'promocion', 'promo', 
                 'oferta', '2x1', '3x2', 'precio final', 'valor final', 'dto',
@@ -193,8 +190,6 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
             
             for prod in data["productos"]:
                 nombre = str(prod.get('nombre', '')).lower().strip()
-                
-                # Verificar si el nombre contiene palabras de descuento
                 es_descuento = any(palabra in nombre for palabra in palabras_descuento)
                 
                 if es_descuento:
@@ -208,9 +203,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
             if descuentos_eliminados > 0:
                 print(f"✅ Filtrado inteligente: {descuentos_eliminados} descuentos eliminados de {productos_originales} entradas")
         
-        # ========== FIN FILTRADO ==========
-        
-        # LOG DEBUG: Ver JSON crudo
+        # LOG DEBUG
         print("=" * 80)
         print("🔍 JSON CRUDO PARSEADO:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
@@ -220,47 +213,37 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         if "productos" not in data:
             data["productos"] = []
         
-        # ========== NORMALIZACIÓN DE PRODUCTOS ==========
+        # NORMALIZACIÓN DE PRODUCTOS
         productos_procesados = 0
         codigos_validos = 0
         
         for prod in data.get("productos", []):
             productos_procesados += 1
             
-            # ========== NORMALIZACIÓN DE PRECIO MEJORADA ==========
+            # Normalización de precio
             if "precio" in prod:
                 try:
                     precio_str = str(prod["precio"])
                     
-                    # Si Claude ya envió sin separadores (como debe ser), usar directo
                     if precio_str.isdigit():
                         prod["precio"] = int(precio_str)
                     else:
-                        # Backup: limpiar comas Y puntos de miles (pero NO decimales)
-                        # Primero eliminar espacios
                         precio_str = precio_str.replace(" ", "")
                         
-                        # Si tiene coma Y punto, asumir formato europeo: 1.234,56
                         if "," in precio_str and "." in precio_str:
-                            # Formato: 1.234,56 → 1234.56
                             precio_str = precio_str.replace(".", "").replace(",", ".")
                             prod["precio"] = int(float(precio_str))
-                        # Si SOLO tiene coma, asumir decimal: 5,25
                         elif "," in precio_str and "." not in precio_str:
-                            # Formato: 5,25 → 5.25
                             precio_str = precio_str.replace(",", ".")
                             prod["precio"] = int(float(precio_str))
-                        # Si tiene punto, podría ser miles o decimal
                         elif "." in precio_str:
-                            # Si el precio tiene más de 3 dígitos después del punto, es miles
                             parts = precio_str.split(".")
-                            if len(parts[-1]) >= 3:  # 5.425 → separador de miles
+                            if len(parts[-1]) >= 3:
                                 precio_str = precio_str.replace(".", "")
                                 prod["precio"] = int(precio_str)
-                            else:  # 5.42 → decimal
+                            else:
                                 prod["precio"] = int(float(precio_str))
                         else:
-                            # Ya es un número simple
                             prod["precio"] = int(float(precio_str))
                 except Exception as e:
                     print(f"⚠️ Error procesando precio '{prod.get('precio', 'N/A')}': {e}")
@@ -274,20 +257,14 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
             if "cantidad" not in prod:
                 prod["cantidad"] = 1
             
-            # ========== VALIDACIÓN DE CÓDIGO MEJORADA ==========
+            # Validación de código
             if "codigo" in prod and prod["codigo"]:
                 codigo_limpio = str(prod["codigo"]).strip()
                 
-                # Validar que sea un código válido:
-                # 1. Solo dígitos (sin letras)
-                # 2. Sin caracteres especiales (%, $, kg, etc)
-                # 3. Longitud: 1-13 dígitos (acepta PLU cortos como "7" o "09")
-                
-                if codigo_limpio.isdigit() and 1 <= len(codigo_limpio) <= 13:  # ✅ CAMBIADO: antes era >= 3
+                if codigo_limpio.isdigit() and 1 <= len(codigo_limpio) <= 13:
                     prod["codigo"] = codigo_limpio
                     codigos_validos += 1
                     
-                    # Clasificar tipo de código para logging
                     if len(codigo_limpio) >= 8:
                         tipo = "EAN"
                     elif len(codigo_limpio) >= 3:
@@ -326,7 +303,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
                 **data,
                 "metadatos": {
                     "metodo": "claude-vision",
-                    "modelo": "claude-3-5-haiku-20241022",  # ✅ Actualizado
+                    "modelo": "claude-3-5-haiku-20241022",
                     "productos_detectados": productos_procesados,
                     "codigos_validos": codigos_validos
                 }
@@ -358,12 +335,9 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
 
 
 def normalizar_establecimiento(nombre_raw: str) -> str:
-    """
-    Normaliza el nombre del establecimiento basándose en palabras clave
-    """
+    """Normaliza el nombre del establecimiento basándose en palabras clave"""
     nombre_lower = nombre_raw.lower()
     
-    # Mapeo de palabras clave a nombres normalizados
     establecimientos = {
         'jumbo': 'JUMBO',
         'exito': 'ÉXITO',
@@ -391,10 +365,8 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         'homecenter': 'HOME CENTER'
     }
     
-    # Buscar coincidencias
     for clave, normalizado in establecimientos.items():
         if clave in nombre_lower:
             return normalizado
     
-    # Si no encuentra coincidencia, retornar el original pero limpio
     return nombre_raw.strip().upper()
