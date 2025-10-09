@@ -541,7 +541,47 @@ def create_postgresql_tables():
         # TABLAS AUXILIARES
         # ============================================
         
+        # ============================================
+        # TABLAS AUXILIARES
+        # ============================================
+        
         # 3.1. CODIGOS_LOCALES (NUEVA - Productos sin EAN)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS codigos_locales (
+            id SERIAL PRIMARY KEY,
+            producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+            establecimiento_id INTEGER REFERENCES establecimientos(id),
+            
+            codigo_local VARCHAR(20) NOT NULL,
+            descripcion_local TEXT,
+            activo BOOLEAN DEFAULT TRUE,
+            
+            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            
+            UNIQUE(establecimiento_id, codigo_local)
+        )
+        ''')
+        print("✓ Tabla 'codigos_locales' creada")
+        
+        # 3.2. MATCHING_LOGS (NUEVA - Auditoría de matching)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS matching_logs (
+            id SERIAL PRIMARY KEY,
+            item_factura_id INTEGER REFERENCES items_factura(id),
+            
+            codigo_leido VARCHAR(20),
+            nombre_leido VARCHAR(200),
+            producto_maestro_sugerido_id INTEGER REFERENCES productos_maestros(id),
+            
+            confianza INTEGER,
+            metodo_matching VARCHAR(50),
+            fue_aceptado BOOLEAN,
+            
+            fecha_matching TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        print("✓ Tabla 'matching_logs' creada")
+        
         # 3.3. CORRECCIONES_PRODUCTOS (Sistema de aprendizaje)
         print("🧠 Verificando tabla correcciones_productos...")
         
@@ -617,68 +657,7 @@ def create_postgresql_tables():
         ''')
         print("✓ Tabla 'processing_jobs' creada")
 
-# Índices para processing_jobs
-    crear_indice_seguro(
-        'CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status, created_at DESC)',
-        'processing_jobs.status'
-    )
-    crear_indice_seguro(
-        'CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario ON processing_jobs(usuario_id, created_at DESC)',
-        'processing_jobs.usuario'
-    )
-        
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'correcciones_productos'
-            )
-        """)
-        tabla_correcciones_existe = cursor.fetchone()[0]
-        
-        if not tabla_correcciones_existe:
-            print("   ✨ Creando tabla correcciones_productos...")
-            cursor.execute('''
-            CREATE TABLE correcciones_productos (
-                id SERIAL PRIMARY KEY,
-                
-                nombre_ocr TEXT NOT NULL,
-                codigo_ocr TEXT,
-                
-                codigo_correcto TEXT NOT NULL,
-                nombre_correcto TEXT,
-                
-                nombre_normalizado TEXT NOT NULL,
-                establecimiento_id INTEGER REFERENCES establecimientos(id),
-                
-                factura_id INTEGER REFERENCES facturas(id),
-                usuario_id INTEGER,
-                fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                veces_aplicado INTEGER DEFAULT 0,
-                
-                UNIQUE(nombre_normalizado, establecimiento_id)
-            )
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX idx_correcciones_nombre 
-                ON correcciones_productos(nombre_normalizado)
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX idx_correcciones_establecimiento 
-                ON correcciones_productos(establecimiento_id)
-            ''')
-            
-            cursor.execute('''
-            CREATE INDEX idx_correcciones_veces 
-                ON correcciones_productos(veces_aplicado DESC)
-            ''')
-            
-            conn.commit()
-            print("   ✅ Tabla 'correcciones_productos' creada")
-        else:
-            print("   ✅ Tabla 'correcciones_productos' ya existe")
-        
+
         # ============================================
         # TABLAS LEGACY (mantener para migración)
         # ============================================
@@ -768,6 +747,11 @@ def create_postgresql_tables():
         # ============================================
         print("📊 Creando índices optimizados...")
         
+        # ============================================
+        # ÍNDICES OPTIMIZADOS
+        # ============================================
+        print("📊 Creando índices optimizados...")
+        
         def crear_indice_seguro(sql_statement, descripcion):
             try:
                 cursor.execute(sql_statement)
@@ -804,7 +788,11 @@ def create_postgresql_tables():
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_correcciones_nombre ON correcciones_productos(nombre_normalizado)', 'correcciones_productos.nombre')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_correcciones_establecimiento ON correcciones_productos(establecimiento_id)', 'correcciones_productos.establecimiento')
         
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status, created_at DESC)', 'processing_jobs.status')
+        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario ON processing_jobs(usuario_id, created_at DESC)', 'processing_jobs.usuario')
+        
         print("✓ Índices creados")
+        
         
         conn.commit()
         conn.close()
@@ -841,7 +829,8 @@ def create_sqlite_tables():
             fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         ''')
-            cursor.execute('''
+        
+        cursor.execute('''
         CREATE TABLE IF NOT EXISTS processing_jobs (
             id TEXT PRIMARY KEY,
             usuario_id INTEGER REFERENCES usuarios(id),
@@ -861,12 +850,12 @@ def create_sqlite_tables():
 
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_processing_jobs_status 
-         ON processing_jobs(status, created_at DESC)
+            ON processing_jobs(status, created_at DESC)
         ''')
 
         cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario 
-         ON processing_jobs(usuario_id, created_at DESC)
+            ON processing_jobs(usuario_id, created_at DESC)
         ''')
         
         cursor.execute('''
@@ -1056,7 +1045,6 @@ def create_sqlite_tables():
         print(f"❌ Error creando tablas SQLite: {e}")
         if conn:
             conn.close()
-
 def normalizar_nombre_establecimiento(nombre_raw: str) -> str:
     """Normaliza el nombre de un establecimiento"""
     if not nombre_raw:
