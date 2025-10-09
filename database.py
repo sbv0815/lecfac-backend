@@ -436,28 +436,7 @@ def create_postgresql_tables():
             cadena VARCHAR(50)
         )
         ''')
-        
-        # Agregar columnas faltantes si no existen
-        def agregar_columna_segura(tabla, columna, tipo):
-            try:
-                cursor.execute(f"""
-                    ALTER TABLE {tabla} 
-                    ADD COLUMN IF NOT EXISTS {columna} {tipo}
-                """)
-                conn.commit()
-                print(f"✓ Columna '{columna}' verificada en {tabla}")
-            except Exception as e:
-                print(f"⚠️ Columna {columna}: {e}")
-                conn.rollback()
-        
-        agregar_columna_segura('facturas', 'establecimiento_id', 'INTEGER REFERENCES establecimientos(id)')
-        agregar_columna_segura('facturas', 'productos_guardados', 'INTEGER DEFAULT 0')
-        agregar_columna_segura('facturas', 'productos_detectados', 'INTEGER DEFAULT 0')
-        agregar_columna_segura('facturas', 'estado_validacion', "VARCHAR(20) DEFAULT 'pendiente'")
-        agregar_columna_segura('facturas', 'puntaje_calidad', 'INTEGER DEFAULT 0')
-        agregar_columna_segura('facturas', 'porcentaje_lectura', 'DECIMAL(5,2)')
-        
-        print("✓ Tabla 'facturas' actualizada")
+        print("✓ Tabla 'facturas' creada")
         
         # 2.2. ITEMS_FACTURA (NUEVA - Reemplaza tabla 'productos')
         cursor.execute('''
@@ -530,16 +509,7 @@ def create_postgresql_tables():
             UNIQUE(usuario_id, producto_maestro_id)
         )
         ''')
-        
-        agregar_columna_segura('patrones_compra', 'producto_maestro_id', 'INTEGER REFERENCES productos_maestros(id)')
-        agregar_columna_segura('patrones_compra', 'establecimiento_preferido_id', 'INTEGER REFERENCES establecimientos(id)')
-        agregar_columna_segura('patrones_compra', 'precio_promedio_pagado', 'INTEGER')
-        
         print("✓ Tabla 'patrones_compra' actualizada")
-        
-        # ============================================
-        # TABLAS AUXILIARES
-        # ============================================
         
         # ============================================
         # TABLAS AUXILIARES
@@ -657,7 +627,6 @@ def create_postgresql_tables():
         ''')
         print("✓ Tabla 'processing_jobs' creada")
 
-
         # ============================================
         # TABLAS LEGACY (mantener para migración)
         # ============================================
@@ -740,12 +709,8 @@ def create_postgresql_tables():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
-
         
-        # ============================================
-        # ÍNDICES OPTIMIZADOS
-        # ============================================
-        print("📊 Creando índices optimizados...")
+        print("✓ Tablas legacy creadas")
         
         # ============================================
         # ÍNDICES OPTIMIZADOS
@@ -756,8 +721,10 @@ def create_postgresql_tables():
             try:
                 cursor.execute(sql_statement)
                 conn.commit()
+                print(f"   ✓ Índice {descripcion}")
                 return True
             except Exception as e:
+                print(f"   ⚠️ Índice {descripcion}: {e}")
                 conn.rollback()
                 return False
         
@@ -785,17 +752,12 @@ def create_postgresql_tables():
         
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_patrones_usuario_maestro ON patrones_compra(usuario_id, producto_maestro_id)', 'patrones_compra.usuario_producto')
         
-        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_correcciones_nombre ON correcciones_productos(nombre_normalizado)', 'correcciones_productos.nombre')
-        crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_correcciones_establecimiento ON correcciones_productos(establecimiento_id)', 'correcciones_productos.establecimiento')
-        
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status, created_at DESC)', 'processing_jobs.status')
         crear_indice_seguro('CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario ON processing_jobs(usuario_id, created_at DESC)', 'processing_jobs.usuario')
         
-        print("✓ Índices creados")
-        
+        print("✅ Índices optimizados creados")
         
         conn.commit()
-        conn.close()
         print("✅ Base de datos PostgreSQL configurada correctamente")
         
     except Exception as e:
@@ -804,6 +766,8 @@ def create_postgresql_tables():
         traceback.print_exc()
         if conn:
             conn.rollback()
+    finally:
+        if conn:
             conn.close()
 
 def create_sqlite_tables():
@@ -1650,5 +1614,6 @@ def obtener_jobs_pendientes(usuario_id: int, limit: int = 10) -> list:
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
     test_database_connection()
-    create_tables()  # Ya incluye processing_jobs ahora
-    print("✅ Sistema inicializado")
+    create_tables()
+    print("✅ Sistema inicializado correctamente")
+    print("✅ Tablas creadas/actualizadas incluyendo processing_jobs")
