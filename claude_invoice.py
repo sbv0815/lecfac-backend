@@ -26,10 +26,29 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         client = anthropic.Anthropic(api_key=api_key)
         
         # ========== PROMPT OPTIMIZADO ==========
-        prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
+       # ========== PROMPT OPTIMIZADO CON DETECCIÓN DE DESCUENTOS ==========
+prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
 
 # OBJETIVO
-Extraer: establecimiento, fecha, total y CADA producto con su código.
+Extraer: establecimiento, fecha, total y CADA producto REAL con su código.
+
+# IMPORTANTE: DETECTAR DESCUENTOS
+⚠️ NO incluyas líneas de descuentos como productos. Los descuentos se identifican porque:
+- Contienen palabras: AHORRO, DESCUENTO, DESC, DTO, REBAJA, PROMOCION, PROMO, OFERTA, %, 2X1, 3X2
+- Aparecen DESPUÉS del producto real
+- Tienen precio NEGATIVO o menor al producto original
+
+EJEMPLOS DE DESCUENTOS (NO incluir):
+✗ "14476 AHORRO 20% M-PLAZA" → ES DESCUENTO (tiene "AHORRO")
+✗ "625 DESC 20% PRODUCTO" → ES DESCUENTO (tiene "DESC")
+✗ "750 PROMOCION 2X1" → ES DESCUENTO (tiene "PROMOCION")
+✗ "1174 REBAJA ESPECIAL" → ES DESCUENTO (tiene "REBAJA")
+
+EJEMPLOS DE PRODUCTOS REALES (SÍ incluir):
+✓ "14476 LIMON TAHITI" → PRODUCTO REAL
+✓ "625 ZANAHORIA GRL" → PRODUCTO REAL
+✓ "750 BANANO GRL" → PRODUCTO REAL
+✓ "1174 MANZANA GIRALDO 1KG" → PRODUCTO REAL
 
 # ESTABLECIMIENTOS COMUNES
 Si el nombre contiene alguna de estas palabras, usa SOLO el nombre principal:
@@ -40,22 +59,32 @@ Ejemplo: "JUMBO BULEVAR NIZA" → usa "JUMBO"
 # CÓDIGOS DE PRODUCTOS - CRÍTICO
 Los códigos están SIEMPRE a la IZQUIERDA del nombre del producto.
 
+TIPOS DE CÓDIGOS VÁLIDOS:
+1. **Códigos EAN (8-13 dígitos):** 7702993047842
+2. **Códigos PLU (3-7 dígitos):** 116, 1045, 14476
+3. **Códigos Internos (3-7 dígitos):** 625, 750, 2107
+
 EJEMPLOS REALES:
 ✓ "116 BANANO URABA" → codigo: "116"
 ✓ "1045 ZANAHORIA" → codigo: "1045"  
 ✓ "7702993047842 LECHE ALPINA" → codigo: "7702993047842"
 ✓ "23456 ARROZ DIANA X 500G" → codigo: "23456"
+✓ "09 LIMON TAHITI" → codigo: "09"
+✓ "7 TOMATE CHONTO" → codigo: "7"
 
-CÓDIGOS INVÁLIDOS (tienen letras o símbolos):
+CÓDIGOS INVÁLIDOS (tienen letras, símbolos o palabras clave de descuento):
 ✗ "343718DF.VD PRODUCTO" → "" (tiene letras DF)
 ✗ "344476DF.20% PRODUCTO" → "" (tiene letras y %)
 ✗ "REF123 PRODUCTO" → "" (tiene letras REF)
+✗ "14476 AHORRO 20%" → OMITIR COMPLETAMENTE (es descuento)
+✗ "625 DESC ESPECIAL" → OMITIR COMPLETAMENTE (es descuento)
 
 REGLAS:
 1. Busca el PRIMER número a la IZQUIERDA del nombre
 2. Si tiene SOLO DÍGITOS → ES EL CÓDIGO
 3. Si tiene letras o símbolos → pon ""
-4. Puede ser corto (3 dígitos) o largo (13 dígitos)
+4. Si el nombre contiene palabras de descuento → OMITIR COMPLETAMENTE
+5. Puede ser de 1 a 13 dígitos (acepta códigos cortos como "7" o "09")
 
 # FORMATO CRÍTICO DE NÚMEROS
 ⚠️ IMPORTANTE: Los precios deben estar SIN separadores de miles:
@@ -84,6 +113,12 @@ Responde SOLO con este JSON (sin explicaciones, sin texto adicional):
       "nombre": "BANANO URABA",
       "cantidad": 0.878,
       "precio": 5425
+    },
+    {
+      "codigo": "09",
+      "nombre": "LIMON TAHITI",
+      "cantidad": 1,
+      "precio": 3500
     }
   ]
 }
@@ -91,9 +126,10 @@ Responde SOLO con este JSON (sin explicaciones, sin texto adicional):
 VALIDACIONES FINALES:
 - JSON válido sin errores de sintaxis
 - Precios como números enteros SIN separadores: 2190 (no 2,190)
-- Códigos como strings con solo dígitos: "116" o ""
+- Códigos como strings con solo dígitos: "116", "09" o ""
 - Fecha formato YYYY-MM-DD
-- NO incluyas descuentos, IVA o subtotales en productos
+- NO incluyas descuentos, IVA, subtotales, ni líneas con palabras: AHORRO, DESCUENTO, PROMO, REBAJA, %
+- Acepta códigos de 1 a 13 dígitos (frutas/verduras pueden tener códigos de 1-2 dígitos)
 
 ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
         
