@@ -2,7 +2,8 @@
 main.py - Servidor FastAPI Principal para LecFac
 VERSIÓN COMPLETA - Incluye TODOS los endpoints necesarios + Gestor de Duplicados
 """
-
+from video_processor import extraer_frames_video, deduplicar_productos, limpiar_frames_temporales
+import tempfile
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
@@ -47,6 +48,9 @@ from duplicados_routes import router as duplicados_router  # ← AGREGAR ESTA L�
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
+
+
+
 
 # ==========================================
 # CICLO DE VIDA DE LA APLICACIÓN
@@ -2691,6 +2695,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
