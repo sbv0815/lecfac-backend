@@ -1324,8 +1324,7 @@ async def health_check():
 
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
-    video: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)
+    video: UploadFile = File(...)  # ✅ Sin autenticación
 ):
     """
     Procesa un video de factura
@@ -1334,14 +1333,14 @@ async def parse_invoice_video(
     - Consolida y deduplica productos
     """
     
-    # ✅ IMPORTANTE: Imports LOCALES (evita crash de NumPy al inicio)
+    # ✅ Imports locales
     try:
         from video_processor import extraer_frames_video, deduplicar_productos, limpiar_frames_temporales
     except ImportError as e:
         print(f"❌ Error importando video_processor: {e}")
         return {
             "success": False,
-            "error": "Procesamiento de video no disponible. Contacta al admin."
+            "error": "Procesamiento de video no disponible."
         }
     
     from claude_invoice import parse_invoice_with_claude
@@ -1355,10 +1354,6 @@ async def parse_invoice_video(
         print("📹 PROCESANDO VIDEO DE FACTURA")
         print("=" * 80)
         
-        # Validar tipo de archivo
-        content_type = video.content_type or ""
-        print(f"📦 Content-Type: {content_type}")
-        
         # Guardar video temporal
         print("💾 Guardando video...")
         with tempfile.NamedTemporaryFile(delete=False, suffix='.webm', dir='/tmp') as tmp_video:
@@ -1367,23 +1362,22 @@ async def parse_invoice_video(
             video_path = tmp_video.name
         
         video_size_mb = len(content) / (1024 * 1024)
-        print(f"📦 Video: {video_size_mb:.2f} MB en {video_path}")
+        print(f"📦 Video: {video_size_mb:.2f} MB")
         
         # Extraer frames
-        print("\n🎬 PASO 1: Extrayendo frames...")
+        print("\n🎬 Extrayendo frames...")
         frames_paths = extraer_frames_video(video_path, intervalo=0.5)
         
         if not frames_paths:
-            print("❌ No se extrajeron frames")
             return {
                 "success": False,
-                "error": "No se pudieron extraer frames del video"
+                "error": "No se pudieron extraer frames"
             }
         
         print(f"✅ {len(frames_paths)} frames extraídos")
         
-        # Procesar frames con Claude
-        print("\n🤖 PASO 2: Procesando con Claude Vision...")
+        # Procesar frames
+        print("\n🤖 Procesando con Claude...")
         todos_productos = []
         establecimiento = None
         total = 0
@@ -1404,20 +1398,17 @@ async def parse_invoice_video(
                         establecimiento = data.get('establecimiento', 'Desconocido')
                         total = data.get('total', 0)
                         fecha = data.get('fecha')
-                        print(f"      ✓ Establecimiento: {establecimiento}")
                     
                     productos = data.get('productos', [])
                     todos_productos.extend(productos)
                     print(f"      ✓ {len(productos)} productos")
-                else:
-                    print(f"      ⚠️ Sin datos")
                     
             except Exception as e:
                 print(f"      ❌ Error: {e}")
                 continue
         
         print(f"\n✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
-        print(f"📊 Productos detectados: {len(todos_productos)}")
+        print(f"📊 Productos: {len(todos_productos)}")
         
         if not todos_productos:
             return {
@@ -1426,12 +1417,12 @@ async def parse_invoice_video(
             }
         
         # Deduplicar
-        print("\n🔍 PASO 3: Deduplicando...")
+        print("\n🔍 Deduplicando...")
         productos_unicos = deduplicar_productos(todos_productos)
-        print(f"✅ Productos únicos: {len(productos_unicos)}")
+        print(f"✅ Únicos: {len(productos_unicos)}")
         
         # Guardar en BD
-        print("\n💾 PASO 4: Guardando en BD...")
+        print("\n💾 Guardando en BD...")
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -1440,9 +1431,8 @@ async def parse_invoice_video(
                 establecimiento, 
                 detectar_cadena(establecimiento)
             )
-            print(f"   ✓ Establecimiento ID: {establecimiento_id}")
             
-            usuario_id = current_user['id']
+            usuario_id = 1  # ✅ Usuario por defecto (sin autenticación)
             
             # Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
@@ -1502,9 +1492,7 @@ async def parse_invoice_video(
             conn.commit()
             print(f"   ✓ {productos_guardados} productos guardados")
             
-            print("\n" + "=" * 80)
-            print("✅ PROCESAMIENTO COMPLETO")
-            print("=" * 80)
+            print("\n✅ PROCESAMIENTO COMPLETO")
             
             return {
                 "success": True,
@@ -1535,11 +1523,11 @@ async def parse_invoice_video(
         
         return {
             "success": False,
-            "error": f"Error procesando video: {str(e)}"
+            "error": f"Error: {str(e)}"
         }
         
     finally:
-        # Limpiar archivos temporales
+        # Limpiar
         print("\n🧹 Limpiando...")
         
         if video_path and os.path.exists(video_path):
@@ -1551,8 +1539,7 @@ async def parse_invoice_video(
         
         if frames_paths:
             limpiar_frames_temporales(frames_paths)
-            print(f"   ✓ {len(frames_paths)} frames eliminados")
-
+            print(f"   ✓ Frames eliminados")
 # ==========================================
 # PÁGINAS HTML
 # ==========================================
@@ -2934,6 +2921,7 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
 
 
 
