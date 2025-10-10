@@ -1,5 +1,5 @@
 """
-Procesador de videos de facturas - VERSIÓN OPTIMIZADA
+Procesador de videos de facturas - VERSIÓN OPTIMIZADA Y SEGURA
 Extrae frames inteligentemente y deduplica productos
 """
 import cv2
@@ -12,61 +12,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def detectar_cambio_significativo(frame_actual, frame_anterior, umbral=0.12):
+def extraer_frames_video(video_path: str, intervalo: float = 1.0) -> List[str]:
     """
-    Detecta si hay cambio significativo entre dos frames
-    Umbral bajo = más sensible a cambios (más frames)
-    Umbral alto = menos sensible (menos frames)
-    """
-    if frame_anterior is None:
-        return True
-    
-    try:
-        # Convertir a escala de grises
-        gray1 = cv2.cvtColor(frame_anterior, cv2.COLOR_BGR2GRAY)
-        gray2 = cv2.cvtColor(frame_actual, cv2.COLOR_BGR2GRAY)
-        
-        # Calcular diferencia absoluta
-        diff = cv2.absdiff(gray1, gray2)
-        
-        # Porcentaje de píxeles que cambiaron significativamente
-        porcentaje_cambio = np.sum(diff > 30) / diff.size
-        
-        return porcentaje_cambio > umbral
-    except Exception as e:
-        logger.warning(f"Error detectando cambio: {e}")
-        return True  # En caso de error, procesar el frame
-
-
-def estrategia_frames_por_duracion(duration: float) -> tuple:
-    """
-    Determina estrategia de extracción según duración del video
-    Retorna (intervalo_segundos, usar_deteccion_cambios)
-    """
-    if duration <= 3:
-        # Video muy corto: cada 0.5s, sin detección
-        return (0.5, False)
-    elif duration <= 8:
-        # Video corto: cada 0.8s, con detección
-        return (0.8, True)
-    elif duration <= 15:
-        # Video medio: cada 1.2s, con detección
-        return (1.2, True)
-    else:
-        # Video largo: cada 2s, con detección
-        return (2.0, True)
-
-
-def extraer_frames_video(video_path: str, intervalo: float = None) -> List[str]:
-    """
-    Extrae frames de un video de forma INTELIGENTE
-    - Detecta duración y ajusta estrategia automáticamente
-    - Detecta cambios significativos para evitar frames duplicados
-    - Optimizado para balance entre velocidad y calidad
+    Extrae frames de un video de forma optimizada
     
     Args:
         video_path: Ruta al archivo de video
-        intervalo: Intervalo en segundos (None = automático según duración)
+        intervalo: Intervalo en segundos (default: 1.0 = 1 frame por segundo)
         
     Returns:
         Lista de rutas a imágenes temporales extraídas
@@ -85,36 +37,32 @@ def extraer_frames_video(video_path: str, intervalo: float = None) -> List[str]:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps if fps > 0 else 0
         
-        logger.info(f"   📊 Información del video:")
-        logger.info(f"      - FPS: {fps:.2f}")
-        logger.info(f"      - Frames totales: {total_frames}")
-        logger.info(f"      - Duración: {duration:.2f}s")
+        logger.info(f"   FPS: {fps:.2f}")
+        logger.info(f"   Frames totales: {total_frames}")
+        logger.info(f"   Duración: {duration:.2f}s")
         
-        # Validar FPS
+        # Si FPS es inválido, usar fallback
         if fps <= 0 or fps > 240:
             logger.warning(f"⚠️ FPS inválido ({fps}), usando 30 como fallback")
             fps = 30
         
-        # Estrategia inteligente
-        if intervalo is None:
-            intervalo, usar_deteccion = estrategia_frames_por_duracion(duration)
-            logger.info(f"   🎯 Estrategia automática:")
-            logger.info(f"      - Intervalo: {intervalo}s")
-            logger.info(f"      - Detección cambios: {'Sí' if usar_deteccion else 'No'}")
+        # Ajustar intervalo según duración
+        if duration <= 5:
+            intervalo = 0.8  # Videos cortos: más frames
+        elif duration <= 10:
+            intervalo = 1.0  # Videos medios: 1 frame/seg
         else:
-            usar_deteccion = True  # Siempre usar si se especifica intervalo manual
+            intervalo = 1.5  # Videos largos: menos frames
         
         frame_interval = max(1, int(fps * intervalo))
-        logger.info(f"   ⚙️ Extrayendo 1 frame cada {frame_interval} frames ({intervalo}s)")
+        logger.info(f"   Extrayendo 1 frame cada {frame_interval} frames ({intervalo}s)")
         
         frames_paths = []
         frame_count = 0
         saved_count = 0
-        skipped_count = 0
-        frame_anterior = None
         
-        # Límite de seguridad: máximo 25 frames
-        max_frames = 25
+        # Límite de seguridad: máximo 20 frames
+        max_frames = 20
         
         while True:
             ret, frame = cap.read()
@@ -122,56 +70,42 @@ def extraer_frames_video(video_path: str, intervalo: float = None) -> List[str]:
             if not ret:
                 break
             
-            # Verificar límite de seguridad
+            # Verificar límite
             if saved_count >= max_frames:
-                logger.warning(f"⚠️ Alcanzado límite de {max_frames} frames")
+                logger.warning(f"⚠️ Límite de {max_frames} frames alcanzado")
                 break
             
             # Guardar frame cada intervalo
             if frame_count % frame_interval == 0:
-                
-                # Verificar cambio significativo (si está habilitado)
-                hay_cambio = True
-                if usar_deteccion and frame_anterior is not None:
-                    hay_cambio = detectar_cambio_significativo(frame, frame_anterior)
-                
-                if hay_cambio:
-                    try:
-                        # Crear archivo temporal
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg', dir='/tmp') as tmp_frame:
-                            frame_path = tmp_frame.name
+                try:
+                    # Crear archivo temporal
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg', dir='/tmp') as tmp_frame:
+                        frame_path = tmp_frame.name
+                    
+                    # Guardar frame con buena calidad
+                    success = cv2.imwrite(
+                        frame_path, 
+                        frame, 
+                        [cv2.IMWRITE_JPEG_QUALITY, 90]
+                    )
+                    
+                    if success:
+                        frames_paths.append(frame_path)
+                        saved_count += 1
+                        logger.info(f"   ✓ Frame {saved_count} guardado (frame #{frame_count})")
+                    else:
+                        logger.warning(f"   ⚠️ No se pudo guardar frame {frame_count}")
                         
-                        # Guardar frame con buena calidad
-                        success = cv2.imwrite(
-                            frame_path, 
-                            frame, 
-                            [cv2.IMWRITE_JPEG_QUALITY, 85]  # 85% calidad (balance)
-                        )
-                        
-                        if success:
-                            frames_paths.append(frame_path)
-                            saved_count += 1
-                            frame_anterior = frame.copy()
-                            logger.info(f"   ✅ Frame {saved_count} guardado (#{frame_count}, {frame_count/fps:.1f}s)")
-                        else:
-                            logger.warning(f"   ⚠️ No se pudo guardar frame {frame_count}")
-                            
-                    except Exception as e:
-                        logger.error(f"   ❌ Error guardando frame {frame_count}: {e}")
-                else:
-                    skipped_count += 1
-                    logger.debug(f"   ⏭️ Frame {frame_count} saltado (sin cambios)")
+                except Exception as e:
+                    logger.error(f"   ❌ Error guardando frame {frame_count}: {e}")
             
             frame_count += 1
         
         cap.release()
         
         logger.info(f"✅ Extracción completa:")
-        logger.info(f"   📊 Resultados:")
-        logger.info(f"      - Frames analizados: {frame_count}")
-        logger.info(f"      - Frames guardados: {saved_count}")
-        logger.info(f"      - Frames saltados: {skipped_count}")
-        logger.info(f"      - Eficiencia: {(skipped_count/frame_count*100):.1f}% frames evitados")
+        logger.info(f"   Total frames analizados: {frame_count}")
+        logger.info(f"   Frames guardados: {saved_count}")
         
         return frames_paths
         
@@ -185,7 +119,6 @@ def extraer_frames_video(video_path: str, intervalo: float = None) -> List[str]:
 def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     """
     Elimina productos duplicados detectados en múltiples frames
-    MEJORADO: Pre-filtra descuentos y optimiza deduplicación
     """
     from difflib import SequenceMatcher
     
@@ -194,12 +127,10 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     
     logger.info(f"🔍 Deduplicando {len(productos)} productos...")
     
-    # ========== PASO 1: FILTRADO PREVIO DE DESCUENTOS ==========
+    # PASO 1: Filtrar descuentos
     palabras_descuento = [
         'ahorro', 'descuento', 'desc', 'dto', 'rebaja', 'promocion', 'promo', 
-        'oferta', '2x1', '3x2', 'precio final', 'valor final', 'dto',
-        'dcto', 'descu', 'dcto.', 'ahorro%', 'desc%', 'ahorro ', ' ahorro',
-        'descto', 'descuent'
+        'oferta', '2x1', '3x2', 'precio final', 'valor final', 'dcto'
     ]
     
     productos_limpios = []
@@ -207,61 +138,54 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     
     for prod in productos:
         nombre = str(prod.get('nombre', '')).lower().strip()
-        
-        # Verificar si es descuento
         es_descuento = any(palabra in nombre for palabra in palabras_descuento)
         
-        if es_descuento:
-            descuentos_filtrados += 1
-        else:
+        if not es_descuento:
             productos_limpios.append(prod)
+        else:
+            descuentos_filtrados += 1
     
     if descuentos_filtrados > 0:
         logger.info(f"   🗑️ {descuentos_filtrados} descuentos eliminados")
     
     productos = productos_limpios
     
-    # ========== PASO 2: DEDUPLICACIÓN POR CÓDIGO ==========
+    # PASO 2: Deduplicar por código
     productos_unicos = {}
     productos_sin_codigo = []
     
     for prod in productos:
         codigo = str(prod.get('codigo', '')).strip()
         nombre = str(prod.get('nombre', '')).strip().lower()
-        precio = prod.get('precio', 0)
         
-        # Validar nombre mínimo
         if not nombre or len(nombre) < 3:
             continue
         
-        # CASO 1: Producto con código EAN (8+ dígitos)
+        # Con código EAN (8+ dígitos)
         if codigo and len(codigo) >= 8 and codigo.isdigit():
-            key = f"ean_{codigo}"
-            
+            key = f"codigo_{codigo}"
             if key not in productos_unicos:
                 productos_unicos[key] = prod
             else:
-                # Quedarse con el que tenga mejor nombre
                 prod_existente = productos_unicos[key]
-                if len(nombre) > len(str(prod_existente.get('nombre', '')).lower()):
+                if len(nombre) > len(prod_existente.get('nombre', '')):
                     productos_unicos[key] = prod
         
-        # CASO 2: Producto con código PLU (1-7 dígitos)
+        # Con código PLU (1-7 dígitos)
         elif codigo and 1 <= len(codigo) <= 7 and codigo.isdigit():
             key = f"plu_{codigo}"
-            
             if key not in productos_unicos:
                 productos_unicos[key] = prod
             else:
                 prod_existente = productos_unicos[key]
-                if len(nombre) > len(str(prod_existente.get('nombre', '')).lower()):
+                if len(nombre) > len(prod_existente.get('nombre', '')):
                     productos_unicos[key] = prod
         
-        # CASO 3: Producto sin código
+        # Sin código
         else:
             productos_sin_codigo.append(prod)
     
-    # ========== PASO 3: DEDUPLICAR PRODUCTOS SIN CÓDIGO ==========
+    # PASO 3: Deduplicar sin código por nombre
     logger.info(f"   🔍 Analizando {len(productos_sin_codigo)} productos sin código...")
     
     for prod in productos_sin_codigo:
@@ -271,33 +195,27 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         if not nombre or len(nombre) < 3:
             continue
         
-        # Buscar similar
         encontrado = False
         
         for key, prod_existente in productos_unicos.items():
             nombre_existente = str(prod_existente.get('nombre', '')).strip().lower()
             precio_existente = prod_existente.get('precio', 0)
             
-            # Similitud de nombres
             similitud = SequenceMatcher(None, nombre, nombre_existente).ratio()
             
-            # Si son muy similares (>85%) y precio cercano (±20%)
             if similitud > 0.85:
-                diferencia_precio = abs(precio - precio_existente) / max(precio, precio_existente, 1) if precio and precio_existente else 1
+                diferencia_precio = abs(precio - precio_existente) / max(precio, precio_existente, 1)
                 
                 if diferencia_precio < 0.20:
                     encontrado = True
-                    # Actualizar con el nombre más largo
                     if len(nombre) > len(nombre_existente):
                         productos_unicos[key]['nombre'] = prod['nombre']
                     break
         
         if not encontrado:
-            # Crear key único
             palabras = nombre.split()[:4]
             key = f"nombre_{'_'.join(palabras)}"
             
-            # Evitar colisiones
             counter = 1
             original_key = key
             while key in productos_unicos:
@@ -309,10 +227,10 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     resultado = list(productos_unicos.values())
     
     logger.info(f"✅ Deduplicación completa:")
-    logger.info(f"   📊 Productos originales: {len(productos) + descuentos_filtrados}")
-    logger.info(f"   🗑️ Descuentos filtrados: {descuentos_filtrados}")
-    logger.info(f"   ✨ Productos únicos: {len(resultado)}")
-    logger.info(f"   📉 Duplicados eliminados: {len(productos) - len(resultado)}")
+    logger.info(f"   Productos originales: {len(productos) + descuentos_filtrados}")
+    logger.info(f"   Descuentos filtrados: {descuentos_filtrados}")
+    logger.info(f"   Productos únicos: {len(resultado)}")
+    logger.info(f"   Duplicados eliminados: {len(productos) - len(resultado)}")
     
     return resultado
 
