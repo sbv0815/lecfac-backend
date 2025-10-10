@@ -655,79 +655,73 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         # ============================================
         # PASO 5: Guardar en base de datos
         # ============================================
-        print(f"💾 Guardando en base de datos...")
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
+       print(f"💾 Guardando en base de datos...")
+
+conn = get_db_connection()
+cursor = conn.cursor()
+
+try:
+    # 5.1 Crear/obtener establecimiento
+    cadena = detectar_cadena(establecimiento)
+    establecimiento_id = obtener_o_crear_establecimiento(establecimiento, cadena)
+    
+    # 5.2 Crear factura
+    if os.environ.get("DATABASE_TYPE") == "postgresql":
+        cursor.execute("""
+            INSERT INTO facturas (
+                usuario_id, establecimiento_id, establecimiento, cadena,
+                total_factura, fecha_factura, fecha_cargue,
+                productos_detectados, estado_validacion
+            ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
+            RETURNING id
+        """, (usuario_id, establecimiento_id, establecimiento, cadena,
+              total, fecha, len(productos_unicos)))
+        factura_id = cursor.fetchone()[0]
+    else:
+        cursor.execute("""
+            INSERT INTO facturas (
+                usuario_id, establecimiento_id, establecimiento, cadena,
+                total_factura, fecha_factura, fecha_cargue,
+                productos_detectados, estado_validacion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'procesado')
+        """, (usuario_id, establecimiento_id, establecimiento, cadena,
+              total, fecha, datetime.now(), len(productos_unicos)))
+        factura_id = cursor.lastrowid
+    
+    conn.commit()
+    print(f"✅ Factura creada: ID {factura_id}")
+    
+    # 5.3 Guardar imagen del primer frame (DESHABILITADO)
+    imagen_guardada = False
+    if False:  # Deshabilitado temporalmente
         try:
-            # 5.1 Crear/obtener establecimiento
-            cadena = detectar_cadena(establecimiento)
-            establecimiento_id = obtener_o_crear_establecimiento(establecimiento, cadena)
-            
-            # 5.2 Crear factura
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    INSERT INTO facturas (
-                        usuario_id, establecimiento_id, establecimiento, cadena,
-                        total_factura, fecha_factura, fecha_cargue,
-                        productos_detectados, estado_validacion
-                    ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
-                    RETURNING id
-                """, (usuario_id, establecimiento_id, establecimiento, cadena,
-                      total, fecha, len(productos_unicos)))
-                factura_id = cursor.fetchone()[0]
-            else:
-                cursor.execute("""
-                    INSERT INTO facturas (
-                        usuario_id, establecimiento_id, establecimiento, cadena,
-                        total_factura, fecha_factura, fecha_cargue,
-                        productos_detectados, estado_validacion
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'procesado')
-                """, (usuario_id, establecimiento_id, establecimiento, cadena,
-                      total, fecha, datetime.now(), len(productos_unicos)))
-                factura_id = cursor.lastrowid
-            
-            conn.commit()
-            print(f"✅ Factura creada: ID {factura_id}")
-            
-            # 5.3 Guardar imagen del primer frame
-            # 5.3 Guardar imagen del primer frame
-# ⚠️ TEMPORALMENTE DESHABILITADO: columna imagen_factura no existe
-        # 5.3 Guardar imagen del primer frame
-# ⚠️ TEMPORALMENTE DESHABILITADO: columna imagen_factura no existe
-imagen_guardada = False
-if False:  # ← CAMBIO CRÍTICO: Deshabilitar temporalmente
-    try:
-        primer_frame = frames_paths[0]
-        if os.path.exists(primer_frame):
-            with open(primer_frame, 'rb') as f:
-                imagen_data = f.read()
-            
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE facturas 
-                    SET imagen_factura = %s 
-                    WHERE id = %s
-                """, (imagen_data, factura_id))
-            else:
-                cursor.execute("""
-                    UPDATE facturas 
-                    SET imagen_factura = ? 
-                    WHERE id = ?
-                """, (imagen_data, factura_id))
-            
-            conn.commit()
-            imagen_guardada = True
-            print(f"✅ Imagen guardada ({len(imagen_data) // 1024} KB)")
-    except Exception as e:
-        print(f"⚠️ Error guardando imagen: {e}")
-                    print(f"⚠️ Error guardando imagen: {e}")
-            
-            # 5.4 Guardar productos en items_factura (NO en productos)
-            productos_guardados = 0
-            productos_fallidos = 0
-            
+            primer_frame = frames_paths[0]
+            if os.path.exists(primer_frame):
+                with open(primer_frame, 'rb') as f:
+                    imagen_data = f.read()
+                
+                if os.environ.get("DATABASE_TYPE") == "postgresql":
+                    cursor.execute("""
+                        UPDATE facturas 
+                        SET imagen_factura = %s 
+                        WHERE id = %s
+                    """, (imagen_data, factura_id))
+                else:
+                    cursor.execute("""
+                        UPDATE facturas 
+                        SET imagen_factura = ? 
+                        WHERE id = ?
+                    """, (imagen_data, factura_id))
+                
+                conn.commit()
+                imagen_guardada = True
+                print(f"✅ Imagen guardada ({len(imagen_data) // 1024} KB)")
+        except Exception as e:
+            print(f"⚠️ Error guardando imagen: {e}")
+    
+    # 5.4 Guardar productos en items_factura (NO en productos)
+    productos_guardados = 0
+    productos_fallidos = 0
             for producto in productos_unicos:
                 try:
                     codigo = producto.get('codigo', '')
@@ -1968,6 +1962,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
