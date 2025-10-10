@@ -1727,6 +1727,196 @@ async def check_image(factura_id: int):
         "imagen_size": result[3]
     }
 
+
+# ==========================================
+# ENDPOINTS PARA ITEMS_FACTURA (EDITOR)
+# ==========================================
+
+@app.put("/admin/items/{item_id}")
+async def actualizar_item_factura(item_id: int, request: Request):
+    """Actualizar item en items_factura - USADO POR EDITOR"""
+    try:
+        data = await request.json()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            nombre = data.get('nombre', '').strip()
+            precio = data.get('precio', 0)
+            codigo_ean = data.get('codigo_ean', '').strip()
+            
+            if not nombre:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "error": "Nombre es requerido"}
+                )
+            
+            # Construir query dinámicamente
+            updates = []
+            params = []
+            
+            updates.append("nombre_producto = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "nombre_producto = ?")
+            params.append(nombre)
+            
+            updates.append("precio_unitario = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "precio_unitario = ?")
+            params.append(float(precio))
+            
+            # Solo actualizar código si se proporciona
+            if codigo_ean:
+                updates.append("codigo_producto = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "codigo_producto = ?")
+                params.append(codigo_ean)
+            
+            params.append(item_id)
+            
+            query = f"UPDATE items_factura SET {', '.join(updates)} WHERE id = {'%s' if os.environ.get('DATABASE_TYPE') == 'postgresql' else '?'}"
+            
+            cursor.execute(query, params)
+            
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "error": "Item no encontrado"}
+                )
+            
+            conn.commit()
+            
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Item {item_id} actualizado correctamente"
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+            
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        print(f"❌ Error actualizando item {item_id}: {e}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+@app.delete("/admin/items/{item_id}")
+async def eliminar_item_factura(item_id: int):
+    """Eliminar item de items_factura - USADO POR EDITOR"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("DELETE FROM items_factura WHERE id = %s", (item_id,))
+            else:
+                cursor.execute("DELETE FROM items_factura WHERE id = ?", (item_id,))
+            
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "error": "Item no encontrado"}
+                )
+            
+            conn.commit()
+            
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Item {item_id} eliminado correctamente"
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+            
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        print(f"❌ Error eliminando item {item_id}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+@app.post("/admin/facturas/{factura_id}/items")
+async def crear_item_factura(factura_id: int, request: Request):
+    """Crear nuevo item en items_factura - USADO POR EDITOR"""
+    try:
+        data = await request.json()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            nombre = data.get('nombre', '').strip()
+            precio = data.get('precio', 0)
+            codigo_ean = data.get('codigo_ean', '').strip()
+            cantidad = data.get('cantidad', 1)
+            
+            if not nombre:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "error": "Nombre es requerido"}
+                )
+            
+            # Verificar que factura existe
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+            else:
+                cursor.execute("SELECT id FROM facturas WHERE id = ?", (factura_id,))
+            
+            if not cursor.fetchone():
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "error": "Factura no encontrada"}
+                )
+            
+            # Insertar item
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    INSERT INTO items_factura (factura_id, codigo_producto, nombre_producto, cantidad, precio_unitario)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (factura_id, codigo_ean or None, nombre, cantidad, float(precio)))
+                nuevo_id = cursor.fetchone()[0]
+            else:
+                cursor.execute("""
+                    INSERT INTO items_factura (factura_id, codigo_producto, nombre_producto, cantidad, precio_unitario)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (factura_id, codigo_ean or None, nombre, cantidad, float(precio)))
+                nuevo_id = cursor.lastrowid
+            
+            conn.commit()
+            
+            return JSONResponse(content={
+                "success": True,
+                "id": nuevo_id,
+                "message": "Item creado correctamente"
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+            
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        print(f"❌ Error creando item: {e}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
@@ -1734,6 +1924,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
