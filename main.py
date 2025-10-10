@@ -1533,41 +1533,56 @@ async def marcar_como_validada(factura_id: int):
 
 @app.delete("/admin/facturas/{factura_id}")
 async def eliminar_factura(factura_id: int):
-    """Eliminar factura y sus productos asociados"""
+    """Eliminar factura y TODAS sus referencias en cascada"""
+    print(f"🗑️ ELIMINANDO FACTURA #{factura_id}")
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                # ✅ PASO 1: Eliminar processing_jobs
+                # ✅ ORDEN CRÍTICO: Eliminar referencias ANTES de la factura
+                
+                # 1. Processing jobs
+                print(f"   1️⃣ Eliminando processing_jobs...")
                 cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,))
                 deleted_jobs = cursor.rowcount
-                print(f"   🗑️ Jobs eliminados: {deleted_jobs}")
+                print(f"      ✓ {deleted_jobs} job(s) eliminado(s)")
                 
-                # ✅ PASO 2: Eliminar items_factura
+                # 2. Items factura
+                print(f"   2️⃣ Eliminando items_factura...")
                 cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
                 deleted_items = cursor.rowcount
-                print(f"   🗑️ Items eliminados: {deleted_items}")
+                print(f"      ✓ {deleted_items} item(s) eliminado(s)")
                 
-                # ✅ PASO 3: Eliminar productos (por si acaso)
+                # 3. Productos (tabla antigua)
+                print(f"   3️⃣ Eliminando productos...")
                 cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
                 deleted_productos = cursor.rowcount
-                print(f"   🗑️ Productos eliminados: {deleted_productos}")
+                print(f"      ✓ {deleted_productos} producto(s) eliminado(s)")
                 
-                # ✅ PASO 4: Eliminar factura
+                # 4. La factura misma
+                print(f"   4️⃣ Eliminando factura...")
                 cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
                 deleted_factura = cursor.rowcount
                 
             else:
-                # SQLite
+                # SQLite - mismo orden
                 cursor.execute("DELETE FROM processing_jobs WHERE factura_id = ?", (factura_id,))
+                deleted_jobs = cursor.rowcount
+                
                 cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
+                deleted_items = cursor.rowcount
+                
                 cursor.execute("DELETE FROM productos WHERE factura_id = ?", (factura_id,))
+                deleted_productos = cursor.rowcount
+                
                 cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
                 deleted_factura = cursor.rowcount
             
             if deleted_factura == 0:
+                print(f"   ❌ Factura {factura_id} no encontrada")
                 conn.rollback()
                 return JSONResponse(
                     status_code=404,
@@ -1575,6 +1590,7 @@ async def eliminar_factura(factura_id: int):
                 )
             
             conn.commit()
+            print(f"   ✅ Factura {factura_id} eliminada exitosamente")
             
             return JSONResponse(content={
                 "success": True,
@@ -1587,15 +1603,20 @@ async def eliminar_factura(factura_id: int):
             })
             
         except Exception as e:
+            print(f"   ❌ Error en transacción: {e}")
             conn.rollback()
             raise e
             
         finally:
-            cursor.close()
-            conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
         
     except Exception as e:
         print(f"❌ Error eliminando factura {factura_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": str(e)}
@@ -1941,6 +1962,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
