@@ -1539,18 +1539,31 @@ async def eliminar_factura(factura_id: int):
         cursor = conn.cursor()
         
         try:
-            # ✅ PASO 1: Eliminar items_factura PRIMERO (foreign key)
             if os.environ.get("DATABASE_TYPE") == "postgresql":
+                # ✅ PASO 1: Eliminar processing_jobs
+                cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,))
+                deleted_jobs = cursor.rowcount
+                print(f"   🗑️ Jobs eliminados: {deleted_jobs}")
+                
+                # ✅ PASO 2: Eliminar items_factura
                 cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
                 deleted_items = cursor.rowcount
+                print(f"   🗑️ Items eliminados: {deleted_items}")
                 
-                # PASO 2: Eliminar la factura
+                # ✅ PASO 3: Eliminar productos (por si acaso)
+                cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+                deleted_productos = cursor.rowcount
+                print(f"   🗑️ Productos eliminados: {deleted_productos}")
+                
+                # ✅ PASO 4: Eliminar factura
                 cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
                 deleted_factura = cursor.rowcount
-            else:
-                cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
-                deleted_items = cursor.rowcount
                 
+            else:
+                # SQLite
+                cursor.execute("DELETE FROM processing_jobs WHERE factura_id = ?", (factura_id,))
+                cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
+                cursor.execute("DELETE FROM productos WHERE factura_id = ?", (factura_id,))
                 cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
                 deleted_factura = cursor.rowcount
             
@@ -1566,7 +1579,11 @@ async def eliminar_factura(factura_id: int):
             return JSONResponse(content={
                 "success": True,
                 "message": f"Factura {factura_id} eliminada correctamente",
-                "productos_eliminados": deleted_items
+                "detalles": {
+                    "jobs_eliminados": deleted_jobs if os.environ.get("DATABASE_TYPE") == "postgresql" else "N/A",
+                    "items_eliminados": deleted_items if os.environ.get("DATABASE_TYPE") == "postgresql" else "N/A",
+                    "productos_eliminados": deleted_productos if os.environ.get("DATABASE_TYPE") == "postgresql" else "N/A"
+                }
             })
             
         except Exception as e:
@@ -1924,6 +1941,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
