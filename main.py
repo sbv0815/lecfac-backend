@@ -600,7 +600,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         
         print(f"🎬 Extrayendo frames...")
         # ✅ ESTRATEGIA INTELIGENTE: None = automático según duración
-        frames_paths = extraer_frames_video(video_path, intervalo=None)
+        frames_paths = extraer_frames_video(video_path, intervalo=1.0)
         
         if not frames_paths:
             raise Exception("No se extrajeron frames del video")
@@ -1963,6 +1963,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
