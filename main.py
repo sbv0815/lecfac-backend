@@ -692,32 +692,34 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             print(f"✅ Factura creada: ID {factura_id}")
             
             # 5.3 Guardar imagen del primer frame
-            imagen_guardada = False
-            if frames_paths and len(frames_paths) > 0:
-                try:
-                    primer_frame = frames_paths[0]
-                    if os.path.exists(primer_frame):
-                        with open(primer_frame, 'rb') as f:
-                            imagen_data = f.read()
-                        
-                        if os.environ.get("DATABASE_TYPE") == "postgresql":
-                            cursor.execute("""
-                                UPDATE facturas 
-                                SET imagen_factura = %s 
-                                WHERE id = %s
-                            """, (imagen_data, factura_id))
-                        else:
-                            cursor.execute("""
-                                UPDATE facturas 
-                                SET imagen_factura = ? 
-                                WHERE id = ?
-                            """, (imagen_data, factura_id))
-                        
-                        conn.commit()
-                        imagen_guardada = True
-                        print(f"✅ Imagen guardada ({len(imagen_data) // 1024} KB)")
-                except Exception as e:
-                    print(f"⚠️ Error guardando imagen: {e}")
+            # 5.3 Guardar imagen del primer frame
+# ⚠️ TEMPORALMENTE DESHABILITADO: columna imagen_factura no existe
+        imagen_guardada = False
+        if False:  # ← CAMBIO CRÍTICO: Deshabilitar temporalmente
+            try:
+                primer_frame = frames_paths[0]
+                if os.path.exists(primer_frame):
+                    with open(primer_frame, 'rb') as f:
+                        imagen_data = f.read()
+            
+                    if os.environ.get("DATABASE_TYPE") == "postgresql":
+                        cursor.execute("""
+                        UPDATE facturas 
+                        SET imagen_factura = %s 
+                        WHERE id = %s
+                        """, (imagen_data, factura_id))
+                  else:
+                    cursor.execute("""
+                    UPDATE facturas 
+                    SET imagen_factura = ? 
+                    WHERE id = ?
+                """, (imagen_data, factura_id))
+            
+                conn.commit()
+                imagen_guardada = True
+                print(f"✅ Imagen guardada ({len(imagen_data) // 1024} KB)")
+            except Exception as e:
+                print(f"⚠️ Error guardando imagen: {e}")
             
             # 5.4 Guardar productos en items_factura (NO en productos)
             productos_guardados = 0
@@ -1963,6 +1965,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
