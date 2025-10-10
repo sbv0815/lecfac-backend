@@ -772,7 +772,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         # ============================================
         # PASO 6: Limpieza de archivos temporales
         # ============================================
-    print(f"🧹 Limpiando archivos temporales...")
+        print(f"🧹 Limpiando archivos temporales...")
         try:
             if os.path.exists(video_path):
                 os.remove(video_path)
@@ -788,7 +788,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"✅ PROCESAMIENTO COMPLETADO")
         print(f"{'='*80}\n")
         
-    except Exception as e:
+   except Exception as e:
         print(f"\n{'='*80}")
         print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
         print(f"Error: {str(e)}")
@@ -1917,6 +1917,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
