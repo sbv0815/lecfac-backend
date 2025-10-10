@@ -599,7 +599,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             raise Exception(f"Error importando módulos: {e}")
         
         print(f"🎬 Extrayendo frames...")
-        # ✅ ESTRATEGIA INTELIGENTE: None = automático según duración
         frames_paths = extraer_frames_video(video_path, intervalo=1.0)
         
         if not frames_paths:
@@ -609,7 +608,50 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         
         # ============================================
         # PASO 3: Procesar frames con Claude
-       # ============================================
+        # ============================================
+        print(f"🤖 Procesando con Claude...")
+        
+        todos_productos = []
+        establecimiento = None
+        total = 0
+        fecha = None
+        frames_exitosos = 0
+        
+        for i, frame_path in enumerate(frames_paths):
+            try:
+                resultado = parse_invoice_with_claude(frame_path)
+                
+                if resultado.get('success') and resultado.get('data'):
+                    data = resultado['data']
+                    frames_exitosos += 1
+                    
+                    # Guardar datos de la primera factura detectada
+                    if not establecimiento:
+                        establecimiento = data.get('establecimiento', 'Desconocido')
+                        total = data.get('total', 0)
+                        fecha = data.get('fecha')
+                    
+                    productos = data.get('productos', [])
+                    todos_productos.extend(productos)
+                    
+            except Exception as e:
+                print(f"⚠️ Error procesando frame {i+1}: {e}")
+                continue
+        
+        print(f"✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
+        print(f"📦 Productos detectados: {len(todos_productos)}")
+        
+        if not todos_productos:
+            raise Exception("No se detectaron productos en ningún frame")
+        
+        # ============================================
+        # PASO 4: Deduplicar productos
+        # ============================================
+        print(f"🔍 Deduplicando productos...")
+        productos_unicos = deduplicar_productos(todos_productos)
+        print(f"✅ Productos únicos: {len(productos_unicos)}")
+        
+        # ============================================
         # PASO 5: Guardar en base de datos
         # ============================================
         print(f"💾 Guardando en base de datos...")
@@ -788,12 +830,12 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"✅ PROCESAMIENTO COMPLETADO")
         print(f"{'='*80}\n")
         
-        except Exception as e:
-            print(f"\n{'='*80}")
-            print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
-            print(f"Error: {str(e)}")
-            print(f"{'='*80}")
-            traceback.print_exc()
+    except Exception as e:
+        print(f"\n{'='*80}")
+        print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
+        print(f"Error: {str(e)}")
+        print(f"{'='*80}")
+        traceback.print_exc()
         
         # Marcar job como fallido
         try:
@@ -1917,6 +1959,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
