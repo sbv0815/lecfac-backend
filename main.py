@@ -739,7 +739,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         cursor.execute("""
                             INSERT INTO items_factura (factura_id, usuario_id, codigo_leido, nombre_leido, cantidad, precio_pagado)
                             VALUES (%s, %s, %s, %s, %s, %s)
-                        """, factura_id, usuario_id, codigo or None, nombre, cantidad, precio))
+                        """, (factura_id, usuario_id, codigo or None, nombre, cantidad, precio))
                     else:
                         cursor.execute("""
                             INSERT INTO items_factura (factura_id, usuario_id, codigo_leido, nombre_leido, cantidad, precio_pagado)
@@ -1959,6 +1959,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
