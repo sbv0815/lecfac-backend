@@ -482,7 +482,7 @@ async def parse_invoice_video(
         
         # ⭐ VALIDACIÓN DE TAMAÑO (NUEVO) ⭐
         video_size_mb = len(content) / (1024 * 1024)
-        MAX_VIDEO_SIZE_MB = 25.0
+        MAX_VIDEO_SIZE_MB = 30.0
         
         print(f"💾 Video: {video_size_mb:.2f} MB")
         
@@ -1978,6 +1978,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
