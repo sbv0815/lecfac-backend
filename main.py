@@ -643,6 +643,42 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         
         if not todos_productos:
             raise Exception("No se detectaron productos en ningún frame")
+
+        @app.post("/invoices/parse-video")
+async def parse_invoice_video(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...)
+):
+    """Procesar video de factura - ASÍNCRONO"""
+    print("=" * 80)
+    print("📹 NUEVO VIDEO (PROCESAMIENTO ASÍNCRONO)")
+    print("=" * 80)
+    
+    try:
+        job_id = str(uuid.uuid4())
+        print(f"🆔 Job ID: {job_id}")
+        
+        video_path = f"/tmp/lecfac_video_{job_id}.webm"
+        content = await video.read()
+        
+        # ⭐ AGREGAR ESTAS LÍNEAS AQUÍ ⭐
+        video_size_mb = len(content) / (1024 * 1024)
+        MAX_VIDEO_SIZE_MB = 25.0  # ✅ Nuevo límite
+        
+        print(f"💾 Video: {video_size_mb:.2f} MB")
+        
+        if video_size_mb > MAX_VIDEO_SIZE_MB:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "success": False,
+                    "error": f"Video muy grande ({video_size_mb:.1f} MB). Máximo {MAX_VIDEO_SIZE_MB} MB"
+                }
+            )
+        # ⭐ FIN DE LAS LÍNEAS NUEVAS ⭐
+        
+        with open(video_path, "wb") as f:
+            f.write(content)
         
         # ============================================
         # PASO 4: Deduplicar productos
@@ -1959,6 +1995,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
