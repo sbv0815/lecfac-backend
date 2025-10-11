@@ -477,15 +477,33 @@ async def parse_invoice_video(
         job_id = str(uuid.uuid4())
         print(f"🆔 Job ID: {job_id}")
         
-        video_path = f"/tmp/lecfac_video_{job_id}.webm"
+        # Leer contenido del video
         content = await video.read()
         
+        # ⭐ VALIDACIÓN DE TAMAÑO (NUEVO) ⭐
+        video_size_mb = len(content) / (1024 * 1024)
+        MAX_VIDEO_SIZE_MB = 25.0
+        
+        print(f"💾 Video: {video_size_mb:.2f} MB")
+        
+        if video_size_mb > MAX_VIDEO_SIZE_MB:
+            print(f"❌ Video rechazado: {video_size_mb:.1f} MB > {MAX_VIDEO_SIZE_MB} MB")
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "success": False,
+                    "error": f"Video muy grande ({video_size_mb:.1f} MB). Máximo permitido: {MAX_VIDEO_SIZE_MB} MB"
+                }
+            )
+        
+        # Guardar video temporalmente
+        video_path = f"/tmp/lecfac_video_{job_id}.webm"
         with open(video_path, "wb") as f:
             f.write(content)
         
-        video_size_mb = len(content) / (1024 * 1024)
-        print(f"💾 Video: {video_size_mb:.2f} MB")
+        print(f"✅ Video guardado: {video_path}")
         
+        # Guardar job en base de datos
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -510,6 +528,7 @@ async def parse_invoice_video(
         
         print(f"✅ Job creado en BD")
         
+        # Agregar tarea en background
         background_tasks.add_task(
             process_video_background_task,
             job_id,
@@ -517,8 +536,8 @@ async def parse_invoice_video(
             usuario_id
         )
         
-        print("✅ Tarea en background")
-        print("📤 RESPUESTA INMEDIATA")
+        print("✅ Tarea en background programada")
+        print("📤 RESPUESTA INMEDIATA AL CLIENTE")
         
         return JSONResponse(
             status_code=202,
@@ -526,6 +545,7 @@ async def parse_invoice_video(
                 "success": True,
                 "job_id": job_id,
                 "status": "pending",
+                "video_size_mb": round(video_size_mb, 2),
                 "message": "Video recibido. Procesando en background.",
                 "estimated_time_minutes": "1-3",
                 "poll_endpoint": f"/invoices/job-status/{job_id}"
@@ -540,6 +560,7 @@ async def parse_invoice_video(
             status_code=500,
             content={"success": False, "error": str(e)}
         )
+
 
 # ==========================================
 # FUNCIÓN DE BACKGROUND ⭐
@@ -643,42 +664,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         
         if not todos_productos:
             raise Exception("No se detectaron productos en ningún frame")
-
-        @app.post("/invoices/parse-video")
-async def parse_invoice_video(
-    background_tasks: BackgroundTasks,
-    video: UploadFile = File(...)
-):
-    """Procesar video de factura - ASÍNCRONO"""
-    print("=" * 80)
-    print("📹 NUEVO VIDEO (PROCESAMIENTO ASÍNCRONO)")
-    print("=" * 80)
-    
-    try:
-        job_id = str(uuid.uuid4())
-        print(f"🆔 Job ID: {job_id}")
-        
-        video_path = f"/tmp/lecfac_video_{job_id}.webm"
-        content = await video.read()
-        
-        # ⭐ AGREGAR ESTAS LÍNEAS AQUÍ ⭐
-        video_size_mb = len(content) / (1024 * 1024)
-        MAX_VIDEO_SIZE_MB = 25.0  # ✅ Nuevo límite
-        
-        print(f"💾 Video: {video_size_mb:.2f} MB")
-        
-        if video_size_mb > MAX_VIDEO_SIZE_MB:
-            return JSONResponse(
-                status_code=413,
-                content={
-                    "success": False,
-                    "error": f"Video muy grande ({video_size_mb:.1f} MB). Máximo {MAX_VIDEO_SIZE_MB} MB"
-                }
-            )
-        # ⭐ FIN DE LAS LÍNEAS NUEVAS ⭐
-        
-        with open(video_path, "wb") as f:
-            f.write(content)
         
         # ============================================
         # PASO 4: Deduplicar productos
@@ -726,9 +711,9 @@ async def parse_invoice_video(
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
             
-            # 5.3 Guardar imagen del primer frame (DESHABILITADO)
+            # 5.3 Guardar imagen del primer frame
             imagen_guardada = False
-            if True:  # Deshabilitado temporalmente
+            if True:  # ✅ HABILITADO
                 try:
                     primer_frame = frames_paths[0]
                     if os.path.exists(primer_frame):
@@ -754,7 +739,7 @@ async def parse_invoice_video(
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
             
-            # 5.4 Guardar productos en items_factura (NO en productos)
+            # 5.4 Guardar productos en items_factura
             productos_guardados = 0
             productos_fallidos = 0
             
@@ -765,12 +750,10 @@ async def parse_invoice_video(
                     precio = producto.get('precio') or producto.get('valor', 0)
                     cantidad = producto.get('cantidad', 1)
                     
-                    # Validación básica
                     if not nombre or nombre.strip() == '':
                         productos_fallidos += 1
                         continue
                     
-                    # ✅ IMPORTANTE: Guardar en items_factura (no en productos)
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
                         cursor.execute("""
                             INSERT INTO items_factura (factura_id, usuario_id, codigo_leido, nombre_leido, cantidad, precio_pagado)
@@ -915,6 +898,11 @@ async def parse_invoice_video(
                 limpiar_frames_temporales(frames_paths)
         except Exception as cleanup_error:
             print(f"⚠️ Error limpiando archivos: {cleanup_error}")
+
+
+# ==========================================
+# ENDPOINTS DE CONSULTA DE JOBS ⭐
+# ==========================================
 # ==========================================
 # ENDPOINTS DE CONSULTA DE JOBS ⭐
 # ==========================================
@@ -1995,6 +1983,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
