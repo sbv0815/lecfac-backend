@@ -711,33 +711,31 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
             
-            # 5.3 Guardar imagen del primer frame
+            # 5.3 Guardar imagen del primer frame ⭐ CORREGIDO
             imagen_guardada = False
-            if True:  # ✅ HABILITADO
+            if frames_paths and len(frames_paths) > 0:
                 try:
                     primer_frame = frames_paths[0]
                     if os.path.exists(primer_frame):
-                        with open(primer_frame, 'rb') as f:
-                            imagen_data = f.read()
+                        # ✅ Usar la función save_image_to_db que ya existe
+                        from storage import save_image_to_db
                         
-                        if os.environ.get("DATABASE_TYPE") == "postgresql":
-                            cursor.execute("""
-                                UPDATE facturas 
-                                SET imagen_factura = %s 
-                                WHERE id = %s
-                            """, (imagen_data, factura_id))
+                        imagen_guardada = save_image_to_db(
+                            factura_id, 
+                            primer_frame, 
+                            "image/jpeg"
+                        )
+                        
+                        if imagen_guardada:
+                            print(f"✅ Imagen guardada correctamente en BD")
                         else:
-                            cursor.execute("""
-                                UPDATE facturas 
-                                SET imagen_factura = ? 
-                                WHERE id = ?
-                            """, (imagen_data, factura_id))
-                        
-                        conn.commit()
-                        imagen_guardada = True
-                        print(f"✅ Imagen guardada ({len(imagen_data) // 1024} KB)")
+                            print(f"⚠️ save_image_to_db retornó False")
+                            
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
+                    traceback.print_exc()
+            else:
+                print(f"⚠️ No hay frames disponibles para guardar imagen")
             
             # 5.4 Guardar productos en items_factura
             productos_guardados = 0
@@ -900,9 +898,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             print(f"⚠️ Error limpiando archivos: {cleanup_error}")
 
 
-# ==========================================
-# ENDPOINTS DE CONSULTA DE JOBS ⭐
-# ==========================================
 # ==========================================
 # ENDPOINTS DE CONSULTA DE JOBS ⭐
 # ==========================================
@@ -1983,6 +1978,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
