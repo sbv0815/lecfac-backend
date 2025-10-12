@@ -480,7 +480,7 @@ async def parse_invoice_video(
         # Leer contenido del video
         content = await video.read()
         
-        # ⭐ VALIDACIÓN DE TAMAÑO (NUEVO) ⭐
+        # ⭐ VALIDACIÓN DE TAMAÑO
         video_size_mb = len(content) / (1024 * 1024)
         MAX_VIDEO_SIZE_MB = 30.0
         
@@ -508,6 +508,19 @@ async def parse_invoice_video(
         cursor = conn.cursor()
         
         usuario_id = 1
+        
+        # ⭐ VERIFICAR QUE NO EXISTA EL JOB (prevenir duplicados por retry)
+        try:
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("SELECT id FROM processing_jobs WHERE id = %s", (job_id,))
+            else:
+                cursor.execute("SELECT id FROM processing_jobs WHERE id = ?", (job_id,))
+            
+            if cursor.fetchone():
+                print(f"⚠️ Job {job_id} ya existe, generando nuevo ID")
+                job_id = str(uuid.uuid4())
+        except Exception as e:
+            print(f"⚠️ Error verificando job existente: {e}")
         
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute("""
@@ -563,7 +576,7 @@ async def parse_invoice_video(
 
 
 # ==========================================
-# FUNCIÓN DE BACKGROUND ⭐
+# FUNCIÓN DE BACKGROUND ⭐ CORREGIDA
 # ==========================================
 async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
     """Procesa video en BACKGROUND - Usuario ya recibió respuesta"""
@@ -575,10 +588,12 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"\n{'='*80}")
         print(f"🔄 PROCESAMIENTO EN BACKGROUND")
         print(f"🆔 Job: {job_id}")
+        print(f"🔧 PID: {os.getpid()}")
+        print(f"🕐 Timestamp: {datetime.now().isoformat()}")
         print(f"{'='*80}")
         
         # ============================================
-        # PASO 1: Actualizar job a 'processing'
+        # ⭐ PASO 0: VERIFICAR QUE NO ESTÉ YA PROCESADO
         # ============================================
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -586,23 +601,89 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute("""
+                    SELECT status, factura_id 
+                    FROM processing_jobs 
+                    WHERE id = %s
+                """, (job_id,))
+            else:
+                cursor.execute("""
+                    SELECT status, factura_id 
+                    FROM processing_jobs 
+                    WHERE id = ?
+                """, (job_id,))
+            
+            job_data = cursor.fetchone()
+            
+            if not job_data:
+                print(f"❌ Job {job_id} no existe en BD")
+                return
+            
+            current_status, existing_factura_id = job_data[0], job_data[1]
+            
+            # ⭐ SI YA ESTÁ COMPLETADO, NO PROCESAR
+            if current_status == 'completed':
+                print(f"⚠️ Job {job_id} ya fue completado. Factura ID: {existing_factura_id}")
+                print(f"⚠️ IGNORANDO PROCESAMIENTO DUPLICADO")
+                return
+            
+            # ⭐ SI YA TIENE FACTURA ASIGNADA, NO PROCESAR
+            if existing_factura_id:
+                print(f"⚠️ Job {job_id} ya tiene factura {existing_factura_id}")
+                print(f"⚠️ IGNORANDO PROCESAMIENTO DUPLICADO")
+                return
+            
+            # ⭐ SI YA ESTÁ PROCESANDO, NO PROCESAR
+            if current_status == 'processing':
+                print(f"⚠️ Job {job_id} ya está siendo procesado por otro worker")
+                print(f"⚠️ IGNORANDO PROCESAMIENTO DUPLICADO")
+                return
+            
+            print(f"✅ Job válido para procesar. Status actual: {current_status}")
+            
+        except Exception as e:
+            print(f"⚠️ Error verificando job: {e}")
+            traceback.print_exc()
+        finally:
+            cursor.close()
+            conn.close()
+            conn = None
+            cursor = None
+        
+        # ============================================
+        # PASO 1: Actualizar job a 'processing' (CON VALIDACIÓN)
+        # ============================================
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # ⭐ SOLO actualizar si está en 'pending' (evita race conditions)
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
                     UPDATE processing_jobs 
                     SET status = 'processing', started_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
+                    WHERE id = %s AND status = 'pending'
                 """, (job_id,))
             else:
                 cursor.execute("""
                     UPDATE processing_jobs 
                     SET status = 'processing', started_at = ?
-                    WHERE id = ?
+                    WHERE id = ? AND status = 'pending'
                 """, (datetime.now(), job_id))
             
+            affected_rows = cursor.rowcount
             conn.commit()
-            print(f"✅ Status: processing")
+            
+            if affected_rows == 0:
+                print(f"⚠️ No se pudo actualizar job {job_id}. Ya fue procesado por otro worker.")
+                print(f"⚠️ ABORTANDO PROCESAMIENTO DUPLICADO")
+                return
+            
+            print(f"✅ Status actualizado a 'processing' ({affected_rows} fila(s))")
             
         except Exception as e:
-            print(f"⚠️ Error actualizando job status: {e}")
+            print(f"❌ Error actualizando job status: {e}")
             conn.rollback()
+            return
         finally:
             if cursor:
                 cursor.close()
@@ -646,7 +727,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     data = resultado['data']
                     frames_exitosos += 1
                     
-                    # Guardar datos de la primera factura detectada
                     if not establecimiento:
                         establecimiento = data.get('establecimiento', 'Desconocido')
                         total = data.get('total', 0)
@@ -711,13 +791,12 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
             
-            # 5.3 Guardar imagen del primer frame ⭐ CORREGIDO
+            # 5.3 Guardar imagen del primer frame
             imagen_guardada = False
             if frames_paths and len(frames_paths) > 0:
                 try:
                     primer_frame = frames_paths[0]
                     if os.path.exists(primer_frame):
-                        # ✅ Usar la función save_image_to_db que ya existe
                         from storage import save_image_to_db
                         
                         imagen_guardada = save_image_to_db(
@@ -727,15 +806,13 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         )
                         
                         if imagen_guardada:
-                            print(f"✅ Imagen guardada correctamente en BD")
+                            print(f"✅ Imagen guardada correctamente")
                         else:
                             print(f"⚠️ save_image_to_db retornó False")
                             
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
                     traceback.print_exc()
-            else:
-                print(f"⚠️ No hay frames disponibles para guardar imagen")
             
             # 5.4 Guardar productos en items_factura
             productos_guardados = 0
@@ -789,7 +866,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if productos_fallidos > 0:
                 print(f"⚠️ Productos no guardados: {productos_fallidos}")
             
-            # 5.6 Marcar job como completado
+            # 5.6 Marcar job como completado (⭐ CON VALIDACIÓN ADICIONAL)
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute("""
                     UPDATE processing_jobs 
@@ -799,7 +876,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         productos_detectados = %s,
                         frames_procesados = %s,
                         frames_exitosos = %s
-                    WHERE id = %s
+                    WHERE id = %s AND status = 'processing'
                 """, (factura_id, productos_guardados, len(frames_paths), frames_exitosos, job_id))
             else:
                 cursor.execute("""
@@ -810,11 +887,16 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         productos_detectados = ?,
                         frames_procesados = ?,
                         frames_exitosos = ?
-                    WHERE id = ?
+                    WHERE id = ? AND status = 'processing'
                 """, (factura_id, datetime.now(), productos_guardados, len(frames_paths), frames_exitosos, job_id))
             
+            affected_rows = cursor.rowcount
             conn.commit()
-            print(f"✅ JOB COMPLETADO EXITOSAMENTE")
+            
+            if affected_rows > 0:
+                print(f"✅ JOB COMPLETADO EXITOSAMENTE")
+            else:
+                print(f"⚠️ Job ya fue marcado como completado por otro proceso")
             
         except Exception as e:
             print(f"❌ Error en operación de BD: {e}")
@@ -828,6 +910,75 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if conn:
                 conn.close()
         
+        # ============================================
+        # PASO 6: Limpieza de archivos temporales
+        # ============================================
+        print(f"🧹 Limpiando archivos temporales...")
+        try:
+            if os.path.exists(video_path):
+                os.remove(video_path)
+                print(f"   ✓ Video eliminado")
+            
+            if frames_paths:
+                limpiar_frames_temporales(frames_paths)
+                print(f"   ✓ Frames eliminados")
+        except Exception as e:
+            print(f"⚠️ Error limpiando temporales: {e}")
+        
+        print(f"{'='*80}")
+        print(f"✅ PROCESAMIENTO COMPLETADO")
+        print(f"{'='*80}\n")
+        
+    except Exception as e:
+        print(f"\n{'='*80}")
+        print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
+        print(f"Error: {str(e)}")
+        print(f"{'='*80}")
+        traceback.print_exc()
+        
+        # Marcar job como fallido
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    UPDATE processing_jobs 
+                    SET status = 'failed', 
+                        error_message = %s, 
+                        completed_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND status IN ('pending', 'processing')
+                """, (str(e)[:500], job_id))
+            else:
+                cursor.execute("""
+                    UPDATE processing_jobs 
+                    SET status = 'failed', 
+                        error_message = ?, 
+                        completed_at = ?
+                    WHERE id = ? AND status IN ('pending', 'processing')
+                """, (str(e)[:500], datetime.now(), job_id))
+            
+            conn.commit()
+            
+        except Exception as db_error:
+            print(f"⚠️ Error actualizando job status: {db_error}")
+            if conn:
+                conn.rollback()
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+        
+        # Limpiar archivos temporales aunque haya fallado
+        try:
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
+            if frames_paths:
+                from video_processor import limpiar_frames_temporales
+                limpiar_frames_temporales(frames_paths)
+        except Exception as cleanup_error:
+            print(f"⚠️ Error limpiando archivos: {cleanup_error}")
         # ============================================
         # PASO 6: Limpieza de archivos temporales
         # ============================================
@@ -1978,6 +2129,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
