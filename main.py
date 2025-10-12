@@ -752,7 +752,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         productos_unicos = deduplicar_productos(todos_productos)
         print(f"✅ Productos únicos: {len(productos_unicos)}")
         
-        # ============================================
+       # ============================================
         # PASO 5: Guardar en base de datos
         # ============================================
         print(f"💾 Guardando en base de datos...")
@@ -814,7 +814,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     print(f"⚠️ Error guardando imagen: {e}")
                     traceback.print_exc()
             
-            # 5.4 Guardar productos en items_factura
+            # 5.4 Guardar productos en items_factura (⭐ CON VALIDACIÓN MEJORADA)
             productos_guardados = 0
             productos_fallidos = 0
             
@@ -825,26 +825,75 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     precio = producto.get('precio') or producto.get('valor', 0)
                     cantidad = producto.get('cantidad', 1)
                     
+                    # ⭐ VALIDACIÓN CRÍTICA: Nombre válido
                     if not nombre or nombre.strip() == '':
+                        print(f"⚠️ Producto sin nombre, omitiendo")
                         productos_fallidos += 1
                         continue
                     
+                    # ⭐ VALIDACIÓN CRÍTICA: Cantidad debe ser >= 1
+                    try:
+                        cantidad = int(cantidad)
+                        if cantidad <= 0:
+                            print(f"⚠️ Cantidad inválida ({cantidad}) para '{nombre}', ajustando a 1")
+                            cantidad = 1
+                    except (ValueError, TypeError):
+                        print(f"⚠️ Cantidad no numérica para '{nombre}', usando 1")
+                        cantidad = 1
+                    
+                    # ⭐ VALIDACIÓN CRÍTICA: Precio debe ser >= 0
+                    try:
+                        precio = float(precio)
+                        if precio < 0:
+                            print(f"⚠️ Precio negativo ({precio}) para '{nombre}', omitiendo")
+                            productos_fallidos += 1
+                            continue
+                    except (ValueError, TypeError):
+                        print(f"⚠️ Precio no numérico para '{nombre}', usando 0")
+                        precio = 0
+                    
+                    # ⭐ VALIDACIÓN: Saltar productos con precio 0 (probablemente errores)
+                    if precio == 0:
+                        print(f"⚠️ Precio cero para '{nombre}', omitiendo")
+                        productos_fallidos += 1
+                        continue
+                    
+                    # Insertar en base de datos
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
                         cursor.execute("""
-                            INSERT INTO items_factura (factura_id, usuario_id, codigo_leido, nombre_leido, cantidad, precio_pagado)
+                            INSERT INTO items_factura (
+                                factura_id, usuario_id, codigo_leido, 
+                                nombre_leido, cantidad, precio_pagado
+                            )
                             VALUES (%s, %s, %s, %s, %s, %s)
                         """, (factura_id, usuario_id, codigo or None, nombre, cantidad, precio))
                     else:
                         cursor.execute("""
-                            INSERT INTO items_factura (factura_id, usuario_id, codigo_leido, nombre_leido, cantidad, precio_pagado)
+                            INSERT INTO items_factura (
+                                factura_id, usuario_id, codigo_leido, 
+                                nombre_leido, cantidad, precio_pagado
+                            )
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (factura_id, usuario_id, codigo or None, nombre, cantidad, precio))
                     
                     productos_guardados += 1
                     
                 except Exception as e:
-                    print(f"⚠️ Error guardando producto '{nombre}': {e}")
+                    # ⭐ ERROR MÁS DETALLADO
+                    print(f"❌ Error guardando '{nombre}': {str(e)}")
+                    print(f"   - Cantidad: {cantidad}")
+                    print(f"   - Precio: {precio}")
+                    print(f"   - Código: {codigo}")
                     productos_fallidos += 1
+                    
+                    # ⭐ CRÍTICO: Si hay error de constraint, hacer rollback parcial
+                    if "constraint" in str(e).lower():
+                        conn.rollback()
+                        print(f"   🔄 Rollback ejecutado por constraint violation")
+                        # Reconectar y continuar
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                    
                     continue
             
             # 5.5 Actualizar contador en factura
@@ -909,6 +958,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 cursor.close()
             if conn:
                 conn.close()
+        
         
         # ============================================
         # PASO 6: Limpieza de archivos temporales
@@ -2129,6 +2179,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
