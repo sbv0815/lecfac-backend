@@ -962,26 +962,58 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
 
-            # 5.3 Guardar imagen del primer frame
+            # 5.3 Guardar imagen COMPLETA (todos los frames combinados)
             imagen_guardada = False
             if frames_paths and len(frames_paths) > 0:
                 try:
-                    primer_frame = frames_paths[0]
-                    if os.path.exists(primer_frame):
+                    print(f"🖼️ Creando imagen completa de la factura...")
+
+                    # 🆕 IMPORTAR FUNCIÓN
+                    from video_processor import combinar_frames_vertical
+
+                    # 🆕 COMBINAR TODOS LOS FRAMES
+                    imagen_completa_path = combinar_frames_vertical(
+                        frames_paths,
+                        output_path=f"/tmp/factura_completa_{factura_id}.jpg",
+                    )
+
+                    # 🆕 GUARDAR IMAGEN COMPLETA
+                    if os.path.exists(imagen_completa_path):
                         from storage import save_image_to_db
 
                         imagen_guardada = save_image_to_db(
-                            factura_id, primer_frame, "image/jpeg"
+                            factura_id, imagen_completa_path, "image/jpeg"
                         )
 
                         if imagen_guardada:
-                            print(f"✅ Imagen guardada correctamente")
+                            print(f"✅ Imagen completa guardada correctamente")
                         else:
                             print(f"⚠️ save_image_to_db retornó False")
 
+                        # Limpiar imagen temporal
+                        try:
+                            os.remove(imagen_completa_path)
+                        except:
+                            pass
+
                 except Exception as e:
-                    print(f"⚠️ Error guardando imagen: {e}")
+                    print(f"⚠️ Error guardando imagen completa: {e}")
+                    import traceback
+
                     traceback.print_exc()
+
+                    # FALLBACK: Si falla, usar el primer frame
+                    try:
+                        print(f"   ⚠️ Usando primer frame como fallback...")
+                        primer_frame = frames_paths[0]
+                        if os.path.exists(primer_frame):
+                            from storage import save_image_to_db
+
+                            imagen_guardada = save_image_to_db(
+                                factura_id, primer_frame, "image/jpeg"
+                            )
+                    except Exception as fallback_error:
+                        print(f"   ❌ Error en fallback: {fallback_error}")
 
             # 5.4 Guardar productos en items_factura (⭐ CON VALIDACIÓN MEJORADA)
             productos_guardados = 0
