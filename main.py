@@ -460,7 +460,11 @@ async def parse_invoice(file: UploadFile = File(...)):
         
         raise HTTPException(500, str(e))
 
-# ==========================================
+        # ==========================================
+        # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
+        # ==========================================
+        # main.py - YA FUNCIONA CORRECTAMENTE
+        # ==========================================
 # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
 # ==========================================
 @app.post("/invoices/parse-video")
@@ -2179,6 +2183,7 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
