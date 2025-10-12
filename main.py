@@ -546,11 +546,9 @@ async def parse_invoice(file: UploadFile = File(...)):
         # ==========================================
         # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
         # ==========================================
-        # main.py - YA FUNCIONA CORRECTAMENTE
-        # ==========================================
+        # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
 
 
-# ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
 # ==========================================
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
@@ -823,14 +821,14 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"✅ {len(frames_paths)} frames extraídos")
 
         # ============================================
-        # PASO 3: Procesar frames con Claude
+        # PASO 3: Procesar frames con Claude - MEJORADO
         # ============================================
-        print(f"🤖 Procesando con Claude (paralelo)...")
+        print(f"🤖 Procesando con Claude (paralelo + validación)...")
 
         start_time = time.time()
 
         def procesar_frame_individual(args):
-            """Procesa un frame individual - Para uso en ThreadPool"""
+            """Procesa un frame individual"""
             i, frame_path = args
             try:
                 resultado = parse_invoice_with_claude(frame_path)
@@ -844,36 +842,53 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         # ⚡ PROCESAMIENTO PARALELO: 3 frames a la vez
         todos_productos = []
         establecimiento = None
-        total = 0
+        total_detectado = None  # 🆕 Para validar
         fecha = None
         frames_exitosos = 0
 
-        # Preparar argumentos para el pool
         frame_args = list(enumerate(frames_paths))
 
-        # Procesar en paralelo con ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=3) as executor:
             resultados = list(executor.map(procesar_frame_individual, frame_args))
 
-        # Procesar resultados
+        # 🆕 PROCESAMIENTO INTELIGENTE DE RESULTADOS
+        totales_detectados = []  # Guardar todos los totales detectados
+
         for i, data in resultados:
             if data:
                 frames_exitosos += 1
 
-                # Guardar datos de la primera factura detectada
+                # Guardar el establecimiento del primer frame válido
                 if not establecimiento:
                     establecimiento = data.get("establecimiento", "Desconocido")
-                    total = data.get("total", 0)
                     fecha = data.get("fecha")
 
+                # 🆕 GUARDAR TOTALES DETECTADOS
+                total_frame = data.get("total", 0)
+                if total_frame > 0:
+                    totales_detectados.append(total_frame)
+                    print(f"   Frame {i+1}: Total detectado = ${total_frame:,}")
+
+                # Agregar productos
                 productos = data.get("productos", [])
                 todos_productos.extend(productos)
 
         elapsed_time = time.time() - start_time
 
         print(f"✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
-        print(f"📦 Productos detectados: {len(todos_productos)}")
+        print(f"📦 Productos detectados (con duplicados): {len(todos_productos)}")
         print(f"⏱️ Tiempo procesamiento: {elapsed_time:.1f}s")
+
+        # 🆕 SELECCIONAR EL TOTAL MÁS CONFIABLE
+        if totales_detectados:
+            # Usar el MAYOR total detectado (asumiendo que el último frame tiene el total real)
+            total = max(totales_detectados)
+            print(
+                f"💰 Total seleccionado: ${total:,} (de {len(totales_detectados)} detecciones)"
+            )
+        else:
+            total = 0
+            print(f"⚠️ No se detectó total en ningún frame")
 
         if not todos_productos:
             raise Exception("No se detectaron productos en ningún frame")

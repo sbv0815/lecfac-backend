@@ -1,6 +1,6 @@
 """
-Procesador de videos - SISTEMA ADAPTATIVO INTELIGENTE
-Ajusta frames según duración del video
+Procesador de videos - SISTEMA OPTIMIZADO PARA PRECISIÓN
+Extrae más frames y asegura capturar el FINAL de la factura
 """
 
 import cv2
@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 
 def extraer_frames_video(video_path, intervalo=1.0):
     """
-    Extrae frames de un video de manera ADAPTATIVA y OPTIMIZADA
+    Extrae frames de un video de manera OPTIMIZADA PARA MÁXIMA PRECISIÓN
 
     Args:
         video_path: Ruta al archivo de video
-        intervalo: Intervalo en segundos entre frames (se ajusta automáticamente)
+        intervalo: No se usa (parámetro legacy)
 
     Returns:
         Lista de rutas a los frames extraídos
@@ -40,24 +40,24 @@ def extraer_frames_video(video_path, intervalo=1.0):
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        # ⭐ CALCULAR DURACIÓN (CRÍTICO)
+        # ⭐ CALCULAR DURACIÓN
         duracion = total_frames / fps if fps > 0 else 0
 
         print(
             f"📹 Video: {duracion:.1f}s, {fps:.1f} FPS, {total_frames} frames totales"
         )
 
-        # ⚡ SISTEMA ADAPTATIVO OPTIMIZADO (menos frames = más rápido)
+        # 🎯 SISTEMA MEJORADO - MÁS FRAMES = MEJOR PRECISIÓN
         if duracion <= 10:
-            max_frames = 4
+            max_frames = 12  # Videos cortos: 12 frames (era 4)
         elif duracion <= 20:
-            max_frames = 6
+            max_frames = 18  # Videos medianos: 18 frames (era 6)
         elif duracion <= 30:
-            max_frames = 8
+            max_frames = 25  # Videos largos: 25 frames (era 8)
         else:
-            max_frames = 10
+            max_frames = 30  # Videos muy largos: 30 frames (era 10)
 
-        print(f"🎯 Extraeremos máximo {max_frames} frames para optimizar velocidad")
+        print(f"🎯 Extraeremos {max_frames} frames para máxima precisión")
 
         # Calcular intervalo entre frames
         if duracion > 0:
@@ -68,6 +68,7 @@ def extraer_frames_video(video_path, intervalo=1.0):
         frame_count = 0
         extracted_count = 0
 
+        # PRIMERA PASADA: Frames uniformemente distribuidos
         while cap.isOpened() and extracted_count < max_frames:
             ret, frame = cap.read()
 
@@ -77,7 +78,7 @@ def extraer_frames_video(video_path, intervalo=1.0):
             # Extraer frame cada 'frame_interval' frames
             if frame_count % frame_interval == 0:
                 # Guardar frame como imagen temporal
-                frame_filename = f"/tmp/frame_{os.getpid()}_{extracted_count}.jpg"
+                frame_filename = f"/tmp/frame_{os.getpid()}_{extracted_count:03d}.jpg"
                 cv2.imwrite(frame_filename, frame)
                 frames.append(frame_filename)
                 extracted_count += 1
@@ -88,7 +89,44 @@ def extraer_frames_video(video_path, intervalo=1.0):
 
         cap.release()
 
+        # 🎯 CRÍTICO: SEGUNDA PASADA - Asegurar frames del FINAL
+        print(f"🎯 Extrayendo frames FINALES para capturar el TOTAL...")
+
+        cap = cv2.VideoCapture(video_path)
+
+        # Calcular posiciones de los últimos 5 frames
+        ultimos_frames_posiciones = [
+            total_frames - 1,  # Último frame
+            total_frames - int(fps * 0.5),  # 0.5s antes del final
+            total_frames - int(fps * 1),  # 1s antes del final
+            total_frames - int(fps * 1.5),  # 1.5s antes del final
+            total_frames - int(fps * 2),  # 2s antes del final
+        ]
+
+        # Filtrar posiciones válidas
+        ultimos_frames_posiciones = [
+            pos for pos in ultimos_frames_posiciones if 0 <= pos < total_frames
+        ]
+
+        # Extraer últimos frames
+        for i, pos in enumerate(ultimos_frames_posiciones):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
+            ret, frame = cap.read()
+
+            if ret:
+                frame_filename = f"/tmp/frame_{os.getpid()}_final_{i:03d}.jpg"
+                cv2.imwrite(frame_filename, frame)
+                frames.append(frame_filename)
+                print(
+                    f"  ✓ Frame FINAL {i+1}/{len(ultimos_frames_posiciones)} extraído (frame #{pos})"
+                )
+
+        cap.release()
+
         print(f"✅ {len(frames)} frames extraídos exitosamente")
+        print(f"   - Frames regulares: {max_frames}")
+        print(f"   - Frames finales: {len(ultimos_frames_posiciones)}")
+
         return frames
 
     except Exception as e:
