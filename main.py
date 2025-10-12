@@ -19,7 +19,17 @@ from contextlib import asynccontextmanager
 # ==========================================
 # IMPORTS DE FASTAPI
 # ==========================================
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, Header, Request, BackgroundTasks
+from fastapi import (
+    FastAPI,
+    File,
+    UploadFile,
+    HTTPException,
+    Form,
+    Depends,
+    Header,
+    Request,
+    BackgroundTasks,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,16 +40,16 @@ from pydantic import BaseModel
 # IMPORTACIONES LOCALES
 # ==========================================
 from database import (
-    create_tables, 
-    get_db_connection, 
-    hash_password, 
-    verify_password, 
+    create_tables,
+    get_db_connection,
+    hash_password,
+    verify_password,
     test_database_connection,
     detectar_cadena,
     obtener_productos_frecuentes_faltantes,
     confirmar_producto_manual,
     obtener_o_crear_establecimiento,
-    obtener_o_crear_producto_maestro
+    obtener_o_crear_producto_maestro,
 )
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
@@ -55,6 +65,9 @@ from duplicados_routes import router as duplicados_router
 from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
+from concurrent.futures import ThreadPoolExecutor
+import time
+
 
 # ==========================================
 # MODELOS PYDANTIC (Definidos primero)
@@ -65,20 +78,24 @@ class FacturaManual(BaseModel):
     total: float
     productos: List[dict]
 
+
 class UserRegister(BaseModel):
     email: str
     password: str
     nombre: Optional[str] = None
 
+
 class UserLogin(BaseModel):
     email: str
     password: str
 
-class ProductoItem(BaseModel):  
+
+class ProductoItem(BaseModel):
     nombre: str
     cantidad: int = 1
     precio: float
     codigo: Optional[str] = None
+
 
 class InvoiceConfirm(BaseModel):
     establecimiento: str
@@ -87,6 +104,7 @@ class InvoiceConfirm(BaseModel):
     productos: List[ProductoItem]
     user_id: Optional[str] = None
     user_email: Optional[str] = None
+
 
 # ==========================================
 # FUNCIONES AUXILIARES
@@ -97,11 +115,13 @@ async def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="No autorizado")
     return {"user_id": "user123", "email": "user@example.com"}
 
-async def require_admin(user = Depends(get_current_user)):
+
+async def require_admin(user=Depends(get_current_user)):
     """Verificar si es admin"""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Requiere permisos de admin")
     return user
+
 
 # ==========================================
 # CICLO DE VIDA DE LA APLICACIÓN
@@ -112,38 +132,39 @@ async def lifespan(app: FastAPI):
     print("=" * 60)
     print("🚀 INICIANDO LECFAC API")
     print("=" * 60)
-    
+
     processor.start()
     print("✅ Procesador OCR iniciado")
-    
+
     if test_database_connection():
         print("✅ Conexión a base de datos exitosa")
     else:
         print("⚠️ Error de conexión a base de datos")
-    
+
     try:
         create_tables()
         print("✅ Tablas verificadas/creadas")
     except Exception as e:
         print(f"❌ Error creando tablas: {e}")
-    
+
     print("=" * 60)
     print("✅ SERVIDOR LISTO")
     print("=" * 60)
-    
+
     yield
-    
+
     processor.stop()
     print("\n👋 Cerrando LecFac API...")
+
 
 # ==========================================
 # CONFIGURACIÓN DE LA APP
 # ==========================================
 app = FastAPI(
-    title="LecFac API", 
+    title="LecFac API",
     version="3.1.0",
     description="Sistema de gestión de facturas con procesamiento asíncrono",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -204,6 +225,7 @@ print("=" * 60)
 print("✅ ROUTERS CONFIGURADOS")
 print("=" * 60 + "\n")
 
+
 # ==========================================
 # ENDPOINTS DE PÁGINAS HTML
 # ==========================================
@@ -214,6 +236,7 @@ async def index(request: Request):
         return templates.TemplateResponse("admin_dashboard.html", {"request": request})
     return HTMLResponse("<h1>LecFac API</h1>")
 
+
 @app.get("/editor", response_class=HTMLResponse)
 async def editor(request: Request):
     """Editor de facturas"""
@@ -221,26 +244,30 @@ async def editor(request: Request):
         return templates.TemplateResponse("editor.html", {"request": request})
     return HTMLResponse("<h1>Editor</h1>")
 
+
 @app.get("/gestor-duplicados", response_class=HTMLResponse)
 async def get_duplicados_page(request: Request):
     """Gestor de duplicados"""
     try:
         if templates:
-            return templates.TemplateResponse("gestor_duplicados.html", {"request": request})
+            return templates.TemplateResponse(
+                "gestor_duplicados.html", {"request": request}
+            )
     except:
         pass
-    
+
     possible_paths = [
         Path("gestor_duplicados.html"),
         Path("static/gestor_duplicados.html"),
     ]
-    
+
     for html_path in possible_paths:
         if html_path.exists():
             with open(html_path, "r", encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
-    
+
     raise HTTPException(404, "gestor_duplicados.html no encontrado")
+
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
@@ -250,6 +277,7 @@ async def dashboard():
         return FileResponse("admin_dashboard.html")
     raise HTTPException(404, "Dashboard no encontrado")
 
+
 @app.get("/duplicados.js")
 async def get_duplicados_js():
     """Servir JavaScript de duplicados"""
@@ -257,6 +285,7 @@ async def get_duplicados_js():
     if js_path.exists():
         return FileResponse(str(js_path), media_type="application/javascript")
     raise HTTPException(404, "duplicados.js no encontrado")
+
 
 # ==========================================
 # ENDPOINTS DE SALUD Y CONFIGURACIÓN
@@ -270,28 +299,26 @@ async def health_check():
         db_status = "connected" if conn else "disconnected"
         if conn:
             conn.close()
-        
+
         return {
             "status": "healthy" if db_status == "connected" else "unhealthy",
             "database": db_status,
             "database_type": os.environ.get("DATABASE_TYPE", "postgresql"),
             "anthropic_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         return JSONResponse(
-            status_code=500,
-            content={"status": "unhealthy", "error": str(e)}
+            status_code=500, content={"status": "unhealthy", "error": str(e)}
         )
+
 
 @app.get("/api/config/anthropic-key")
 async def get_anthropic_key():
     """Obtener API Key de Anthropic"""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    return {
-        "apiKey": api_key if api_key else "",
-        "configured": bool(api_key)
-    }
+    return {"apiKey": api_key if api_key else "", "configured": bool(api_key)}
+
 
 # ==========================================
 # ENDPOINT: PROCESAR IMAGEN DE FACTURA (SÍNCRONO)
@@ -302,70 +329,100 @@ async def parse_invoice(file: UploadFile = File(...)):
     print(f"\n{'='*60}")
     print(f"📸 NUEVA FACTURA: {file.filename}")
     print(f"{'='*60}")
-    
+
     temp_file = None
     conn = None
-    
+
     try:
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         content = await file.read()
         temp_file.write(content)
         temp_file.close()
-        
+
         print(f"✅ Archivo temporal: {temp_file.name}")
-        
+
         result = parse_invoice_with_claude(temp_file.name)
-        
+
         if not result.get("success"):
             raise HTTPException(400, result.get("error", "Error procesando"))
-        
+
         data = result["data"]
         productos_ocr = data.get("productos", [])
         establecimiento_raw = data.get("establecimiento", "Desconocido")
         fecha_factura = data.get("fecha")
         total_factura = data.get("total", 0)
-        
+
         print(f"✅ Extraídos: {len(productos_ocr)} productos")
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         cadena = detectar_cadena(establecimiento_raw)
-        establecimiento_id = obtener_o_crear_establecimiento(establecimiento_raw, cadena)
-        
+        establecimiento_id = obtener_o_crear_establecimiento(
+            establecimiento_raw, cadena
+        )
+
         usuario_id = 1
         fecha_factura = data.get("fecha") or None
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO facturas (
                     usuario_id, establecimiento_id, establecimiento, cadena,
                     total_factura, fecha_factura, fecha_cargue,
                     estado_validacion, tiene_imagen, productos_detectados
                 ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
                 RETURNING id
-            """, (usuario_id, establecimiento_id, establecimiento_raw, cadena,
-                  total_factura, fecha_factura, 'procesado', True, len(productos_ocr)))
+            """,
+                (
+                    usuario_id,
+                    establecimiento_id,
+                    establecimiento_raw,
+                    cadena,
+                    total_factura,
+                    fecha_factura,
+                    "procesado",
+                    True,
+                    len(productos_ocr),
+                ),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO facturas (
                     usuario_id, establecimiento_id, establecimiento, cadena,
                     total_factura, fecha_factura, fecha_cargue,
                     estado_validacion, tiene_imagen, productos_detectados
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (usuario_id, establecimiento_id, establecimiento_raw, cadena,
-                  total_factura, fecha_factura, datetime.now(), 'procesado', True, len(productos_ocr)))
-        
+            """,
+                (
+                    usuario_id,
+                    establecimiento_id,
+                    establecimiento_raw,
+                    cadena,
+                    total_factura,
+                    fecha_factura,
+                    datetime.now(),
+                    "procesado",
+                    True,
+                    len(productos_ocr),
+                ),
+            )
+
         factura_id = cursor.fetchone()[0]
         print(f"✅ Factura ID: {factura_id}")
-        
+
         try:
             productos_corregidos = aplicar_correcciones_automaticas(
-                conn, productos_ocr, establecimiento_id=establecimiento_id, umbral_similitud=0.85
+                conn,
+                productos_ocr,
+                establecimiento_id=establecimiento_id,
+                umbral_similitud=0.85,
             )
         except:
             productos_corregidos = productos_ocr
-        
+
         productos_guardados = 0
         for idx, prod in enumerate(productos_corregidos, 1):
             try:
@@ -373,91 +430,117 @@ async def parse_invoice(file: UploadFile = File(...)):
                 nombre = str(prod.get("nombre", "")).strip()
                 precio = int(prod.get("valor") or prod.get("precio") or 0)
                 cantidad = int(prod.get("cantidad", 1))
-                
+
                 if not nombre or precio <= 0:
                     continue
-                
+
                 codigo_ean_valido = None
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
-                
+
                 producto_maestro_id = None
                 if codigo_ean_valido:
                     producto_maestro_id = obtener_o_crear_producto_maestro(
                         codigo_ean=codigo_ean_valido, nombre=nombre, precio=precio
                     )
-                
+
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         INSERT INTO items_factura (
                             factura_id, producto_maestro_id, usuario_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad, matching_confianza
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (factura_id, producto_maestro_id, usuario_id, codigo_ean, nombre, 
-                          precio, cantidad, 100 if codigo_ean_valido else 50))
+                    """,
+                        (
+                            factura_id,
+                            producto_maestro_id,
+                            usuario_id,
+                            codigo_ean,
+                            nombre,
+                            precio,
+                            cantidad,
+                            100 if codigo_ean_valido else 50,
+                        ),
+                    )
                 else:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         INSERT INTO items_factura (
                             factura_id, producto_maestro_id, usuario_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad, matching_confianza
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (factura_id, producto_maestro_id, usuario_id, codigo_ean, nombre,
-                          precio, cantidad, 100 if codigo_ean_valido else 50))
-                
+                    """,
+                        (
+                            factura_id,
+                            producto_maestro_id,
+                            usuario_id,
+                            codigo_ean,
+                            nombre,
+                            precio,
+                            cantidad,
+                            100 if codigo_ean_valido else 50,
+                        ),
+                    )
+
                 productos_guardados += 1
-                
+
             except Exception as e:
                 print(f"❌ Error producto {idx}: {e}")
                 continue
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("UPDATE facturas SET productos_guardados = %s WHERE id = %s", 
-                          (productos_guardados, factura_id))
+            cursor.execute(
+                "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
+                (productos_guardados, factura_id),
+            )
         else:
-            cursor.execute("UPDATE facturas SET productos_guardados = ? WHERE id = ?",
-                          (productos_guardados, factura_id))
-        
+            cursor.execute(
+                "UPDATE facturas SET productos_guardados = ? WHERE id = ?",
+                (productos_guardados, factura_id),
+            )
+
         conn.commit()
         cursor.close()
         conn.close()
         conn = None
-        
+
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
-        
+
         try:
             os.unlink(temp_file.name)
         except:
             pass
-        
+
         print(f"✅ PROCESAMIENTO COMPLETO")
-        
+
         return {
             "success": True,
             "factura_id": factura_id,
             "data": data,
             "productos_guardados": productos_guardados,
-            "imagen_guardada": imagen_guardada
+            "imagen_guardada": imagen_guardada,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ ERROR: {str(e)}")
         print(traceback.format_exc())
-        
+
         if conn:
             try:
                 conn.rollback()
                 conn.close()
             except:
                 pass
-        
+
         if temp_file:
             try:
                 os.unlink(temp_file.name)
             except:
                 pass
-        
+
         raise HTTPException(500, str(e))
 
         # ==========================================
@@ -465,97 +548,105 @@ async def parse_invoice(file: UploadFile = File(...)):
         # ==========================================
         # main.py - YA FUNCIONA CORRECTAMENTE
         # ==========================================
+
+
 # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
 # ==========================================
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
-    background_tasks: BackgroundTasks,
-    video: UploadFile = File(...)
+    background_tasks: BackgroundTasks, video: UploadFile = File(...)
 ):
     """Procesar video de factura - ASÍNCRONO"""
     print("=" * 80)
     print("📹 NUEVO VIDEO (PROCESAMIENTO ASÍNCRONO)")
     print("=" * 80)
-    
+
     try:
         job_id = str(uuid.uuid4())
         print(f"🆔 Job ID: {job_id}")
-        
+
         # Leer contenido del video
         content = await video.read()
-        
+
         # ⭐ VALIDACIÓN DE TAMAÑO
         video_size_mb = len(content) / (1024 * 1024)
         MAX_VIDEO_SIZE_MB = 30.0
-        
+
         print(f"💾 Video: {video_size_mb:.2f} MB")
-        
+
         if video_size_mb > MAX_VIDEO_SIZE_MB:
-            print(f"❌ Video rechazado: {video_size_mb:.1f} MB > {MAX_VIDEO_SIZE_MB} MB")
+            print(
+                f"❌ Video rechazado: {video_size_mb:.1f} MB > {MAX_VIDEO_SIZE_MB} MB"
+            )
             return JSONResponse(
                 status_code=413,
                 content={
                     "success": False,
-                    "error": f"Video muy grande ({video_size_mb:.1f} MB). Máximo permitido: {MAX_VIDEO_SIZE_MB} MB"
-                }
+                    "error": f"Video muy grande ({video_size_mb:.1f} MB). Máximo permitido: {MAX_VIDEO_SIZE_MB} MB",
+                },
             )
-        
+
         # Guardar video temporalmente
         video_path = f"/tmp/lecfac_video_{job_id}.webm"
         with open(video_path, "wb") as f:
             f.write(content)
-        
+
         print(f"✅ Video guardado: {video_path}")
-        
+
         # Guardar job en base de datos
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         usuario_id = 1
-        
+
         # ⭐ VERIFICAR QUE NO EXISTA EL JOB (prevenir duplicados por retry)
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("SELECT id FROM processing_jobs WHERE id = %s", (job_id,))
+                cursor.execute(
+                    "SELECT id FROM processing_jobs WHERE id = %s", (job_id,)
+                )
             else:
                 cursor.execute("SELECT id FROM processing_jobs WHERE id = ?", (job_id,))
-            
+
             if cursor.fetchone():
                 print(f"⚠️ Job {job_id} ya existe, generando nuevo ID")
                 job_id = str(uuid.uuid4())
         except Exception as e:
             print(f"⚠️ Error verificando job existente: {e}")
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                INSERT INTO processing_jobs 
+            cursor.execute(
+                """
+                INSERT INTO processing_jobs
                 (id, usuario_id, video_path, status, created_at)
                 VALUES (%s, %s, %s, 'pending', CURRENT_TIMESTAMP)
-            """, (job_id, usuario_id, video_path))
+            """,
+                (job_id, usuario_id, video_path),
+            )
         else:
-            cursor.execute("""
-                INSERT INTO processing_jobs 
+            cursor.execute(
+                """
+                INSERT INTO processing_jobs
                 (id, usuario_id, video_path, status, created_at)
                 VALUES (?, ?, ?, 'pending', ?)
-            """, (job_id, usuario_id, video_path, datetime.now()))
-        
+            """,
+                (job_id, usuario_id, video_path, datetime.now()),
+            )
+
         conn.commit()
         cursor.close()
         conn.close()
-        
+
         print(f"✅ Job creado en BD")
-        
+
         # Agregar tarea en background
         background_tasks.add_task(
-            process_video_background_task,
-            job_id,
-            video_path,
-            usuario_id
+            process_video_background_task, job_id, video_path, usuario_id
         )
-        
+
         print("✅ Tarea en background programada")
         print("📤 RESPUESTA INMEDIATA AL CLIENTE")
-        
+
         return JSONResponse(
             status_code=202,
             content={
@@ -565,17 +656,16 @@ async def parse_invoice_video(
                 "video_size_mb": round(video_size_mb, 2),
                 "message": "Video recibido. Procesando en background.",
                 "estimated_time_minutes": "1-3",
-                "poll_endpoint": f"/invoices/job-status/{job_id}"
-            }
+                "poll_endpoint": f"/invoices/job-status/{job_id}",
+            },
         )
-        
+
     except Exception as e:
         print(f"❌ ERROR: {str(e)}")
         traceback.print_exc()
-        
+
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
 
 
@@ -587,7 +677,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
     conn = None
     cursor = None
     frames_paths = []
-    
+
     try:
         print(f"\n{'='*80}")
         print(f"🔄 PROCESAMIENTO EN BACKGROUND")
@@ -595,55 +685,63 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"🔧 PID: {os.getpid()}")
         print(f"🕐 Timestamp: {datetime.now().isoformat()}")
         print(f"{'='*80}")
-        
+
         # ============================================
         # ⭐ PASO 0: VERIFICAR QUE NO ESTÉ YA PROCESADO
         # ============================================
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    SELECT status, factura_id 
-                    FROM processing_jobs 
+                cursor.execute(
+                    """
+                    SELECT status, factura_id
+                    FROM processing_jobs
                     WHERE id = %s
-                """, (job_id,))
+                """,
+                    (job_id,),
+                )
             else:
-                cursor.execute("""
-                    SELECT status, factura_id 
-                    FROM processing_jobs 
+                cursor.execute(
+                    """
+                    SELECT status, factura_id
+                    FROM processing_jobs
                     WHERE id = ?
-                """, (job_id,))
-            
+                """,
+                    (job_id,),
+                )
+
             job_data = cursor.fetchone()
-            
+
             if not job_data:
                 print(f"❌ Job {job_id} no existe en BD")
                 return
-            
+
             current_status, existing_factura_id = job_data[0], job_data[1]
-            
+
             # ⭐ SI YA ESTÁ COMPLETADO, NO PROCESAR
-            if current_status == 'completed':
-                print(f"⚠️ Job {job_id} ya fue completado. Factura ID: {existing_factura_id}")
+            if current_status == "completed":
+                print(
+                    f"⚠️ Job {job_id} ya fue completado. Factura ID: {existing_factura_id}"
+                )
                 print(f"⚠️ IGNORANDO PROCESAMIENTO DUPLICADO")
                 return
-            
+
             # ⭐ SI YA TIENE FACTURA ASIGNADA, NO PROCESAR
             if existing_factura_id:
                 print(f"⚠️ Job {job_id} ya tiene factura {existing_factura_id}")
                 print(f"⚠️ IGNORANDO PROCESAMIENTO DUPLICADO")
                 return
-            
+
             # ⭐ SI YA ESTÁ PROCESANDO, NO PROCESAR
-            if current_status == 'processing':
+            if current_status == "processing":
                 print(f"⚠️ Job {job_id} ya está siendo procesado por otro worker")
                 print(f"⚠️ IGNORANDO PROCESAMIENTO DUPLICADO")
                 return
-            
+
             print(f"✅ Job válido para procesar. Status actual: {current_status}")
-            
+
         except Exception as e:
             print(f"⚠️ Error verificando job: {e}")
             traceback.print_exc()
@@ -652,38 +750,46 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn.close()
             conn = None
             cursor = None
-        
+
         # ============================================
         # PASO 1: Actualizar job a 'processing' (CON VALIDACIÓN)
         # ============================================
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
             # ⭐ SOLO actualizar si está en 'pending' (evita race conditions)
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE processing_jobs 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
                     SET status = 'processing', started_at = CURRENT_TIMESTAMP
                     WHERE id = %s AND status = 'pending'
-                """, (job_id,))
+                """,
+                    (job_id,),
+                )
             else:
-                cursor.execute("""
-                    UPDATE processing_jobs 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
                     SET status = 'processing', started_at = ?
                     WHERE id = ? AND status = 'pending'
-                """, (datetime.now(), job_id))
-            
+                """,
+                    (datetime.now(), job_id),
+                )
+
             affected_rows = cursor.rowcount
             conn.commit()
-            
+
             if affected_rows == 0:
-                print(f"⚠️ No se pudo actualizar job {job_id}. Ya fue procesado por otro worker.")
+                print(
+                    f"⚠️ No se pudo actualizar job {job_id}. Ya fue procesado por otro worker."
+                )
                 print(f"⚠️ ABORTANDO PROCESAMIENTO DUPLICADO")
                 return
-            
+
             print(f"✅ Status actualizado a 'processing' ({affected_rows} fila(s))")
-            
+
         except Exception as e:
             print(f"❌ Error actualizando job status: {e}")
             conn.rollback()
@@ -695,106 +801,152 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 conn.close()
             conn = None
             cursor = None
-        
+
         # ============================================
         # PASO 2: Extraer frames del video
         # ============================================
         try:
-            from video_processor import extraer_frames_video, deduplicar_productos, limpiar_frames_temporales
+            from video_processor import (
+                extraer_frames_video,
+                deduplicar_productos,
+                limpiar_frames_temporales,
+            )
         except ImportError as e:
             raise Exception(f"Error importando módulos: {e}")
-        
+
         print(f"🎬 Extrayendo frames...")
         frames_paths = extraer_frames_video(video_path, intervalo=1.0)
-        
+
         if not frames_paths:
             raise Exception("No se extrajeron frames del video")
-        
+
         print(f"✅ {len(frames_paths)} frames extraídos")
-        
+
         # ============================================
         # PASO 3: Procesar frames con Claude
         # ============================================
-        print(f"🤖 Procesando con Claude...")
-        
+        print(f"🤖 Procesando con Claude (paralelo)...")
+
+        start_time = time.time()
+
+        def procesar_frame_individual(args):
+            """Procesa un frame individual - Para uso en ThreadPool"""
+            i, frame_path = args
+            try:
+                resultado = parse_invoice_with_claude(frame_path)
+                if resultado.get("success") and resultado.get("data"):
+                    return (i, resultado["data"])
+                return (i, None)
+            except Exception as e:
+                print(f"⚠️ Error procesando frame {i+1}: {e}")
+                return (i, None)
+
+        # ⚡ PROCESAMIENTO PARALELO: 3 frames a la vez
         todos_productos = []
         establecimiento = None
         total = 0
         fecha = None
         frames_exitosos = 0
-        
-        for i, frame_path in enumerate(frames_paths):
-            try:
-                resultado = parse_invoice_with_claude(frame_path)
-                
-                if resultado.get('success') and resultado.get('data'):
-                    data = resultado['data']
-                    frames_exitosos += 1
-                    
-                    if not establecimiento:
-                        establecimiento = data.get('establecimiento', 'Desconocido')
-                        total = data.get('total', 0)
-                        fecha = data.get('fecha')
-                    
-                    productos = data.get('productos', [])
-                    todos_productos.extend(productos)
-                    
-            except Exception as e:
-                print(f"⚠️ Error procesando frame {i+1}: {e}")
-                continue
-        
+
+        # Preparar argumentos para el pool
+        frame_args = list(enumerate(frames_paths))
+
+        # Procesar en paralelo con ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            resultados = list(executor.map(procesar_frame_individual, frame_args))
+
+        # Procesar resultados
+        for i, data in resultados:
+            if data:
+                frames_exitosos += 1
+
+                # Guardar datos de la primera factura detectada
+                if not establecimiento:
+                    establecimiento = data.get("establecimiento", "Desconocido")
+                    total = data.get("total", 0)
+                    fecha = data.get("fecha")
+
+                productos = data.get("productos", [])
+                todos_productos.extend(productos)
+
+        elapsed_time = time.time() - start_time
+
         print(f"✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
         print(f"📦 Productos detectados: {len(todos_productos)}")
-        
+        print(f"⏱️ Tiempo procesamiento: {elapsed_time:.1f}s")
+
         if not todos_productos:
             raise Exception("No se detectaron productos en ningún frame")
-        
+
         # ============================================
         # PASO 4: Deduplicar productos
         # ============================================
         print(f"🔍 Deduplicando productos...")
         productos_unicos = deduplicar_productos(todos_productos)
         print(f"✅ Productos únicos: {len(productos_unicos)}")
-        
-       # ============================================
+
+        # ============================================
         # PASO 5: Guardar en base de datos
         # ============================================
         print(f"💾 Guardando en base de datos...")
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
             # 5.1 Crear/obtener establecimiento
             cadena = detectar_cadena(establecimiento)
-            establecimiento_id = obtener_o_crear_establecimiento(establecimiento, cadena)
-            
+            establecimiento_id = obtener_o_crear_establecimiento(
+                establecimiento, cadena
+            )
+
             # 5.2 Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO facturas (
                         usuario_id, establecimiento_id, establecimiento, cadena,
                         total_factura, fecha_factura, fecha_cargue,
                         productos_detectados, estado_validacion
                     ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
                     RETURNING id
-                """, (usuario_id, establecimiento_id, establecimiento, cadena,
-                      total, fecha, len(productos_unicos)))
+                """,
+                    (
+                        usuario_id,
+                        establecimiento_id,
+                        establecimiento,
+                        cadena,
+                        total,
+                        fecha,
+                        len(productos_unicos),
+                    ),
+                )
                 factura_id = cursor.fetchone()[0]
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO facturas (
                         usuario_id, establecimiento_id, establecimiento, cadena,
                         total_factura, fecha_factura, fecha_cargue,
                         productos_detectados, estado_validacion
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'procesado')
-                """, (usuario_id, establecimiento_id, establecimiento, cadena,
-                      total, fecha, datetime.now(), len(productos_unicos)))
+                """,
+                    (
+                        usuario_id,
+                        establecimiento_id,
+                        establecimiento,
+                        cadena,
+                        total,
+                        fecha,
+                        datetime.now(),
+                        len(productos_unicos),
+                    ),
+                )
                 factura_id = cursor.lastrowid
-            
+
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
-            
+
             # 5.3 Guardar imagen del primer frame
             imagen_guardada = False
             if frames_paths and len(frames_paths) > 0:
@@ -802,86 +954,108 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     primer_frame = frames_paths[0]
                     if os.path.exists(primer_frame):
                         from storage import save_image_to_db
-                        
+
                         imagen_guardada = save_image_to_db(
-                            factura_id, 
-                            primer_frame, 
-                            "image/jpeg"
+                            factura_id, primer_frame, "image/jpeg"
                         )
-                        
+
                         if imagen_guardada:
                             print(f"✅ Imagen guardada correctamente")
                         else:
                             print(f"⚠️ save_image_to_db retornó False")
-                            
+
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
                     traceback.print_exc()
-            
+
             # 5.4 Guardar productos en items_factura (⭐ CON VALIDACIÓN MEJORADA)
             productos_guardados = 0
             productos_fallidos = 0
-            
+
             for producto in productos_unicos:
                 try:
-                    codigo = producto.get('codigo', '')
-                    nombre = producto.get('nombre', 'Sin nombre')
-                    precio = producto.get('precio') or producto.get('valor', 0)
-                    cantidad = producto.get('cantidad', 1)
-                    
+                    codigo = producto.get("codigo", "")
+                    nombre = producto.get("nombre", "Sin nombre")
+                    precio = producto.get("precio") or producto.get("valor", 0)
+                    cantidad = producto.get("cantidad", 1)
+
                     # ⭐ VALIDACIÓN CRÍTICA: Nombre válido
-                    if not nombre or nombre.strip() == '':
+                    if not nombre or nombre.strip() == "":
                         print(f"⚠️ Producto sin nombre, omitiendo")
                         productos_fallidos += 1
                         continue
-                    
+
                     # ⭐ VALIDACIÓN CRÍTICA: Cantidad debe ser >= 1
                     try:
                         cantidad = int(cantidad)
                         if cantidad <= 0:
-                            print(f"⚠️ Cantidad inválida ({cantidad}) para '{nombre}', ajustando a 1")
+                            print(
+                                f"⚠️ Cantidad inválida ({cantidad}) para '{nombre}', ajustando a 1"
+                            )
                             cantidad = 1
                     except (ValueError, TypeError):
                         print(f"⚠️ Cantidad no numérica para '{nombre}', usando 1")
                         cantidad = 1
-                    
+
                     # ⭐ VALIDACIÓN CRÍTICA: Precio debe ser >= 0
                     try:
                         precio = float(precio)
                         if precio < 0:
-                            print(f"⚠️ Precio negativo ({precio}) para '{nombre}', omitiendo")
+                            print(
+                                f"⚠️ Precio negativo ({precio}) para '{nombre}', omitiendo"
+                            )
                             productos_fallidos += 1
                             continue
                     except (ValueError, TypeError):
                         print(f"⚠️ Precio no numérico para '{nombre}', usando 0")
                         precio = 0
-                    
+
                     # ⭐ VALIDACIÓN: Saltar productos con precio 0 (probablemente errores)
                     if precio == 0:
                         print(f"⚠️ Precio cero para '{nombre}', omitiendo")
                         productos_fallidos += 1
                         continue
-                    
+
                     # Insertar en base de datos
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO items_factura (
-                                factura_id, usuario_id, codigo_leido, 
+                                factura_id, usuario_id, codigo_leido,
                                 nombre_leido, cantidad, precio_pagado
                             )
                             VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (factura_id, usuario_id, codigo or None, nombre, cantidad, precio))
+                        """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
                     else:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO items_factura (
-                                factura_id, usuario_id, codigo_leido, 
+                                factura_id, usuario_id, codigo_leido,
                                 nombre_leido, cantidad, precio_pagado
                             )
                             VALUES (?, ?, ?, ?, ?, ?)
-                        """, (factura_id, usuario_id, codigo or None, nombre, cantidad, precio))
-                    
+                        """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
+
                     productos_guardados += 1
-                    
+
                 except Exception as e:
                     # ⭐ ERROR MÁS DETALLADO
                     print(f"❌ Error guardando '{nombre}': {str(e)}")
@@ -889,7 +1063,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     print(f"   - Precio: {precio}")
                     print(f"   - Código: {codigo}")
                     productos_fallidos += 1
-                    
+
                     # ⭐ CRÍTICO: Si hay error de constraint, hacer rollback parcial
                     if "constraint" in str(e).lower():
                         conn.rollback()
@@ -897,73 +1071,97 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         # Reconectar y continuar
                         conn = get_db_connection()
                         cursor = conn.cursor()
-                    
+
                     continue
-            
+
             # 5.5 Actualizar contador en factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE facturas 
-                    SET productos_guardados = %s 
+                cursor.execute(
+                    """
+                    UPDATE facturas
+                    SET productos_guardados = %s
                     WHERE id = %s
-                """, (productos_guardados, factura_id))
+                """,
+                    (productos_guardados, factura_id),
+                )
             else:
-                cursor.execute("""
-                    UPDATE facturas 
-                    SET productos_guardados = ? 
+                cursor.execute(
+                    """
+                    UPDATE facturas
+                    SET productos_guardados = ?
                     WHERE id = ?
-                """, (productos_guardados, factura_id))
-            
+                """,
+                    (productos_guardados, factura_id),
+                )
+
             conn.commit()
             print(f"✅ Productos guardados: {productos_guardados}")
             if productos_fallidos > 0:
                 print(f"⚠️ Productos no guardados: {productos_fallidos}")
-            
+
             # 5.6 Marcar job como completado (⭐ CON VALIDACIÓN ADICIONAL)
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE processing_jobs 
-                    SET status = 'completed', 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'completed',
                         factura_id = %s,
-                        completed_at = CURRENT_TIMESTAMP, 
+                        completed_at = CURRENT_TIMESTAMP,
                         productos_detectados = %s,
                         frames_procesados = %s,
                         frames_exitosos = %s
                     WHERE id = %s AND status = 'processing'
-                """, (factura_id, productos_guardados, len(frames_paths), frames_exitosos, job_id))
+                """,
+                    (
+                        factura_id,
+                        productos_guardados,
+                        len(frames_paths),
+                        frames_exitosos,
+                        job_id,
+                    ),
+                )
             else:
-                cursor.execute("""
-                    UPDATE processing_jobs 
-                    SET status = 'completed', 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'completed',
                         factura_id = ?,
-                        completed_at = ?, 
+                        completed_at = ?,
                         productos_detectados = ?,
                         frames_procesados = ?,
                         frames_exitosos = ?
                     WHERE id = ? AND status = 'processing'
-                """, (factura_id, datetime.now(), productos_guardados, len(frames_paths), frames_exitosos, job_id))
-            
+                """,
+                    (
+                        factura_id,
+                        datetime.now(),
+                        productos_guardados,
+                        len(frames_paths),
+                        frames_exitosos,
+                        job_id,
+                    ),
+                )
+
             affected_rows = cursor.rowcount
             conn.commit()
-            
+
             if affected_rows > 0:
                 print(f"✅ JOB COMPLETADO EXITOSAMENTE")
             else:
                 print(f"⚠️ Job ya fue marcado como completado por otro proceso")
-            
+
         except Exception as e:
             print(f"❌ Error en operación de BD: {e}")
             if conn:
                 conn.rollback()
             raise e
-            
+
         finally:
             if cursor:
                 cursor.close()
             if conn:
                 conn.close()
-        
-        
+
         # ============================================
         # PASO 6: Limpieza de archivos temporales
         # ============================================
@@ -972,48 +1170,54 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if os.path.exists(video_path):
                 os.remove(video_path)
                 print(f"   ✓ Video eliminado")
-            
+
             if frames_paths:
                 limpiar_frames_temporales(frames_paths)
                 print(f"   ✓ Frames eliminados")
         except Exception as e:
             print(f"⚠️ Error limpiando temporales: {e}")
-        
+
         print(f"{'='*80}")
         print(f"✅ PROCESAMIENTO COMPLETADO")
         print(f"{'='*80}\n")
-        
+
     except Exception as e:
         print(f"\n{'='*80}")
         print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
         print(f"Error: {str(e)}")
         print(f"{'='*80}")
         traceback.print_exc()
-        
+
         # Marcar job como fallido
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            
+
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE processing_jobs 
-                    SET status = 'failed', 
-                        error_message = %s, 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'failed',
+                        error_message = %s,
                         completed_at = CURRENT_TIMESTAMP
                     WHERE id = %s AND status IN ('pending', 'processing')
-                """, (str(e)[:500], job_id))
+                """,
+                    (str(e)[:500], job_id),
+                )
             else:
-                cursor.execute("""
-                    UPDATE processing_jobs 
-                    SET status = 'failed', 
-                        error_message = ?, 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'failed',
+                        error_message = ?,
                         completed_at = ?
                     WHERE id = ? AND status IN ('pending', 'processing')
-                """, (str(e)[:500], datetime.now(), job_id))
-            
+                """,
+                    (str(e)[:500], datetime.now(), job_id),
+                )
+
             conn.commit()
-            
+
         except Exception as db_error:
             print(f"⚠️ Error actualizando job status: {db_error}")
             if conn:
@@ -1023,13 +1227,14 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 cursor.close()
             if conn:
                 conn.close()
-        
+
         # Limpiar archivos temporales aunque haya fallado
         try:
             if video_path and os.path.exists(video_path):
                 os.remove(video_path)
             if frames_paths:
                 from video_processor import limpiar_frames_temporales
+
                 limpiar_frames_temporales(frames_paths)
         except Exception as cleanup_error:
             print(f"⚠️ Error limpiando archivos: {cleanup_error}")
@@ -1041,48 +1246,54 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if os.path.exists(video_path):
                 os.remove(video_path)
                 print(f"   ✓ Video eliminado")
-            
+
             if frames_paths:
                 limpiar_frames_temporales(frames_paths)
                 print(f"   ✓ Frames eliminados")
         except Exception as e:
             print(f"⚠️ Error limpiando temporales: {e}")
-        
+
         print(f"{'='*80}")
         print(f"✅ PROCESAMIENTO COMPLETADO")
         print(f"{'='*80}\n")
-        
+
     except Exception as e:
         print(f"\n{'='*80}")
         print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
         print(f"Error: {str(e)}")
         print(f"{'='*80}")
         traceback.print_exc()
-        
+
         # Marcar job como fallido
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            
+
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    UPDATE processing_jobs 
-                    SET status = 'failed', 
-                        error_message = %s, 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'failed',
+                        error_message = %s,
                         completed_at = CURRENT_TIMESTAMP
                     WHERE id = %s
-                """, (str(e)[:500], job_id))
+                """,
+                    (str(e)[:500], job_id),
+                )
             else:
-                cursor.execute("""
-                    UPDATE processing_jobs 
-                    SET status = 'failed', 
-                        error_message = ?, 
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'failed',
+                        error_message = ?,
                         completed_at = ?
                     WHERE id = ?
-                """, (str(e)[:500], datetime.now(), job_id))
-            
+                """,
+                    (str(e)[:500], datetime.now(), job_id),
+                )
+
             conn.commit()
-            
+
         except Exception as db_error:
             print(f"⚠️ Error actualizando job status: {db_error}")
             if conn:
@@ -1092,7 +1303,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 cursor.close()
             if conn:
                 conn.close()
-        
+
         # Limpiar archivos temporales aunque haya fallado
         try:
             if video_path and os.path.exists(video_path):
@@ -1112,30 +1323,36 @@ async def get_job_status(job_id: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT id, status, factura_id, error_message, 
+            cursor.execute(
+                """
+                SELECT id, status, factura_id, error_message,
                        created_at, started_at, completed_at, productos_procesados
                 FROM processing_jobs WHERE id = %s
-            """, (job_id,))
+            """,
+                (job_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, status, factura_id, error_message,
                        created_at, started_at, completed_at, productos_procesados
                 FROM processing_jobs WHERE id = ?
-            """, (job_id,))
-        
+            """,
+                (job_id,),
+            )
+
         job = cursor.fetchone()
-        
+
         if not job:
             cursor.close()
             conn.close()
             return JSONResponse(
                 status_code=404,
-                content={"success": False, "error": "Job no encontrado"}
+                content={"success": False, "error": "Job no encontrado"},
             )
-        
+
         response = {
             "success": True,
             "job_id": job[0],
@@ -1145,39 +1362,45 @@ async def get_job_status(job_id: str):
             "created_at": job[4].isoformat() if job[4] else None,
             "started_at": job[5].isoformat() if job[5] else None,
             "completed_at": job[6].isoformat() if job[6] else None,
-            "productos_procesados": job[7]
+            "productos_procesados": job[7],
         }
-        
-        if job[1] == 'completed' and job[2]:
+
+        if job[1] == "completed" and job[2]:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT establecimiento, total_factura, productos_guardados
                     FROM facturas WHERE id = %s
-                """, (job[2],))
+                """,
+                    (job[2],),
+                )
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT establecimiento, total_factura, productos_guardados
                     FROM facturas WHERE id = ?
-                """, (job[2],))
-            
+                """,
+                    (job[2],),
+                )
+
             factura = cursor.fetchone()
             if factura:
-                response['factura'] = {
+                response["factura"] = {
                     "establecimiento": factura[0],
                     "total": float(factura[1]) if factura[1] else 0,
-                    "productos": factura[2]
+                    "productos": factura[2],
                 }
-        
+
         cursor.close()
         conn.close()
-        
+
         return JSONResponse(content=response)
-        
+
     except Exception as e:
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
+
 
 @app.get("/invoices/pending-jobs")
 async def get_pending_jobs(usuario_id: int = 1):
@@ -1185,40 +1408,51 @@ async def get_pending_jobs(usuario_id: int = 1):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, status, created_at, completed_at, factura_id
                 FROM processing_jobs WHERE usuario_id = %s
                 ORDER BY created_at DESC LIMIT 10
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, status, created_at, completed_at, factura_id
                 FROM processing_jobs WHERE usuario_id = ?
                 ORDER BY created_at DESC LIMIT 10
-            """, (usuario_id,))
-        
+            """,
+                (usuario_id,),
+            )
+
         jobs = cursor.fetchall()
         cursor.close()
         conn.close()
-        
-        return JSONResponse(content={
-            "success": True,
-            "jobs": [
-                {
-                    "job_id": job[0],
-                    "status": job[1],
-                    "created_at": job[2].isoformat() if job[2] else None,
-                    "completed_at": job[3].isoformat() if job[3] else None,
-                    "factura_id": job[4]
-                }
-                for job in jobs
-            ]
-        })
-        
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "jobs": [
+                    {
+                        "job_id": job[0],
+                        "status": job[1],
+                        "created_at": job[2].isoformat() if job[2] else None,
+                        "completed_at": job[3].isoformat() if job[3] else None,
+                        "factura_id": job[4],
+                    }
+                    for job in jobs
+                ],
+            }
+        )
+
     except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+        return JSONResponse(
+            status_code=500, content={"success": False, "error": str(e)}
+        )
+
 
 # ==========================================
 # ENDPOINTS DE USUARIOS
@@ -1229,24 +1463,25 @@ async def register_user(user: UserRegister):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT id FROM usuarios WHERE email = %s", (user.email,))
         if cursor.fetchone():
             raise HTTPException(400, "Email ya registrado")
-        
+
         password_hash = hash_password(user.password)
         cursor.execute(
             "INSERT INTO usuarios (email, password_hash, nombre) VALUES (%s, %s, %s) RETURNING id",
-            (user.email, password_hash, user.nombre)
+            (user.email, password_hash, user.nombre),
         )
         user_id = cursor.fetchone()[0]
-        
+
         conn.commit()
         conn.close()
-        
+
         return {"success": True, "user_id": user_id}
     except Exception as e:
         raise HTTPException(500, str(e))
+
 
 @app.post("/users/login")
 async def login_user(user: UserLogin):
@@ -1254,24 +1489,21 @@ async def login_user(user: UserLogin):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute(
             "SELECT id, password_hash, nombre FROM usuarios WHERE email = %s",
-            (user.email,)
+            (user.email,),
         )
         result = cursor.fetchone()
         conn.close()
-        
+
         if not result or not verify_password(user.password, result[1]):
             raise HTTPException(401, "Email o contraseña incorrectos")
-        
-        return {
-            "success": True,
-            "user_id": result[0],
-            "nombre": result[2]
-        }
+
+        return {"success": True, "user_id": result[0], "nombre": result[2]}
     except Exception as e:
         raise HTTPException(500, str(e))
+
 
 # ==========================================
 # ENDPOINTS DE AUDITORÍA
@@ -1287,6 +1519,7 @@ async def get_audit_report():
         traceback.print_exc()
         raise HTTPException(500, str(e))
 
+
 @app.post("/api/admin/run-audit")
 @app.post("/admin/run-audit")
 async def run_manual_audit():
@@ -1296,15 +1529,17 @@ async def run_manual_audit():
         return {
             "success": True,
             "timestamp": datetime.now().isoformat(),
-            "results": results
+            "results": results,
         }
     except Exception as e:
         raise HTTPException(500, str(e))
+
 
 @app.get("/ocr-stats")
 async def get_ocr_stats():
     """Estadísticas del procesador OCR"""
     return processor.get_stats()
+
 
 # ==========================================
 # ENDPOINTS MÓVILES
@@ -1315,150 +1550,184 @@ async def upload_auto(file: UploadFile = File(...), user_id: Optional[int] = For
     try:
         if file.size > 10 * 1024 * 1024:
             return {"success": False, "error": "Archivo muy grande"}
-        
+
         content = await file.read()
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         temp_file.write(content)
         temp_file.close()
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute("""
+
+        cursor.execute(
+            """
             INSERT INTO facturas (usuario_id, establecimiento, estado_validacion, fecha_cargue)
             VALUES (%s, %s, %s, %s) RETURNING id
-        """, (user_id, "Procesando...", "cola", datetime.now()))
-        
+        """,
+            (user_id, "Procesando...", "cola", datetime.now()),
+        )
+
         factura_id = cursor.fetchone()[0]
-        
+
         save_image_to_db(factura_id, temp_file.name, "image/jpeg")
-        
+
         conn.commit()
         conn.close()
-        
+
         processor.add_to_queue(factura_id, temp_file.name, user_id)
-        
+
         return {
             "success": True,
             "factura_id": factura_id,
-            "queue_position": processor.get_queue_position(factura_id)
+            "queue_position": processor.get_queue_position(factura_id),
         }
-        
+
     except Exception as e:
         return {"success": False, "error": str(e)}
+
 
 @app.get("/api/mobile/status/{factura_id}")
 async def get_invoice_status(factura_id: int):
     """Estado de procesamiento"""
     if factura_id in processing:
         return processing[factura_id]
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute("""
+
+    cursor.execute(
+        """
         SELECT estado_validacion, establecimiento, total_factura
         FROM facturas WHERE id = %s
-    """, (factura_id,))
-    
+    """,
+        (factura_id,),
+    )
+
     result = cursor.fetchone()
     conn.close()
-    
+
     if result:
         return {
             "status": result[0],
             "establecimiento": result[1],
-            "total": float(result[2]) if result[2] else 0
+            "total": float(result[2]) if result[2] else 0,
         }
-    
+
     return {"status": "not_found"}
+
 
 # ==========================================
 # ENDPOINTS DE EDICIÓN Y CONTROL DE CALIDAD (ADMIN)
 # ==========================================
+
 
 @app.put("/admin/facturas/{factura_id}")
 async def actualizar_factura(factura_id: int, request: Request):
     """Actualizar datos de una factura"""
     try:
         data = await request.json()
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Campos actualizables
-            establecimiento = data.get('establecimiento')
-            cadena = data.get('cadena')
-            fecha_factura = data.get('fecha_factura')
-            total_factura = data.get('total_factura')
-            estado_validacion = data.get('estado_validacion')
-            
+            establecimiento = data.get("establecimiento")
+            cadena = data.get("cadena")
+            fecha_factura = data.get("fecha_factura")
+            total_factura = data.get("total_factura")
+            estado_validacion = data.get("estado_validacion")
+
             # Construir query dinámicamente
             updates = []
             params = []
-            
+
             if establecimiento:
-                updates.append("establecimiento = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "establecimiento = ?")
+                updates.append(
+                    "establecimiento = %s"
+                    if os.environ.get("DATABASE_TYPE") == "postgresql"
+                    else "establecimiento = ?"
+                )
                 params.append(establecimiento)
-            
+
             if cadena:
-                updates.append("cadena = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "cadena = ?")
+                updates.append(
+                    "cadena = %s"
+                    if os.environ.get("DATABASE_TYPE") == "postgresql"
+                    else "cadena = ?"
+                )
                 params.append(cadena)
-            
+
             if fecha_factura:
-                updates.append("fecha_factura = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "fecha_factura = ?")
+                updates.append(
+                    "fecha_factura = %s"
+                    if os.environ.get("DATABASE_TYPE") == "postgresql"
+                    else "fecha_factura = ?"
+                )
                 params.append(fecha_factura)
-            
+
             if total_factura is not None:
-                updates.append("total_factura = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "total_factura = ?")
+                updates.append(
+                    "total_factura = %s"
+                    if os.environ.get("DATABASE_TYPE") == "postgresql"
+                    else "total_factura = ?"
+                )
                 params.append(total_factura)
-            
+
             if estado_validacion:
-                updates.append("estado_validacion = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "estado_validacion = ?")
+                updates.append(
+                    "estado_validacion = %s"
+                    if os.environ.get("DATABASE_TYPE") == "postgresql"
+                    else "estado_validacion = ?"
+                )
                 params.append(estado_validacion)
-            
+
             if not updates:
                 return JSONResponse(
                     status_code=400,
-                    content={"success": False, "error": "No hay campos para actualizar"}
+                    content={
+                        "success": False,
+                        "error": "No hay campos para actualizar",
+                    },
                 )
-            
+
             # Agregar factura_id al final
             params.append(factura_id)
-            
+
             query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = {'%s' if os.environ.get('DATABASE_TYPE') == 'postgresql' else '?'}"
-            
+
             cursor.execute(query, params)
-            
+
             if cursor.rowcount == 0:
                 conn.rollback()
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "error": "Factura no encontrada"}
+                    content={"success": False, "error": "Factura no encontrada"},
                 )
-            
+
             conn.commit()
-            
-            return JSONResponse(content={
-                "success": True,
-                "message": f"Factura {factura_id} actualizada correctamente"
-            })
-            
+
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": f"Factura {factura_id} actualizada correctamente",
+                }
+            )
+
         except Exception as e:
             conn.rollback()
             raise e
-            
+
         finally:
             cursor.close()
             conn.close()
-        
+
     except Exception as e:
         print(f"❌ Error actualizando factura {factura_id}: {e}")
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
+
 
 @app.get("/admin/facturas/{factura_id}")
 async def get_factura_para_editor(factura_id: int):
@@ -1466,55 +1735,68 @@ async def get_factura_para_editor(factura_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT id, usuario_id, establecimiento, cadena, total_factura, 
+
+        cursor.execute(
+            """
+            SELECT id, usuario_id, establecimiento, cadena, total_factura,
                    fecha_cargue, estado_validacion, puntaje_calidad, tiene_imagen
             FROM facturas WHERE id = %s
-        """, (factura_id,))
-        
+        """,
+            (factura_id,),
+        )
+
         factura = cursor.fetchone()
         if not factura:
             conn.close()
             raise HTTPException(404, "Factura no encontrada")
-        
+
         productos = []
-        
+
         # Buscar en tabla productos primero
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, codigo, nombre, valor
             FROM productos
             WHERE factura_id = %s
             ORDER BY id
-        """, (factura_id,))
-        
+        """,
+            (factura_id,),
+        )
+
         for p in cursor.fetchall():
-            productos.append({
-                "id": p[0],
-                "codigo": p[1] or "",
-                "nombre": p[2] or "",
-                "precio": float(p[3]) if p[3] else 0
-            })
-        
+            productos.append(
+                {
+                    "id": p[0],
+                    "codigo": p[1] or "",
+                    "nombre": p[2] or "",
+                    "precio": float(p[3]) if p[3] else 0,
+                }
+            )
+
         # Si está vacía, buscar en items_factura
         if len(productos) == 0:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, codigo_leido, nombre_leido, precio_pagado
                 FROM items_factura
                 WHERE factura_id = %s
                 ORDER BY id
-            """, (factura_id,))
-            
+            """,
+                (factura_id,),
+            )
+
             for p in cursor.fetchall():
-                productos.append({
-                    "id": p[0],
-                    "codigo": p[1] or "",
-                    "nombre": p[2] or "",
-                    "precio": float(p[3]) if p[3] else 0
-                })
-        
+                productos.append(
+                    {
+                        "id": p[0],
+                        "codigo": p[1] or "",
+                        "nombre": p[2] or "",
+                        "precio": float(p[3]) if p[3] else 0,
+                    }
+                )
+
         conn.close()
-        
+
         return {
             "id": factura[0],
             "usuario_id": factura[1],
@@ -1526,9 +1808,9 @@ async def get_factura_para_editor(factura_id: int):
             "estado": factura[6] or "pendiente",
             "puntaje": factura[7] or 0,
             "tiene_imagen": factura[8] or False,
-            "productos": productos
+            "productos": productos,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1536,47 +1818,54 @@ async def get_factura_para_editor(factura_id: int):
         traceback.print_exc()
         raise HTTPException(500, str(e))
 
+
 @app.put("/admin/productos/{producto_id}")
 async def actualizar_producto(producto_id: int, datos: dict):
     """Actualizar producto en la factura"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        codigo = datos.get('codigo', '').strip()
-        nombre = datos.get('nombre', '').strip()
-        precio = datos.get('precio', 0)
-        
+
+        codigo = datos.get("codigo", "").strip()
+        nombre = datos.get("nombre", "").strip()
+        precio = datos.get("precio", 0)
+
         if not nombre:
             raise HTTPException(400, "Nombre es requerido")
-        
+
         # Intentar actualizar en tabla productos
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE productos
             SET codigo = %s, nombre = %s, valor = %s
             WHERE id = %s
-        """, (codigo, nombre, float(precio), producto_id))
-        
+        """,
+            (codigo, nombre, float(precio), producto_id),
+        )
+
         affected = cursor.rowcount
-        
+
         # Si no está en productos, intentar en items_factura
         if affected == 0:
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE items_factura
                 SET codigo_leido = %s, nombre_leido = %s, precio_pagado = %s
                 WHERE id = %s
-            """, (codigo, nombre, float(precio), producto_id))
+            """,
+                (codigo, nombre, float(precio), producto_id),
+            )
             affected = cursor.rowcount
-        
+
         if affected == 0:
             conn.close()
             raise HTTPException(404, "Producto no encontrado")
-        
+
         conn.commit()
         conn.close()
-        
+
         return {"success": True, "message": "Producto actualizado"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1587,31 +1876,32 @@ async def actualizar_producto(producto_id: int, datos: dict):
             conn.close()
         raise HTTPException(500, str(e))
 
+
 @app.delete("/admin/productos/{producto_id}")
 async def eliminar_producto_factura(producto_id: int):
     """Eliminar producto de una factura"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # Intentar eliminar de tabla productos
         cursor.execute("DELETE FROM productos WHERE id = %s", (producto_id,))
         affected = cursor.rowcount
-        
+
         # Si no está en productos, intentar en items_factura
         if affected == 0:
             cursor.execute("DELETE FROM items_factura WHERE id = %s", (producto_id,))
             affected = cursor.rowcount
-        
+
         if affected == 0:
             conn.close()
             raise HTTPException(404, "Producto no encontrado")
-        
+
         conn.commit()
         conn.close()
-        
+
         return {"success": True, "message": "Producto eliminado"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1621,45 +1911,45 @@ async def eliminar_producto_factura(producto_id: int):
             conn.close()
         raise HTTPException(500, str(e))
 
+
 @app.post("/admin/facturas/{factura_id}/productos")
 async def agregar_producto_a_factura(factura_id: int, datos: dict):
     """Agregar nuevo producto a una factura"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # Verificar que la factura existe
         cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
         if not cursor.fetchone():
             conn.close()
             raise HTTPException(404, "Factura no encontrada")
-        
-        codigo = datos.get('codigo', '').strip()
-        nombre = datos.get('nombre', '').strip()
-        precio = datos.get('precio', 0)
-        
+
+        codigo = datos.get("codigo", "").strip()
+        nombre = datos.get("nombre", "").strip()
+        precio = datos.get("precio", 0)
+
         if not nombre:
             conn.close()
             raise HTTPException(400, "Nombre es requerido")
-        
+
         # Agregar a tabla productos
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO productos (factura_id, codigo, nombre, valor)
             VALUES (%s, %s, %s, %s)
             RETURNING id
-        """, (factura_id, codigo, nombre, float(precio)))
-        
+        """,
+            (factura_id, codigo, nombre, float(precio)),
+        )
+
         nuevo_id = cursor.fetchone()[0]
-        
+
         conn.commit()
         conn.close()
-        
-        return {
-            "success": True, 
-            "id": nuevo_id,
-            "message": "Producto agregado"
-        }
-        
+
+        return {"success": True, "id": nuevo_id, "message": "Producto agregado"}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1670,56 +1960,57 @@ async def agregar_producto_a_factura(factura_id: int, datos: dict):
             conn.close()
         raise HTTPException(500, str(e))
 
+
 @app.put("/admin/facturas/{factura_id}/datos-generales")
 async def actualizar_datos_generales(factura_id: int, datos: dict):
     """Actualizar datos generales de la factura (establecimiento, total, fecha)"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        establecimiento = datos.get('establecimiento')
-        total = datos.get('total', 0)
-        fecha = datos.get('fecha')
-        
+
+        establecimiento = datos.get("establecimiento")
+        total = datos.get("total", 0)
+        fecha = datos.get("fecha")
+
         print(f"📝 Actualizando factura {factura_id}:")
         print(f"  - Establecimiento: {establecimiento}")
         print(f"  - Total: {total}")
         print(f"  - Fecha: {fecha}")
-        
+
         updates = []
         params = []
-        
+
         if establecimiento:
             updates.append("establecimiento = %s")
             params.append(establecimiento)
             updates.append("cadena = %s")
             params.append(detectar_cadena(establecimiento))
-        
+
         if total is not None:
             updates.append("total_factura = %s")
             params.append(float(total))
-        
+
         if fecha:
             updates.append("fecha_cargue = %s")
             params.append(fecha)
-        
+
         # Marcar como revisada después de editar
         updates.append("estado_validacion = %s")
-        params.append('revisada')
-        
+        params.append("revisada")
+
         params.append(factura_id)
-        
+
         query = f"UPDATE facturas SET {', '.join(updates)} WHERE id = %s"
         cursor.execute(query, params)
-        
+
         affected = cursor.rowcount
         print(f"✅ {affected} fila(s) actualizada(s)")
-        
+
         conn.commit()
         conn.close()
-        
+
         return {"success": True, "message": "Datos actualizados", "affected": affected}
-        
+
     except Exception as e:
         print(f"❌ Error actualizando datos generales: {e}")
         traceback.print_exc()
@@ -1728,23 +2019,27 @@ async def actualizar_datos_generales(factura_id: int, datos: dict):
             conn.close()
         raise HTTPException(500, str(e))
 
+
 @app.post("/admin/facturas/{factura_id}/validar")
 async def marcar_como_validada(factura_id: int):
     """Marcar factura como validada (100% calidad)"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute("""
+
+        cursor.execute(
+            """
             UPDATE facturas
             SET estado_validacion = 'validada',
                 puntaje_calidad = 100
             WHERE id = %s
-        """, (factura_id,))
-        
+        """,
+            (factura_id,),
+        )
+
         conn.commit()
         conn.close()
-        
+
         return {"success": True, "message": "Factura validada"}
     except Exception as e:
         if conn:
@@ -1752,143 +2047,178 @@ async def marcar_como_validada(factura_id: int):
             conn.close()
         raise HTTPException(500, str(e))
 
+
 @app.delete("/admin/facturas/{factura_id}")
 async def eliminar_factura(factura_id: int):
     """Eliminar factura y TODAS sus referencias en cascada"""
     print(f"🗑️ ELIMINANDO FACTURA #{factura_id}")
-    
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 # ✅ ORDEN CRÍTICO: Eliminar referencias ANTES de la factura
-                
+
                 # 1. Processing jobs
                 print(f"   1️⃣ Eliminando processing_jobs...")
-                cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,))
+                cursor.execute(
+                    "DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,)
+                )
                 deleted_jobs = cursor.rowcount
                 print(f"      ✓ {deleted_jobs} job(s) eliminado(s)")
-                
+
                 # 2. Items factura
                 print(f"   2️⃣ Eliminando items_factura...")
-                cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
+                cursor.execute(
+                    "DELETE FROM items_factura WHERE factura_id = %s", (factura_id,)
+                )
                 deleted_items = cursor.rowcount
                 print(f"      ✓ {deleted_items} item(s) eliminado(s)")
-                
+
                 # 3. Productos (tabla antigua)
                 print(f"   3️⃣ Eliminando productos...")
-                cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+                cursor.execute(
+                    "DELETE FROM productos WHERE factura_id = %s", (factura_id,)
+                )
                 deleted_productos = cursor.rowcount
                 print(f"      ✓ {deleted_productos} producto(s) eliminado(s)")
-                
+
                 # 4. La factura misma
                 print(f"   4️⃣ Eliminando factura...")
                 cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
                 deleted_factura = cursor.rowcount
-                
+
             else:
                 # SQLite - mismo orden
-                cursor.execute("DELETE FROM processing_jobs WHERE factura_id = ?", (factura_id,))
+                cursor.execute(
+                    "DELETE FROM processing_jobs WHERE factura_id = ?", (factura_id,)
+                )
                 deleted_jobs = cursor.rowcount
-                
-                cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
+
+                cursor.execute(
+                    "DELETE FROM items_factura WHERE factura_id = ?", (factura_id,)
+                )
                 deleted_items = cursor.rowcount
-                
-                cursor.execute("DELETE FROM productos WHERE factura_id = ?", (factura_id,))
+
+                cursor.execute(
+                    "DELETE FROM productos WHERE factura_id = ?", (factura_id,)
+                )
                 deleted_productos = cursor.rowcount
-                
+
                 cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
                 deleted_factura = cursor.rowcount
-            
+
             if deleted_factura == 0:
                 print(f"   ❌ Factura {factura_id} no encontrada")
                 conn.rollback()
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "error": "Factura no encontrada"}
+                    content={"success": False, "error": "Factura no encontrada"},
                 )
-            
+
             conn.commit()
             print(f"   ✅ Factura {factura_id} eliminada exitosamente")
-            
-            return JSONResponse(content={
-                "success": True,
-                "message": f"Factura {factura_id} eliminada correctamente",
-                "detalles": {
-                    "jobs_eliminados": deleted_jobs if os.environ.get("DATABASE_TYPE") == "postgresql" else "N/A",
-                    "items_eliminados": deleted_items if os.environ.get("DATABASE_TYPE") == "postgresql" else "N/A",
-                    "productos_eliminados": deleted_productos if os.environ.get("DATABASE_TYPE") == "postgresql" else "N/A"
+
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": f"Factura {factura_id} eliminada correctamente",
+                    "detalles": {
+                        "jobs_eliminados": (
+                            deleted_jobs
+                            if os.environ.get("DATABASE_TYPE") == "postgresql"
+                            else "N/A"
+                        ),
+                        "items_eliminados": (
+                            deleted_items
+                            if os.environ.get("DATABASE_TYPE") == "postgresql"
+                            else "N/A"
+                        ),
+                        "productos_eliminados": (
+                            deleted_productos
+                            if os.environ.get("DATABASE_TYPE") == "postgresql"
+                            else "N/A"
+                        ),
+                    },
                 }
-            })
-            
+            )
+
         except Exception as e:
             print(f"   ❌ Error en transacción: {e}")
             conn.rollback()
             raise e
-            
+
         finally:
             if cursor:
                 cursor.close()
             if conn:
                 conn.close()
-        
+
     except Exception as e:
         print(f"❌ Error eliminando factura {factura_id}: {e}")
         import traceback
+
         traceback.print_exc()
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
+
 
 @app.post("/admin/facturas/eliminar-multiple")
 async def eliminar_facturas_multiple(datos: dict):
     """Eliminar múltiples facturas en batch"""
     try:
-        ids = datos.get('ids', [])
-        
+        ids = datos.get("ids", [])
+
         if not ids or not isinstance(ids, list):
             raise HTTPException(400, "IDs inválidos")
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         eliminadas = 0
         errores = []
-        
+
         for factura_id in ids:
             try:
                 # Eliminar productos
-                cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
-                cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
-                
+                cursor.execute(
+                    "DELETE FROM productos WHERE factura_id = %s", (factura_id,)
+                )
+                cursor.execute(
+                    "DELETE FROM items_factura WHERE factura_id = %s", (factura_id,)
+                )
+
                 # Eliminar precios
                 try:
-                    cursor.execute("DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,))
+                    cursor.execute(
+                        "DELETE FROM precios_productos WHERE factura_id = %s",
+                        (factura_id,),
+                    )
                 except:
                     pass
-                
+
                 # Eliminar factura
                 cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
-                
+
                 if cursor.rowcount > 0:
                     eliminadas += 1
-                    
+
             except Exception as e:
                 errores.append(f"Factura {factura_id}: {str(e)}")
-        
+
         conn.commit()
         conn.close()
-        
+
         return {
             "success": True,
             "eliminadas": eliminadas,
             "errores": errores,
-            "message": f"{eliminadas} facturas eliminadas"
+            "message": f"{eliminadas} facturas eliminadas",
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1898,55 +2228,62 @@ async def eliminar_facturas_multiple(datos: dict):
         traceback.print_exc()
         raise HTTPException(500, str(e))
 
+
 @app.post("/invoices/save-manual")
 async def save_manual_invoice(factura: FacturaManual):
     """Guardar factura manualmente (sin OCR, sin imagen)"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         cadena = detectar_cadena(factura.establecimiento)
-        
-        cursor.execute("""
+
+        cursor.execute(
+            """
             INSERT INTO facturas (
-                establecimiento, fecha_cargue, total_factura, 
+                establecimiento, fecha_cargue, total_factura,
                 puntaje_calidad, tiene_imagen, estado_validacion
             ) VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
-        """, (
-            factura.establecimiento,
-            datetime.now(),
-            factura.total,
-            100,  # Score perfecto para entrada manual
-            False,
-            'validada'
-        ))
-        
+        """,
+            (
+                factura.establecimiento,
+                datetime.now(),
+                factura.total,
+                100,  # Score perfecto para entrada manual
+                False,
+                "validada",
+            ),
+        )
+
         factura_id = cursor.fetchone()[0]
-        
+
         # Insertar productos
         for producto in factura.productos:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO productos (
                     nombre, codigo, valor, factura_id
                 ) VALUES (%s, %s, %s, %s)
-            """, (
-                producto.get("nombre"),
-                producto.get("codigo", ""),
-                producto.get("precio", 0),
-                factura_id
-            ))
-        
+            """,
+                (
+                    producto.get("nombre"),
+                    producto.get("codigo", ""),
+                    producto.get("precio", 0),
+                    factura_id,
+                ),
+            )
+
         conn.commit()
         cursor.close()
         conn.close()
-        
+
         return {
             "success": True,
             "factura_id": factura_id,
-            "message": "Factura guardada correctamente"
+            "message": "Factura guardada correctamente",
         }
-        
+
     except Exception as e:
         print(f"❌ Error guardando factura manual: {e}")
         if conn:
@@ -1954,36 +2291,40 @@ async def save_manual_invoice(factura: FacturaManual):
             conn.close()
         raise HTTPException(500, str(e))
 
+
 @app.get("/admin/facturas/{factura_id}/check-image")
 async def check_image(factura_id: int):
     """Debug: verificar si imagen existe en BD"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT 
+
+    cursor.execute(
+        """
+        SELECT
             id,
             imagen_mime,
-            CASE 
+            CASE
                 WHEN imagen_data IS NULL THEN 'NULL'
                 ELSE 'EXISTS'
             END as status,
             LENGTH(imagen_data) as size_bytes
-        FROM facturas 
+        FROM facturas
         WHERE id = %s
-    """, (factura_id,))
-    
+    """,
+        (factura_id,),
+    )
+
     result = cursor.fetchone()
     conn.close()
-    
+
     if not result:
         return {"error": "Factura no encontrada"}
-    
+
     return {
         "factura_id": result[0],
         "imagen_mime": result[1],
         "imagen_status": result[2],
-        "imagen_size": result[3]
+        "imagen_size": result[3],
     }
 
 
@@ -1991,76 +2332,91 @@ async def check_image(factura_id: int):
 # ENDPOINTS PARA ITEMS_FACTURA (EDITOR)
 # ==========================================
 
+
 @app.put("/admin/items/{item_id}")
 async def actualizar_item_factura(item_id: int, request: Request):
     """Actualizar item en items_factura - USADO POR EDITOR"""
     try:
         data = await request.json()
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
-            nombre = data.get('nombre', '').strip()
-            precio = data.get('precio', 0)
-            codigo_ean = data.get('codigo_ean', '').strip()
-            
+            nombre = data.get("nombre", "").strip()
+            precio = data.get("precio", 0)
+            codigo_ean = data.get("codigo_ean", "").strip()
+
             if not nombre:
                 return JSONResponse(
                     status_code=400,
-                    content={"success": False, "error": "Nombre es requerido"}
+                    content={"success": False, "error": "Nombre es requerido"},
                 )
-            
+
             # Construir query dinámicamente
             updates = []
             params = []
-            
-            updates.append("nombre_producto = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "nombre_producto = ?")
+
+            updates.append(
+                "nombre_producto = %s"
+                if os.environ.get("DATABASE_TYPE") == "postgresql"
+                else "nombre_producto = ?"
+            )
             params.append(nombre)
-            
-            updates.append("precio_unitario = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "precio_unitario = ?")
+
+            updates.append(
+                "precio_unitario = %s"
+                if os.environ.get("DATABASE_TYPE") == "postgresql"
+                else "precio_unitario = ?"
+            )
             params.append(float(precio))
-            
+
             # Solo actualizar código si se proporciona
             if codigo_ean:
-                updates.append("codigo_producto = %s" if os.environ.get("DATABASE_TYPE") == "postgresql" else "codigo_producto = ?")
+                updates.append(
+                    "codigo_producto = %s"
+                    if os.environ.get("DATABASE_TYPE") == "postgresql"
+                    else "codigo_producto = ?"
+                )
                 params.append(codigo_ean)
-            
+
             params.append(item_id)
-            
+
             query = f"UPDATE items_factura SET {', '.join(updates)} WHERE id = {'%s' if os.environ.get('DATABASE_TYPE') == 'postgresql' else '?'}"
-            
+
             cursor.execute(query, params)
-            
+
             if cursor.rowcount == 0:
                 conn.rollback()
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "error": "Item no encontrado"}
+                    content={"success": False, "error": "Item no encontrado"},
                 )
-            
+
             conn.commit()
-            
-            return JSONResponse(content={
-                "success": True,
-                "message": f"Item {item_id} actualizado correctamente"
-            })
-            
+
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": f"Item {item_id} actualizado correctamente",
+                }
+            )
+
         except Exception as e:
             conn.rollback()
             raise e
-            
+
         finally:
             cursor.close()
             conn.close()
-        
+
     except Exception as e:
         print(f"❌ Error actualizando item {item_id}: {e}")
         traceback.print_exc()
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
+
 
 @app.delete("/admin/items/{item_id}")
 async def eliminar_item_factura(item_id: int):
@@ -2068,147 +2424,129 @@ async def eliminar_item_factura(item_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute("DELETE FROM items_factura WHERE id = %s", (item_id,))
             else:
                 cursor.execute("DELETE FROM items_factura WHERE id = ?", (item_id,))
-            
+
             if cursor.rowcount == 0:
                 conn.rollback()
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "error": "Item no encontrado"}
+                    content={"success": False, "error": "Item no encontrado"},
                 )
-            
+
             conn.commit()
-            
-            return JSONResponse(content={
-                "success": True,
-                "message": f"Item {item_id} eliminado correctamente"
-            })
-            
+
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": f"Item {item_id} eliminado correctamente",
+                }
+            )
+
         except Exception as e:
             conn.rollback()
             raise e
-            
+
         finally:
             cursor.close()
             conn.close()
-        
+
     except Exception as e:
         print(f"❌ Error eliminando item {item_id}: {e}")
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
+
 
 @app.post("/admin/facturas/{factura_id}/items")
 async def crear_item_factura(factura_id: int, request: Request):
     """Crear nuevo item en items_factura - USADO POR EDITOR"""
     try:
         data = await request.json()
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
-            nombre = data.get('nombre', '').strip()
-            precio = data.get('precio', 0)
-            codigo_ean = data.get('codigo_ean', '').strip()
-            cantidad = data.get('cantidad', 1)
-            
+            nombre = data.get("nombre", "").strip()
+            precio = data.get("precio", 0)
+            codigo_ean = data.get("codigo_ean", "").strip()
+            cantidad = data.get("cantidad", 1)
+
             if not nombre:
                 return JSONResponse(
                     status_code=400,
-                    content={"success": False, "error": "Nombre es requerido"}
+                    content={"success": False, "error": "Nombre es requerido"},
                 )
-            
+
             # Verificar que factura existe
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
             else:
                 cursor.execute("SELECT id FROM facturas WHERE id = ?", (factura_id,))
-            
+
             if not cursor.fetchone():
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "error": "Factura no encontrada"}
+                    content={"success": False, "error": "Factura no encontrada"},
                 )
-            
+
             # Insertar item
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO items_factura (factura_id, codigo_producto, nombre_producto, cantidad, precio_unitario)
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
-                """, (factura_id, codigo_ean or None, nombre, cantidad, float(precio)))
+                """,
+                    (factura_id, codigo_ean or None, nombre, cantidad, float(precio)),
+                )
                 nuevo_id = cursor.fetchone()[0]
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO items_factura (factura_id, codigo_producto, nombre_producto, cantidad, precio_unitario)
                     VALUES (?, ?, ?, ?, ?)
-                """, (factura_id, codigo_ean or None, nombre, cantidad, float(precio)))
+                """,
+                    (factura_id, codigo_ean or None, nombre, cantidad, float(precio)),
+                )
                 nuevo_id = cursor.lastrowid
-            
+
             conn.commit()
-            
-            return JSONResponse(content={
-                "success": True,
-                "id": nuevo_id,
-                "message": "Item creado correctamente"
-            })
-            
+
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "id": nuevo_id,
+                    "message": "Item creado correctamente",
+                }
+            )
+
         except Exception as e:
             conn.rollback()
             raise e
-            
+
         finally:
             cursor.close()
             conn.close()
-        
+
     except Exception as e:
         print(f"❌ Error creando item: {e}")
         traceback.print_exc()
         return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(e)}
+            status_code=500, content={"success": False, "error": str(e)}
         )
+
 
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
