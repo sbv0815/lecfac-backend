@@ -355,9 +355,10 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
             else:
                 precios_similares = False
 
-            # ✅ CRITERIO DE DUPLICADO: Más permisivo
-            # 85%+ similitud O 75%+ con precios similares
-            if similitud >= 0.85:
+            # ✅ CRITERIO DE DUPLICADO: MÁS AGRESIVO para videos
+            # En videos, el mismo producto aparece en MUCHOS frames
+            # 70%+ similitud O 60%+ con precios similares
+            if similitud >= 0.70:  # Antes 0.85 - DEMASIADO permisivo
                 es_duplicado = True
                 # Mantener el de mejor nivel
                 if nivel < prod_existente.get("nivel_confianza", 3):
@@ -367,7 +368,7 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
                 ) > len(nombre_existente):
                     prod_existente["nombre"] = nombre
                 break
-            elif similitud >= 0.75 and precios_similares:
+            elif similitud >= 0.60 and precios_similares:  # Antes 0.75
                 es_duplicado = True
                 if nivel < prod_existente.get("nivel_confianza", 3):
                     prod_existente.update(prod)
