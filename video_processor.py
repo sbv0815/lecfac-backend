@@ -137,11 +137,17 @@ def extraer_frames_video(video_path, intervalo=1.0):
         return frames
 
 
+"""
+REEMPLAZAR la función deduplicar_productos() en video_processor.py
+"""
+
+
 def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     """
-    Deduplicación ULTRA INTELIGENTE con 3 niveles
+    Deduplicación MEJORADA con análisis inteligente
     """
     from difflib import SequenceMatcher
+    import re
 
     if not productos:
         return []
@@ -171,6 +177,9 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         "cambio",
         "efectivo",
         "tarjeta",
+        "redeban",
+        "credito",
+        "debito",
     ]
 
     productos_limpios = []
@@ -182,8 +191,12 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         # Filtrar por palabras clave
         es_basura = any(palabra in nombre for palabra in palabras_descuento)
 
-        # Filtrar nombres muy cortos (ruido)
+        # Filtrar nombres muy cortos
         if len(nombre) < 3:
+            es_basura = True
+
+        # Filtrar si solo tiene números y espacios
+        if re.match(r"^[\d\s]+$", nombre):
             es_basura = True
 
         if not es_basura:
@@ -197,40 +210,72 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     productos = productos_limpios
 
     # ========================================
-    # NIVEL 2: Deduplicar por código EAN/PLU
+    # NIVEL 2: Deduplicar por código + nombre normalizado
     # ========================================
+
+    def normalizar_nombre(nombre: str) -> str:
+        """Normaliza nombre para mejor comparación"""
+        nombre = nombre.upper().strip()
+        # Remover espacios múltiples
+        nombre = re.sub(r"\s+", " ", nombre)
+        # Remover caracteres especiales comunes en OCR
+        nombre = re.sub(r"[^\w\s]", "", nombre)
+        return nombre
+
+    def extraer_palabras_clave(nombre: str) -> set:
+        """Extrae palabras significativas del nombre"""
+        nombre_norm = normalizar_nombre(nombre)
+        palabras = nombre_norm.split()
+        # Filtrar palabras muy cortas
+        return set(p for p in palabras if len(p) >= 3)
+
     productos_unicos = {}
     productos_sin_codigo = []
 
     for prod in productos:
         codigo = str(prod.get("codigo", "")).strip()
         nombre = str(prod.get("nombre", "")).strip()
+        precio = prod.get("precio", 0)
 
         if not nombre:
             continue
 
-        # Con código EAN (8+ dígitos) - MUY CONFIABLE
-        if codigo and len(codigo) >= 8 and codigo.isdigit():
-            key = f"ean_{codigo}"
-            if key not in productos_unicos:
-                productos_unicos[key] = prod
-            else:
-                # Mantener el nombre más completo
-                prod_existente = productos_unicos[key]
-                if len(nombre) > len(prod_existente.get("nombre", "")):
-                    productos_unicos[key] = prod
+        # ========================================
+        # ESTRATEGIA 1: Código EAN/PLU confiable
+        # ========================================
+        if codigo and len(codigo) >= 6 and codigo.isdigit():
+            # Normalizar nombre para comparación
+            nombre_norm = normalizar_nombre(nombre)
 
-        # Con código PLU (1-7 dígitos) - CONFIABLE
-        elif codigo and 1 <= len(codigo) <= 7 and codigo.isdigit():
-            key = f"plu_{codigo}"
-            if key not in productos_unicos:
-                productos_unicos[key] = prod
-            else:
-                prod_existente = productos_unicos[key]
-                if len(nombre) > len(prod_existente.get("nombre", "")):
-                    productos_unicos[key] = prod
+            # Buscar si ya existe este código
+            encontrado = False
+            for key in list(productos_unicos.keys()):
+                if key.startswith(f"cod_{codigo}_"):
+                    # Ya existe este código, verificar si es el mismo producto
+                    prod_existente = productos_unicos[key]
+                    nombre_existente_norm = normalizar_nombre(
+                        prod_existente.get("nombre", "")
+                    )
 
-        # Sin código - requiere análisis por nombre
+                    # Calcular similitud
+                    similitud = SequenceMatcher(
+                        None, nombre_norm, nombre_existente_norm
+                    ).ratio()
+
+                    # Si son muy similares (>70%), es duplicado
+                    if similitud > 0.70:
+                        # Mantener el nombre más completo
+                        if len(nombre) > len(prod_existente.get("nombre", "")):
+                            productos_unicos[key] = prod
+                        encontrado = True
+                        break
+
+            if not encontrado:
+                # Crear clave única con código y hash del nombre
+                key = f"cod_{codigo}_{hash(nombre_norm) % 10000}"
+                productos_unicos[key] = prod
+
+        # Sin código confiable - analizar por nombre
         else:
             productos_sin_codigo.append(prod)
 
@@ -240,49 +285,74 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     )
 
     # ========================================
-    # NIVEL 3: Deduplicar SIN código (MÁS DIFÍCIL)
+    # NIVEL 3: Deduplicar por similitud de nombre + precio
     # ========================================
     for prod in productos_sin_codigo:
-        nombre = str(prod.get("nombre", "")).strip().lower()
+        nombre = str(prod.get("nombre", "")).strip()
         precio = prod.get("precio", 0)
 
         if not nombre or len(nombre) < 3:
             continue
 
+        nombre_norm = normalizar_nombre(nombre)
+        palabras_clave = extraer_palabras_clave(nombre)
+
         encontrado = False
 
         # Comparar con productos existentes
         for key, prod_existente in list(productos_unicos.items()):
-            nombre_existente = str(prod_existente.get("nombre", "")).strip().lower()
+            nombre_existente = str(prod_existente.get("nombre", "")).strip()
+            nombre_existente_norm = normalizar_nombre(nombre_existente)
+            palabras_clave_existente = extraer_palabras_clave(nombre_existente)
             precio_existente = prod_existente.get("precio", 0)
 
-            # ✅ Similitud de texto (Levenshtein)
-            similitud = SequenceMatcher(None, nombre, nombre_existente).ratio()
+            # ✅ Estrategia 1: Similitud de texto alta
+            similitud_texto = SequenceMatcher(
+                None, nombre_norm, nombre_existente_norm
+            ).ratio()
 
-            # ✅ Umbral ALTO para evitar falsos positivos
-            if similitud > 0.90:  # 90% de similitud
-                # ✅ Validar también similitud de precio (±10%)
-                if precio > 0 and precio_existente > 0:
-                    diferencia_precio = abs(precio - precio_existente) / max(
-                        precio, precio_existente
-                    )
+            # ✅ Estrategia 2: Palabras clave en común
+            if palabras_clave and palabras_clave_existente:
+                palabras_comunes = palabras_clave & palabras_clave_existente
+                similitud_palabras = len(palabras_comunes) / max(
+                    len(palabras_clave), len(palabras_clave_existente)
+                )
+            else:
+                similitud_palabras = 0
 
-                    if diferencia_precio < 0.10:  # Máximo 10% de diferencia
-                        encontrado = True
-                        # Mantener el nombre más largo (más completo)
-                        if len(nombre) > len(nombre_existente):
-                            productos_unicos[key]["nombre"] = prod["nombre"]
-                        break
-                else:
-                    # Si no hay precio, usar solo similitud de texto
-                    encontrado = True
-                    if len(nombre) > len(nombre_existente):
-                        productos_unicos[key]["nombre"] = prod["nombre"]
-                    break
+            # ✅ Estrategia 3: Similitud de precio
+            if precio > 0 and precio_existente > 0:
+                diferencia_precio = abs(precio - precio_existente) / max(
+                    precio, precio_existente
+                )
+                similitud_precio = 1 - diferencia_precio
+            else:
+                similitud_precio = 0
+
+            # DECISIÓN: Es duplicado si cumple CUALQUIERA de estos criterios:
+            # 1. Similitud de texto > 80%
+            # 2. Similitud de palabras > 70% Y precio similar (>90%)
+            # 3. Similitud de texto > 70% Y precio idéntico o muy similar (>95%)
+
+            es_duplicado = False
+
+            if similitud_texto > 0.80:
+                es_duplicado = True
+            elif similitud_palabras > 0.70 and similitud_precio > 0.90:
+                es_duplicado = True
+            elif similitud_texto > 0.70 and similitud_precio > 0.95:
+                es_duplicado = True
+
+            if es_duplicado:
+                encontrado = True
+                # Mantener el nombre más completo
+                if len(nombre) > len(nombre_existente):
+                    productos_unicos[key]["nombre"] = prod["nombre"]
+                break
 
         # Si no es duplicado, agregarlo
         if not encontrado:
-            palabras = nombre.split()[:5]  # Primeras 5 palabras como clave
+            palabras = nombre_norm.split()[:5]
             key = f"nombre_{'_'.join(palabras)}"
 
             # Asegurar clave única
