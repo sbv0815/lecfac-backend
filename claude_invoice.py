@@ -34,10 +34,12 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
         # ========== PROMPT MEJORADO - SISTEMA 3 NIVELES ==========
         prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
 
-🎯 OBJETIVO: Extraer TODOS los productos reales, incluso si tienen datos incompletos.
+🎯 OBJETIVO: Extraer SOLO los productos QUE REALMENTE VES en la imagen.
 
-# 🔑 FILOSOFÍA CLAVE
-"Es mejor capturar un producto con 80% de información que perderlo completamente"
+⚠️ CRÍTICO: NO INVENTES productos. Solo incluye lo que CLARAMENTE lees.
+
+# 🔑 REGLA DE ORO
+"Si no estás 100% seguro de que es un producto REAL, NO lo incluyas"
 
 Necesitamos:
 1. ESTABLECIMIENTO - Para saber dónde compró
@@ -65,11 +67,18 @@ NIVEL 3 - BAJA CONFIANZA (Parcial pero útil):
 
 NO incluir líneas con estas palabras:
 ✗ AHORRO, DESCUENTO, DESC, DTO, REBAJA, PROMOCION, PROMO, OFERTA
-✗ IVA, IMPUESTO, SUBTOTAL, TOTAL A PAGAR, GRAN TOTAL
-✗ CAMBIO, EFECTIVO, TARJETA, REDEBAN, CREDITO, DEBITO
+✗ IVA, IMPUESTO, SUBTOTAL, TOTAL A PAGAR, GRAN TOTAL, VALOR TOTAL
+✗ CAMBIO, EFECTIVO, ITEMS COMPRADOS, PRECIO FINAL
 ✗ GRACIAS, VUELVA PRONTO, NIT, RESOLUCION DIAN
 
+MÉTODOS DE PAGO (CRÍTICO - NO SON PRODUCTOS):
+✗ TARJETA, CREDITO, DEBITO, REDEBAN, DATAFONO, POS
+✗ MASTERCARD, VISA, AMERICAN EXPRESS, AMEX, DINERS
+✗ PSE, NEQUI, DAVIPLATA, BANCOLOMBIA, TRANSFERENCIA
+
 EJEMPLOS:
+✗ "RM HAS MASTERCARD" → MÉTODO DE PAGO
+✗ "TARJ CRE/DEB REDEBAN" → MÉTODO DE PAGO
 ✗ "14476 AHORRO 20%" → DESCUENTO
 ✗ "IVA 19%" → IMPUESTO
 ✗ "SUBTOTAL 45000" → RESUMEN

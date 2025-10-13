@@ -198,6 +198,14 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
 
         return True
 
+    def normalizar_para_comparacion(texto: str) -> str:
+        """Normaliza texto para comparación estricta"""
+        texto = texto.upper().strip()
+        texto = re.sub(r"[^\w\s]", "", texto)  # Quitar puntuación
+        texto = re.sub(r"\s+", " ", texto)  # Espacios únicos
+        texto = re.sub(r"\s+\d+[A-Z]*$", "", texto)  # Quitar números finales
+        return texto
+
     def calcular_nivel_confianza(codigo: str, nombre: str, precio: float) -> int:
         """
         Calcula el nivel de confianza del producto
@@ -283,104 +291,62 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     productos = productos_validos
 
     # ========================================
-    # PASO 2: AGRUPAR POR CÓDIGO (NIVEL 1)
+    # PASO 2: AGRUPAR POR NOMBRE + PRECIO (CRÍTICO PARA VIDEOS)
     # ========================================
-    productos_con_codigo = {}
-    productos_sin_codigo = []
+    # En videos, Claude lee mal los códigos creando "falsos diferentes"
+    # SOLUCIÓN: Agrupar por (NOMBRE + PRECIO) primero
+
+    productos_unicos = {}
 
     for prod in productos:
         codigo = str(prod.get("codigo", "")).strip()
-        nombre = str(prod.get("nombre", "")).strip()
+        nombre = str(prod.get("nombre", "")).strip().upper()
         precio = prod.get("precio", 0)
         nivel = prod.get("nivel_confianza", 3)
 
-        if es_codigo_valido(codigo):
-            if codigo not in productos_con_codigo:
-                productos_con_codigo[codigo] = prod
-            else:
-                # Ya existe - mantener el mejor
-                prod_existente = productos_con_codigo[codigo]
+        # Normalizar nombre para comparación
+        nombre_norm = normalizar_para_comparacion(nombre)
 
-                # Prioridad 1: Nivel de confianza
+        # Clave ÚNICA: Nombre normalizado + Precio
+        # Esto agrupa "CREMA DE LECHE U $22865" aunque tenga códigos diferentes
+        clave_unica = (nombre_norm, precio)
+
+        if clave_unica not in productos_unicos:
+            productos_unicos[clave_unica] = prod
+        else:
+            # Ya existe producto similar - mantener el MEJOR
+            prod_existente = productos_unicos[clave_unica]
+
+            # Prioridad 1: Con código válido
+            tiene_codigo_actual = es_codigo_valido(codigo)
+            tiene_codigo_existente = es_codigo_valido(prod_existente.get("codigo", ""))
+
+            if tiene_codigo_actual and not tiene_codigo_existente:
+                productos_unicos[clave_unica] = prod
+            elif not tiene_codigo_actual and tiene_codigo_existente:
+                pass  # Mantener el existente
+            else:
+                # Ambos tienen o no tienen código
+                # Prioridad 2: Mejor nivel de confianza
                 if nivel < prod_existente.get("nivel_confianza", 3):
-                    productos_con_codigo[codigo] = prod
-                # Prioridad 2: Nombre más descriptivo
+                    productos_unicos[clave_unica] = prod
+                # Prioridad 3: Nombre más completo
                 elif nivel == prod_existente.get("nivel_confianza", 3):
                     if len(nombre) > len(prod_existente.get("nombre", "")):
-                        productos_con_codigo[codigo] = prod
-        else:
-            productos_sin_codigo.append(prod)
+                        productos_unicos[clave_unica] = prod
 
-    logger.info(f"   📊 NIVEL 1 (Código): {len(productos_con_codigo)} productos")
-    logger.info(f"   📊 NIVEL 2/3 (Sin código): {len(productos_sin_codigo)} productos")
+    # Convertir a lista
+    productos_con_codigo = list(productos_unicos.values())
+    productos_sin_codigo = []  # Ya no necesitamos este paso
 
-    # ========================================
-    # PASO 3: DEDUPLICAR SIN CÓDIGO (NIVEL 2/3)
-    # ========================================
-
-    def normalizar_para_comparacion(texto: str) -> str:
-        """Normaliza texto para comparación"""
-        texto = texto.upper().strip()
-        texto = re.sub(r"[^\w\s]", "", texto)
-        texto = re.sub(r"\s+", " ", texto)
-        texto = re.sub(r"\s+\d+[A-Z]*$", "", texto)
-        return texto
-
-    productos_unicos_sin_codigo = []
-
-    for prod in productos_sin_codigo:
-        nombre = str(prod.get("nombre", "")).strip()
-        precio = prod.get("precio", 0)
-        nivel = prod.get("nivel_confianza", 3)
-
-        nombre_normalizado = normalizar_para_comparacion(nombre)
-        es_duplicado = False
-
-        for prod_existente in productos_unicos_sin_codigo:
-            nombre_existente = str(prod_existente.get("nombre", "")).strip()
-            nombre_existente_normalizado = normalizar_para_comparacion(nombre_existente)
-            precio_existente = prod_existente.get("precio", 0)
-
-            # Calcular similitud
-            similitud = SequenceMatcher(
-                None, nombre_normalizado, nombre_existente_normalizado
-            ).ratio()
-
-            # Calcular similitud de precio
-            if precio > 0 and precio_existente > 0:
-                diff_precio = abs(precio - precio_existente) / max(
-                    precio, precio_existente
-                )
-                precios_similares = diff_precio < 0.05  # 5% tolerancia
-            else:
-                precios_similares = False
-
-            # ✅ CRITERIO DE DUPLICADO: MÁS AGRESIVO para videos
-            # En videos, el mismo producto aparece en MUCHOS frames
-            # 70%+ similitud O 60%+ con precios similares
-            if similitud >= 0.70:  # Antes 0.85 - DEMASIADO permisivo
-                es_duplicado = True
-                # Mantener el de mejor nivel
-                if nivel < prod_existente.get("nivel_confianza", 3):
-                    prod_existente.update(prod)
-                elif nivel == prod_existente.get("nivel_confianza", 3) and len(
-                    nombre
-                ) > len(nombre_existente):
-                    prod_existente["nombre"] = nombre
-                break
-            elif similitud >= 0.60 and precios_similares:  # Antes 0.75
-                es_duplicado = True
-                if nivel < prod_existente.get("nivel_confianza", 3):
-                    prod_existente.update(prod)
-                break
-
-        if not es_duplicado:
-            productos_unicos_sin_codigo.append(prod)
+    logger.info(
+        f"   📊 Agrupados por Nombre+Precio: {len(productos_unicos)} productos únicos"
+    )
 
     # ========================================
-    # PASO 4: COMBINAR RESULTADOS
+    # PASO 3: RESULTADO FINAL
     # ========================================
-    resultado_final = list(productos_con_codigo.values()) + productos_unicos_sin_codigo
+    resultado_final = list(productos_unicos.values())
 
     # ========================================
     # ESTADÍSTICAS FINALES
