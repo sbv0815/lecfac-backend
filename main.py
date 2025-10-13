@@ -67,6 +67,7 @@ from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
 import time
+from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
 
 
 # ==========================================
@@ -910,29 +911,42 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
         try:
             # 5.1 Crear/obtener establecimiento
-            cadena = detectar_cadena(establecimiento)
-            establecimiento_id = obtener_o_crear_establecimiento(
-                establecimiento, cadena
+            establecimiento, cadena = procesar_establecimiento(
+                establecimiento_raw=establecimiento,
+                productos=productos_unicos,
+                total=total,
+            )
+
+            establecimiento_id = obtener_o_crear_establecimiento_id(
+                conn=conn, establecimiento=establecimiento, cadena=cadena
             )
 
             # 5.2 Crear factura
+            # 5.2 Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
+                # 🆕 Si no hay fecha detectada, usar fecha de cargue
+                fecha_final = (
+                    fecha
+                    if (fecha and fecha.strip())
+                    else datetime.now().date().isoformat()
+                )
+
                 cursor.execute(
                     """
-                    INSERT INTO facturas (
-                        usuario_id, establecimiento_id, establecimiento, cadena,
-                        total_factura, fecha_factura, fecha_cargue,
-                        productos_detectados, estado_validacion
+                INSERT INTO facturas (
+                    usuario_id, establecimiento_id, establecimiento, cadena,
+                    total_factura, fecha_factura, fecha_cargue,
+                    productos_detectados, estado_validacion
                     ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
                     RETURNING id
-                """,
+                    """,
                     (
                         usuario_id,
                         establecimiento_id,
                         establecimiento,
                         cadena,
                         total,
-                        fecha,
+                        fecha_final,  # ✅ Usa fecha detectada o fecha actual
                         len(productos_unicos),
                     ),
                 )
