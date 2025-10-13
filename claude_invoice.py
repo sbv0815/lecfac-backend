@@ -31,112 +31,165 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT MEJORADO - SISTEMA 3 NIVELES ==========
-        prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
+        # ========== PROMPT ULTRA MEJORADO - CONTEXTO COLOMBIANO ==========
+        prompt = """Eres un experto en facturas de supermercados COLOMBIANOS.
 
-🎯 OBJETIVO: Extraer SOLO los productos QUE REALMENTE VES en la imagen.
-
-⚠️ CRÍTICO: NO INVENTES productos. Solo incluye lo que CLARAMENTE lees.
+🎯 OBJETIVO: Extraer SOLO los productos que el cliente COMPRÓ y PAGÓ.
 
 # 🔑 REGLA DE ORO
-"Si no estás 100% seguro de que es un producto REAL, NO lo incluyas"
+Lee CUIDADOSAMENTE y extrae SOLO lo que está en la SECCIÓN DE PRODUCTOS.
 
-Necesitamos:
-1. ESTABLECIMIENTO - Para saber dónde compró
-2. CÓDIGO del producto - Para identificación única y comparación de precios
-3. NOMBRE del producto - Para saber QUÉ compró
-4. PRECIO - Para comparar entre tiendas
-5. CANTIDAD (si está visible)
+# 📋 CÓMO LEER UNA FACTURA COLOMBIANA
 
-# ✅ TIPOS DE PRODUCTOS A INCLUIR
+Las facturas tienen SECCIONES bien definidas:
 
-NIVEL 1 - ALTA CONFIANZA (Código + Nombre + Precio):
-✓ "7702993047842 LECHE ALPINA 2190" → PERFECTO
-✓ "116 BANANO URABA 5425" → PERFECTO
+## SECCIÓN 1: HEADER (No extraer)
+- Nombre del establecimiento (ÉXITO, JUMBO, OLÍMPICA, etc)
+- NIT, dirección, teléfono
+- Número de factura
+- Fecha y hora
 
-NIVEL 2 - MEDIA CONFIANZA (Nombre + Precio sin código):
-✓ "LIMON TAHITI 3500" → INCLUIR (nombre + precio)
-✓ "SAL REFISAL 1200" → INCLUIR (nombre + precio)
-✓ "AJO NACIONAL 800" → INCLUIR (productos baratos válidos)
+## SECCIÓN 2: PRODUCTOS (✅ EXTRAER AQUÍ)
+Busca la palabra "PLU" o "CODIGO" seguida de "DETALLE" y "PRECIO"
 
-NIVEL 3 - BAJA CONFIANZA (Parcial pero útil):
-✓ "HUEVOS AA" → INCLUIR (solo nombre, precio 0)
-✓ "234 5600" → INCLUIR (código + precio, nombre vacío)
+Formato típico:
+```
+PLU      DETALLE                    PRECIO
+123456   PRODUCTO 1                 10,000
+789012   PRODUCTO 2                 25,500
+```
 
-# ❌ LO QUE NO DEBES INCLUIR (BASURA OBVIA)
+⚠️ CLAVE: Busca "Total Item: X" al final de esta sección
+- Si dice "Total Item: 1" → Solo hay 1 producto
+- Si dice "Total Item: 3" → Solo hay 3 productos
+- NO extraigas MÁS productos que este número
 
-NO incluir líneas con estas palabras:
-✗ AHORRO, DESCUENTO, DESC, DTO, REBAJA, PROMOCION, PROMO, OFERTA
-✗ IVA, IMPUESTO, SUBTOTAL, TOTAL A PAGAR, GRAN TOTAL, VALOR TOTAL
-✗ CAMBIO, EFECTIVO, ITEMS COMPRADOS, PRECIO FINAL
-✗ GRACIAS, VUELVA PRONTO, NIT, RESOLUCION DIAN
+## SECCIÓN 3: PROMOCIONES Y DESCUENTOS (❌ NO extraer)
+Aparece ENTRE los productos y el total final:
+```
+1 1/u x 26.900  V.Ahorro 4.035  ← ESTO ES DESCUENTO, NO PRODUCTO
+SUBTOTAL         26,900
+DESCUENTO         4,035
+AHORRO            4,035
+```
 
-MÉTODOS DE PAGO (CRÍTICO - NO SON PRODUCTOS):
-✗ TARJETA, CREDITO, DEBITO, REDEBAN, DATAFONO, POS
-✗ MASTERCARD, VISA, AMERICAN EXPRESS, AMEX, DINERS
-✗ PSE, NEQUI, DAVIPLATA, BANCOLOMBIA, TRANSFERENCIA
+Palabras clave de descuentos:
+- V.Ahorro, V. Ahorro, Ahorro
+- Descuento, Dto, Rebaja
+- Promoción, Promo, Oferta
+- 2x1, 3x2, %OFF
 
-EJEMPLOS:
-✗ "RM HAS MASTERCARD" → MÉTODO DE PAGO
-✗ "TARJ CRE/DEB REDEBAN" → MÉTODO DE PAGO
-✗ "14476 AHORRO 20%" → DESCUENTO
-✗ "IVA 19%" → IMPUESTO
-✗ "SUBTOTAL 45000" → RESUMEN
-✗ "GRACIAS POR SU COMPRA" → MENSAJE
+## SECCIÓN 4: TOTALES (❌ NO extraer)
+```
+SUBTOTAL         26,900
+DESCUENTO         4,035
+VALOR TOTAL      22,865  ← Este es el total DESPUÉS del descuento
+```
 
-# 📝 REGLAS PARA CÓDIGOS
+## SECCIÓN 5: PAGO (❌ NO extraer)
+```
+FORMA PAGO: CONTADO
+EFECTIVO
+TARJETA CREDITO
+MASTERCARD, VISA, etc
+CAMBIO: 17,150
+```
 
-CÓDIGOS VÁLIDOS (solo dígitos, 1-13 caracteres):
-✓ "3" → código válido (PLU frutas)
-✓ "09" → código válido
-✓ "116" → código válido (PLU común)
-✓ "7702993047842" → código válido (EAN-13)
+## SECCIÓN 6: INFO FISCAL (❌ NO extraer)
+- RES DIAN
+- Discriminación tarifas
+- Códigos QR, Cufe, etc
 
-CÓDIGOS INVÁLIDOS:
-✗ "343718DF" → tiene letras, código: ""
-✗ "REF123" → tiene letras, código: ""
-✗ "" → vacío, código: ""
+# ✅ REGLAS PARA EXTRAER PRODUCTOS
 
-# 🔍 NOMBRES DE PRODUCTOS
+1. **Busca "Total Item: X"** - Este número te dice cuántos productos REALMENTE hay
+2. **Solo extrae de la sección de productos** (entre el header y los totales)
+3. **Cada producto tiene:**
+   - Código (PLU o EAN): números a la izquierda
+   - Nombre: descripción en el centro
+   - Precio: número a la derecha
 
-ACEPTA nombres cortos si son productos REALES:
-✓ "SAL" → VÁLIDO (producto real)
-✓ "AJO" → VÁLIDO (producto real)
-✓ "PAN" → VÁLIDO (producto real)
-✓ "TÉ" → VÁLIDO (producto real)
+4. **NO extraigas:**
+   - Líneas de descuento (tienen palabras: Ahorro, Descuento, V.Ahorro)
+   - Subtotales, totales
+   - Métodos de pago
+   - Info administrativa
 
-NO aceptes solo unidades o fragmentos:
-✗ "KG" → NO es producto
-✗ "X" → NO es producto
-✗ "/U" → NO es producto
+# 📝 EJEMPLO COMPLETO
 
-# 💰 PRECIOS
+```
+EXITO NIZA
+NIT 890900689
+2025-10-04 08:24:58
 
-ACEPTA precios desde $50 (productos baratos son válidos):
-✓ 50 → válido
-✓ 200 → válido (chicles, dulces)
-✓ 5600 → válido
-✓ 45000 → válido
+PLU         DETALLE                    PRECIO
+477476      Crema De Leche U           22,865
+123456      Pan Integral Bimbo         8,500
+Total Item: 2
 
-NO aceptes:
-✗ 0 → sin precio
-✗ Negativos → descuentos
+1 1/u x 26.900  V.Ahorro 4.035  ← NO ES PRODUCTO
+SUBTOTAL                           31,365
+DESCUENTO                           4,035
+VALOR TOTAL                        27,330
+FORMA PAGO: EFECTIVO
+```
 
-# 🏪 ESTABLECIMIENTOS
+**Respuesta CORRECTA:**
+```json
+{
+  "establecimiento": "ÉXITO",
+  "fecha": "2025-10-04",
+  "total": 27330,
+  "productos": [
+    {
+      "codigo": "477476",
+      "nombre": "Crema De Leche U",
+      "cantidad": 1,
+      "precio": 22865
+    },
+    {
+      "codigo": "123456",
+      "nombre": "Pan Integral Bimbo",
+      "cantidad": 1,
+      "precio": 8500
+    }
+  ]
+}
+```
 
-Si ves: JUMBO, ÉXITO, CARULLA, OLÍMPICA, ARA, D1, ALKOSTO, etc.
-Usa SOLO el nombre principal sin sucursal:
-"JUMBO BULEVAR" → "JUMBO"
-"ÉXITO AMERICAS" → "ÉXITO"
+# 🚨 ERRORES COMUNES A EVITAR
 
-# 📅 TOTAL Y FECHA
+❌ **ERROR 1: Incluir descuentos como productos**
+```
+"1 1/u x 26.900 V.Ahorro 4.035"  → NO ES PRODUCTO
+```
 
-- El TOTAL suele estar al FINAL de la factura
-- Busca: TOTAL, GRAN TOTAL, TOTAL A PAGAR, VALOR TOTAL
-- Fecha: formato YYYY-MM-DD (2024-12-27)
-- Si no encuentras fecha o total, pon null
+❌ **ERROR 2: Ignorar "Total Item"**
+```
+Total Item: 1  → Solo hay 1 producto real
+```
+Si ves esto, SOLO debes tener 1 producto en tu respuesta
 
-# 📦 FORMATO JSON
+❌ **ERROR 3: Incluir métodos de pago**
+```
+"MASTERCARD", "VISA", "TARJETA" → NO SON PRODUCTOS
+```
+
+❌ **ERROR 4: Incluir totales**
+```
+"SUBTOTAL 26900" → NO ES PRODUCTO
+"VALOR TOTAL 22865" → NO ES PRODUCTO
+```
+
+# ⚠️ VALIDACIÓN FINAL
+
+Antes de responder, verifica:
+1. ✅ ¿Cuántos productos dice "Total Item"? Tu lista debe tener ESE número
+2. ✅ ¿Todos los productos están en la sección PRODUCTOS? (no en descuentos/totales)
+3. ✅ ¿Ninguno tiene palabras de descuento? (Ahorro, Descuento, Dto)
+4. ✅ ¿La suma de precios es cercana al SUBTOTAL? (antes de descuentos)
+
+# 📦 FORMATO JSON (sin comas en precios)
 
 {
   "establecimiento": "JUMBO",
@@ -145,50 +198,14 @@ Usa SOLO el nombre principal sin sucursal:
   "productos": [
     {
       "codigo": "7702993047842",
-      "nombre": "LECHE ALPINA ENTERA",
-      "cantidad": 2,
-      "precio": 8760
-    },
-    {
-      "codigo": "116",
-      "nombre": "BANANO URABA",
-      "cantidad": 0.878,
-      "precio": 5425
-    },
-    {
-      "codigo": "",
-      "nombre": "SAL REFISAL",
+      "nombre": "CHOCOLATE BT",
       "cantidad": 1,
-      "precio": 1200
-    },
-    {
-      "codigo": "234",
-      "nombre": "LIMON TAHITI",
-      "cantidad": 1,
-      "precio": 3500
+      "precio": 2190
     }
   ]
 }
 
-# ⚠️ IMPORTANTE
-
-1. Precios SIN separadores: 2190 (no 2,190)
-2. Códigos como strings: "116", "09", ""
-3. Si no hay código, pon ""
-4. Si no hay precio, pon 0
-5. Incluye TODOS los productos visibles, incluso con datos parciales
-6. NO incluyas descuentos, IVA, subtotales, mensajes
-
-# 🎯 ESTRATEGIA
-
-Es MEJOR tener:
-- 15 productos donde 12 son perfectos y 3 necesitan revisión
-QUE:
-- 8 productos perfectos pero perdiste 7 productos reales
-
-El usuario puede revisar/corregir después en el editor.
-
-ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
+ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
 
         # ✅ Llamada con HAIKU 3.5
         message = client.messages.create(
