@@ -255,6 +255,31 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
                 "dian",
                 "nit",
                 "autoretenedor",
+                # Métodos de pago - CRÍTICO
+                "mastercard",
+                "visa",
+                "american express",
+                "amex",
+                "diners",
+                "pse",
+                "nequi",
+                "daviplata",
+                "bancolombia",
+                "davivienda",
+                "transferencia",
+                "datafono",
+                "pos",
+                "terminal",
+                # Mensajes adicionales
+                "precio final",
+                "gran total",
+                "valor total",
+                "items comprados",
+                "cajero",
+                "caja",
+                "factura",
+                "ticket",
+                "recibo",
             ]
 
             productos_filtrados = []
