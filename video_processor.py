@@ -137,23 +137,14 @@ def extraer_frames_video(video_path, intervalo=1.0):
         return frames
 
 
-"""
-REEMPLAZAR la función deduplicar_productos() en video_processor.py
-"""
-
-
-"""
-DEDUPLICACIÓN OPTIMIZADA - PRIORIZA: Código, Nombre, Precio
-Reemplazar en video_processor.py
-"""
-
-
 def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     """
-    Deduplicación OPTIMIZADA que prioriza:
-    1. Códigos únicos (EAN/PLU)
-    2. Nombres sin duplicados
-    3. Precios correctos
+    Deduplicación ULTRA MEJORADA con validaciones estrictas
+
+    Prioriza:
+    1. Códigos EAN/PLU válidos
+    2. Nombres descriptivos (no genéricos)
+    3. Precios razonables
     """
     from difflib import SequenceMatcher
     import re
@@ -162,11 +153,93 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         return []
 
     logger.info(
-        f"🔍 Iniciando deduplicación OPTIMIZADA de {len(productos)} productos..."
+        f"🔍 Iniciando deduplicación ULTRA MEJORADA de {len(productos)} productos..."
     )
 
     # ========================================
-    # PASO 1: FILTRAR LÍNEAS NO-PRODUCTO
+    # FUNCIONES AUXILIARES
+    # ========================================
+
+    def es_codigo_valido(codigo: str) -> bool:
+        """Valida si un código es realmente un código de producto"""
+        if not codigo or not isinstance(codigo, str):
+            return False
+
+        codigo = codigo.strip()
+
+        # Muy corto
+        if len(codigo) < 4:
+            return False
+
+        # Muy largo (probablemente error)
+        if len(codigo) > 14:
+            return False
+
+        # Debe ser numérico
+        if not codigo.isdigit():
+            return False
+
+        # Códigos repetitivos (666666, 777777, etc.)
+        digitos_unicos = len(set(codigo))
+        if digitos_unicos == 1:  # Todos los dígitos iguales
+            return False
+
+        # Códigos con más del 70% del mismo dígito
+        if digitos_unicos <= 2 and len(codigo) >= 6:
+            contador_max = max(codigo.count(d) for d in set(codigo))
+            if contador_max / len(codigo) > 0.7:
+                return False
+
+        return True
+
+    def es_nombre_generico(nombre: str) -> bool:
+        """Detecta nombres genéricos que NO son productos reales"""
+        nombre_upper = nombre.upper().strip()
+
+        # Nombres muy cortos
+        if len(nombre_upper) < 3:
+            return True
+
+        # Unidades de medida
+        unidades = ["KGM", "KG", "/KGM", "/KG", "UND", "UNIDADES", "/U", "1/U"]
+        if nombre_upper in unidades:
+            return True
+
+        # Códigos internos
+        codigos_internos = ["PLU", "SKU", "COD", "REF"]
+        if nombre_upper in codigos_internos:
+            return True
+
+        # Solo contiene unidades de medida y números
+        if re.match(r"^[\d\s/KGM]+$", nombre_upper):
+            return True
+
+        # Nombres que son solo ratios (875/KGM, 220/KGM, etc.)
+        if re.match(r"^\d+/\w+$", nombre_upper):
+            return True
+
+        return False
+
+    def es_precio_valido(precio: float, nombre: str = "") -> bool:
+        """Valida si un precio es razonable"""
+        # Precio debe ser positivo
+        if precio <= 0:
+            return False
+
+        # Precios sospechosamente bajos (< $100)
+        # Estos suelen ser errores o líneas de descuento
+        if precio < 100:
+            return False
+
+        # Precios extremadamente altos (> $500,000)
+        # Probablemente error de lectura
+        if precio > 500000:
+            return False
+
+        return True
+
+    # ========================================
+    # PASO 1: FILTRAR LÍNEAS NO-PRODUCTO (MEJORADO)
     # ========================================
     palabras_filtro = [
         # Descuentos y promociones
@@ -182,6 +255,9 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         "3x2",
         "dcto",
         "precio final",
+        "v ahorro",
+        "vahorro",
+        "ahorro v",
         # Información de pago
         "iva",
         "impuesto",
@@ -195,7 +271,14 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         "debito",
         "visa",
         "mastercard",
-        # Otros
+        # Unidades de medida (NO son productos)
+        "kgm",
+        "/kgm",
+        "kg/",
+        "/kg",
+        "und",
+        "unidades",
+        # Información de tienda
         "establecimiento",
         "fecha",
         "hora",
@@ -204,44 +287,71 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         "gracias",
         "vuelva pronto",
         "nit",
+        "autoretenedor",
+        "toshiba",
+        "global commerce",
+        "cadena s.a",
+        "cadena s.r",
+        "cadena",
+        "commerce solutions",
+        # Términos administrativos
+        "rpad",
+        "sito la colina",
+        "sitio la colina",
+        "bito la colina",
     ]
 
     productos_validos = []
     lineas_filtradas = 0
+    razones_filtrado = {}
 
     for prod in productos:
         nombre = str(prod.get("nombre", "")).lower().strip()
         codigo = str(prod.get("codigo", "")).strip()
         precio = prod.get("precio", 0)
 
-        # ❌ FILTRO 1: Palabras de descuento/pago
+        razon = None
+
+        # ❌ FILTRO 1: Palabras de descuento/pago/administrativa
         if any(palabra in nombre for palabra in palabras_filtro):
+            razon = "palabra_filtro"
             lineas_filtradas += 1
+            razones_filtrado[razon] = razones_filtrado.get(razon, 0) + 1
             continue
 
-        # ❌ FILTRO 2: Nombres muy cortos (ruido)
-        if len(nombre) < 3:
+        # ❌ FILTRO 2: Nombres genéricos
+        if es_nombre_generico(nombre):
+            razon = "nombre_generico"
             lineas_filtradas += 1
+            razones_filtrado[razon] = razones_filtrado.get(razon, 0) + 1
             continue
 
-        # ❌ FILTRO 3: Solo números (no es nombre de producto)
-        if re.match(r"^[\d\s\-\.]+$", nombre):
+        # ❌ FILTRO 3: Solo números o caracteres especiales
+        if re.match(r"^[\d\s\-\./]+$", nombre):
+            razon = "solo_numeros"
             lineas_filtradas += 1
+            razones_filtrado[razon] = razones_filtrado.get(razon, 0) + 1
             continue
 
-        # ❌ FILTRO 4: Precio cero o negativo (error de OCR)
-        if precio <= 0:
+        # ❌ FILTRO 4: Precio inválido
+        if not es_precio_valido(precio, nombre):
+            razon = "precio_invalido"
             lineas_filtradas += 1
+            razones_filtrado[razon] = razones_filtrado.get(razon, 0) + 1
             continue
 
         # ✅ Producto válido
         productos_validos.append(prod)
 
     logger.info(f"   🗑️ Paso 1: {lineas_filtradas} líneas no-producto eliminadas")
+    if razones_filtrado:
+        for razon, count in razones_filtrado.items():
+            logger.info(f"      - {razon}: {count}")
+
     productos = productos_validos
 
     # ========================================
-    # PASO 2: AGRUPAR POR CÓDIGO (MÁXIMA PRIORIDAD)
+    # PASO 2: AGRUPAR POR CÓDIGO VÁLIDO (MÁXIMA PRIORIDAD)
     # ========================================
     productos_con_codigo = {}
     productos_sin_codigo = []
@@ -251,9 +361,8 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         nombre = str(prod.get("nombre", "")).strip()
         precio = prod.get("precio", 0)
 
-        # ✅ TIENE CÓDIGO VÁLIDO (6+ dígitos)
-        if codigo and len(codigo) >= 6 and codigo.isdigit():
-
+        # ✅ TIENE CÓDIGO VÁLIDO
+        if es_codigo_valido(codigo):
             if codigo not in productos_con_codigo:
                 # Primera vez que vemos este código
                 productos_con_codigo[codigo] = prod
@@ -261,37 +370,38 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
                 # Ya existe este código - mantener el mejor
                 prod_existente = productos_con_codigo[codigo]
 
-                # Criterio 1: Nombre más largo (más completo)
+                # Criterio 1: Nombre más largo y descriptivo
                 if len(nombre) > len(prod_existente.get("nombre", "")):
                     productos_con_codigo[codigo] = prod
-                # Criterio 2: Si igual longitud, mantener precio más alto (más confiable)
+                # Criterio 2: Si igual longitud, mantener precio más confiable
                 elif len(nombre) == len(prod_existente.get("nombre", "")):
-                    if precio > prod_existente.get("precio", 0):
-                        productos_con_codigo[codigo] = prod
-
+                    if abs(precio - prod_existente.get("precio", 0)) < 100:
+                        # Precios similares, mantener el más alto
+                        if precio > prod_existente.get("precio", 0):
+                            productos_con_codigo[codigo] = prod
         else:
             # Sin código válido - requiere análisis por nombre
             productos_sin_codigo.append(prod)
 
-    logger.info(f"   ✅ Paso 2: {len(productos_con_codigo)} productos con código único")
+    logger.info(
+        f"   ✅ Paso 2: {len(productos_con_codigo)} productos con código válido"
+    )
     logger.info(
         f"   🔍 Paso 3: {len(productos_sin_codigo)} sin código (analizando por nombre...)"
     )
 
     # ========================================
-    # PASO 3: DEDUPLICAR SIN CÓDIGO (POR NOMBRE + PRECIO)
+    # PASO 3: DEDUPLICAR SIN CÓDIGO (MÁS ESTRICTO)
     # ========================================
 
     def normalizar_para_comparacion(texto: str) -> str:
         """Normaliza texto para comparación más flexible"""
-        # Convertir a mayúsculas
         texto = texto.upper().strip()
-        # Remover caracteres especiales comunes en OCR malo
+        # Remover caracteres especiales
         texto = re.sub(r"[^\w\s]", "", texto)
         # Remover espacios múltiples
         texto = re.sub(r"\s+", " ", texto)
-        # Remover números al final (peso/tamaño) para mejor matching
-        # Ej: "ARROZ DIANA 500G" y "ARROZ DIANA 5OOG" se vuelven "ARROZ DIANA"
+        # Remover números y unidades al final
         texto = re.sub(r"\s+\d+[A-Z]*$", "", texto)
         return texto
 
@@ -321,20 +431,22 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
                 diff_precio = abs(precio - precio_existente) / max(
                     precio, precio_existente
                 )
-                precios_similares = diff_precio < 0.05  # Máximo 5% de diferencia
+                precios_similares = (
+                    diff_precio < 0.03
+                )  # Máximo 3% de diferencia (más estricto)
             else:
                 precios_similares = False
 
-            # ✅ CRITERIO DE DUPLICADO:
-            # Opción A: 85%+ de similitud en nombre
-            # Opción B: 70%+ de similitud Y precios casi idénticos
-            if similitud >= 0.85:
+            # ✅ CRITERIO DE DUPLICADO (MÁS ESTRICTO):
+            # Opción A: 90%+ de similitud en nombre (antes era 85%)
+            # Opción B: 80%+ de similitud Y precios casi idénticos
+            if similitud >= 0.90:
                 es_duplicado = True
-                # Actualizar con el nombre más completo
+                # Mantener el nombre más completo
                 if len(nombre) > len(nombre_existente):
                     prod_existente["nombre"] = nombre
                 break
-            elif similitud >= 0.70 and precios_similares:
+            elif similitud >= 0.80 and precios_similares:
                 es_duplicado = True
                 if len(nombre) > len(nombre_existente):
                     prod_existente["nombre"] = nombre
@@ -350,7 +462,7 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     resultado = list(productos_con_codigo.values()) + productos_unicos_sin_codigo
 
     # ========================================
-    # PASO 5: VALIDACIÓN FINAL DE CALIDAD
+    # PASO 5: VALIDACIÓN FINAL ESTRICTA
     # ========================================
     resultado_final = []
     productos_rechazados = 0
@@ -363,17 +475,17 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
         # Validaciones finales
         validaciones_ok = True
 
-        # Validación 1: Nombre no vacío
-        if not nombre or len(nombre) < 3:
+        # Validación 1: Nombre descriptivo
+        if not nombre or len(nombre) < 4 or es_nombre_generico(nombre):
             validaciones_ok = False
 
         # Validación 2: Precio válido
-        if precio <= 0:
+        if not es_precio_valido(precio, nombre):
             validaciones_ok = False
 
-        # Validación 3: Si tiene código, debe ser numérico y >= 6 dígitos
-        if codigo and (not codigo.isdigit() or len(codigo) < 6):
-            # Código inválido - limpiar pero mantener producto
+        # Validación 3: Si tiene código, debe ser válido
+        if codigo and not es_codigo_valido(codigo):
+            # Código inválido - limpiar pero mantener producto si es bueno
             prod["codigo"] = ""
 
         if validaciones_ok:
@@ -392,7 +504,7 @@ def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     logger.info(f"   📊 Productos detectados: {total_original}")
     logger.info(f"   🗑️  Líneas filtradas: {lineas_filtradas}")
     logger.info(f"   ✅ Productos únicos: {len(resultado_final)}")
-    logger.info(f"   🔢 Con código EAN/PLU: {len(productos_con_codigo)}")
+    logger.info(f"   🔢 Con código válido: {len(productos_con_codigo)}")
     logger.info(f"   📝 Sin código (por nombre): {len(productos_unicos_sin_codigo)}")
     logger.info(f"   ❌ Rechazados (calidad): {productos_rechazados}")
     logger.info(
