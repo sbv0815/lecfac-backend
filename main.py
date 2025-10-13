@@ -1,14 +1,6 @@
-"""
-main.py - Servidor FastAPI COMPLETO para LecFac
-VERSIÓN CORREGIDA - Con TODAS las funcionalidades, sin duplicados
-"""
-
-# ==========================================
-# IMPORTS ESTÁNDAR
-# ==========================================
 import os
 import tempfile
-import traceback
+import traceback  # ✅ MANTENER ESTE
 import json
 import uuid
 from datetime import datetime

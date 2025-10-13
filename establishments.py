@@ -28,8 +28,11 @@ ESTABLECIMIENTOS_CONOCIDOS = {
     # Hard Discount
     "D1": "D1",
     "ARA": "ARA",
+    "JUSTO Y BUENO": "JUSTO & BUENO",
+    "JUSTO & BUENO": "JUSTO & BUENO",
     # Supermercados regionales
     "SUPERINTER": "SUPERINTER",
+    "LA 14": "LA 14",
     "SURTIMAX": "SURTIMAX",
     "COLSUBSIDIO": "COLSUBSIDIO",
     "CAFAM": "CAFAM",
@@ -71,6 +74,9 @@ CADENAS_COMERCIALES = {
     "D1": "Koba Colombia",
     # Makro
     "MAKRO": "Makro",
+    # Justo & Bueno
+    "JUSTO & BUENO": "Justo & Bueno",
+    "JUSTO Y BUENO": "Justo & Bueno",
     # Farmacias
     "FARMATODO": "Farmatodo",
     "CRUZ VERDE": "Cruz Verde",
@@ -307,14 +313,15 @@ def obtener_o_crear_establecimiento_id(
         cadena = obtener_cadena(establecimiento)
 
     # Buscar establecimiento existente
+    # ✅ CORRECCIÓN: Usar nombre_normalizado (no "nombre")
     if os.environ.get("DATABASE_TYPE") == "postgresql":
         cursor.execute(
-            "SELECT id FROM establecimientos WHERE UPPER(nombre) = UPPER(%s)",
+            "SELECT id FROM establecimientos WHERE UPPER(nombre_normalizado) = UPPER(%s)",
             (establecimiento,),
         )
     else:
         cursor.execute(
-            "SELECT id FROM establecimientos WHERE UPPER(nombre) = UPPER(?)",
+            "SELECT id FROM establecimientos WHERE UPPER(nombre_normalizado) = UPPER(?)",
             (establecimiento,),
         )
 
@@ -324,15 +331,16 @@ def obtener_o_crear_establecimiento_id(
         return result[0]
 
     # Crear nuevo establecimiento
+    # ✅ CORRECCIÓN: Usar nombre_normalizado (no "nombre")
     if os.environ.get("DATABASE_TYPE") == "postgresql":
         cursor.execute(
-            "INSERT INTO establecimientos (nombre, cadena) VALUES (%s, %s) RETURNING id",
+            "INSERT INTO establecimientos (nombre_normalizado, cadena) VALUES (%s, %s) RETURNING id",
             (establecimiento, cadena),
         )
         establecimiento_id = cursor.fetchone()[0]
     else:
         cursor.execute(
-            "INSERT INTO establecimientos (nombre, cadena) VALUES (?, ?)",
+            "INSERT INTO establecimientos (nombre_normalizado, cadena) VALUES (?, ?)",
             (establecimiento, cadena),
         )
         establecimiento_id = cursor.lastrowid
