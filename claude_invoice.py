@@ -6,10 +6,13 @@ from typing import Dict
 
 
 def parse_invoice_with_claude(image_path: str) -> Dict:
-    """Procesa factura con Claude Vision API - OPTIMIZADO PARA FACTURAS LARGAS"""
+    """
+    Procesa factura con Claude Vision API
+    Sistema de 3 Niveles de Confianza
+    """
     try:
         print("=" * 70)
-        print("🤖 PROCESANDO CON CLAUDE HAIKU 3.5")
+        print("🤖 PROCESANDO CON CLAUDE HAIKU 3.5 - Sistema 3 Niveles")
         print("=" * 70)
 
         # Leer imagen
@@ -28,52 +31,104 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT MEJORADO PARA FACTURAS LARGAS ==========
+        # ========== PROMPT MEJORADO - SISTEMA 3 NIVELES ==========
         prompt = """Eres un experto en análisis de facturas de supermercados colombianos.
 
-🎯 CONTEXTO IMPORTANTE:
-Esta imagen puede ser UNA de VARIAS imágenes de la MISMA factura.
-Las facturas largas se capturan en múltiples fotos secuenciales.
+🎯 OBJETIVO: Extraer TODOS los productos reales, incluso si tienen datos incompletos.
 
-# OBJETIVO
-Extraer: establecimiento, fecha, total y CADA producto REAL con su código.
+# 🔑 FILOSOFÍA CLAVE
+"Es mejor capturar un producto con 80% de información que perderlo completamente"
 
-# ⚠️ CRÍTICO: BUSCAR EL TOTAL
-El TOTAL suele estar en la ÚLTIMA imagen de la secuencia.
-Busca palabras como: TOTAL, GRAN TOTAL, TOTAL A PAGAR, VALOR TOTAL
-El total es el número MÁS GRANDE cerca del final de la factura.
+Necesitamos:
+1. ESTABLECIMIENTO - Para saber dónde compró
+2. CÓDIGO del producto - Para identificación única y comparación de precios
+3. NOMBRE del producto - Para saber QUÉ compró
+4. PRECIO - Para comparar entre tiendas
+5. CANTIDAD (si está visible)
 
-# IMPORTANTE: DETECTAR DESCUENTOS
-⚠️ NO incluyas líneas de descuentos. Los descuentos tienen palabras:
-AHORRO, DESCUENTO, DESC, DTO, REBAJA, PROMOCION, PROMO, OFERTA, %, 2X1, 3X2
+# ✅ TIPOS DE PRODUCTOS A INCLUIR
 
-EJEMPLOS DE DESCUENTOS (NO incluir):
+NIVEL 1 - ALTA CONFIANZA (Código + Nombre + Precio):
+✓ "7702993047842 LECHE ALPINA 2190" → PERFECTO
+✓ "116 BANANO URABA 5425" → PERFECTO
+
+NIVEL 2 - MEDIA CONFIANZA (Nombre + Precio sin código):
+✓ "LIMON TAHITI 3500" → INCLUIR (nombre + precio)
+✓ "SAL REFISAL 1200" → INCLUIR (nombre + precio)
+✓ "AJO NACIONAL 800" → INCLUIR (productos baratos válidos)
+
+NIVEL 3 - BAJA CONFIANZA (Parcial pero útil):
+✓ "HUEVOS AA" → INCLUIR (solo nombre, precio 0)
+✓ "234 5600" → INCLUIR (código + precio, nombre vacío)
+
+# ❌ LO QUE NO DEBES INCLUIR (BASURA OBVIA)
+
+NO incluir líneas con estas palabras:
+✗ AHORRO, DESCUENTO, DESC, DTO, REBAJA, PROMOCION, PROMO, OFERTA
+✗ IVA, IMPUESTO, SUBTOTAL, TOTAL A PAGAR, GRAN TOTAL
+✗ CAMBIO, EFECTIVO, TARJETA, REDEBAN, CREDITO, DEBITO
+✗ GRACIAS, VUELVA PRONTO, NIT, RESOLUCION DIAN
+
+EJEMPLOS:
 ✗ "14476 AHORRO 20%" → DESCUENTO
-✗ "625 DESC ESPECIAL" → DESCUENTO
-✗ "750 PROMO 2X1" → DESCUENTO
+✗ "IVA 19%" → IMPUESTO
+✗ "SUBTOTAL 45000" → RESUMEN
+✗ "GRACIAS POR SU COMPRA" → MENSAJE
 
-EJEMPLOS DE PRODUCTOS REALES (SÍ incluir):
-✓ "14476 LIMON TAHITI" → PRODUCTO
-✓ "625 ZANAHORIA GRL" → PRODUCTO
-✓ "7702993047842 LECHE ALPINA" → PRODUCTO
+# 📝 REGLAS PARA CÓDIGOS
 
-# ESTABLECIMIENTOS
-Si contiene: JUMBO, ÉXITO, CARULLA, OLÍMPICA, ARA, D1, ALKOSTO, etc.
-Usa SOLO el nombre principal: "JUMBO BULEVAR" → "JUMBO"
+CÓDIGOS VÁLIDOS (solo dígitos, 1-13 caracteres):
+✓ "3" → código válido (PLU frutas)
+✓ "09" → código válido
+✓ "116" → código válido (PLU común)
+✓ "7702993047842" → código válido (EAN-13)
 
-# CÓDIGOS DE PRODUCTOS
-Códigos están a la IZQUIERDA del nombre.
+CÓDIGOS INVÁLIDOS:
+✗ "343718DF" → tiene letras, código: ""
+✗ "REF123" → tiene letras, código: ""
+✗ "" → vacío, código: ""
 
-VÁLIDOS (solo dígitos, 1-13 caracteres):
-✓ "116 BANANO" → codigo: "116"
-✓ "7702993047842 LECHE" → codigo: "7702993047842"
-✓ "09 LIMON" → codigo: "09"
+# 🔍 NOMBRES DE PRODUCTOS
 
-INVÁLIDOS (tienen letras):
-✗ "343718DF PRODUCTO" → codigo: ""
-✗ "REF123 PRODUCTO" → codigo: ""
+ACEPTA nombres cortos si son productos REALES:
+✓ "SAL" → VÁLIDO (producto real)
+✓ "AJO" → VÁLIDO (producto real)
+✓ "PAN" → VÁLIDO (producto real)
+✓ "TÉ" → VÁLIDO (producto real)
 
-# FORMATO JSON (sin comas en precios)
+NO aceptes solo unidades o fragmentos:
+✗ "KG" → NO es producto
+✗ "X" → NO es producto
+✗ "/U" → NO es producto
+
+# 💰 PRECIOS
+
+ACEPTA precios desde $50 (productos baratos son válidos):
+✓ 50 → válido
+✓ 200 → válido (chicles, dulces)
+✓ 5600 → válido
+✓ 45000 → válido
+
+NO aceptes:
+✗ 0 → sin precio
+✗ Negativos → descuentos
+
+# 🏪 ESTABLECIMIENTOS
+
+Si ves: JUMBO, ÉXITO, CARULLA, OLÍMPICA, ARA, D1, ALKOSTO, etc.
+Usa SOLO el nombre principal sin sucursal:
+"JUMBO BULEVAR" → "JUMBO"
+"ÉXITO AMERICAS" → "ÉXITO"
+
+# 📅 TOTAL Y FECHA
+
+- El TOTAL suele estar al FINAL de la factura
+- Busca: TOTAL, GRAN TOTAL, TOTAL A PAGAR, VALOR TOTAL
+- Fecha: formato YYYY-MM-DD (2024-12-27)
+- Si no encuentras fecha o total, pon null
+
+# 📦 FORMATO JSON
+
 {
   "establecimiento": "JUMBO",
   "fecha": "2024-12-27",
@@ -81,44 +136,55 @@ INVÁLIDOS (tienen letras):
   "productos": [
     {
       "codigo": "7702993047842",
-      "nombre": "CHOCOLATE BT",
-      "cantidad": 1,
-      "precio": 2190
+      "nombre": "LECHE ALPINA ENTERA",
+      "cantidad": 2,
+      "precio": 8760
     },
     {
       "codigo": "116",
       "nombre": "BANANO URABA",
       "cantidad": 0.878,
       "precio": 5425
+    },
+    {
+      "codigo": "",
+      "nombre": "SAL REFISAL",
+      "cantidad": 1,
+      "precio": 1200
+    },
+    {
+      "codigo": "234",
+      "nombre": "LIMON TAHITI",
+      "cantidad": 1,
+      "precio": 3500
     }
   ]
 }
 
-🔍 VALIDACIÓN IMPORTANTE:
-Después de extraer productos, VERIFICA:
-- La SUMA de (precio × cantidad) de todos los productos debe ser CERCANA al total
-- Si hay gran diferencia, puede que falten productos
-- Busca si hay productos en la parte INFERIOR de la imagen
+# ⚠️ IMPORTANTE
 
-REGLAS:
-- JSON válido sin errores
-- Precios SIN separadores: 2190 (no 2,190)
-- Códigos como strings: "116", "09" o ""
-- NO incluyas descuentos, IVA, subtotales
-- Acepta códigos de 1-13 dígitos
-- Lee TODOS los productos visibles, incluso los del final
+1. Precios SIN separadores: 2190 (no 2,190)
+2. Códigos como strings: "116", "09", ""
+3. Si no hay código, pon ""
+4. Si no hay precio, pon 0
+5. Incluye TODOS los productos visibles, incluso con datos parciales
+6. NO incluyas descuentos, IVA, subtotales, mensajes
 
-⚠️ SI ESTA ES UNA IMAGEN PARCIAL:
-- Extrae todos los productos visibles
-- Si no ves el total, ponlo en 0
-- Si no ves el establecimiento, pon "Desconocido"
+# 🎯 ESTRATEGIA
 
-ANALIZA Y RESPONDE SOLO CON JSON:"""
+Es MEJOR tener:
+- 15 productos donde 12 son perfectos y 3 necesitan revisión
+QUE:
+- 8 productos perfectos pero perdiste 7 productos reales
 
-        # ✅ Llamada con HAIKU 3.5 (más rápido y barato)
+El usuario puede revisar/corregir después en el editor.
+
+ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:"""
+
+        # ✅ Llamada con HAIKU 3.5
         message = client.messages.create(
-            model="claude-3-5-haiku-20241022",  # ✅ MODELO CORRECTO
-            max_tokens=8000,  # Suficiente para facturas
+            model="claude-3-5-haiku-20241022",
+            max_tokens=8000,
             temperature=0,
             messages=[
                 {
@@ -140,7 +206,7 @@ ANALIZA Y RESPONDE SOLO CON JSON:"""
 
         # Parsear respuesta
         response_text = message.content[0].text
-        print(f"📄 Respuesta (primeros 200 chars): {response_text[:200]}...")
+        print(f"📄 Respuesta Claude (primeros 200 chars): {response_text[:200]}...")
 
         # Extraer JSON
         json_str = response_text
@@ -160,11 +226,12 @@ ANALIZA Y RESPONDE SOLO CON JSON:"""
         # Parsear JSON
         data = json.loads(json_str)
 
-        # ========== FILTRADO DE DESCUENTOS ==========
+        # ========== FILTRADO INTELIGENTE DE BASURA ==========
         if "productos" in data and data["productos"]:
             productos_originales = len(data["productos"])
 
-            palabras_descuento = [
+            # Lista REDUCIDA de basura obvia
+            palabras_basura = [
                 "ahorro",
                 "descuento",
                 "desc",
@@ -172,35 +239,58 @@ ANALIZA Y RESPONDE SOLO CON JSON:"""
                 "rebaja",
                 "promocion",
                 "promo",
-                "oferta",
-                "2x1",
-                "3x2",
-                "dcto",
-                "descu",
-                "desc%",
+                "iva",
+                "impuesto",
+                "subtotal",
+                "total",
+                "cambio",
+                "efectivo",
+                "tarjeta",
+                "redeban",
+                "credito",
+                "debito",
+                "gracias",
+                "vuelva",
+                "resolucion",
+                "dian",
+                "nit",
+                "autoretenedor",
             ]
 
             productos_filtrados = []
-            descuentos_eliminados = 0
+            basura_eliminada = 0
 
             for prod in data["productos"]:
                 nombre = str(prod.get("nombre", "")).lower().strip()
-                es_descuento = any(palabra in nombre for palabra in palabras_descuento)
 
-                if es_descuento:
-                    descuentos_eliminados += 1
-                    print(f"   🗑️ Descuento: {prod.get('nombre', 'N/A')[:40]}")
+                # ❌ Filtrar basura obvia
+                es_basura = any(palabra in nombre for palabra in palabras_basura)
+
+                # ❌ Filtrar solo números/símbolos (sin letras)
+                import re
+
+                solo_numeros = not re.search(r"[A-Za-zÀ-ÿ]", nombre)
+
+                # ❌ Filtrar unidades solas
+                es_unidad = nombre in ["kg", "kgm", "/kgm", "/kg", "und", "/u", "x"]
+
+                if es_basura or solo_numeros or es_unidad:
+                    basura_eliminada += 1
+                    print(f"   🗑️ Basura: {prod.get('nombre', 'N/A')[:40]}")
                 else:
                     productos_filtrados.append(prod)
 
             data["productos"] = productos_filtrados
 
-            if descuentos_eliminados > 0:
-                print(f"✅ {descuentos_eliminados} descuentos eliminados")
+            if basura_eliminada > 0:
+                print(f"✅ {basura_eliminada} líneas de basura eliminadas")
+                print(f"📦 {len(productos_filtrados)} productos válidos guardados")
 
-        # Normalizar productos
+        # ========== NORMALIZACIÓN Y NIVEL DE CONFIANZA ==========
         productos_procesados = 0
-        codigos_validos = 0
+        nivel_1 = 0  # Código + Nombre + Precio
+        nivel_2 = 0  # Nombre + Precio
+        nivel_3 = 0  # Parcial
 
         for prod in data.get("productos", []):
             productos_procesados += 1
@@ -220,18 +310,46 @@ ANALIZA Y RESPONDE SOLO CON JSON:"""
             # Cantidad
             if "cantidad" not in prod:
                 prod["cantidad"] = 1
+            else:
+                try:
+                    prod["cantidad"] = float(prod["cantidad"])
+                except:
+                    prod["cantidad"] = 1
 
-            # Validar código
+            # Validar y limpiar código
             if "codigo" in prod and prod["codigo"]:
                 codigo_limpio = str(prod["codigo"]).strip()
 
+                # ✅ Acepta códigos de 1-13 dígitos
                 if codigo_limpio.isdigit() and 1 <= len(codigo_limpio) <= 13:
                     prod["codigo"] = codigo_limpio
-                    codigos_validos += 1
                 else:
                     prod["codigo"] = ""
             else:
                 prod["codigo"] = ""
+
+            # Limpiar nombre
+            nombre = str(prod.get("nombre", "")).strip()
+            prod["nombre"] = nombre
+
+            # ✅ Calcular nivel de confianza
+            tiene_codigo = bool(prod["codigo"])
+            tiene_nombre = bool(nombre and len(nombre) >= 2)
+            tiene_precio = bool(prod["precio"] >= 50)
+
+            if tiene_codigo and tiene_nombre and tiene_precio:
+                prod["nivel_confianza"] = 1
+                nivel_1 += 1
+            elif tiene_nombre and tiene_precio:
+                prod["nivel_confianza"] = 2
+                nivel_2 += 1
+            elif tiene_nombre or (tiene_codigo and prod["precio"] > 0):
+                prod["nivel_confianza"] = 3
+                nivel_3 += 1
+            else:
+                # Sin suficiente info - marcar para revisión
+                prod["nivel_confianza"] = 3
+                nivel_3 += 1
 
         # Normalizar establecimiento
         establecimiento_raw = data.get("establecimiento", "Desconocido")
@@ -239,11 +357,21 @@ ANALIZA Y RESPONDE SOLO CON JSON:"""
 
         # Asegurar total
         if "total" not in data or not data["total"]:
-            data["total"] = sum(p.get("precio", 0) for p in data.get("productos", []))
+            suma_productos = sum(
+                p.get("precio", 0) * p.get("cantidad", 1)
+                for p in data.get("productos", [])
+            )
+            data["total"] = suma_productos
 
+        # ========== LOG DE RESULTADOS ==========
         print(f"📊 Establecimiento: {data.get('establecimiento', 'N/A')}")
         print(f"💰 Total: ${data.get('total', 0):,}")
-        print(f"📦 Productos: {productos_procesados} | Códigos: {codigos_validos}")
+        print(f"📦 Productos procesados: {productos_procesados}")
+        print(f"")
+        print(f"📊 POR NIVEL DE CONFIANZA:")
+        print(f"   ✅ NIVEL 1 (Código+Nombre+Precio): {nivel_1}")
+        print(f"   ⚠️  NIVEL 2 (Nombre+Precio): {nivel_2}")
+        print(f"   ⚡ NIVEL 3 (Parcial): {nivel_3}")
         print("=" * 70)
 
         return {
@@ -251,28 +379,37 @@ ANALIZA Y RESPONDE SOLO CON JSON:"""
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision",
+                    "metodo": "claude-vision-3niveles",
                     "modelo": "claude-3-5-haiku-20241022",
                     "productos_detectados": productos_procesados,
-                    "codigos_validos": codigos_validos,
+                    "nivel_1": nivel_1,
+                    "nivel_2": nivel_2,
+                    "nivel_3": nivel_3,
                 },
             },
         }
 
     except json.JSONDecodeError as e:
         print(f"❌ Error JSON: {e}")
-        return {"success": False, "error": "No se pudo procesar. Imagen más clara."}
+        print(f"Respuesta recibida: {response_text[:500]}")
+        return {
+            "success": False,
+            "error": "Error parseando respuesta de Claude. Imagen más clara.",
+        }
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
 
         traceback.print_exc()
-        return {"success": False, "error": "Error procesando imagen."}
+        return {"success": False, "error": f"Error procesando imagen: {str(e)}"}
 
 
 def normalizar_establecimiento(nombre_raw: str) -> str:
-    """Normaliza nombre del establecimiento"""
-    nombre_lower = nombre_raw.lower()
+    """Normaliza nombre del establecimiento a formato estándar"""
+    if not nombre_raw:
+        return "Desconocido"
+
+    nombre_lower = nombre_raw.lower().strip()
 
     establecimientos = {
         "jumbo": "JUMBO",
@@ -280,18 +417,25 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         "éxito": "ÉXITO",
         "carulla": "CARULLA",
         "olimpica": "OLÍMPICA",
+        "olímpica": "OLÍMPICA",
         "ara": "ARA",
         "d1": "D1",
         "alkosto": "ALKOSTO",
         "makro": "MAKRO",
         "pricesmart": "PRICESMART",
         "dolarcity": "DOLARCITY",
+        "surtimax": "SURTIMAX",
+        "metro": "METRO",
+        "la 14": "LA 14",
         "camacho": "CAMACHO",
         "cruz verde": "CRUZ VERDE",
+        "cafam": "CAFAM",
+        "colsubsidio": "COLSUBSIDIO",
     }
 
     for clave, normalizado in establecimientos.items():
         if clave in nombre_lower:
             return normalizado
 
-    return nombre_raw.strip().upper()
+    # Si no coincide con ninguno, devolver capitalizado
+    return nombre_raw.strip().upper()[:50]

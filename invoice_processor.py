@@ -1,4 +1,4 @@
-# invoice_processor.py
+# invoice_processor.py - SISTEMA 3 NIVELES + FILTROS ANTI-BASURA
 import os
 import re
 import json
@@ -14,6 +14,7 @@ import shutil
 # =============================
 try:
     from google.cloud import documentai
+
     DOCUMENT_AI_AVAILABLE = True
     print("✅ Document AI disponible")
 except Exception:
@@ -22,6 +23,7 @@ except Exception:
 
 try:
     from PIL import Image, ImageEnhance
+
     PIL_AVAILABLE = True
 except Exception:
     PIL_AVAILABLE = False
@@ -29,10 +31,15 @@ except Exception:
 # ===== Tesseract (opcional) =====
 try:
     import pytesseract
-    _tcmd = os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
+
+    _tcmd = (
+        os.getenv("TESSERACT_CMD") or shutil.which("tesseract") or "/usr/bin/tesseract"
+    )
     pytesseract.pytesseract.tesseract_cmd = _tcmd
     TESSERACT_AVAILABLE = bool(_tcmd and os.path.exists(_tcmd))
-    print(f"✅ Tesseract OCR {'disponible' if TESSERACT_AVAILABLE else 'NO disponible'} en: {_tcmd}")
+    print(
+        f"✅ Tesseract OCR {'disponible' if TESSERACT_AVAILABLE else 'NO disponible'} en: {_tcmd}"
+    )
 except Exception as e:
     TESSERACT_AVAILABLE = False
     print(f"⚠️ pytesseract no disponible ({e})")
@@ -42,35 +49,31 @@ except Exception as e:
 # Preprocesamiento de imagen
 # =============================
 def preprocess_for_document_ai(image_path: str) -> str:
-    """
-    Preprocesa la imagen para subir resolución y nitidez,
-    lo que suele mejorar el reconocimiento de Document AI.
-    """
+    """Preprocesa la imagen para Document AI"""
     if not PIL_AVAILABLE:
         return image_path
     try:
         img = Image.open(image_path)
         orig_size = img.size
 
-        # Document AI rinde mejor con imágenes "grandes"
         width, height = img.size
         min_width = 3000
         if width < min_width:
             scale = min_width / float(width)
             new_size = (int(width * scale), int(height * scale))
-            # PIL>=9: Image.Resampling.LANCZOS; fallback a Image.LANCZOS si no existe
             resampling = getattr(Image, "Resampling", Image).LANCZOS
             img = img.resize(new_size, resampling)
             print(f"🔧 Escalado: {orig_size} -> {new_size}")
 
-        # Contraste + Nitidez
         img = ImageEnhance.Contrast(img).enhance(1.8)
         img = ImageEnhance.Sharpness(img).enhance(1.5)
 
         processed_path = image_path
         if image_path.lower().endswith(".png"):
             processed_path = image_path[:-4] + "_optimized.jpg"
-        elif image_path.lower().endswith(".jpg") or image_path.lower().endswith(".jpeg"):
+        elif image_path.lower().endswith(".jpg") or image_path.lower().endswith(
+            ".jpeg"
+        ):
             processed_path = image_path[:-4] + "_optimized.jpg"
         else:
             processed_path = image_path + "_optimized.jpg"
@@ -84,10 +87,7 @@ def preprocess_for_document_ai(image_path: str) -> str:
 
 
 def split_long_invoice(image_path: str) -> list:
-    """
-    Si la factura es MUY larga, la divide en 2-3 secciones con solape.
-    Document AI a veces mejora así el parseo de ítems.
-    """
+    """Divide facturas muy largas en secciones"""
     if not PIL_AVAILABLE:
         return [image_path]
     try:
@@ -117,10 +117,8 @@ def split_long_invoice(image_path: str) -> list:
         return [image_path]
 
 
-# =============================
-# Configuración de credenciales
-# =============================
 def setup_document_ai():
+    """Configura credenciales de Document AI"""
     required_vars = [
         "GCP_PROJECT_ID",
         "DOC_AI_LOCATION",
@@ -146,11 +144,13 @@ def setup_document_ai():
 # =============================
 # Utilidades de texto / precios
 # =============================
-PRICE_RE = r"(\d{1,3}(?:[.,]\d{3})+)"            # 16,390
-PRICE_RE_ANY = r"(\d{1,3}(?:[.,]\d{3})+|\d{4,6})" # 16,390 o 16390
-EAN_LONG_RE = r"\b\d{8,13}\b"
+PRICE_RE = r"(\d{1,3}(?:[.,]\d{3})+)"
+PRICE_RE_ANY = r"(\d{1,3}(?:[.,]\d{3})+|\d{3,6})"  # ✅ Acepta desde $100
+EAN_LONG_RE = r"\b\d{6,13}\b"  # ✅ Acepta desde 6 dígitos (PLU)
+
 
 def clean_amount(s):
+    """Limpia y convierte strings a números"""
     if not s:
         return None
     s = str(s)
@@ -160,28 +160,153 @@ def clean_amount(s):
     num = m.group(1).replace(".", "").replace(",", "")
     try:
         val = int(num)
-        if 10 < val < 100_000_000:
+        # ✅ Acepta desde $50 (productos baratos válidos)
+        if 50 < val < 100_000_000:
             return val
     except Exception:
         pass
     return None
 
+
 def _pick_best_price(nums):
+    """Selecciona el mejor precio de una lista"""
     if not nums:
         return 0
     cand = [clean_amount(x) for x in nums]
     cand = [c for c in cand if c is not None]
     return max(cand) if cand else 0
 
-def _looks_like_price_only(s: str) -> bool:
-    s = (s or "").strip()
-    if re.fullmatch(r'-?\s*\d{1,3}(?:[.,]\d{3})+\s*[NH]?', s, re.IGNORECASE):
+
+# =============================
+# FILTROS ANTI-BASURA MEJORADOS
+# =============================
+
+
+def _is_obvious_garbage(text: str) -> bool:
+    """
+    Detecta SOLO basura OBVIA (no productos)
+
+    ✅ MÁS PERMISIVO: Solo rechaza lo que CLARAMENTE no es producto
+    ❌ NO rechaza nombres cortos válidos como "Sal", "Ajo", "Pan"
+    """
+    if not text:
         return True
-    if re.fullmatch(r'-?\s*\d{4,6}\s*[NH]?', s, re.IGNORECASE):
+
+    text_upper = text.upper().strip()
+
+    # Lista REDUCIDA de palabras clave de basura
+    basura_obvia = [
+        # Descuentos y promociones
+        "AHORRO",
+        "DESCUENTO",
+        "DESC",
+        "DTO",
+        "REBAJA",
+        "PROMOCION",
+        "DCTO",
+        "V AHORRO",
+        "VAHORRO",
+        "PRECIO FINAL",
+        # Impuestos y totales
+        "IVA",
+        "IMPUESTO",
+        "SUBTOTAL",
+        "TOTAL A PAGAR",
+        "GRAN TOTAL",
+        "CAMBIO",
+        "EFECTIVO",
+        "TARJETA",
+        "REDEBAN",
+        # Info administrativa
+        "RESOLUCION DIAN",
+        "RESPONSABLE DE IVA",
+        "AGENTE RETENEDOR",
+        "NIT",
+        "AUTORETENEDOR",
+        "GRACIAS POR SU COMPRA",
+        "CAJERO",
+        "CAJA",
+        "FACTURA",
+        "TICKET",
+        # Cadenas específicas
+        "TOSHIBA",
+        "GLOBAL COMMERCE",
+        "CADENA S.A",
+    ]
+
+    # ❌ Rechazar si contiene palabras de basura
+    if any(palabra in text_upper for palabra in basura_obvia):
+        return True
+
+    # ❌ Rechazar si es SOLO números/símbolos (sin letras)
+    if not re.search(r"[A-Za-zÀ-ÿ]", text):
+        return True
+
+    # ❌ Rechazar si son SOLO unidades de medida
+    if text_upper in ["KG", "KGM", "/KGM", "/KG", "UND", "/U", "X"]:
+        return True
+
+    # ✅ TODO LO DEMÁS es potencialmente válido
+    return False
+
+
+def _looks_like_price_only(s: str) -> bool:
+    """Detecta si es solo un precio (sin nombre de producto)"""
+    s = (s or "").strip()
+    if re.fullmatch(r"-?\s*\d{1,3}(?:[.,]\d{3})+\s*[NH]?", s, re.IGNORECASE):
+        return True
+    if re.fullmatch(r"-?\s*\d{3,6}\s*[NH]?", s, re.IGNORECASE):
         return True
     return False
 
+
+def _is_discount_or_note(line: str) -> bool:
+    """Detecta descuentos o notas (montos negativos)"""
+    if not line:
+        return False
+
+    U = line.upper()
+
+    # Montos negativos (descuentos)
+    if re.search(r"-\s*\d{1,3}(?:[.,]\d{3})+", line):
+        return True
+
+    # Referencias a descuentos
+    if re.search(r"\bDF\.", U) or "%REF" in U:
+        return True
+
+    # Líneas de resumen
+    if "SUBTOTAL/TOTAL" in U or "RESUMEN DE IVA" in U:
+        return True
+
+    return False
+
+
+def _calculate_confidence_level(codigo: str, nombre: str, precio: float) -> int:
+    """
+    Calcula el nivel de confianza del producto
+
+    NIVEL 1 (✅): Código + Nombre + Precio
+    NIVEL 2 (⚠️): Nombre + Precio (sin código)
+    NIVEL 3 (⚡): Solo Nombre o Solo Precio
+    0: Rechazar
+    """
+    tiene_codigo = bool(codigo and len(codigo) >= 4 and codigo.isdigit())
+    tiene_nombre = bool(nombre and len(nombre) >= 2 and not _is_obvious_garbage(nombre))
+    tiene_precio = bool(precio and precio >= 50)
+
+    if tiene_codigo and tiene_nombre and tiene_precio:
+        return 1  # Alta confianza
+    elif tiene_nombre and tiene_precio:
+        return 2  # Media confianza
+    elif tiene_nombre or (tiene_codigo and precio >= 100):
+        return 3  # Baja confianza
+    else:
+        return 0  # Rechazar
+
+
 def _looks_like_continuation(line: str) -> bool:
+    """Detecta si es una línea de continuación"""
     U = line.upper()
     return (
         bool(re.search(r"\bKG\b", U))
@@ -191,7 +316,9 @@ def _looks_like_continuation(line: str) -> bool:
         or _looks_like_price_only(line)
     )
 
+
 def _join_item_blocks(texto: str) -> list:
+    """Une bloques de items que están en múltiples líneas"""
     raw = [l.strip() for l in (texto or "").splitlines() if l.strip()]
     joined = []
     buf = ""
@@ -208,36 +335,9 @@ def _join_item_blocks(texto: str) -> list:
         joined.append(buf)
     return joined
 
-def _is_discount_or_note(line: str) -> bool:
-    U = (line or "").upper()
-    if re.search(r'-\s*\d{1,3}(?:[.,]\d{3})+', line):  # montos negativos
-        return True
-    if re.search(r'\bDF\.', U) or '%REF' in U or (re.search(r'\bREF\b', U) and '%' in U):
-        return True
-    if "SUBTOTAL/TOTAL" in U or "RESUMEN DE IVA" in U:
-        return True
-    return False
-
-def _is_weight_only_or_fragment(text: str) -> bool:
-    if not text:
-        return True
-    s = re.sub(r'[;,:]', ' ', text).upper().strip()
-    if re.match(r'^\d+(?:[.,]\d+)?\s*KG\b', s):
-        return True
-    if re.match(r'^\d+\s*X\s*\d{3,6}\b', s):
-        return True
-    if re.match(r'^\d{1,3}[.,]\d{3}\b', s) and not re.search(r'[A-ZÀ-Ÿ]', s):
-        return True
-    tokens = re.findall(r'[A-ZÀ-Ÿ]{2,}', s)
-    weak = {'KG','X','N','H','A','E','BA','C','DE','DEL','LA','EL','AL','POR'}
-    strong = [t for t in tokens if t not in weak]
-    return not any(len(t) >= 4 for t in strong)
-
-def _has_two_real_words(name: str) -> bool:
-    toks = re.findall(r'[A-Za-zÀ-ÿ]{4,}', name or "")
-    return len(toks) >= 2
 
 def _detect_columns(lines: list):
+    """Detecta las columnas de código y total en la factura"""
     code_idx, total_idx = 0, None
     for l in lines[:50]:
         U = l.upper()
@@ -250,19 +350,20 @@ def _detect_columns(lines: list):
         total_idx = max(30, longest - 8)
     return code_idx, total_idx
 
+
 def _join_name_with_next_price(lines: list) -> list:
-    """
-    Empareja una línea con nombre 'real' sin precio con la siguiente
-    si la siguiente es 'precio puro'. Mejora recall en tickets cortados.
-    """
+    """Une nombres sin precio con la línea siguiente si es solo precio"""
     out = []
     i = 0
     while i < len(lines):
         cur = lines[i].strip()
-        nxt = lines[i+1].strip() if i+1 < len(lines) else ""
-        has_two_words = len(re.findall(r'[A-Za-zÀ-ÿ]{4,}', cur)) >= 2
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+
+        # ✅ Detectar nombre real (2+ palabras de 2+ letras)
+        has_real_name = len(re.findall(r"[A-Za-zÀ-ÿ]{2,}", cur)) >= 2
         has_price_cur = bool(re.search(PRICE_RE_ANY, cur))
-        if has_two_words and not has_price_cur and _looks_like_price_only(nxt):
+
+        if has_real_name and not has_price_cur and _looks_like_price_only(nxt):
             out.append(f"{cur} {nxt}")
             i += 2
         else:
@@ -272,9 +373,13 @@ def _join_name_with_next_price(lines: list) -> list:
 
 
 # =============================
-# Parsers por texto crudo
+# Parser de texto crudo MEJORADO
 # =============================
 def _parse_text_products(raw_text: str) -> list:
+    """
+    Parser de texto con SISTEMA DE 3 NIVELES
+    Más permisivo pero con filtros anti-basura inteligentes
+    """
     lines = _join_item_blocks(raw_text or "")
     lines = _join_name_with_next_price(lines)
     print(f"📄 Bloques tras normalizar: {len(lines)}")
@@ -283,52 +388,93 @@ def _parse_text_products(raw_text: str) -> list:
 
     matched_idx = set()
     by_cols = []
+
     for i, l in enumerate(lines):
-        if len(l) < 10:
+        # ✅ Aceptar líneas más cortas (5+ caracteres, antes 10+)
+        if len(l) < 5:
             continue
+
+        # ❌ Filtrar descuentos y basura obvia
         if _is_discount_or_note(l):
             continue
 
         U = l.upper()
-        if ("CODIGO" in U and "TOTAL" in U) or U.startswith("NRO. CUENTA") or "TARJ CRE/DEB" in U or U.startswith("VISA") or "ITEMS COMPRADOS" in U:
+
+        # ❌ Líneas de header o footer
+        if (
+            ("CODIGO" in U and "TOTAL" in U)
+            or U.startswith("NRO. CUENTA")
+            or "TARJ CRE/DEB" in U
+        ):
             continue
-        if "RESOLUCION DIAN" in U or "RESPONSABLE DE IVA" in U or "AGENTE RETENEDOR" in U:
+        if (
+            "RESOLUCION DIAN" in U
+            or "RESPONSABLE DE IVA" in U
+            or "AGENTE RETENEDOR" in U
+        ):
             continue
 
+        # Extraer zonas
         codigo_zone = l[: max(0, code_idx + 15)].strip()
         total_zone = l[total_idx:].strip() if total_idx < len(l) else ""
-        descr_zone = l[len(codigo_zone): total_idx].strip() if total_idx > len(codigo_zone) else l.strip()
+        descr_zone = (
+            l[len(codigo_zone) : total_idx].strip()
+            if total_idx > len(codigo_zone)
+            else l.strip()
+        )
 
+        # Extraer código
         codigo = None
         mm = re.findall(EAN_LONG_RE, codigo_zone)
         if mm:
             codigo = mm[0]
 
+        # Extraer precio
         nums = re.findall(PRICE_RE_ANY, total_zone) or re.findall(PRICE_RE_ANY, l)
         precio = _pick_best_price(nums)
 
+        # Limpiar nombre
         nombre = re.sub(r"\s+", " ", descr_zone).strip()
-        nombre = re.sub(r"^\d{3,}\s*", "", nombre)
+        nombre = re.sub(r"^\d{3,}\s*", "", nombre)  # Quitar código del inicio
         nombre = nombre[:80]
 
-        if not nombre or len(nombre) < 3:
-            continue
-        if not codigo and _is_weight_only_or_fragment(nombre):
+        # ❌ Filtrar basura obvia
+        if _is_obvious_garbage(nombre):
             continue
 
-        uid = hashlib.md5(f"col:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
-        by_cols.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio or 0, "fuente": "text_columns"})
-        matched_idx.add(i)
+        # ✅ Calcular nivel de confianza
+        nivel = _calculate_confidence_level(codigo, nombre, precio)
 
+        if nivel > 0:
+            uid = hashlib.md5(
+                f"col:{i}:{nombre}|{precio}|{codigo or ''}".encode()
+            ).hexdigest()[:10]
+            by_cols.append(
+                {
+                    "uid": uid,
+                    "codigo": codigo,
+                    "nombre": nombre,
+                    "valor": precio or 0,
+                    "fuente": "text_columns",
+                    "nivel_confianza": nivel,
+                }
+            )
+            matched_idx.add(i)
+
+    # Parser por regex (fallback)
     by_rx = []
     rx1 = re.compile(rf"(\d{{6,13}})\s+(.+?)\s+{PRICE_RE_ANY}", re.IGNORECASE)
-    rx2 = re.compile(rf"([A-Za-zÀ-ÿ]{{2}}[A-Za-zÀ-ÿ0-9\s/\-\.]{{3,80}}?)\s+{PRICE_RE_ANY}(?:\s*[NXAEH])?", re.IGNORECASE)
+    rx2 = re.compile(
+        rf"([A-Za-zÀ-ÿ]{{2}}[A-Za-zÀ-ÿ0-9\s/\-\.]{{2,80}}?)\s+{PRICE_RE_ANY}(?:\s*[NXAEH])?",
+        re.IGNORECASE,
+    )
 
     for i, linea in enumerate(lines):
         if i in matched_idx:
             continue
         if _is_discount_or_note(linea):
             continue
+
         U = linea.upper()
         if "SUBTOTAL/TOTAL" in U or "****" in U:
             continue
@@ -348,14 +494,30 @@ def _parse_text_products(raw_text: str) -> list:
 
         precio = clean_amount(precio_s) or 0
         nombre = re.sub(r"\s+", " ", nombre).strip()[:80]
-        if not nombre or len(nombre) < 3:
-            continue
-        if not codigo and _is_weight_only_or_fragment(nombre):
+
+        # ❌ Filtrar basura
+        if _is_obvious_garbage(nombre):
             continue
 
-        uid = hashlib.md5(f"rx:{i}:{nombre}|{precio}|{codigo or ''}".encode()).hexdigest()[:10]
-        by_rx.append({"uid": uid, "codigo": codigo, "nombre": nombre, "valor": precio, "fuente": "text_regex"})
+        # ✅ Calcular nivel
+        nivel = _calculate_confidence_level(codigo, nombre, precio)
 
+        if nivel > 0:
+            uid = hashlib.md5(
+                f"rx:{i}:{nombre}|{precio}|{codigo or ''}".encode()
+            ).hexdigest()[:10]
+            by_rx.append(
+                {
+                    "uid": uid,
+                    "codigo": codigo,
+                    "nombre": nombre,
+                    "valor": precio,
+                    "fuente": "text_regex",
+                    "nivel_confianza": nivel,
+                }
+            )
+
+    # Combinar y deduplicar
     seen = set()
     out = []
     for src in (by_cols, by_rx):
@@ -364,6 +526,8 @@ def _parse_text_products(raw_text: str) -> list:
                 continue
             seen.add(p["uid"])
             out.append({k: v for k, v in p.items() if k != "uid"})
+
+    print(f"✅ Parser texto: {len(out)} productos extraídos")
     return out
 
 
@@ -371,6 +535,7 @@ def _parse_text_products(raw_text: str) -> list:
 # Extractores de metadata
 # =============================
 def extract_vendor(text):
+    """Extrae el nombre del establecimiento"""
     patterns = [
         r"(JUMBO\s+[A-ZÁÉÍÓÚÜÑ\s]+)",
         r"(ALMACENES\s+É?XITO[^\n]*)",
@@ -386,7 +551,9 @@ def extract_vendor(text):
             return re.sub(r"\s+", " ", m.group(1).strip())[:50]
     return "Establecimiento no identificado"
 
+
 def extract_total(text):
+    """Extrae el total de la factura"""
     lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
     for l in reversed(lines[-80:]):
         U = l.upper()
@@ -402,17 +569,20 @@ def extract_total(text):
 
 
 # =============================
-# Extractores de productos (DocAI + texto)
+# Extractores de productos (DocAI)
 # =============================
 def extract_products_document_ai(document) -> list:
     """
-    Usa DOCAI entities + parser de texto crudo del documento.
-    Filtra descuentos, notas y líneas débiles.
+    Extrae productos de Document AI con sistema de niveles
     """
     productos = []
 
-    # 1) Entities (line_item)
-    line_items = [e for e in getattr(document, "entities", []) if getattr(e, "type_", "") == "line_item" and getattr(e, "confidence", 0) > 0.20]
+    line_items = [
+        e
+        for e in getattr(document, "entities", [])
+        if getattr(e, "type_", "") == "line_item" and getattr(e, "confidence", 0) > 0.20
+    ]
+
     for e in line_items:
         raw = (getattr(e, "mention_text", "") or "").strip()
         if not raw:
@@ -421,6 +591,7 @@ def extract_products_document_ai(document) -> list:
         if _is_discount_or_note(raw):
             continue
 
+        # Extraer código
         code = None
         mm = re.search(EAN_LONG_RE, raw)
         if mm:
@@ -428,26 +599,44 @@ def extract_products_document_ai(document) -> list:
 
         name = re.sub(r"\s+", " ", raw)[:80] or "Sin descripción"
 
-        if not code and (_is_weight_only_or_fragment(name) or not _has_two_real_words(name)):
+        # ❌ Filtrar basura
+        if _is_obvious_garbage(name):
             continue
 
+        # Extraer precio
         price = 0
         has_negative = False
         for prop in getattr(e, "properties", []):
-            txt = (getattr(prop, "mention_text", "") or "")
+            txt = getattr(prop, "mention_text", "") or ""
             if "-" in txt:
                 has_negative = True
-            if getattr(prop, "type_", "") == "line_item/amount" and getattr(prop, "confidence", 0) > 0.2:
+            if (
+                getattr(prop, "type_", "") == "line_item/amount"
+                and getattr(prop, "confidence", 0) > 0.2
+            ):
                 price = clean_amount(txt) or price
+
         if has_negative:
             continue
 
-        productos.append({"codigo": code, "nombre": name, "valor": price, "fuente": "document_ai"})
+        # ✅ Calcular nivel
+        nivel = _calculate_confidence_level(code, name, price)
 
-    # 2) Texto crudo siempre
+        if nivel > 0:
+            productos.append(
+                {
+                    "codigo": code,
+                    "nombre": name,
+                    "valor": price,
+                    "fuente": "document_ai",
+                    "nivel_confianza": nivel,
+                }
+            )
+
+    # Parser de texto crudo
     prod_text = _parse_text_products(getattr(document, "text", "") or "")
 
-    # 3) Merge simple (EAN exacto o nombre+valor)
+    # Merge por código o nombre+precio
     seen = set()
     final = []
 
@@ -465,26 +654,30 @@ def extract_products_document_ai(document) -> list:
             seen.add(k)
             final.append(p)
 
+    print(f"✅ DocAI + Texto: {len(final)} productos únicos")
     return final
 
 
 # =============================
-# Tesseract (fallback/mejora)
+# Tesseract (fallback)
 # =============================
 def extract_products_tesseract_aggressive(image_path) -> list:
-    """
-    Ejecuta pytesseract en varios modos y parsea con el mismo parser de texto crudo.
-    En Render puede que Tesseract no esté; en ese caso regresa [].
-    """
+    """Extrae productos con Tesseract OCR"""
     if not TESSERACT_AVAILABLE or not PIL_AVAILABLE:
         return []
     try:
         img = Image.open(image_path)
         texts = []
         try:
-            texts.append(pytesseract.image_to_string(img, lang="spa", config="--psm 6 --oem 3"))
-            texts.append(pytesseract.image_to_string(img, lang="spa", config="--psm 4 --oem 3"))
-            texts.append(pytesseract.image_to_string(img, lang="spa", config="--psm 11 --oem 3"))
+            texts.append(
+                pytesseract.image_to_string(img, lang="spa", config="--psm 6 --oem 3")
+            )
+            texts.append(
+                pytesseract.image_to_string(img, lang="spa", config="--psm 4 --oem 3")
+            )
+            texts.append(
+                pytesseract.image_to_string(img, lang="spa", config="--psm 11 --oem 3")
+            )
         except Exception as oe:
             print(f"⚠️ Error pytesseract: {oe}")
             return []
@@ -499,16 +692,22 @@ def extract_products_tesseract_aggressive(image_path) -> list:
 
 
 # =============================
-# Merge / Dedupe
+# Merge / Dedupe con niveles
 # =============================
 def _is_variable_weight_ean(code: str) -> bool:
+    """Detecta EAN de productos pesados (balanza)"""
     return bool(code) and len(code) in (12, 13) and code[:2] in ("20", "28", "29")
 
+
 def combinar_y_deduplicar(prod_a, prod_b) -> list:
+    """
+    Combina y deduplica productos con prioridad por nivel de confianza
+    """
     out = {}
 
     for prod in (prod_a or []) + (prod_b or []):
         codigo = prod.get("codigo")
+        nivel = prod.get("nivel_confianza", 3)
 
         # EAN de balanza → PLU único
         if codigo and _is_variable_weight_ean(codigo):
@@ -520,15 +719,32 @@ def combinar_y_deduplicar(prod_a, prod_b) -> list:
             if codigo not in out:
                 out[codigo] = prod
             else:
-                if out[codigo].get("valor", 0) == 0 and prod.get("valor", 0) > 0:
-                    out[codigo]["valor"] = prod["valor"]
+                # Mantener el de mejor nivel de confianza
+                if nivel < out[codigo].get("nivel_confianza", 3):
+                    out[codigo] = prod
+                elif nivel == out[codigo].get("nivel_confianza", 3):
+                    # Mismo nivel - mantener el de mayor precio
+                    if prod.get("valor", 0) > out[codigo].get("valor", 0):
+                        out[codigo] = prod
         else:
             key = ("nv", (prod.get("nombre") or "").lower(), prod.get("valor", 0))
             if key not in out:
                 out[key] = prod
+            else:
+                # Mantener el de mejor nivel
+                if nivel < out[key].get("nivel_confianza", 3):
+                    out[key] = prod
 
     result = list(out.values())
-    result.sort(key=lambda x: (not bool(x.get("codigo")), x.get("codigo") or "", x.get("nombre", "")))
+    result.sort(
+        key=lambda x: (
+            x.get("nivel_confianza", 3),  # Por nivel (1, 2, 3)
+            not bool(x.get("codigo")),  # Con código primero
+            x.get("codigo") or "",
+            x.get("nombre", ""),
+        )
+    )
+
     return result
 
 
@@ -536,10 +752,11 @@ def combinar_y_deduplicar(prod_a, prod_b) -> list:
 # Pipeline principal
 # =============================
 def process_invoice_complete(file_path: str):
+    """Pipeline completo con sistema de 3 niveles"""
     inicio = time.time()
     try:
         print("\n" + "=" * 70)
-        print("🔍 PROCESAMIENTO MEJORADO - DocAI + columnas/regex (+Tess opcional)")
+        print("🔍 PROCESAMIENTO MEJORADO - Sistema 3 Niveles + Anti-Basura")
         print("=" * 70)
 
         is_pdf = file_path.lower().endswith(".pdf")
@@ -549,7 +766,7 @@ def process_invoice_complete(file_path: str):
         establecimiento = None
         total_factura = None
 
-        # ---------- [1] Intentar Document AI ----------
+        # [1] Document AI
         used_docai = False
         if DOCUMENT_AI_AVAILABLE:
             try:
@@ -558,59 +775,78 @@ def process_invoice_complete(file_path: str):
                 name = f"projects/{os.environ['GCP_PROJECT_ID']}/locations/{os.environ['DOC_AI_LOCATION']}/processors/{os.environ['DOC_AI_PROCESSOR_ID']}"
 
                 if is_pdf:
-                    # PDF: no preprocesar/split, mandar tal cual
                     with open(file_path, "rb") as f:
                         content = f.read()
                     resp = client.process_document(
                         request=documentai.ProcessRequest(
                             name=name,
-                            raw_document=documentai.RawDocument(content=content, mime_type="application/pdf"),
+                            raw_document=documentai.RawDocument(
+                                content=content, mime_type="application/pdf"
+                            ),
                         )
                     )
                     all_products_docai += extract_products_document_ai(resp.document)
                     all_text.append(resp.document.text or "")
                 else:
-                    # Imagen: preprocesar + split
-                    optimized = preprocess_for_document_ai(file_path) if PIL_AVAILABLE else file_path
-                    sections = split_long_invoice(optimized) if PIL_AVAILABLE else [optimized]
+                    optimized = (
+                        preprocess_for_document_ai(file_path)
+                        if PIL_AVAILABLE
+                        else file_path
+                    )
+                    sections = (
+                        split_long_invoice(optimized) if PIL_AVAILABLE else [optimized]
+                    )
                     for sec in sections:
                         with open(sec, "rb") as f:
                             content = f.read()
-                        mime = "image/jpeg" if sec.lower().endswith((".jpg", ".jpeg")) else "image/png"
+                        mime = (
+                            "image/jpeg"
+                            if sec.lower().endswith((".jpg", ".jpeg"))
+                            else "image/png"
+                        )
                         resp = client.process_document(
                             request=documentai.ProcessRequest(
                                 name=name,
-                                raw_document=documentai.RawDocument(content=content, mime_type=mime),
+                                raw_document=documentai.RawDocument(
+                                    content=content, mime_type=mime
+                                ),
                             )
                         )
-                        all_products_docai += extract_products_document_ai(resp.document)
+                        all_products_docai += extract_products_document_ai(
+                            resp.document
+                        )
                         all_text.append(resp.document.text or "")
 
                 raw_text = "\n".join(all_text)
                 establecimiento = extract_vendor(raw_text)
                 total_factura = extract_total(raw_text)
                 used_docai = True
-                print(f"   ✓ Productos (DOCAI+texto): {len(all_products_docai)}")
 
             except Exception as de:
-                print(f"⚠️ Document AI no usable ahora: {de}")
+                print(f"⚠️ Document AI no usable: {de}")
                 traceback.print_exc()
         else:
             print("ℹ️ Saltando Document AI (no disponible)")
 
-        # ---------- [2] Tesseract opcional ----------
+        # [2] Tesseract (opcional)
         productos_tess = []
         if TESSERACT_AVAILABLE and not is_pdf:
-            print("\n[2/3] 🔬 Tesseract (fallback/mejora)...")
-            optimized_for_tess = preprocess_for_document_ai(file_path) if PIL_AVAILABLE else file_path
-            productos_tess = extract_products_tesseract_aggressive(optimized_for_tess) or []
-        elif TESSERACT_AVAILABLE and is_pdf:
-            # (Opcional) podrías rasterizar PDF a imagen y luego pasar a Tess. Por ahora, lo omitimos.
-            print("\n[2/3] 🔬 Tesseract omitido (PDF sin rasterizar)")
+            print("\n[2/3] 🔬 Tesseract (fallback)...")
+            optimized_for_tess = (
+                preprocess_for_document_ai(file_path) if PIL_AVAILABLE else file_path
+            )
+            productos_tess = (
+                extract_products_tesseract_aggressive(optimized_for_tess) or []
+            )
 
-        # ---------- [3] Merge final ----------
-        print("\n[3/3] 🔀 Combinando...")
+        # [3] Merge y dedupe
+        print("\n[3/3] 🔀 Combinando con sistema de niveles...")
         productos_finales = combinar_y_deduplicar(all_products_docai, productos_tess)
+
+        # Estadísticas por nivel
+        nivel_1 = len([p for p in productos_finales if p.get("nivel_confianza") == 1])
+        nivel_2 = len([p for p in productos_finales if p.get("nivel_confianza") == 2])
+        nivel_3 = len([p for p in productos_finales if p.get("nivel_confianza") == 3])
 
         tiempo = int(time.time() - inicio)
         print("\n" + "=" * 70)
@@ -618,19 +854,26 @@ def process_invoice_complete(file_path: str):
         print("=" * 70)
         if establecimiento:
             print(f"📍 Establecimiento: {establecimiento}")
-        print(f"💰 Total factura: {total_factura}" if total_factura else "💰 Total: No detectado")
+        print(
+            f"💰 Total factura: ${total_factura:,}"
+            if total_factura
+            else "💰 Total: No detectado"
+        )
         print(f"📦 Productos únicos: {len(productos_finales)}")
-        print(f"   ├─ DOCAI+Texto: {len(all_products_docai)}")
-        print(f"   ├─ Tesseract: {len(productos_tess)}")
-        print(f"   └─ Finales: {len(productos_finales)}")
+        print(f"   ✅ NIVEL 1 (Código+Nombre+Precio): {nivel_1}")
+        print(f"   ⚠️  NIVEL 2 (Nombre+Precio): {nivel_2}")
+        print(f"   ⚡ NIVEL 3 (Parcial): {nivel_3}")
         print(f"⏱️ Tiempo: {tiempo}s")
         print("=" * 70 + "\n")
 
         if productos_finales:
-            print("Primeros 5 productos:")
-            for p in productos_finales[:5]:
+            print("Primeros 10 productos:")
+            for i, p in enumerate(productos_finales[:10], 1):
+                nivel = p.get("nivel_confianza", 3)
+                emoji = "✅" if nivel == 1 else "⚠️" if nivel == 2 else "⚡"
                 precio = f"${p.get('valor',0):,}" if p.get("valor", 0) else "Sin precio"
-                print(f"  {p.get('codigo','(s/c)')}: {p.get('nombre')} - {precio}")
+                codigo = p.get("codigo", "(s/c)")
+                print(f"  {emoji} {i}. [{codigo}]: {p.get('nombre')} - {precio}")
 
         return {
             "establecimiento": establecimiento or "Establecimiento no identificado",
@@ -638,9 +881,10 @@ def process_invoice_complete(file_path: str):
             "fecha_cargue": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "productos": productos_finales,
             "metadatos": {
-                "metodo": f"{'docai+' if used_docai else ''}text_columns+regex{'+tess' if productos_tess else ''}",
-                "docai_text_items": len(all_products_docai),
-                "tesseract_items": len(productos_tess),
+                "metodo": f"{'docai+' if used_docai else ''}text_3niveles{'+tess' if productos_tess else ''}",
+                "nivel_1": nivel_1,
+                "nivel_2": nivel_2,
+                "nivel_3": nivel_3,
                 "productos_finales": len(productos_finales),
                 "tiempo_segundos": tiempo,
             },
@@ -649,7 +893,6 @@ def process_invoice_complete(file_path: str):
     except Exception as e:
         print(f"❌ ERROR CRÍTICO: {str(e)}")
         traceback.print_exc()
-        # Devuelve estructura consistente aunque vacía
         return {
             "establecimiento": "Establecimiento no identificado",
             "total": None,
@@ -664,14 +907,8 @@ def process_invoice_complete(file_path: str):
 
 
 # =============================
-# Alias legacy para main.py
+# Alias legacy
 # =============================
 def process_invoice_products(file_path: str):
-    """
-    Mantiene compatibilidad: main.py llama a process_invoice_products(path).
-    """
+    """Mantiene compatibilidad con main.py"""
     return process_invoice_complete(file_path)
-
-def process_invoice_products(file_path):
-    return process_invoice_complete(file_path)
-
