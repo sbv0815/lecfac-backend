@@ -1,0 +1,84 @@
+warning: in the working copy of 'main.py', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/establishments.py b/establishments.py[m
+[1mindex 384520d..90723b9 100644[m
+[1m--- a/establishments.py[m
+[1m+++ b/establishments.py[m
+[36m@@ -28,8 +28,11 @@[m [mESTABLECIMIENTOS_CONOCIDOS = {[m
+     # Hard Discount[m
+     "D1": "D1",[m
+     "ARA": "ARA",[m
+[32m+[m[32m    "JUSTO Y BUENO": "JUSTO & BUENO",[m
+[32m+[m[32m    "JUSTO & BUENO": "JUSTO & BUENO",[m
+     # Supermercados regionales[m
+     "SUPERINTER": "SUPERINTER",[m
+[32m+[m[32m    "LA 14": "LA 14",[m
+     "SURTIMAX": "SURTIMAX",[m
+     "COLSUBSIDIO": "COLSUBSIDIO",[m
+     "CAFAM": "CAFAM",[m
+[36m@@ -71,6 +74,9 @@[m [mCADENAS_COMERCIALES = {[m
+     "D1": "Koba Colombia",[m
+     # Makro[m
+     "MAKRO": "Makro",[m
+[32m+[m[32m    # Justo & Bueno[m
+[32m+[m[32m    "JUSTO & BUENO": "Justo & Bueno",[m
+[32m+[m[32m    "JUSTO Y BUENO": "Justo & Bueno",[m
+     # Farmacias[m
+     "FARMATODO": "Farmatodo",[m
+     "CRUZ VERDE": "Cruz Verde",[m
+[36m@@ -307,14 +313,15 @@[m [mdef obtener_o_crear_establecimiento_id([m
+         cadena = obtener_cadena(establecimiento)[m
+ [m
+     # Buscar establecimiento existente[m
+[32m+[m[32m    # ✅ CORRECCIÓN: Usar nombre_normalizado (no "nombre")[m
+     if os.environ.get("DATABASE_TYPE") == "postgresql":[m
+         cursor.execute([m
+[31m-            "SELECT id FROM establecimientos WHERE UPPER(nombre) = UPPER(%s)",[m
+[32m+[m[32m            "SELECT id FROM establecimientos WHERE UPPER(nombre_normalizado) = UPPER(%s)",[m
+             (establecimiento,),[m
+         )[m
+     else:[m
+         cursor.execute([m
+[31m-            "SELECT id FROM establecimientos WHERE UPPER(nombre) = UPPER(?)",[m
+[32m+[m[32m            "SELECT id FROM establecimientos WHERE UPPER(nombre_normalizado) = UPPER(?)",[m
+             (establecimiento,),[m
+         )[m
+ [m
+[36m@@ -324,15 +331,16 @@[m [mdef obtener_o_crear_establecimiento_id([m
+         return result[0][m
+ [m
+     # Crear nuevo establecimiento[m
+[32m+[m[32m    # ✅ CORRECCIÓN: Usar nombre_normalizado (no "nombre")[m
+     if os.environ.get("DATABASE_TYPE") == "postgresql":[m
+         cursor.execute([m
+[31m-            "INSERT INTO establecimientos (nombre, cadena) VALUES (%s, %s) RETURNING id",[m
+[32m+[m[32m            "INSERT INTO establecimientos (nombre_normalizado, cadena) VALUES (%s, %s) RETURNING id",[m
+             (establecimiento, cadena),[m
+         )[m
+         establecimiento_id = cursor.fetchone()[0][m
+     else:[m
+         cursor.execute([m
+[31m-            "INSERT INTO establecimientos (nombre, cadena) VALUES (?, ?)",[m
+[32m+[m[32m            "INSERT INTO establecimientos (nombre_normalizado, cadena) VALUES (?, ?)",[m
+             (establecimiento, cadena),[m
+         )[m
+         establecimiento_id = cursor.lastrowid[m
+[1mdiff --git a/main.py b/main.py[m
+[1mindex 9d4ae58..f7fa236 100644[m
+[1m--- a/main.py[m
+[1m+++ b/main.py[m
+[36m@@ -1,14 +1,6 @@[m
+[31m-"""[m
+[31m-main.py - Servidor FastAPI COMPLETO para LecFac[m
+[31m-VERSIÓN CORREGIDA - Con TODAS las funcionalidades, sin duplicados[m
+[31m-"""[m
+[31m-[m
+[31m-# ==========================================[m
+[31m-# IMPORTS ESTÁNDAR[m
+[31m-# ==========================================[m
+ import os[m
+ import tempfile[m
+[31m-import traceback[m
+[32m+[m[32mimport traceback  # ✅ MANTENER ESTE[m
+ import json[m
+ import uuid[m
+ from datetime import datetime[m

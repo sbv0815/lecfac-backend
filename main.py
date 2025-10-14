@@ -283,6 +283,9 @@ async def get_duplicados_js():
 # ==========================================
 # ENDPOINTS DE SALUD Y CONFIGURACIÓN
 # ==========================================
+# ==========================================
+# ENDPOINTS DE SALUD Y CONFIGURACIÓN
+# ==========================================
 @app.get("/health")
 @app.get("/api/health-check")
 async def health_check():
@@ -303,6 +306,35 @@ async def health_check():
     except Exception as e:
         return JSONResponse(
             status_code=500, content={"status": "unhealthy", "error": str(e)}
+        )
+
+
+# ⭐ NUEVO ENDPOINT REQUERIDO POR RAILWAY
+@app.get("/verify-tesseract")
+async def verify_tesseract():
+    """Verificar que Tesseract OCR está instalado y funcional"""
+    try:
+        import pytesseract
+        from PIL import Image
+
+        # Verificar versión de Tesseract
+        version = pytesseract.get_tesseract_version()
+
+        return {
+            "status": "ok",
+            "tesseract_installed": True,
+            "tesseract_version": str(version),
+            "message": "Tesseract OCR funcionando correctamente",
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "tesseract_installed": False,
+                "error": str(e),
+                "message": "Tesseract OCR no disponible",
+            },
         )
 
 
