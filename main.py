@@ -2633,5 +2633,6 @@ async def crear_item_factura(factura_id: int, request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8080))  # Cambia 10000 a 8080
+    print(f"🚀 Servidor iniciando en puerto: {port}")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
