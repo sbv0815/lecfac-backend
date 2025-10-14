@@ -55,6 +55,17 @@ def get_postgresql_connection():
         return None
 
     try:
+        # ⭐ DEBUG: Ver TODAS las variables disponibles
+        print("=" * 60)
+        print("🔍 TODAS LAS VARIABLES DE ENTORNO:")
+        import os
+
+        for key in sorted(os.environ.keys()):
+            if "DATABASE" in key or "PG" in key or "POSTGRES" in key:
+                value = os.environ[key]
+                print(f"   {key} = {value[:50] if value else '(vacío)'}...")
+        print("=" * 60)
+
         database_url = os.environ.get("DATABASE_URL")
 
         print(f"🔍 DATABASE_URL configurada: {'Sí' if database_url else 'No'}")
