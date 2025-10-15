@@ -825,6 +825,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 extraer_frames_video,
                 deduplicar_productos,
                 limpiar_frames_temporales,
+                validar_fecha,
             )
         except ImportError as e:
             raise Exception(f"Error importando módulos: {e}")
@@ -941,7 +942,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             # 5.2 Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 # 🆕 Validar y limpiar la fecha
-                from video_processor import validar_fecha
 
                 fecha_final = (
                     validar_fecha(fecha) if fecha else datetime.now().date().isoformat()
