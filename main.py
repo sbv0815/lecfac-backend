@@ -2322,151 +2322,109 @@ async def marcar_como_validada(factura_id: int):
 
 @app.delete("/admin/facturas/{factura_id}")
 async def eliminar_factura(factura_id: int):
-    """Eliminar factura y TODAS sus referencias en cascada - ORDEN CORRECTO"""
+    """Eliminar factura y TODAS sus referencias en cascada - VERSIÓN SIMPLIFICADA"""
     print(f"🗑️ ELIMINANDO FACTURA #{factura_id}")
+
+    conn = None
+    cursor = None
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # ✅ SIEMPRE usar sintaxis PostgreSQL (Railway usa PostgreSQL)
+
+        # 1. Processing jobs (PRIMERO)
+        print(f"   1️⃣ Eliminando processing_jobs...")
+        cursor.execute(
+            "DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,)
+        )
+        deleted_jobs = cursor.rowcount
+        print(f"      ✓ {deleted_jobs} job(s) eliminado(s)")
+
+        # 2. Items factura
+        print(f"   2️⃣ Eliminando items_factura...")
+        cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
+        deleted_items = cursor.rowcount
+        print(f"      ✓ {deleted_items} item(s) eliminado(s)")
+
+        # 3. Productos (tabla antigua)
+        print(f"   3️⃣ Eliminando productos...")
+        cursor.execute("DELETE FROM productos WHERE factura_id = %s", (factura_id,))
+        deleted_productos = cursor.rowcount
+        print(f"      ✓ {deleted_productos} producto(s) eliminado(s)")
+
+        # 4. Precios (si existen)
+        print(f"   4️⃣ Eliminando precios_productos...")
         try:
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                # ✅ ORDEN CRÍTICO: Eliminar referencias ANTES de la factura
+            cursor.execute(
+                "DELETE FROM precios_productos WHERE factura_id = %s", (factura_id,)
+            )
+            deleted_precios = cursor.rowcount
+            print(f"      ✓ {deleted_precios} precio(s) eliminado(s)")
+        except Exception as e:
+            print(f"      ⚠️ Sin tabla precios_productos: {e}")
+            deleted_precios = 0
 
-                # 1. Processing jobs (PRIMERO)
-                print(f"   1️⃣ Eliminando processing_jobs...")
-                cursor.execute(
-                    "DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,)
-                )
-                deleted_jobs = cursor.rowcount
-                print(f"      ✓ {deleted_jobs} job(s) eliminado(s)")
+        # 5. La factura misma (AL FINAL)
+        print(f"   5️⃣ Eliminando factura...")
+        cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+        deleted_factura = cursor.rowcount
 
-                # 2. Items factura
-                print(f"   2️⃣ Eliminando items_factura...")
-                cursor.execute(
-                    "DELETE FROM items_factura WHERE factura_id = %s", (factura_id,)
-                )
-                deleted_items = cursor.rowcount
-                print(f"      ✓ {deleted_items} item(s) eliminado(s)")
-
-                # 3. Productos (tabla antigua)
-                print(f"   3️⃣ Eliminando productos...")
-                cursor.execute(
-                    "DELETE FROM productos WHERE factura_id = %s", (factura_id,)
-                )
-                deleted_productos = cursor.rowcount
-                print(f"      ✓ {deleted_productos} producto(s) eliminado(s)")
-
-                # 4. Precios (si existen referencias)
-                print(f"   4️⃣ Eliminando precios_productos...")
-                try:
-                    cursor.execute(
-                        "DELETE FROM precios_productos WHERE factura_id = %s",
-                        (factura_id,),
-                    )
-                    deleted_precios = cursor.rowcount
-                    print(f"      ✓ {deleted_precios} precio(s) eliminado(s)")
-                except Exception as e:
-                    print(f"      ⚠️ No hay tabla precios_productos o sin referencias")
-
-                # 5. La factura misma (AL FINAL)
-                print(f"   5️⃣ Eliminando factura...")
-                cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
-                deleted_factura = cursor.rowcount
-
-            else:
-                # SQLite - mismo orden
-                cursor.execute(
-                    "DELETE FROM processing_jobs WHERE factura_id = ?", (factura_id,)
-                )
-                deleted_jobs = cursor.rowcount
-
-                cursor.execute(
-                    "DELETE FROM items_factura WHERE factura_id = ?", (factura_id,)
-                )
-                deleted_items = cursor.rowcount
-
-                cursor.execute(
-                    "DELETE FROM productos WHERE factura_id = ?", (factura_id,)
-                )
-                deleted_productos = cursor.rowcount
-
-                try:
-                    cursor.execute(
-                        "DELETE FROM precios_productos WHERE factura_id = ?",
-                        (factura_id,),
-                    )
-                    deleted_precios = cursor.rowcount
-                except:
-                    deleted_precios = 0
-
-                cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
-                deleted_factura = cursor.rowcount
-
-            if deleted_factura == 0:
-                print(f"   ❌ Factura {factura_id} no encontrada")
+        if deleted_factura == 0:
+            print(f"   ❌ Factura {factura_id} no encontrada")
+            if conn:
                 conn.rollback()
-                return JSONResponse(
-                    status_code=404,
-                    content={"success": False, "error": "Factura no encontrada"},
-                )
-
-            conn.commit()
-            print(f"   ✅ Factura {factura_id} eliminada exitosamente")
-
             return JSONResponse(
-                content={
-                    "success": True,
-                    "message": f"Factura {factura_id} eliminada correctamente",
-                    "detalles": {
-                        "jobs_eliminados": (
-                            deleted_jobs
-                            if os.environ.get("DATABASE_TYPE") == "postgresql"
-                            else "N/A"
-                        ),
-                        "items_eliminados": (
-                            deleted_items
-                            if os.environ.get("DATABASE_TYPE") == "postgresql"
-                            else "N/A"
-                        ),
-                        "productos_eliminados": (
-                            deleted_productos
-                            if os.environ.get("DATABASE_TYPE") == "postgresql"
-                            else "N/A"
-                        ),
-                        "precios_eliminados": (
-                            deleted_precios
-                            if os.environ.get("DATABASE_TYPE") == "postgresql"
-                            else "N/A"
-                        ),
-                    },
-                }
+                status_code=404,
+                content={"success": False, "error": "Factura no encontrada"},
             )
 
-        except Exception as e:
-            print(f"   ❌ Error en transacción: {e}")
-            conn.rollback()
-            raise e
+        conn.commit()
+        print(f"   ✅ Factura {factura_id} eliminada exitosamente")
 
-        finally:
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": f"Factura {factura_id} eliminada correctamente",
+                "detalles": {
+                    "jobs_eliminados": deleted_jobs,
+                    "items_eliminados": deleted_items,
+                    "productos_eliminados": deleted_productos,
+                    "precios_eliminados": deleted_precios,
+                },
+            }
+        )
 
     except Exception as e:
-        print(f"❌ Error eliminando factura {factura_id}: {e}")
+        print(f"   ❌ Error en transacción: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
         import traceback
 
         traceback.print_exc()
         return JSONResponse(
             status_code=500, content={"success": False, "error": str(e)}
         )
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 
 @app.post("/admin/facturas/eliminar-multiple")
 async def eliminar_facturas_multiple(datos: dict):
-    """Eliminar múltiples facturas en batch"""
+    """Eliminar múltiples facturas en batch - VERSIÓN SIMPLIFICADA"""
     try:
         ids = datos.get("ids", [])
 
@@ -2481,15 +2439,24 @@ async def eliminar_facturas_multiple(datos: dict):
 
         for factura_id in ids:
             try:
-                # Eliminar productos
+                print(f"🗑️ Eliminando factura #{factura_id}...")
+
+                # 1. Processing jobs
                 cursor.execute(
-                    "DELETE FROM productos WHERE factura_id = %s", (factura_id,)
+                    "DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,)
                 )
+
+                # 2. Items factura
                 cursor.execute(
                     "DELETE FROM items_factura WHERE factura_id = %s", (factura_id,)
                 )
 
-                # Eliminar precios
+                # 3. Productos
+                cursor.execute(
+                    "DELETE FROM productos WHERE factura_id = %s", (factura_id,)
+                )
+
+                # 4. Precios
                 try:
                     cursor.execute(
                         "DELETE FROM precios_productos WHERE factura_id = %s",
@@ -2498,14 +2465,16 @@ async def eliminar_facturas_multiple(datos: dict):
                 except:
                     pass
 
-                # Eliminar factura
+                # 5. Factura
                 cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
 
                 if cursor.rowcount > 0:
                     eliminadas += 1
+                    print(f"   ✅ Factura {factura_id} eliminada")
 
             except Exception as e:
                 errores.append(f"Factura {factura_id}: {str(e)}")
+                print(f"   ❌ Error eliminando {factura_id}: {e}")
 
         conn.commit()
         conn.close()
@@ -2523,6 +2492,8 @@ async def eliminar_facturas_multiple(datos: dict):
         if conn:
             conn.rollback()
             conn.close()
+        import traceback
+
         traceback.print_exc()
         raise HTTPException(500, str(e))
 
