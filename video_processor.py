@@ -1,463 +1,313 @@
-"""
-Procesador de videos - SISTEMA DE 3 NIVELES DE CONFIANZA
-Prioriza NO PERDER INFORMACIÓN sobre tener datos perfectos
-"""
+# Agregar esta función mejorada en video_processor.py
 
-import cv2
-import tempfile
-import os
-import numpy as np
+import re
 from typing import List, Dict
-import logging
-
-logger = logging.getLogger(__name__)
+from difflib import SequenceMatcher
 
 
-def extraer_frames_video(video_path, intervalo=1.0):
+def extraer_consecutivo(nombre: str) -> tuple:
     """
-    Extrae frames de un video de manera OPTIMIZADA PARA MÁXIMA PRECISIÓN
+    Extrae el número consecutivo del inicio del nombre del producto.
+
+    Ejemplos:
+    - "01 un 14.800 1" → (1, "un 14.800 1")
+    - "2 0.595/KGM x 9.620" → (2, "0.595/KGM x 9.620")
+    - "HUEVO AAA RJO 15UN" → (None, "HUEVO AAA RJO 15UN")
+
+    Returns:
+        tuple: (consecutivo, nombre_limpio)
     """
-    import cv2
-    import os
+    # Patrones para detectar consecutivo al inicio
+    patrones = [
+        r"^(\d{1,3})\s+un\b",  # "01 un", "1 un"
+        r"^(\d{1,3})\s+",  # "1 ", "01 "
+        r"^(\d{1,3})[./]",  # "1/", "1."
+    ]
 
-    frames = []
+    for patron in patrones:
+        match = re.match(patron, nombre.strip(), re.IGNORECASE)
+        if match:
+            consecutivo = int(match.group(1))
+            nombre_limpio = nombre[match.end() :].strip()
+            return (consecutivo, nombre_limpio)
 
-    try:
-        cap = cv2.VideoCapture(video_path)
+    return (None, nombre)
 
-        if not cap.isOpened():
-            print(f"❌ Error: No se pudo abrir el video {video_path}")
-            return frames
 
-        # Obtener propiedades del video
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duracion = total_frames / fps if fps > 0 else 0
+def limpiar_nombre_producto(nombre: str) -> str:
+    """
+    Limpia el nombre del producto para comparación.
 
-        print(
-            f"📹 Video: {duracion:.1f}s, {fps:.1f} FPS, {total_frames} frames totales"
+    - Elimina consecutivos (01, 02, etc.)
+    - Elimina "un", "1", cantidades
+    - Normaliza espacios
+    - Convierte a minúsculas
+    """
+    # Remover consecutivo si existe
+    _, nombre_sin_consecutivo = extraer_consecutivo(nombre)
+
+    # Limpiar el nombre
+    nombre_limpio = nombre_sin_consecutivo.lower()
+
+    # Remover palabras comunes que no identifican al producto
+    palabras_ignorar = ["un", "und", "unidad", "unidades"]
+    for palabra in palabras_ignorar:
+        nombre_limpio = re.sub(
+            rf"\b{palabra}\b", "", nombre_limpio, flags=re.IGNORECASE
         )
 
-        # Sistema adaptativo de frames
-        if duracion <= 10:
-            max_frames = 12
-        elif duracion <= 20:
-            max_frames = 18
-        elif duracion <= 30:
-            max_frames = 25
-        else:
-            max_frames = 30
+    # Normalizar espacios
+    nombre_limpio = " ".join(nombre_limpio.split())
 
-        print(f"🎯 Extraeremos {max_frames} frames para máxima precisión")
+    return nombre_limpio.strip()
 
-        frame_interval = max(1, total_frames // max_frames) if duracion > 0 else 1
-        frame_count = 0
-        extracted_count = 0
 
-        # Primera pasada: frames uniformes
-        while cap.isOpened() and extracted_count < max_frames:
-            ret, frame = cap.read()
-            if not ret:
-                break
+def similitud_productos(prod1: str, prod2: str) -> float:
+    """
+    Calcula similitud entre dos nombres de productos.
 
-            if frame_count % frame_interval == 0:
-                frame_filename = f"/tmp/frame_{os.getpid()}_{extracted_count:03d}.jpg"
-                cv2.imwrite(frame_filename, frame)
-                frames.append(frame_filename)
-                extracted_count += 1
-                print(f"  ✓ Frame {extracted_count}/{max_frames} extraído")
+    Returns:
+        float: Similitud de 0.0 a 1.0
+    """
+    nombre1 = limpiar_nombre_producto(prod1)
+    nombre2 = limpiar_nombre_producto(prod2)
 
-            frame_count += 1
+    if not nombre1 or not nombre2:
+        return 0.0
 
-        cap.release()
-
-        # Segunda pasada: frames finales
-        print(f"🎯 Extrayendo frames FINALES para capturar el TOTAL...")
-        cap = cv2.VideoCapture(video_path)
-
-        ultimos_frames_posiciones = [
-            total_frames - 1,
-            total_frames - int(fps * 0.5),
-            total_frames - int(fps * 1),
-            total_frames - int(fps * 1.5),
-            total_frames - int(fps * 2),
-        ]
-
-        ultimos_frames_posiciones = [
-            pos for pos in ultimos_frames_posiciones if 0 <= pos < total_frames
-        ]
-
-        for i, pos in enumerate(ultimos_frames_posiciones):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
-            ret, frame = cap.read()
-            if ret:
-                frame_filename = f"/tmp/frame_{os.getpid()}_final_{i:03d}.jpg"
-                cv2.imwrite(frame_filename, frame)
-                frames.append(frame_filename)
-                print(
-                    f"  ✓ Frame FINAL {i+1}/{len(ultimos_frames_posiciones)} extraído"
-                )
-
-        cap.release()
-
-        print(f"✅ {len(frames)} frames extraídos exitosamente")
-        return frames
-
-    except Exception as e:
-        print(f"❌ Error extrayendo frames: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return frames
+    return SequenceMatcher(None, nombre1, nombre2).ratio()
 
 
 def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     """
-    Deduplicación con SISTEMA DE 3 NIVELES DE CONFIANZA
+    Deduplica productos usando CONSECUTIVO + SIMILITUD.
 
-    NIVEL 1 (Alta): Código + Nombre + Precio
-    NIVEL 2 (Media): Nombre + Precio (sin código)
-    NIVEL 3 (Baja): Solo Nombre o Solo Precio
+    Estrategia:
+    1. Extraer consecutivo de cada producto
+    2. Agrupar productos por consecutivo
+    3. Para productos sin consecutivo, usar similitud de nombres
+    4. Mantener el producto con más información
 
-    🎯 FILOSOFÍA: Es mejor tener 1 producto con 80% confianza
-                  que perder completamente ese producto
+    Args:
+        productos: Lista de productos detectados
+
+    Returns:
+        Lista de productos únicos
     """
-    from difflib import SequenceMatcher
-    import re
-
     if not productos:
         return []
 
-    logger.info(f"🔍 Iniciando deduplicación de {len(productos)} productos...")
+    print(f"🔍 Deduplicando {len(productos)} productos...")
 
-    # ========================================
-    # FUNCIONES DE VALIDACIÓN (MÁS PERMISIVAS)
-    # ========================================
+    # Agrupar por consecutivo
+    por_consecutivo = {}
+    sin_consecutivo = []
 
-    def es_codigo_valido(codigo: str) -> bool:
-        """Valida códigos - MÁS PERMISIVO"""
-        if not codigo or not isinstance(codigo, str):
-            return False
+    for prod in productos:
+        nombre = prod.get("nombre", "")
+        consecutivo, nombre_limpio = extraer_consecutivo(nombre)
 
-        codigo = codigo.strip()
-
-        # ✅ Aceptar desde 3 dígitos (PLU de frutas/verduras)
-        if len(codigo) < 3:
-            return False
-
-        if len(codigo) > 14:
-            return False
-
-        # Debe ser numérico
-        if not codigo.isdigit():
-            return False
-
-        # Rechazar solo códigos OBVIAMENTE falsos
-        digitos_unicos = len(set(codigo))
-        if digitos_unicos == 1:  # 666666, 777777
-            return False
-
-        return True
-
-    def es_nombre_generico(nombre: str) -> bool:
-        """Detecta SOLO nombres OBVIAMENTE genéricos"""
-        nombre_upper = nombre.upper().strip()
-
-        # ✅ Aceptar nombres de 2+ caracteres (antes 3+)
-        if len(nombre_upper) < 2:
-            return True
-
-        # Solo unidades de medida puras
-        unidades = ["KGM", "KG", "/KGM", "/KG", "UND", "/U"]
-        if nombre_upper in unidades:
-            return True
-
-        # Solo códigos internos
-        if nombre_upper in ["PLU", "SKU", "COD", "REF"]:
-            return True
-
-        # Solo números y barras
-        if re.match(r"^[\d\s/]+$", nombre_upper):
-            return True
-
-        return False
-
-    def es_precio_valido(precio: float) -> bool:
-        """Valida precios - MÁS PERMISIVO"""
-        if precio <= 0:
-            return False
-
-        # ✅ Aceptar desde $50 (antes $100)
-        # Hay productos de $50, $80, $90 válidos
-        if precio < 50:
-            return False
-
-        # Rechazar solo extremos obvios
-        if precio > 1000000:  # 1 millón
-            return False
-
-        return True
-
-    def normalizar_para_comparacion(texto: str) -> str:
-        """Normaliza texto para comparación estricta"""
-        texto = texto.upper().strip()
-        texto = re.sub(r"[^\w\s]", "", texto)  # Quitar puntuación
-        texto = re.sub(r"\s+", " ", texto)  # Espacios únicos
-        texto = re.sub(r"\s+\d+[A-Z]*$", "", texto)  # Quitar números finales
-        return texto
-
-    def calcular_nivel_confianza(codigo: str, nombre: str, precio: float) -> int:
-        """
-        Calcula el nivel de confianza del producto
-
-        NIVEL 1: Código + Nombre + Precio ✅
-        NIVEL 2: Nombre + Precio (sin código) ⚠️
-        NIVEL 3: Solo nombre o solo precio ⚡
-        """
-        tiene_codigo = bool(codigo and es_codigo_valido(codigo))
-        tiene_nombre = bool(
-            nombre and len(nombre) >= 2 and not es_nombre_generico(nombre)
-        )
-        tiene_precio = bool(precio and es_precio_valido(precio))
-
-        if tiene_codigo and tiene_nombre and tiene_precio:
-            return 1  # Alta confianza
-        elif tiene_nombre and tiene_precio:
-            return 2  # Media confianza
-        elif tiene_nombre or tiene_precio:
-            return 3  # Baja confianza
+        if consecutivo is not None:
+            if consecutivo not in por_consecutivo:
+                por_consecutivo[consecutivo] = []
+            por_consecutivo[consecutivo].append(
+                {
+                    **prod,
+                    "nombre_original": nombre,
+                    "nombre_limpio": nombre_limpio,
+                    "consecutivo": consecutivo,
+                }
+            )
         else:
-            return 0  # Rechazar
+            sin_consecutivo.append(prod)
 
-    # ========================================
-    # PASO 1: FILTRAR SOLO BASURA OBVIA
-    # ========================================
-    palabras_filtro = [
-        "ahorro",
-        "descuento",
-        "desc",
-        "dto",
-        "rebaja",
-        "promocion",
-        "iva",
-        "impuesto",
-        "subtotal",
-        "total",
-        "cambio",
-        "efectivo",
-        "tarjeta",
-        "redeban",
-        "credito",
-        "debito",
-        "establecimiento",
-        "gracias",
-        "vuelva pronto",
-        "nit",
-        "autoretenedor",
-        "cadena",
+    print(f"   📊 Productos con consecutivo: {len(por_consecutivo)} grupos")
+    print(f"   📊 Productos sin consecutivo: {len(sin_consecutivo)}")
+
+    # Procesar productos con consecutivo
+    productos_unicos = []
+
+    for consecutivo, grupo in sorted(por_consecutivo.items()):
+        if len(grupo) == 1:
+            # Solo un producto con este consecutivo
+            productos_unicos.append(grupo[0])
+        else:
+            # Múltiples productos con el mismo consecutivo
+            # Elegir el que tenga más información (código, nombre más largo, etc.)
+            mejor = max(
+                grupo,
+                key=lambda p: (
+                    len(p.get("codigo", "")),
+                    len(p.get("nombre", "")),
+                    p.get("precio", 0) > 0,
+                ),
+            )
+            productos_unicos.append(mejor)
+
+            if len(grupo) > 1:
+                print(
+                    f"   🔀 Consecutivo {consecutivo}: {len(grupo)} duplicados → 1 único"
+                )
+
+    # Procesar productos sin consecutivo (usar similitud)
+    for i, prod1 in enumerate(sin_consecutivo):
+        es_duplicado = False
+        nombre1 = prod1.get("nombre", "")
+
+        # Comparar con productos únicos ya agregados
+        for prod_unico in productos_unicos:
+            nombre_unico = prod_unico.get(
+                "nombre_original", prod_unico.get("nombre", "")
+            )
+            similitud = similitud_productos(nombre1, nombre_unico)
+
+            if similitud > 0.85:  # 85% de similitud
+                es_duplicado = True
+                print(
+                    f"   ⚠️ Duplicado por similitud ({similitud:.0%}): '{nombre1}' ≈ '{nombre_unico}'"
+                )
+                break
+
+        if not es_duplicado:
+            # Comparar con otros productos sin consecutivo
+            for j, prod2 in enumerate(sin_consecutivo):
+                if i >= j:  # Evitar comparar consigo mismo
+                    continue
+
+                nombre2 = prod2.get("nombre", "")
+                similitud = similitud_productos(nombre1, nombre2)
+
+                if similitud > 0.85:
+                    es_duplicado = True
+                    print(
+                        f"   ⚠️ Duplicado por similitud ({similitud:.0%}): '{nombre1}' ≈ '{nombre2}'"
+                    )
+                    break
+
+        if not es_duplicado:
+            productos_unicos.append(prod1)
+
+    # Limpiar nombres finales (remover info de deduplicación interna)
+    for prod in productos_unicos:
+        if "nombre_limpio" in prod:
+            del prod["nombre_limpio"]
+        if "nombre_original" in prod:
+            # Mantener el nombre original si es más completo
+            if len(prod["nombre_original"]) > len(prod.get("nombre", "")):
+                prod["nombre"] = prod["nombre_original"]
+            del prod["nombre_original"]
+        if "consecutivo" in prod:
+            del prod["consecutivo"]
+
+    print(f"✅ Productos únicos finales: {len(productos_unicos)}")
+    print(f"   📉 Eliminados: {len(productos) - len(productos_unicos)} duplicados")
+
+    return productos_unicos
+
+
+# ==========================================
+# FUNCIÓN PARA VALIDAR Y LIMPIAR FECHAS
+# ==========================================
+def validar_fecha(fecha_str: str) -> str:
+    """
+    Valida y limpia una fecha detectada por OCR.
+
+    Maneja formatos comunes:
+    - DD/MM/YY
+    - DD/MM/YYYY
+    - DD-MM-YY
+
+    Returns:
+        str: Fecha en formato ISO (YYYY-MM-DD) o None si inválida
+    """
+    if not fecha_str or not isinstance(fecha_str, str):
+        return None
+
+    # Limpiar la fecha
+    fecha_limpia = fecha_str.strip()
+
+    # Remover caracteres extraños al final (como "-03")
+    fecha_limpia = re.sub(r"-\d+$", "", fecha_limpia)
+
+    # Intentar parsear diferentes formatos
+    from datetime import datetime
+
+    formatos = [
+        "%d/%m/%Y",  # 25/10/2024
+        "%d/%m/%y",  # 25/10/24
+        "%d-%m-%Y",  # 25-10-2024
+        "%d-%m-%y",  # 25-10-24
+        "%Y-%m-%d",  # 2024-10-25 (ISO)
     ]
 
-    productos_validos = []
-    lineas_filtradas = 0
-
-    for prod in productos:
-        nombre = str(prod.get("nombre", "")).lower().strip()
-        codigo = str(prod.get("codigo", "")).strip()
-        precio = prod.get("precio", 0)
-
-        # ❌ FILTRO 1: Palabras administrativas
-        if any(palabra in nombre for palabra in palabras_filtro):
-            lineas_filtradas += 1
-            continue
-
-        # ❌ FILTRO 2: Solo números sin sentido
-        if re.match(r"^[\d\s\-\./]+$", nombre):
-            lineas_filtradas += 1
-            continue
-
-        # ✅ CALCULAR NIVEL DE CONFIANZA
-        nivel = calcular_nivel_confianza(codigo, nombre, precio)
-
-        if nivel > 0:
-            # Agregar nivel de confianza al producto
-            prod["nivel_confianza"] = nivel
-            productos_validos.append(prod)
-        else:
-            lineas_filtradas += 1
-
-    logger.info(f"   🗑️ Paso 1: {lineas_filtradas} líneas basura eliminadas")
-    logger.info(f"   ✅ Productos válidos: {len(productos_validos)}")
-
-    productos = productos_validos
-
-    # ========================================
-    # PASO 2: AGRUPAR POR NOMBRE + PRECIO (CRÍTICO PARA VIDEOS)
-    # ========================================
-    # En videos, Claude lee mal los códigos creando "falsos diferentes"
-    # SOLUCIÓN: Agrupar por (NOMBRE + PRECIO) primero
-
-    productos_unicos = {}
-
-    for prod in productos:
-        codigo = str(prod.get("codigo", "")).strip()
-        nombre = str(prod.get("nombre", "")).strip().upper()
-        precio = prod.get("precio", 0)
-        nivel = prod.get("nivel_confianza", 3)
-
-        # Normalizar nombre para comparación
-        nombre_norm = normalizar_para_comparacion(nombre)
-
-        # Clave ÚNICA: Nombre normalizado + Precio
-        # Esto agrupa "CREMA DE LECHE U $22865" aunque tenga códigos diferentes
-        clave_unica = (nombre_norm, precio)
-
-        if clave_unica not in productos_unicos:
-            productos_unicos[clave_unica] = prod
-        else:
-            # Ya existe producto similar - mantener el MEJOR
-            prod_existente = productos_unicos[clave_unica]
-
-            # Prioridad 1: Con código válido
-            tiene_codigo_actual = es_codigo_valido(codigo)
-            tiene_codigo_existente = es_codigo_valido(prod_existente.get("codigo", ""))
-
-            if tiene_codigo_actual and not tiene_codigo_existente:
-                productos_unicos[clave_unica] = prod
-            elif not tiene_codigo_actual and tiene_codigo_existente:
-                pass  # Mantener el existente
-            else:
-                # Ambos tienen o no tienen código
-                # Prioridad 2: Mejor nivel de confianza
-                if nivel < prod_existente.get("nivel_confianza", 3):
-                    productos_unicos[clave_unica] = prod
-                # Prioridad 3: Nombre más completo
-                elif nivel == prod_existente.get("nivel_confianza", 3):
-                    if len(nombre) > len(prod_existente.get("nombre", "")):
-                        productos_unicos[clave_unica] = prod
-
-    # Convertir a lista
-    productos_con_codigo = list(productos_unicos.values())
-    productos_sin_codigo = []  # Ya no necesitamos este paso
-
-    logger.info(
-        f"   📊 Agrupados por Nombre+Precio: {len(productos_unicos)} productos únicos"
-    )
-
-    # ========================================
-    # PASO 3: RESULTADO FINAL
-    # ========================================
-    resultado_final = list(productos_unicos.values())
-
-    # ========================================
-    # ESTADÍSTICAS FINALES
-    # ========================================
-    total_original = len(productos) + lineas_filtradas
-
-    nivel_1 = len([p for p in resultado_final if p.get("nivel_confianza") == 1])
-    nivel_2 = len([p for p in resultado_final if p.get("nivel_confianza") == 2])
-    nivel_3 = len([p for p in resultado_final if p.get("nivel_confianza") == 3])
-
-    logger.info(f"=" * 70)
-    logger.info(f"✅ DEDUPLICACIÓN COMPLETADA (Sistema 3 Niveles)")
-    logger.info(f"   📊 Líneas detectadas: {total_original}")
-    logger.info(f"   🗑️  Basura eliminada: {lineas_filtradas}")
-    logger.info(f"   ✅ Productos guardados: {len(resultado_final)}")
-    logger.info(f"")
-    logger.info(f"   📊 POR NIVEL DE CONFIANZA:")
-    logger.info(f"   ✅ NIVEL 1 (Código+Nombre+Precio): {nivel_1}")
-    logger.info(f"   ⚠️  NIVEL 2 (Nombre+Precio): {nivel_2}")
-    logger.info(f"   ⚡ NIVEL 3 (Parcial): {nivel_3}")
-    logger.info(f"=" * 70)
-
-    # Log de productos finales
-    logger.info(f"📦 PRODUCTOS GUARDADOS:")
-    for i, prod in enumerate(resultado_final[:10], 1):
-        codigo = prod.get("codigo", "SIN CÓDIGO")
-        nombre = prod.get("nombre", "")
-        precio = prod.get("precio", 0)
-        nivel = prod.get("nivel_confianza", 3)
-        emoji = "✅" if nivel == 1 else "⚠️" if nivel == 2 else "⚡"
-        logger.info(f"   {emoji} {i}. [{codigo}] {nombre} - ${precio:,.0f}")
-
-    if len(resultado_final) > 10:
-        logger.info(f"   ... y {len(resultado_final) - 10} más")
-
-    return resultado_final
-
-
-def limpiar_frames_temporales(frames_paths: List[str]):
-    """Elimina archivos temporales de forma segura"""
-    eliminados = 0
-    errores = 0
-
-    for frame_path in frames_paths:
+    for formato in formatos:
         try:
-            if os.path.exists(frame_path):
-                os.remove(frame_path)
-                eliminados += 1
-        except Exception as e:
-            errores += 1
-            logger.warning(f"⚠️ Error limpiando {frame_path}: {e}")
+            fecha_obj = datetime.strptime(fecha_limpia, formato)
 
-    if eliminados > 0:
-        logger.info(f"🧹 {eliminados} frames temporales eliminados")
-    if errores > 0:
-        logger.warning(f"⚠️ {errores} archivos no se pudieron eliminar")
+            # Validar que la fecha sea razonable
+            año_actual = datetime.now().year
+
+            # Si el año es muy antiguo (< 2000), probablemente es error de OCR
+            if fecha_obj.year < 2000:
+                # Intentar ajustar el año (ej: "02" → "2002" o "2024")
+                if fecha_obj.year < 100:
+                    # Años de 2 dígitos: 00-25 → 2000-2025, 26-99 → 1926-1999
+                    if fecha_obj.year <= 25:
+                        fecha_obj = fecha_obj.replace(year=2000 + fecha_obj.year)
+                    else:
+                        fecha_obj = fecha_obj.replace(year=1900 + fecha_obj.year)
+
+            # Validar que no sea una fecha futura (más de 1 día)
+            if fecha_obj > datetime.now():
+                from datetime import timedelta
+
+                if (fecha_obj - datetime.now()) > timedelta(days=1):
+                    print(
+                        f"   ⚠️ Fecha futura detectada: {fecha_obj.date()}, usando fecha actual"
+                    )
+                    return datetime.now().date().isoformat()
+
+            # Retornar fecha en formato ISO
+            return fecha_obj.date().isoformat()
+
+        except ValueError:
+            continue
+
+    # Si no se pudo parsear ningún formato
+    print(f"   ⚠️ Fecha inválida: '{fecha_str}', usando fecha actual")
+    return datetime.now().date().isoformat()
 
 
-def combinar_frames_vertical(
-    frames_paths: List[str], output_path: str = None, max_height: int = 15000
-) -> str:
-    """Combina múltiples frames en una sola imagen vertical"""
-    if not frames_paths:
-        raise ValueError("No hay frames para combinar")
+# ==========================================
+# EJEMPLO DE USO
+# ==========================================
+if __name__ == "__main__":
+    # Ejemplo 1: Productos con consecutivo
+    productos_test = [
+        {"nombre": "01 un HUEVO AAA RJO 15UN", "codigo": "2136304", "precio": 14800},
+        {
+            "nombre": "HUEVO AAA RJO 15UN",
+            "codigo": "2136304",
+            "precio": 14800,
+        },  # Duplicado sin consecutivo
+        {"nombre": "02 un HUEVO AAA RJO 15UN", "codigo": "2136304", "precio": 14800},
+        {"nombre": "03 un PAPA MC CAIN RAPIP", "codigo": "1369018", "precio": 14990},
+    ]
 
-    try:
-        images = []
-        for path in frames_paths:
-            if os.path.exists(path):
-                img = cv2.imread(path)
-                if img is not None:
-                    images.append(img)
+    unicos = deduplicar_productos(productos_test)
+    print("\n📦 Productos únicos:")
+    for p in unicos:
+        print(f"   - {p['nombre']}: ${p['precio']:,}")
 
-        if not images:
-            raise ValueError("No se pudieron leer los frames")
+    # Ejemplo 2: Validar fechas
+    print("\n📅 Validando fechas:")
+    fechas_test = [
+        "25/10/02",
+        "26/10/52-03",  # Error de OCR
+        "13/10/2024",
+        "fecha inválida",
+    ]
 
-        max_width = max(img.shape[1] for img in images)
-
-        resized_images = []
-        for img in images:
-            if img.shape[1] != max_width:
-                height = int(img.shape[0] * max_width / img.shape[1])
-                img = cv2.resize(img, (max_width, height))
-            resized_images.append(img)
-
-        total_height = sum(img.shape[0] for img in resized_images)
-
-        if total_height > max_height:
-            scale = max_height / total_height
-            resized_images = [
-                cv2.resize(img, (int(img.shape[1] * scale), int(img.shape[0] * scale)))
-                for img in resized_images
-            ]
-            total_height = sum(img.shape[0] for img in resized_images)
-            max_width = int(max_width * scale)
-
-        combined = np.vstack(resized_images)
-
-        if output_path is None:
-            output_path = f"/tmp/combined_{os.getpid()}.jpg"
-
-        cv2.imwrite(output_path, combined, [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-        logger.info(
-            f"✅ Imagen combinada: {len(images)} frames, {total_height}px altura"
-        )
-
-        return output_path
-
-    except Exception as e:
-        logger.error(f"❌ Error combinando frames: {e}")
-        if frames_paths and os.path.exists(frames_paths[0]):
-            return frames_paths[0]
-        raise
+    for fecha in fechas_test:
+        fecha_valida = validar_fecha(fecha)
+        print(f"   '{fecha}' → {fecha_valida}")
