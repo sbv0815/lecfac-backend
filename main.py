@@ -940,12 +940,15 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             # 5.2 Crear factura
             # 5.2 Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                # 🆕 Si no hay fecha detectada, usar fecha de cargue
+                # 🆕 Validar y limpiar la fecha
+                from video_processor import validar_fecha
+
                 fecha_final = (
-                    fecha
-                    if (fecha and fecha.strip())
-                    else datetime.now().date().isoformat()
+                    validar_fecha(fecha) if fecha else datetime.now().date().isoformat()
                 )
+
+                print(f"📅 Fecha original: '{fecha}'")
+                print(f"📅 Fecha validada: '{fecha_final}'")
 
                 cursor.execute(
                     """
