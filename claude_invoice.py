@@ -2,6 +2,7 @@ import anthropic
 import base64
 import os
 import json
+import re
 from typing import Dict
 
 
@@ -115,79 +116,22 @@ CAMBIO: 17,150
    - Métodos de pago
    - Info administrativa
 
-# 📝 EJEMPLO COMPLETO
+# ⚠️ CASOS ESPECIALES A IGNORAR
 
-```
-EXITO NIZA
-NIT 890900689
-2025-10-04 08:24:58
+❌ **Líneas de numeración:**
+- "01 un", "02 un", "03 un" → NO SON PRODUCTOS
+- "1/u x 12.900", "2/u x 5.500" → NO SON PRODUCTOS
 
-PLU         DETALLE                    PRECIO
-477476      Crema De Leche U           22,865
-123456      Pan Integral Bimbo         8,500
-Total Item: 2
+❌ **Líneas de peso/unidad:**
+- "0.875/KGH" → NO ES PRODUCTO
+- "1.5/KG" → NO ES PRODUCTO
+- Solo indica peso, no es un producto comprado
 
-1 1/u x 26.900  V.Ahorro 4.035  ← NO ES PRODUCTO
-SUBTOTAL                           31,365
-DESCUENTO                           4,035
-VALOR TOTAL                        27,330
-FORMA PAGO: EFECTIVO
-```
+❌ **Palabras sueltas:**
+- "AHORRO", "KG", "KGM", "UN", "%" → NO SON PRODUCTOS
+- "REDEBAN", "PAGO", "AUTORIZA", "RECIBO" → NO SON PRODUCTOS
 
-**Respuesta CORRECTA:**
-```json
-{
-  "establecimiento": "ÉXITO",
-  "fecha": "2025-10-04",
-  "total": 27330,
-  "productos": [
-    {
-      "codigo": "477476",
-      "nombre": "Crema De Leche U",
-      "cantidad": 1,
-      "precio": 22865
-    },
-    {
-      "codigo": "123456",
-      "nombre": "Pan Integral Bimbo",
-      "cantidad": 1,
-      "precio": 8500
-    }
-  ]
-}
-```
-
-# 🚨 ERRORES COMUNES A EVITAR
-
-❌ **ERROR 1: Incluir descuentos como productos**
-```
-"1 1/u x 26.900 V.Ahorro 4.035"  → NO ES PRODUCTO
-```
-
-❌ **ERROR 2: Ignorar "Total Item"**
-```
-Total Item: 1  → Solo hay 1 producto real
-```
-Si ves esto, SOLO debes tener 1 producto en tu respuesta
-
-❌ **ERROR 3: Incluir métodos de pago**
-```
-"MASTERCARD", "VISA", "TARJETA" → NO SON PRODUCTOS
-```
-
-❌ **ERROR 4: Incluir totales**
-```
-"SUBTOTAL 26900" → NO ES PRODUCTO
-"VALOR TOTAL 22865" → NO ES PRODUCTO
-```
-
-# ⚠️ VALIDACIÓN FINAL
-
-Antes de responder, verifica:
-1. ✅ ¿Cuántos productos dice "Total Item"? Tu lista debe tener ESE número
-2. ✅ ¿Todos los productos están en la sección PRODUCTOS? (no en descuentos/totales)
-3. ✅ ¿Ninguno tiene palabras de descuento? (Ahorro, Descuento, Dto)
-4. ✅ ¿La suma de precios es cercana al SUBTOTAL? (antes de descuentos)
+Si ves alguna de estas líneas, IGNÓRALAS COMPLETAMENTE.
 
 # 📦 FORMATO JSON (sin comas en precios)
 
@@ -252,11 +196,11 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
         # Parsear JSON
         data = json.loads(json_str)
 
-        # ========== FILTRADO INTELIGENTE DE BASURA ==========
+        # ========== FILTRADO INTELIGENTE DE BASURA - VERSIÓN MEJORADA ==========
         if "productos" in data and data["productos"]:
             productos_originales = len(data["productos"])
 
-            # Lista REDUCIDA de basura obvia
+            # Lista AMPLIADA de basura obvia
             palabras_basura = [
                 "ahorro",
                 "descuento",
@@ -306,6 +250,17 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
                 "factura",
                 "ticket",
                 "recibo",
+                # 🆕 NUEVOS FILTROS
+                "pago",
+                "autoriza",
+                "recibo",
+                "aprobado",
+                "comprobante",
+                "cufe",
+                "qr",
+                "codigo qr",
+                "fecha",
+                "hora",
             ]
 
             productos_filtrados = []
@@ -314,20 +269,72 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
             for prod in data["productos"]:
                 nombre = str(prod.get("nombre", "")).lower().strip()
 
-                # ❌ Filtrar basura obvia
+                # ❌ FILTRO 1: Basura obvia
                 es_basura = any(palabra in nombre for palabra in palabras_basura)
 
-                # ❌ Filtrar solo números/símbolos (sin letras)
-                import re
-
+                # ❌ FILTRO 2: Solo números/símbolos (sin letras)
                 solo_numeros = not re.search(r"[A-Za-zÀ-ÿ]", nombre)
 
-                # ❌ Filtrar unidades solas
-                es_unidad = nombre in ["kg", "kgm", "/kgm", "/kg", "und", "/u", "x"]
+                # ❌ FILTRO 3: Unidades solas
+                es_unidad = nombre in [
+                    "kg",
+                    "kgm",
+                    "/kgm",
+                    "/kg",
+                    "und",
+                    "/u",
+                    "x",
+                    "un",
+                ]
 
-                if es_basura or solo_numeros or es_unidad:
+                # 🆕 FILTRO 4: Formato de peso/medida (0.875/KGH, 1.5/KG, etc.)
+                es_peso = bool(re.match(r"^\d+\.?\d*\s*/\s*kg[hm]?$", nombre))
+
+                # 🆕 FILTRO 5: Numeración de líneas (01 un, 02 un, 1/u, 2/u, etc.)
+                es_numeracion = bool(re.match(r"^\d{1,2}\s*(un|/u)\b", nombre))
+
+                # 🆕 FILTRO 6: Solo porcentajes o símbolos
+                es_simbolo = nombre in ["%", "$", "-", "=", "*", "+"]
+
+                # 🆕 FILTRO 7: Muy corto (menos de 3 caracteres)
+                muy_corto = len(nombre) < 3
+
+                # 🆕 FILTRO 8: Precio muy bajo (menos de $50 probablemente es basura)
+                precio = prod.get("precio", 0)
+                precio_invalido = precio < 50
+
+                # 🆕 FILTRO 9: Nombre repetitivo (ej: "1 1/u x 26.900")
+                patron_repetitivo = bool(re.match(r"^\d+\s+\d+/u", nombre))
+
+                # Aplicar TODOS los filtros
+                if (
+                    es_basura
+                    or solo_numeros
+                    or es_unidad
+                    or es_peso
+                    or es_numeracion
+                    or es_simbolo
+                    or muy_corto
+                    or (precio_invalido and not nombre)
+                    or patron_repetitivo
+                ):
+
                     basura_eliminada += 1
-                    print(f"   🗑️ Basura: {prod.get('nombre', 'N/A')[:40]}")
+                    print(f"   🗑️ Basura eliminada: '{prod.get('nombre', 'N/A')[:50]}'")
+                    print(f"      Razón: ", end="")
+                    if es_basura:
+                        print("palabra prohibida", end=" ")
+                    if solo_numeros:
+                        print("solo números", end=" ")
+                    if es_peso:
+                        print("formato peso", end=" ")
+                    if es_numeracion:
+                        print("numeración", end=" ")
+                    if muy_corto:
+                        print("muy corto", end=" ")
+                    if precio_invalido:
+                        print("precio inválido", end=" ")
+                    print()
                 else:
                     productos_filtrados.append(prod)
 
