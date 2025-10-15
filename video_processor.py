@@ -311,3 +311,181 @@ if __name__ == "__main__":
     for fecha in fechas_test:
         fecha_valida = validar_fecha(fecha)
         print(f"   '{fecha}' → {fecha_valida}")
+
+# ==========================================
+# FUNCIONES DE PROCESAMIENTO DE VIDEO
+# ==========================================
+
+
+def extraer_frames_video(video_path: str, intervalo: float = 1.0) -> List[str]:
+    """
+    Extrae frames de un video a intervalos regulares.
+
+    Args:
+        video_path: Ruta del video
+        intervalo: Segundos entre cada frame (default: 1.0)
+
+    Returns:
+        Lista de rutas de frames extraídos
+    """
+    import cv2
+    import os
+
+    frames_paths = []
+
+    try:
+        # Abrir el video
+        cap = cv2.VideoCapture(video_path)
+
+        if not cap.isOpened():
+            print(f"❌ No se pudo abrir el video: {video_path}")
+            return []
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        if fps == 0:
+            fps = 30  # Fallback
+
+        frame_interval = int(fps * intervalo)
+
+        print(f"📹 Video: {fps:.1f} FPS, {total_frames} frames totales")
+        print(f"🎯 Extrayendo 1 frame cada {frame_interval} frames ({intervalo}s)")
+
+        frame_count = 0
+        saved_count = 0
+
+        while True:
+            ret, frame = cap.read()
+
+            if not ret:
+                break
+
+            # Guardar frame cada 'frame_interval' frames
+            if frame_count % frame_interval == 0:
+                frame_filename = f"/tmp/frame_{saved_count:04d}.jpg"
+                cv2.imwrite(frame_filename, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                frames_paths.append(frame_filename)
+                saved_count += 1
+                print(f"   ✓ Frame {saved_count} guardado")
+
+            frame_count += 1
+
+        cap.release()
+
+        print(f"✅ Extraídos {len(frames_paths)} frames del video")
+        return frames_paths
+
+    except Exception as e:
+        print(f"❌ Error extrayendo frames: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return []
+
+
+def limpiar_frames_temporales(frames_paths: List[str]) -> None:
+    """
+    Elimina archivos temporales de frames.
+
+    Args:
+        frames_paths: Lista de rutas de frames a eliminar
+    """
+    import os
+
+    eliminados = 0
+    errores = 0
+
+    for frame_path in frames_paths:
+        try:
+            if os.path.exists(frame_path):
+                os.remove(frame_path)
+                eliminados += 1
+        except Exception as e:
+            print(f"⚠️ Error eliminando {frame_path}: {e}")
+            errores += 1
+
+    if eliminados > 0:
+        print(f"🧹 {eliminados} frames temporales eliminados")
+    if errores > 0:
+        print(f"⚠️ {errores} errores al eliminar frames")
+
+
+def combinar_frames_vertical(
+    frames_paths: List[str], output_path: str, max_width: int = 800
+) -> str:
+    """
+    Combina múltiples frames en una sola imagen vertical.
+
+    Args:
+        frames_paths: Lista de rutas de frames
+        output_path: Ruta donde guardar la imagen combinada
+        max_width: Ancho máximo de la imagen final (para optimizar tamaño)
+
+    Returns:
+        Ruta de la imagen combinada, o None si falla
+    """
+    try:
+        from PIL import Image
+        import os
+
+        if not frames_paths:
+            print("⚠️ No hay frames para combinar")
+            return None
+
+        print(f"🖼️ Combinando {len(frames_paths)} frames...")
+
+        # Cargar todas las imágenes
+        imagenes = []
+        for frame_path in frames_paths:
+            if os.path.exists(frame_path):
+                img = Image.open(frame_path)
+
+                # Redimensionar si es muy ancha
+                if img.width > max_width:
+                    ratio = max_width / img.width
+                    new_height = int(img.height * ratio)
+                    img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+                imagenes.append(img)
+
+        if not imagenes:
+            print("⚠️ No se pudieron cargar imágenes")
+            return None
+
+        # Calcular dimensiones de la imagen final
+        widths = [img.width for img in imagenes]
+        heights = [img.height for img in imagenes]
+
+        max_width_img = max(widths)
+        total_height = sum(heights)
+
+        # Crear imagen combinada
+        imagen_combinada = Image.new(
+            "RGB", (max_width_img, total_height), color="white"
+        )
+
+        # Pegar cada frame
+        y_offset = 0
+        for img in imagenes:
+            imagen_combinada.paste(img, (0, y_offset))
+            y_offset += img.height
+
+        # Guardar
+        imagen_combinada.save(output_path, "JPEG", quality=85, optimize=True)
+
+        print(f"✅ Imagen combinada guardada: {output_path}")
+        print(f"   📐 Dimensiones: {max_width_img}x{total_height}px")
+
+        # Cerrar imágenes
+        for img in imagenes:
+            img.close()
+
+        return output_path
+
+    except Exception as e:
+        print(f"❌ Error combinando frames: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return None
