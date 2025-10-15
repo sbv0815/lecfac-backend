@@ -1521,6 +1521,11 @@ def test_database_connection():
         return False
 
 
+def confirmar_producto_manual(producto_id: int, confirmado: bool):
+    # Implementación pendiente
+    pass
+
+
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
     test_database_connection()
