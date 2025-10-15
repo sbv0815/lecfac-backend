@@ -39,7 +39,7 @@ from database import (
     test_database_connection,
     detectar_cadena,
     # obtener_productos_frecuentes_faltantes,
-    confirmar_producto_manual,
+    # confirmar_producto_manual,
     obtener_o_crear_establecimiento,
     obtener_o_crear_producto_maestro,
 )
