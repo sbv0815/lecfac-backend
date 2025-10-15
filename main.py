@@ -2322,7 +2322,7 @@ async def marcar_como_validada(factura_id: int):
 
 @app.delete("/admin/facturas/{factura_id}")
 async def eliminar_factura(factura_id: int):
-    """Eliminar factura y TODAS sus referencias en cascada"""
+    """Eliminar factura y TODAS sus referencias en cascada - ORDEN CORRECTO"""
     print(f"🗑️ ELIMINANDO FACTURA #{factura_id}")
 
     try:
@@ -2333,7 +2333,7 @@ async def eliminar_factura(factura_id: int):
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 # ✅ ORDEN CRÍTICO: Eliminar referencias ANTES de la factura
 
-                # 1. Processing jobs
+                # 1. Processing jobs (PRIMERO)
                 print(f"   1️⃣ Eliminando processing_jobs...")
                 cursor.execute(
                     "DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,)
@@ -2357,8 +2357,20 @@ async def eliminar_factura(factura_id: int):
                 deleted_productos = cursor.rowcount
                 print(f"      ✓ {deleted_productos} producto(s) eliminado(s)")
 
-                # 4. La factura misma
-                print(f"   4️⃣ Eliminando factura...")
+                # 4. Precios (si existen referencias)
+                print(f"   4️⃣ Eliminando precios_productos...")
+                try:
+                    cursor.execute(
+                        "DELETE FROM precios_productos WHERE factura_id = %s",
+                        (factura_id,),
+                    )
+                    deleted_precios = cursor.rowcount
+                    print(f"      ✓ {deleted_precios} precio(s) eliminado(s)")
+                except Exception as e:
+                    print(f"      ⚠️ No hay tabla precios_productos o sin referencias")
+
+                # 5. La factura misma (AL FINAL)
+                print(f"   5️⃣ Eliminando factura...")
                 cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
                 deleted_factura = cursor.rowcount
 
@@ -2378,6 +2390,15 @@ async def eliminar_factura(factura_id: int):
                     "DELETE FROM productos WHERE factura_id = ?", (factura_id,)
                 )
                 deleted_productos = cursor.rowcount
+
+                try:
+                    cursor.execute(
+                        "DELETE FROM precios_productos WHERE factura_id = ?",
+                        (factura_id,),
+                    )
+                    deleted_precios = cursor.rowcount
+                except:
+                    deleted_precios = 0
 
                 cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
                 deleted_factura = cursor.rowcount
@@ -2410,6 +2431,11 @@ async def eliminar_factura(factura_id: int):
                         ),
                         "productos_eliminados": (
                             deleted_productos
+                            if os.environ.get("DATABASE_TYPE") == "postgresql"
+                            else "N/A"
+                        ),
+                        "precios_eliminados": (
+                            deleted_precios
                             if os.environ.get("DATABASE_TYPE") == "postgresql"
                             else "N/A"
                         ),
