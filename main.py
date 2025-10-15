@@ -560,12 +560,204 @@ async def parse_invoice(file: UploadFile = File(...)):
 
         raise HTTPException(500, str(e))
 
-        # ==========================================
-        # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
-        # ==========================================
-        # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
+    # ==========================================
 
 
+# ENDPOINT: GUARDAR FACTURA CON IMAGEN
+# ==========================================
+@app.post("/invoices/save-with-image")
+async def save_invoice_with_image(
+    file: UploadFile = File(...),
+    usuario_id: int = Form(1),
+    establecimiento: str = Form(...),
+    total: float = Form(...),
+    productos: str = Form(...),
+):
+    """Guardar factura procesada con su imagen"""
+    print(f"\n{'='*60}")
+    print(f"💾 GUARDANDO FACTURA CON IMAGEN")
+    print(f"{'='*60}")
+
+    temp_file = None
+    conn = None
+
+    try:
+        # 1. Guardar archivo temporal
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.close()
+
+        print(f"📁 Archivo: {file.filename} ({len(content)} bytes)")
+        print(f"🏪 Establecimiento: {establecimiento}")
+        print(f"💰 Total: ${total:,.0f}")
+
+        # 2. Parsear productos
+        import json
+
+        productos_list = json.loads(productos)
+        print(f"📦 Productos: {len(productos_list)}")
+
+        # 3. Conectar a BD
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 4. Detectar cadena y crear/obtener establecimiento
+        cadena = detectar_cadena(establecimiento)
+        establecimiento_id = obtener_o_crear_establecimiento(establecimiento, cadena)
+
+        # 5. Crear factura
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                """
+                INSERT INTO facturas (
+                    usuario_id, establecimiento_id, establecimiento, cadena,
+                    total_factura, fecha_cargue, estado_validacion, tiene_imagen
+                ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'procesado', TRUE)
+                RETURNING id
+            """,
+                (usuario_id, establecimiento_id, establecimiento, cadena, total),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO facturas (
+                    usuario_id, establecimiento_id, establecimiento, cadena,
+                    total_factura, fecha_cargue, estado_validacion, tiene_imagen
+                ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'procesado', 1)
+            """,
+                (usuario_id, establecimiento_id, establecimiento, cadena, total),
+            )
+
+        factura_id = cursor.fetchone()[0]
+        print(f"✅ Factura creada: ID {factura_id}")
+
+        # 6. Guardar productos en items_factura
+        productos_guardados = 0
+
+        for prod in productos_list:
+            try:
+                codigo = prod.get("codigo", "").strip()
+                nombre = prod.get("nombre", "").strip()
+                precio = float(prod.get("precio", 0))
+
+                if not nombre or precio <= 0:
+                    continue
+
+                # Buscar o crear producto maestro si hay código válido
+                producto_maestro_id = None
+                if codigo and len(codigo) >= 8 and codigo.isdigit():
+                    producto_maestro_id = obtener_o_crear_producto_maestro(
+                        codigo_ean=codigo, nombre=nombre, precio=precio
+                    )
+
+                # Insertar en items_factura
+                if os.environ.get("DATABASE_TYPE") == "postgresql":
+                    cursor.execute(
+                        """
+                        INSERT INTO items_factura (
+                            factura_id, usuario_id, producto_maestro_id,
+                            codigo_leido, nombre_leido, precio_pagado, cantidad
+                        ) VALUES (%s, %s, %s, %s, %s, %s, 1)
+                    """,
+                        (
+                            factura_id,
+                            usuario_id,
+                            producto_maestro_id,
+                            codigo,
+                            nombre,
+                            precio,
+                        ),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO items_factura (
+                            factura_id, usuario_id, producto_maestro_id,
+                            codigo_leido, nombre_leido, precio_pagado, cantidad
+                        ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                    """,
+                        (
+                            factura_id,
+                            usuario_id,
+                            producto_maestro_id,
+                            codigo,
+                            nombre,
+                            precio,
+                        ),
+                    )
+
+                productos_guardados += 1
+
+            except Exception as e:
+                print(f"⚠️ Error guardando producto: {e}")
+                continue
+
+        print(f"✅ {productos_guardados} productos guardados")
+
+        # 7. Actualizar contador
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
+                (productos_guardados, factura_id),
+            )
+        else:
+            cursor.execute(
+                "UPDATE facturas SET productos_guardados = ? WHERE id = ?",
+                (productos_guardados, factura_id),
+            )
+
+        conn.commit()
+
+        # 8. Guardar imagen en BD
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
+
+        print(f"📸 Imagen guardada: {imagen_guardada}")
+
+        # 9. Limpiar archivo temporal
+        try:
+            os.unlink(temp_file.name)
+        except:
+            pass
+
+        cursor.close()
+        conn.close()
+
+        print(f"{'='*60}")
+        print(f"✅ FACTURA GUARDADA EXITOSAMENTE")
+        print(f"{'='*60}\n")
+
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "productos_guardados": productos_guardados,
+            "imagen_guardada": imagen_guardada,
+            "establecimiento": establecimiento,
+            "total": total,
+        }
+
+    except Exception as e:
+        print(f"❌ ERROR: {str(e)}")
+        traceback.print_exc()
+
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
+
+        if temp_file:
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
+
+        raise HTTPException(500, f"Error guardando factura: {str(e)}")
+
+
+# ==========================================
+# ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO) ⭐
 # ==========================================
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
