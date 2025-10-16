@@ -8,33 +8,39 @@ import os
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+
 @router.get("/stats")
 async def estadisticas():
     """Obtener estadísticas generales del sistema"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # 1. Total de facturas
         cursor.execute("SELECT COUNT(*) FROM facturas")
         total_facturas = cursor.fetchone()[0]
-        
+
         # 2. Productos únicos en catálogo NUEVO
-        cursor.execute("""
-            SELECT COUNT(DISTINCT id) 
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT id)
             FROM productos_maestros
-        """)
+        """
+        )
         productos_unicos = cursor.fetchone()[0]
-        
+
         # 3. Facturas pendientes de revisión
-        cursor.execute("""
-            SELECT COUNT(*) FROM facturas 
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM facturas
             WHERE COALESCE(estado_validacion, 'pendiente') NOT IN ('revisada', 'validada')
-        """)
+        """
+        )
         facturas_pendientes = cursor.fetchone()[0]
-        
+
         # 4. Alertas activas (productos con variación de precio)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*) FROM (
                 SELECT producto_maestro_id
                 FROM precios_productos
@@ -42,20 +48,22 @@ async def estadisticas():
                 GROUP BY producto_maestro_id
                 HAVING COUNT(DISTINCT precio) > 1
             ) AS cambios
-        """)
+        """
+        )
         alertas_activas = cursor.fetchone()[0]
-        
+
         cursor.close()
         conn.close()
-        
+
         return {
             "total_facturas": total_facturas,
             "productos_unicos": productos_unicos,
             "alertas_activas": alertas_activas,
-            "pendientes_revision": facturas_pendientes
+            "pendientes_revision": facturas_pendientes,
         }
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -66,17 +74,18 @@ async def estadisticas_detalladas():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # 1. Total de facturas
         cursor.execute("SELECT COUNT(*) FROM facturas")
         total_facturas = cursor.fetchone()[0]
-        
+
         # 2. Productos únicos en catálogo global
         cursor.execute("SELECT COUNT(*) FROM productos_maestros")
         productos_unicos = cursor.fetchone()[0]
-        
+
         # 3. Alertas activas
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*) FROM (
                 SELECT producto_maestro_id
                 FROM precios_productos
@@ -84,43 +93,49 @@ async def estadisticas_detalladas():
                 GROUP BY producto_maestro_id
                 HAVING COUNT(DISTINCT precio) > 1
             ) AS cambios
-        """)
+        """
+        )
         alertas_activas = cursor.fetchone()[0]
-        
+
         # 4. Desglose por estado
-        cursor.execute("""
-            SELECT 
+        cursor.execute(
+            """
+            SELECT
                 COALESCE(estado_validacion, 'sin_estado') as estado,
                 COUNT(*) as cantidad
             FROM facturas
             GROUP BY estado_validacion
-        """)
-        
+        """
+        )
+
         por_estado = {}
         for row in cursor.fetchall():
             estado = row[0]
             cantidad = row[1]
             por_estado[estado] = cantidad
-        
+
         # 5. Total pendientes
-        cursor.execute("""
-            SELECT COUNT(*) FROM facturas 
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM facturas
             WHERE COALESCE(estado_validacion, 'pendiente') NOT IN ('revisada', 'validada')
-        """)
+        """
+        )
         pendientes_total = cursor.fetchone()[0]
-        
+
         cursor.close()
         conn.close()
-        
+
         return {
             "total_facturas": total_facturas,
             "productos_unicos": productos_unicos,
             "alertas_activas": alertas_activas,
             "por_estado": por_estado,
-            "pendientes_total": pendientes_total
+            "pendientes_total": pendientes_total,
         }
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -131,9 +146,10 @@ async def obtener_catalogo_productos():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT 
+
+        cursor.execute(
+            """
+            SELECT
                 pm.id,
                 pm.codigo_ean,
                 pm.nombre_normalizado,
@@ -145,29 +161,33 @@ async def obtener_catalogo_productos():
             FROM productos_maestros pm
             ORDER BY pm.total_reportes DESC
             LIMIT 500
-        """)
-        
+        """
+        )
+
         productos = []
         for row in cursor.fetchall():
-            productos.append({
-                "id": row[0],
-                "codigo_ean": row[1],
-                "nombre": row[2] or "Sin nombre",
-                "marca": row[3],
-                "veces_visto": row[4] or 0,
-                "precio_promedio": float(row[5]) if row[5] else 0,
-                "precio_min": float(row[6]) if row[6] else 0,
-                "precio_max": float(row[7]) if row[7] else 0,
-                "verificado": False,
-                "necesita_revision": False
-            })
-        
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2] or "Sin nombre",
+                    "marca": row[3],
+                    "veces_visto": row[4] or 0,
+                    "precio_promedio": float(row[5]) if row[5] else 0,
+                    "precio_min": float(row[6]) if row[6] else 0,
+                    "precio_max": float(row[7]) if row[7] else 0,
+                    "verificado": False,
+                    "necesita_revision": False,
+                }
+            )
+
         cursor.close()
         conn.close()
-        
+
         return {"productos": productos, "total": len(productos)}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error en catálogo: {str(e)}")
 
@@ -178,9 +198,10 @@ async def obtener_facturas():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT 
+
+        cursor.execute(
+            """
+            SELECT
                 f.id,
                 f.establecimiento,
                 f.total_factura,
@@ -193,26 +214,30 @@ async def obtener_facturas():
             GROUP BY f.id, f.establecimiento, f.total_factura, f.fecha_cargue, f.estado_validacion, f.tiene_imagen
             ORDER BY f.fecha_cargue DESC
             LIMIT 100
-        """)
-        
+        """
+        )
+
         facturas = []
         for row in cursor.fetchall():
-            facturas.append({
-                "id": row[0],
-                "establecimiento": row[1] or "Sin datos",
-                "total": float(row[2]) if row[2] else 0,
-                "fecha": str(row[3]) if row[3] else "",
-                "estado": row[4] or "pendiente",
-                "tiene_imagen": row[5] or False,
-                "productos": row[6] or 0
-            })
-        
+            facturas.append(
+                {
+                    "id": row[0],
+                    "establecimiento": row[1] or "Sin datos",
+                    "total": float(row[2]) if row[2] else 0,
+                    "fecha": str(row[3]) if row[3] else "",
+                    "estado": row[4] or "pendiente",
+                    "tiene_imagen": row[5] or False,
+                    "productos": row[6] or 0,
+                }
+            )
+
         cursor.close()
         conn.close()
-        
+
         return {"facturas": facturas, "total": len(facturas)}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -225,40 +250,47 @@ async def get_factura_detalle(factura_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # 1. Obtener datos generales de la factura
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT 
-                    id, usuario_id, establecimiento, cadena, total_factura, 
+            cursor.execute(
+                """
+                SELECT
+                    id, usuario_id, establecimiento, cadena, total_factura,
                     fecha_cargue, estado_validacion, puntaje_calidad, tiene_imagen,
                     establecimiento_id
-                FROM facturas 
+                FROM facturas
                 WHERE id = %s
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
-                SELECT 
-                    id, usuario_id, establecimiento, cadena, total_factura, 
+            cursor.execute(
+                """
+                SELECT
+                    id, usuario_id, establecimiento, cadena, total_factura,
                     fecha_cargue, estado_validacion, puntaje_calidad, tiene_imagen,
                     establecimiento_id
-                FROM facturas 
+                FROM facturas
                 WHERE id = ?
-            """, (factura_id,))
-        
+            """,
+                (factura_id,),
+            )
+
         factura = cursor.fetchone()
-        
+
         if not factura:
             cursor.close()
             conn.close()
             raise HTTPException(404, "Factura no encontrada")
-        
+
         # 2. Obtener productos de items_factura (NUEVA TABLA)
         productos = []
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT 
+            cursor.execute(
+                """
+                SELECT
                     i.id,
                     i.codigo_leido,
                     i.nombre_leido,
@@ -270,10 +302,13 @@ async def get_factura_detalle(factura_id: int):
                 LEFT JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
                 WHERE i.factura_id = %s
                 ORDER BY i.id
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
-                SELECT 
+            cursor.execute(
+                """
+                SELECT
                     i.id,
                     i.codigo_leido,
                     i.nombre_leido,
@@ -285,26 +320,30 @@ async def get_factura_detalle(factura_id: int):
                 LEFT JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
                 WHERE i.factura_id = ?
                 ORDER BY i.id
-            """, (factura_id,))
-        
+            """,
+                (factura_id,),
+            )
+
         for row in cursor.fetchall():
             # Usar nombre del catálogo si existe, sino el nombre leído
             nombre = row[6] if row[6] else (row[2] or "Sin nombre")
             codigo = row[5] if row[5] else (row[1] or "")
-            
-            productos.append({
-                "id": row[0],
-                "codigo": codigo,
-                "nombre": nombre,
-                "precio": float(row[3]) if row[3] else 0,
-                "cantidad": row[4] or 1
-            })
-        
+
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo": codigo,
+                    "nombre": nombre,
+                    "precio": float(row[3]) if row[3] else 0,
+                    "cantidad": row[4] or 1,
+                }
+            )
+
         cursor.close()
         conn.close()
-        
+
         print(f"✅ Factura {factura_id}: {len(productos)} productos de items_factura")
-        
+
         # 3. Construir respuesta
         return {
             "id": factura[0],
@@ -317,14 +356,15 @@ async def get_factura_detalle(factura_id: int):
             "estado": factura[6] or "pendiente",
             "puntaje": factura[7] or 0,
             "tiene_imagen": factura[8] or False,
-            "productos": productos
+            "productos": productos,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ Error en get_factura_detalle: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(500, str(e))
 
@@ -332,8 +372,9 @@ async def get_factura_detalle(factura_id: int):
 # AGREGAR ESTE ENDPOINT en admin_dashboard.py
 # Colócalo después del endpoint @router.get("/facturas/{factura_id}")
 
-# REEMPLAZAR el endpoint @router.put("/facturas/{factura_id}") 
+# REEMPLAZAR el endpoint @router.put("/facturas/{factura_id}")
 # con esta versión CORREGIDA:
+
 
 @router.put("/facturas/{factura_id}")
 async def update_factura(factura_id: int, request: dict):
@@ -343,116 +384,123 @@ async def update_factura(factura_id: int, request: dict):
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
-    
+
     try:
         # Obtener datos del request
         establecimiento = request.get("establecimiento", "").strip()
         total = request.get("total")
         fecha = request.get("fecha")
-        
+
         print(f"📝 Actualizando factura {factura_id}")
         print(f"   Establecimiento: {establecimiento}")
         print(f"   Total: {total}")
         print(f"   Fecha: {fecha}")
         print(f"   DB Type: {database_type}")
-        
+
         # Verificar que la factura existe
         if database_type == "postgresql":
             cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
         else:
             cursor.execute("SELECT id FROM facturas WHERE id = ?", (factura_id,))
-        
+
         if not cursor.fetchone():
             conn.close()
             raise HTTPException(status_code=404, detail="Factura no encontrada")
-        
+
         # Para PostgreSQL, construir query con placeholders %s
         if database_type == "postgresql":
             updates = []
             params = []
-            
+
             if establecimiento:
                 updates.append("establecimiento = %s")
                 params.append(establecimiento)
-            
+
             if total is not None:
                 updates.append("total_factura = %s")
                 params.append(float(total))
-            
+
             if fecha:
                 updates.append("fecha_cargue = %s")
                 params.append(fecha)
-            
+
             if not updates:
                 conn.close()
-                raise HTTPException(status_code=400, detail="No hay datos para actualizar")
-            
+                raise HTTPException(
+                    status_code=400, detail="No hay datos para actualizar"
+                )
+
             params.append(factura_id)
-            
+
             query = f"""
-                UPDATE facturas 
+                UPDATE facturas
                 SET {', '.join(updates)}
                 WHERE id = %s
                 RETURNING id, establecimiento, total_factura, fecha_cargue
             """
-            
+
             print(f"🔍 Query: {query}")
             print(f"🔍 Params: {params}")
-            
+
             cursor.execute(query, params)
             result = cursor.fetchone()
-            
+
         else:
             # SQLite
             updates = []
             params = []
-            
+
             if establecimiento:
                 updates.append("establecimiento = ?")
                 params.append(establecimiento)
-            
+
             if total is not None:
                 updates.append("total_factura = ?")
                 params.append(float(total))
-            
+
             if fecha:
                 updates.append("fecha_cargue = ?")
                 params.append(fecha)
-            
+
             if not updates:
                 conn.close()
-                raise HTTPException(status_code=400, detail="No hay datos para actualizar")
-            
+                raise HTTPException(
+                    status_code=400, detail="No hay datos para actualizar"
+                )
+
             params.append(factura_id)
-            
+
             query = f"""
-                UPDATE facturas 
+                UPDATE facturas
                 SET {', '.join(updates)}
                 WHERE id = ?
             """
-            
+
             cursor.execute(query, params)
-            
-            cursor.execute("""
-                SELECT id, establecimiento, total_factura, fecha_cargue 
+
+            cursor.execute(
+                """
+                SELECT id, establecimiento, total_factura, fecha_cargue
                 FROM facturas WHERE id = ?
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
             result = cursor.fetchone()
-        
+
         conn.commit()
         conn.close()
-        
+
         print(f"✅ Factura actualizada: {result}")
-        
+
         return {
             "success": True,
             "message": "Factura actualizada correctamente",
             "id": result[0],
             "establecimiento": result[1],
             "total": float(result[2]) if result[2] else 0,
-            "fecha": str(result[3]) if result[3] else None
+            "fecha": str(result[3]) if result[3] else None,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -460,6 +508,7 @@ async def update_factura(factura_id: int, request: dict):
             conn.rollback()
             conn.close()
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -469,37 +518,35 @@ async def get_factura_imagen(factura_id: int):
     """Obtener imagen de factura en ALTA CALIDAD"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
-    
+
     if database_type == "postgresql":
         cursor.execute(
-            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s",
-            (factura_id,)
+            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = %s", (factura_id,)
         )
     else:
         cursor.execute(
-            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = ?",
-            (factura_id,)
+            "SELECT imagen_data, imagen_mime FROM facturas WHERE id = ?", (factura_id,)
         )
-    
+
     resultado = cursor.fetchone()
     conn.close()
-    
+
     if not resultado or not resultado[0]:
         raise HTTPException(status_code=404, detail="Imagen no encontrada")
-    
+
     imagen_data = resultado[0]
     imagen_mime = resultado[1] or "image/jpeg"
-    
+
     # Retornar con headers para evitar compresión
     return Response(
         content=bytes(imagen_data),
         media_type=imagen_mime,
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Content-Disposition": "inline"
-        }
+            "Content-Disposition": "inline",
+        },
     )
 
 
@@ -508,41 +555,43 @@ async def delete_item(item_id: int):
     """Eliminar un item de factura duplicado"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
-    
+
     try:
         # Verificar que el item existe y obtener factura_id
         if database_type == "postgresql":
             cursor.execute(
-                "SELECT factura_id FROM items_factura WHERE id = %s",
-                (item_id,)
+                "SELECT factura_id FROM items_factura WHERE id = %s", (item_id,)
             )
         else:
             cursor.execute(
-                "SELECT factura_id FROM items_factura WHERE id = ?",
-                (item_id,)
+                "SELECT factura_id FROM items_factura WHERE id = ?", (item_id,)
             )
-        
+
         resultado = cursor.fetchone()
-        
+
         if not resultado:
             conn.close()
             raise HTTPException(status_code=404, detail="Item no encontrado")
-        
+
         factura_id = resultado[0]
-        
+
         # Eliminar el item
         if database_type == "postgresql":
             cursor.execute("DELETE FROM items_factura WHERE id = %s", (item_id,))
         else:
             cursor.execute("DELETE FROM items_factura WHERE id = ?", (item_id,))
-        
+
         conn.commit()
         conn.close()
-        
-        return {"success": True, "factura_id": factura_id, "message": "Item eliminado correctamente"}
-        
+
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "message": "Item eliminado correctamente",
+        }
+
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -551,6 +600,7 @@ async def delete_item(item_id: int):
 
 # Este archivo contiene SOLO el endpoint update_item corregido
 # Reemplaza el endpoint @router.put("/items/{item_id}") en tu admin_dashboard.py
+
 
 @router.put("/items/{item_id}")
 async def update_item(item_id: int, request: dict):
@@ -561,59 +611,74 @@ async def update_item(item_id: int, request: dict):
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
-    
+
     try:
         print(f"📝 Actualizando item {item_id}")
         print(f"📦 Data recibida: {request}")
-        
+
         # Obtener datos del request
         nombre = request.get("nombre")
         codigo_nuevo = request.get("codigo_ean")  # Puede ser None
         precio = request.get("precio")
         cantidad = request.get("cantidad", 1)
-        
+
         if not nombre or precio is None:
-            raise HTTPException(status_code=400, detail="Nombre y precio son requeridos")
-        
+            raise HTTPException(
+                status_code=400, detail="Nombre y precio son requeridos"
+            )
+
         # 1. Obtener datos actuales del item
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT factura_id, usuario_id, codigo_leido, nombre_leido, precio_pagado
-                FROM items_factura 
+                FROM items_factura
                 WHERE id = %s
-            """, (item_id,))
+            """,
+                (item_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT factura_id, usuario_id, codigo_leido, nombre_leido, precio_pagado
-                FROM items_factura 
+                FROM items_factura
                 WHERE id = ?
-            """, (item_id,))
-        
+            """,
+                (item_id,),
+            )
+
         resultado = cursor.fetchone()
         if not resultado:
             conn.close()
             raise HTTPException(status_code=404, detail="Item no encontrado")
-        
+
         factura_id, usuario_id, codigo_actual, nombre_actual, precio_actual = resultado
-        
+
         print(f"🔍 Datos actuales:")
         print(f"   - Nombre: {nombre_actual}")
         print(f"   - Código: {codigo_actual}")
         print(f"   - Precio: {precio_actual}")
-        
+
         # 2. Determinar el código final a usar
         codigo_final = codigo_actual  # Por defecto mantener el actual
-        
+
         # Lista de códigos que se consideran INVÁLIDOS
         CODIGOS_INVALIDOS = [
-            '', 'SIN_CODIGO', 'sin_codigo', 'SinCodigo', 
-            'null', 'None', 'undefined', 'N/A', 'n/a'
+            "",
+            "SIN_CODIGO",
+            "sin_codigo",
+            "SinCodigo",
+            "null",
+            "None",
+            "undefined",
+            "N/A",
+            "n/a",
         ]
-        
+
         if codigo_nuevo is not None:
             # Limpiar el código nuevo
             codigo_limpio = str(codigo_nuevo).strip().upper()
-            
+
             # Validar que sea un código válido
             if codigo_limpio and codigo_limpio not in CODIGOS_INVALIDOS:
                 # 🔥 CORREGIDO: Aceptar códigos desde 3 dígitos
@@ -621,46 +686,48 @@ async def update_item(item_id: int, request: dict):
                     codigo_final = codigo_limpio
                     print(f"✅ Usando nuevo código válido: {codigo_final}")
                 else:
-                    print(f"⚠️ Código recibido no es válido (no numérico o muy corto): '{codigo_limpio}'")
+                    print(
+                        f"⚠️ Código recibido no es válido (no numérico o muy corto): '{codigo_limpio}'"
+                    )
                     print(f"   → Manteniendo código actual: {codigo_actual}")
             else:
                 print(f"⚠️ Código inválido recibido: '{codigo_nuevo}'")
                 print(f"   → Manteniendo código actual: {codigo_actual}")
         else:
             print(f"✓ No se recibió código en request - manteniendo: {codigo_actual}")
-        
+
         print(f"📌 Código final a guardar: {codigo_final}")
-        
+
         # 3. Determinar si el código final es VÁLIDO para precios_productos
         # 🔥 CORREGIDO: Aceptar códigos de 3+ dígitos
         codigo_es_valido = (
-            codigo_final and 
-            str(codigo_final).strip() != '' and
-            str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS and
-            len(str(codigo_final)) >= 3 and  # 🔥 Cambiado de >= 8 a >= 3
-            str(codigo_final).isdigit()
+            codigo_final
+            and str(codigo_final).strip() != ""
+            and str(codigo_final).strip().upper() not in CODIGOS_INVALIDOS
+            and len(str(codigo_final)) >= 3  # 🔥 Cambiado de >= 8 a >= 3
+            and str(codigo_final).isdigit()
         )
-        
+
         print(f"🔍 ¿Código válido para precios_productos? {codigo_es_valido}")
-        
+
         # 4. Actualizar items_factura (SIEMPRE)
         producto_maestro_id = None
-        
+
         if codigo_es_valido:
             # Buscar o crear producto maestro
             if database_type == "postgresql":
                 cursor.execute(
                     "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
-                    (codigo_final,)
+                    (codigo_final,),
                 )
             else:
                 cursor.execute(
                     "SELECT id FROM productos_maestros WHERE codigo_ean = ?",
-                    (codigo_final,)
+                    (codigo_final,),
                 )
-            
+
             prod_result = cursor.fetchone()
-            
+
             if prod_result:
                 producto_maestro_id = prod_result[0]
                 print(f"✓ Producto maestro encontrado: {producto_maestro_id}")
@@ -668,28 +735,35 @@ async def update_item(item_id: int, request: dict):
                 # Crear nuevo producto maestro
                 print(f"➕ Creando nuevo producto maestro para código: {codigo_final}")
                 if database_type == "postgresql":
-                    cursor.execute("""
-                        INSERT INTO productos_maestros 
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_maestros
                         (codigo_ean, nombre_normalizado, total_reportes)
                         VALUES (%s, %s, 1)
                         RETURNING id
-                    """, (codigo_final, nombre))
+                    """,
+                        (codigo_final, nombre),
+                    )
                     producto_maestro_id = cursor.fetchone()[0]
                 else:
-                    cursor.execute("""
-                        INSERT INTO productos_maestros 
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_maestros
                         (codigo_ean, nombre_normalizado, total_reportes)
                         VALUES (?, ?, 1)
-                    """, (codigo_final, nombre))
+                    """,
+                        (codigo_final, nombre),
+                    )
                     producto_maestro_id = cursor.lastrowid
-                
+
                 print(f"✓ Producto maestro creado: {producto_maestro_id}")
         else:
             print(f"⚠️ Código NO válido - no se vinculará a producto maestro")
-        
+
         # Actualizar el item en items_factura
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE items_factura
                 SET nombre_leido = %s,
                     codigo_leido = %s,
@@ -698,9 +772,12 @@ async def update_item(item_id: int, request: dict):
                     producto_maestro_id = %s
                 WHERE id = %s
                 RETURNING id, nombre_leido, codigo_leido, precio_pagado
-            """, (nombre, codigo_final, precio, cantidad, producto_maestro_id, item_id))
+            """,
+                (nombre, codigo_final, precio, cantidad, producto_maestro_id, item_id),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE items_factura
                 SET nombre_leido = ?,
                     codigo_leido = ?,
@@ -708,92 +785,134 @@ async def update_item(item_id: int, request: dict):
                     cantidad = ?,
                     producto_maestro_id = ?
                 WHERE id = ?
-            """, (nombre, codigo_final, precio, cantidad, producto_maestro_id, item_id))
-        
+            """,
+                (nombre, codigo_final, precio, cantidad, producto_maestro_id, item_id),
+            )
+
         print(f"✅ Item actualizado en items_factura")
-        
+
         # 5. Actualizar precios_productos SOLO si hay código válido
         precio_actualizado = False
-        
+
         if codigo_es_valido and producto_maestro_id:
             print(f"📊 Intentando actualizar precios_productos...")
-            
+
             # Obtener establecimiento_id de la factura
             if database_type == "postgresql":
-                cursor.execute("""
-                    SELECT establecimiento_id, fecha_cargue 
-                    FROM facturas 
+                cursor.execute(
+                    """
+                    SELECT establecimiento_id, fecha_cargue
+                    FROM facturas
                     WHERE id = %s
-                """, (factura_id,))
+                """,
+                    (factura_id,),
+                )
             else:
-                cursor.execute("""
-                    SELECT establecimiento_id, fecha_cargue 
-                    FROM facturas 
+                cursor.execute(
+                    """
+                    SELECT establecimiento_id, fecha_cargue
+                    FROM facturas
                     WHERE id = ?
-                """, (factura_id,))
-            
+                """,
+                    (factura_id,),
+                )
+
             factura_info = cursor.fetchone()
-            
+
             if factura_info and factura_info[0]:
                 establecimiento_id = factura_info[0]
                 fecha_factura = factura_info[1]
-                
+
                 print(f"   - Producto maestro: {producto_maestro_id}")
                 print(f"   - Establecimiento: {establecimiento_id}")
                 print(f"   - Precio: {precio}")
-                
+
                 # Verificar si ya existe un registro
                 if database_type == "postgresql":
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         SELECT id FROM precios_productos
                         WHERE producto_maestro_id = %s
                           AND establecimiento_id = %s
                           AND factura_id = %s
-                    """, (producto_maestro_id, establecimiento_id, factura_id))
+                    """,
+                        (producto_maestro_id, establecimiento_id, factura_id),
+                    )
                 else:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         SELECT id FROM precios_productos
                         WHERE producto_maestro_id = ?
                           AND establecimiento_id = ?
                           AND factura_id = ?
-                    """, (producto_maestro_id, establecimiento_id, factura_id))
-                
+                    """,
+                        (producto_maestro_id, establecimiento_id, factura_id),
+                    )
+
                 precio_existente = cursor.fetchone()
-                
+
                 if precio_existente:
                     # Actualizar precio existente
                     if database_type == "postgresql":
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             UPDATE precios_productos
                             SET precio = %s,
                                 fecha_actualizacion = CURRENT_TIMESTAMP
                             WHERE id = %s
-                        """, (precio, precio_existente[0]))
+                        """,
+                            (precio, precio_existente[0]),
+                        )
                     else:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             UPDATE precios_productos
                             SET precio = ?,
                                 fecha_actualizacion = CURRENT_TIMESTAMP
                             WHERE id = ?
-                        """, (precio, precio_existente[0]))
-                    
-                    print(f"✅ Precio actualizado en precios_productos (ID: {precio_existente[0]})")
+                        """,
+                            (precio, precio_existente[0]),
+                        )
+
+                    print(
+                        f"✅ Precio actualizado en precios_productos (ID: {precio_existente[0]})"
+                    )
                     precio_actualizado = True
                 else:
-                    # Insertar nuevo registro (usando producto_id)
+                    # Insertar nuevo registro (usando producto_maestro_id)  ✅ CORRECTO
                     if database_type == "postgresql":
-                        cursor.execute("""
-                            INSERT INTO precios_productos 
-                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura, usuario_id, factura_id))
+                        cursor.execute(
+                            """
+                        INSERT INTO precios_productos
+                        (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)  # ✅
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                            (
+                                producto_maestro_id,
+                                establecimiento_id,
+                                precio,
+                                fecha_factura,
+                                usuario_id,
+                                factura_id,
+                            ),
+                        )
                     else:
-                        cursor.execute("""
-                            INSERT INTO precios_productos 
-                            (producto_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (producto_maestro_id, establecimiento_id, precio, fecha_factura, usuario_id, factura_id))
-                    
+                        cursor.execute(
+                            """
+                        INSERT INTO precios_productos
+                        (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)  # ✅
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                            (
+                                producto_maestro_id,
+                                establecimiento_id,
+                                precio,
+                                fecha_factura,
+                                usuario_id,
+                                factura_id,
+                            ),
+                        )
+
                     print(f"✅ Precio insertado en precios_productos")
                     precio_actualizado = True
             else:
@@ -802,14 +921,14 @@ async def update_item(item_id: int, request: dict):
         else:
             print(f"⚠️ Sin código válido o sin producto_maestro_id")
             print(f"   → NO se actualiza precios_productos")
-        
+
         conn.commit()
-        
+
         print(f"✅ Actualización completada exitosamente")
         print(f"   - Item ID: {item_id}")
         print(f"   - Código guardado: {codigo_final}")
         print(f"   - Precio actualizado en catálogo: {precio_actualizado}")
-        
+
         return {
             "success": True,
             "message": "Item actualizado correctamente",
@@ -817,22 +936,23 @@ async def update_item(item_id: int, request: dict):
             "factura_id": factura_id,
             "producto_maestro_id": producto_maestro_id,
             "codigo_guardado": codigo_final,
-            "precio_actualizado_catalogo": precio_actualizado
+            "precio_actualizado_catalogo": precio_actualizado,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
         print(f"❌ Error actualizando item: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
         conn.close()
-        
-       
+
+
 @router.post("/facturas/{factura_id}/items")
 async def add_item(factura_id: int, request: dict):
     """
@@ -841,140 +961,193 @@ async def add_item(factura_id: int, request: dict):
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
-    
+
     try:
         # Obtener datos del request
         nombre = request.get("nombre")
         codigo = request.get("codigo", "")
         precio = request.get("precio")
         cantidad = request.get("cantidad", 1)
-        
+
         if not nombre or precio is None:
-            raise HTTPException(status_code=400, detail="Nombre y precio son requeridos")
-        
+            raise HTTPException(
+                status_code=400, detail="Nombre y precio son requeridos"
+            )
+
         # Verificar que la factura existe y obtener usuario_id
         if database_type == "postgresql":
             cursor.execute(
                 "SELECT usuario_id, establecimiento_id FROM facturas WHERE id = %s",
-                (factura_id,)
+                (factura_id,),
             )
         else:
             cursor.execute(
                 "SELECT usuario_id, establecimiento_id FROM facturas WHERE id = ?",
-                (factura_id,)
+                (factura_id,),
             )
-        
+
         factura_info = cursor.fetchone()
         if not factura_info:
             conn.close()
             raise HTTPException(status_code=404, detail="Factura no encontrada")
-        
+
         usuario_id = factura_info[0]
         establecimiento_id = factura_info[1]
-        
+
         # Si hay código, buscar o crear producto maestro
         producto_maestro_id = None
         if codigo and len(codigo) >= 8:
             if database_type == "postgresql":
                 cursor.execute(
-                    "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
-                    (codigo,)
+                    "SELECT id FROM productos_maestros WHERE codigo_ean = %s", (codigo,)
                 )
             else:
                 cursor.execute(
-                    "SELECT id FROM productos_maestros WHERE codigo_ean = ?",
-                    (codigo,)
+                    "SELECT id FROM productos_maestros WHERE codigo_ean = ?", (codigo,)
                 )
-            
+
             prod_result = cursor.fetchone()
             if prod_result:
                 producto_maestro_id = prod_result[0]
             else:
                 # Crear nuevo producto maestro
                 if database_type == "postgresql":
-                    cursor.execute("""
-                        INSERT INTO productos_maestros 
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_maestros
                         (codigo_ean, nombre_normalizado, total_reportes)
                         VALUES (%s, %s, 1)
                         RETURNING id
-                    """, (codigo, nombre))
+                    """,
+                        (codigo, nombre),
+                    )
                     producto_maestro_id = cursor.fetchone()[0]
                 else:
-                    cursor.execute("""
-                        INSERT INTO productos_maestros 
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_maestros
                         (codigo_ean, nombre_normalizado, total_reportes)
                         VALUES (?, ?, 1)
-                    """, (codigo, nombre))
+                    """,
+                        (codigo, nombre),
+                    )
                     producto_maestro_id = cursor.lastrowid
-        
+
         # Insertar el nuevo item
         if database_type == "postgresql":
-            cursor.execute("""
-                INSERT INTO items_factura 
+            cursor.execute(
+                """
+                INSERT INTO items_factura
                 (factura_id, usuario_id, nombre_leido, codigo_leido, precio_pagado, cantidad, producto_maestro_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (factura_id, usuario_id, nombre, codigo, precio, cantidad, producto_maestro_id))
+            """,
+                (
+                    factura_id,
+                    usuario_id,
+                    nombre,
+                    codigo,
+                    precio,
+                    cantidad,
+                    producto_maestro_id,
+                ),
+            )
             new_item_id = cursor.fetchone()[0]
         else:
-            cursor.execute("""
-                INSERT INTO items_factura 
+            cursor.execute(
+                """
+                INSERT INTO items_factura
                 (factura_id, usuario_id, nombre_leido, codigo_leido, precio_pagado, cantidad, producto_maestro_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (factura_id, usuario_id, nombre, codigo, precio, cantidad, producto_maestro_id))
+            """,
+                (
+                    factura_id,
+                    usuario_id,
+                    nombre,
+                    codigo,
+                    precio,
+                    cantidad,
+                    producto_maestro_id,
+                ),
+            )
             new_item_id = cursor.lastrowid
-        
+
         # Si hay producto_maestro_id y establecimiento_id, agregar a precios_productos
         if producto_maestro_id and establecimiento_id:
             if database_type == "postgresql":
-                cursor.execute("""
-                    INSERT INTO precios_productos 
+                cursor.execute(
+                    """
+                    INSERT INTO precios_productos
                     (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                     VALUES (%s, %s, %s, CURRENT_DATE, %s, %s)
                     ON CONFLICT DO NOTHING
-                """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
+                """,
+                    (
+                        producto_maestro_id,
+                        establecimiento_id,
+                        precio,
+                        usuario_id,
+                        factura_id,
+                    ),
+                )
             else:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO precios_productos 
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO precios_productos
                     (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                     VALUES (?, ?, ?, date('now'), ?, ?)
-                """, (producto_maestro_id, establecimiento_id, precio, usuario_id, factura_id))
-        
+                """,
+                    (
+                        producto_maestro_id,
+                        establecimiento_id,
+                        precio,
+                        usuario_id,
+                        factura_id,
+                    ),
+                )
+
         # Actualizar contador de productos en factura
         if database_type == "postgresql":
-            cursor.execute("""
-                UPDATE facturas 
+            cursor.execute(
+                """
+                UPDATE facturas
                 SET productos_guardados = (
                     SELECT COUNT(*) FROM items_factura WHERE factura_id = %s
                 )
                 WHERE id = %s
-            """, (factura_id, factura_id))
+            """,
+                (factura_id, factura_id),
+            )
         else:
-            cursor.execute("""
-                UPDATE facturas 
+            cursor.execute(
+                """
+                UPDATE facturas
                 SET productos_guardados = (
                     SELECT COUNT(*) FROM items_factura WHERE factura_id = ?
                 )
                 WHERE id = ?
-            """, (factura_id, factura_id))
-        
+            """,
+                (factura_id, factura_id),
+            )
+
         conn.commit()
         conn.close()
-        
+
         return {
             "success": True,
             "message": "Item agregado correctamente",
             "item_id": new_item_id,
             "factura_id": factura_id,
-            "producto_maestro_id": producto_maestro_id
+            "producto_maestro_id": producto_maestro_id,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
         conn.close()
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -996,7 +1169,7 @@ async function editarProducto(itemId, nombre, codigo, precio, cantidad) {
             cantidad: parseInt(cantidad)
         })
     });
-    
+
     const result = await response.json();
     if (result.success) {
         alert('Producto actualizado');
@@ -1016,7 +1189,7 @@ async function agregarProducto(facturaId, nombre, codigo, precio, cantidad) {
             cantidad: parseInt(cantidad)
         })
     });
-    
+
     const result = await response.json();
     if (result.success) {
         alert('Producto agregado');
@@ -1029,7 +1202,7 @@ async function eliminarProducto(itemId) {
     const response = await fetch(`/admin/items/${itemId}`, {
         method: 'DELETE'
     });
-    
+
     const result = await response.json();
     if (result.success) {
         alert('Producto eliminado');
@@ -1045,29 +1218,31 @@ async def fusionar_productos_admin(request: dict):
     try:
         producto_mantener_id = request.get("producto_mantener_id")
         producto_eliminar_id = request.get("producto_eliminar_id")
-        
+
         if not producto_mantener_id or not producto_eliminar_id:
             raise HTTPException(status_code=400, detail="Se requieren ambos IDs")
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # Simplemente eliminar el duplicado de productos_maestros
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("DELETE FROM productos_maestros WHERE id = %s", (producto_eliminar_id,))
+            cursor.execute(
+                "DELETE FROM productos_maestros WHERE id = %s", (producto_eliminar_id,)
+            )
         else:
-            cursor.execute("DELETE FROM productos_maestros WHERE id = ?", (producto_eliminar_id,))
-        
+            cursor.execute(
+                "DELETE FROM productos_maestros WHERE id = ?", (producto_eliminar_id,)
+            )
+
         conn.commit()
         cursor.close()
         conn.close()
-        
-        return {
-            "success": True,
-            "message": "Producto duplicado eliminado exitosamente"
-        }
+
+        return {"success": True, "message": "Producto duplicado eliminado exitosamente"}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         if conn:
             conn.rollback()
@@ -1081,12 +1256,13 @@ async def detectar_cambios_precio(dias: int = 30):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             # Query para PostgreSQL
-            cursor.execute("""
+            cursor.execute(
+                """
                 WITH precios_recientes AS (
-                    SELECT 
+                    SELECT
                         pm.id as producto_id,
                         pm.nombre_normalizado,
                         pm.codigo_ean,
@@ -1100,7 +1276,7 @@ async def detectar_cambios_precio(dias: int = 30):
                     WHERE pp.fecha_registro >= CURRENT_DATE - INTERVAL '%s days'
                 ),
                 estadisticas AS (
-                    SELECT 
+                    SELECT
                         producto_id,
                         establecimiento,
                         AVG(precio) as precio_promedio,
@@ -1112,7 +1288,7 @@ async def detectar_cambios_precio(dias: int = 30):
                     HAVING COUNT(*) >= 2
                 ),
                 ultimo_precio AS (
-                    SELECT 
+                    SELECT
                         pr.producto_id,
                         pr.nombre_normalizado,
                         pr.codigo_ean,
@@ -1122,7 +1298,7 @@ async def detectar_cambios_precio(dias: int = 30):
                     FROM precios_recientes pr
                     WHERE pr.rn = 1
                 )
-                SELECT 
+                SELECT
                     up.codigo_ean,
                     up.nombre_normalizado,
                     up.establecimiento,
@@ -1133,19 +1309,22 @@ async def detectar_cambios_precio(dias: int = 30):
                     e.precio_max,
                     up.producto_id
                 FROM ultimo_precio up
-                JOIN estadisticas e ON up.producto_id = e.producto_id 
+                JOIN estadisticas e ON up.producto_id = e.producto_id
                     AND up.establecimiento = e.establecimiento
                 WHERE (
-                    up.precio_actual > e.precio_max * 1.15 
+                    up.precio_actual > e.precio_max * 1.15
                     OR up.precio_actual < e.precio_min * 0.85
                     OR ABS(up.precio_actual - e.precio_promedio) / NULLIF(e.precio_promedio, 0) > 0.15
                 )
                 ORDER BY up.fecha_registro DESC
                 LIMIT 50
-            """ % dias)
+            """
+                % dias
+            )
         else:
             # Query simplificada para SQLite
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT DISTINCT
                     pm.codigo_ean,
                     pm.nombre_normalizado,
@@ -1161,17 +1340,23 @@ async def detectar_cambios_precio(dias: int = 30):
                 WHERE pp.fecha_registro >= date('now', '-%s days')
                 ORDER BY pp.fecha_registro DESC
                 LIMIT 50
-            """ % dias)
-        
+            """
+                % dias
+            )
+
         alertas = []
         for row in cursor.fetchall():
             precio_actual = float(row[3])
             precio_promedio = float(row[5]) if row[5] else precio_actual
             precio_min = float(row[6]) if row[6] else precio_actual
             precio_max = float(row[7]) if row[7] else precio_actual
-            
-            cambio_porcentaje = ((precio_actual - precio_promedio) / precio_promedio) * 100 if precio_promedio > 0 else 0
-            
+
+            cambio_porcentaje = (
+                ((precio_actual - precio_promedio) / precio_promedio) * 100
+                if precio_promedio > 0
+                else 0
+            )
+
             # Determinar tipo de alerta
             if precio_actual > precio_max * 1.15:
                 tipo_alerta = "AUMENTO_SIGNIFICATIVO"
@@ -1179,27 +1364,30 @@ async def detectar_cambios_precio(dias: int = 30):
                 tipo_alerta = "DISMINUCIÓN_SIGNIFICATIVA"
             else:
                 tipo_alerta = "CAMBIO_ATÍPICO"
-            
-            alertas.append({
-                "codigo": row[0] or "N/A",
-                "nombre": row[1],
-                "establecimiento": row[2],
-                "precio_actual": precio_actual,
-                "fecha": str(row[4]),
-                "precio_promedio": precio_promedio,
-                "precio_min": precio_min,
-                "precio_max": precio_max,
-                "tipo_alerta": tipo_alerta,
-                "cambio_porcentaje": round(cambio_porcentaje, 1),
-                "producto_id": row[8]
-            })
-        
+
+            alertas.append(
+                {
+                    "codigo": row[0] or "N/A",
+                    "nombre": row[1],
+                    "establecimiento": row[2],
+                    "precio_actual": precio_actual,
+                    "fecha": str(row[4]),
+                    "precio_promedio": precio_promedio,
+                    "precio_min": precio_min,
+                    "precio_max": precio_max,
+                    "tipo_alerta": tipo_alerta,
+                    "cambio_porcentaje": round(cambio_porcentaje, 1),
+                    "producto_id": row[8],
+                }
+            )
+
         cursor.close()
         conn.close()
-        
+
         return {"alertas": alertas, "total": len(alertas)}
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1210,28 +1398,35 @@ async def comparar_precios_establecimientos(producto_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         # Obtener info del producto de productos_maestros
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT nombre_normalizado, codigo_ean 
-                FROM productos_maestros 
+            cursor.execute(
+                """
+                SELECT nombre_normalizado, codigo_ean
+                FROM productos_maestros
                 WHERE id = %s
-            """, (producto_id,))
+            """,
+                (producto_id,),
+            )
         else:
-            cursor.execute("""
-                SELECT nombre_normalizado, codigo_ean 
-                FROM productos_maestros 
+            cursor.execute(
+                """
+                SELECT nombre_normalizado, codigo_ean
+                FROM productos_maestros
                 WHERE id = ?
-            """, (producto_id,))
-        
+            """,
+                (producto_id,),
+            )
+
         prod_info = cursor.fetchone()
         if not prod_info:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
-        
+
         # Comparar precios por establecimiento
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT DISTINCT ON (e.nombre_normalizado)
                     e.nombre_normalizado as establecimiento,
                     e.cadena,
@@ -1242,10 +1437,13 @@ async def comparar_precios_establecimientos(producto_id: int):
                 WHERE pp.producto_maestro_id = %s
                   AND pp.precio > 0
                 ORDER BY e.nombre_normalizado, pp.fecha_registro DESC
-            """, (producto_id,))
+            """,
+                (producto_id,),
+            )
         else:
-            cursor.execute("""
-                SELECT 
+            cursor.execute(
+                """
+                SELECT
                     'establecimiento' as establecimiento,
                     'cadena' as cadena,
                     pp.precio,
@@ -1254,49 +1452,57 @@ async def comparar_precios_establecimientos(producto_id: int):
                 WHERE pp.producto_maestro_id = ?
                   AND pp.precio > 0
                 ORDER BY pp.fecha_registro DESC
-            """, (producto_id,))
-        
+            """,
+                (producto_id,),
+            )
+
         comparacion = []
         precios = []
-        
+
         for row in cursor.fetchall():
             precio = float(row[2])
             precios.append(precio)
-            comparacion.append({
-                "establecimiento": row[0],
-                "cadena": row[1] or "N/A",
-                "precio": precio,
-                "fecha": str(row[3])
-            })
-        
+            comparacion.append(
+                {
+                    "establecimiento": row[0],
+                    "cadena": row[1] or "N/A",
+                    "precio": precio,
+                    "fecha": str(row[3]),
+                }
+            )
+
         # Marcar el más barato y más caro
         if precios:
             precio_min = min(precios)
             precio_max = max(precios)
-            
+
             for item in comparacion:
-                item["es_mas_barato"] = (item["precio"] == precio_min)
-                item["es_mas_caro"] = (item["precio"] == precio_max) and (precio_min != precio_max)
+                item["es_mas_barato"] = item["precio"] == precio_min
+                item["es_mas_caro"] = (item["precio"] == precio_max) and (
+                    precio_min != precio_max
+                )
                 item["diferencia_vs_min"] = item["precio"] - precio_min
-        
+
         ahorro_maximo = max(precios) - min(precios) if len(precios) > 0 else 0
-        
+
         cursor.close()
         conn.close()
-        
+
         return {
             "producto_id": producto_id,
             "nombre": prod_info[0],
             "codigo": prod_info[1],
             "comparacion": sorted(comparacion, key=lambda x: x["precio"]),
             "ahorro_maximo": round(ahorro_maximo, 2),
-            "num_establecimientos": len(comparacion)
+            "num_establecimientos": len(comparacion),
         }
     except HTTPException:
         raise
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 print("✅ admin_dashboard.py cargado correctamente")
