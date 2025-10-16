@@ -9,11 +9,11 @@ from typing import Dict
 def parse_invoice_with_claude(image_path: str) -> Dict:
     """
     Procesa factura con Claude Vision API
-    Sistema de 3 Niveles de Confianza
+    Sistema de 3 Niveles de Confianza + Limpieza Automática
     """
     try:
         print("=" * 70)
-        print("🤖 PROCESANDO CON CLAUDE HAIKU 3.5 - Sistema 3 Niveles")
+        print("🤖 PROCESANDO CON CLAUDE HAIKU 3.5 - Sistema Multi-Establecimiento")
         print("=" * 70)
 
         # Leer imagen
@@ -32,124 +32,152 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT ULTRA MEJORADO - CONTEXTO COLOMBIANO ==========
+        # ========== PROMPT GENERALIZADO MULTI-ESTABLECIMIENTO ==========
         prompt = """Eres un experto en facturas de supermercados COLOMBIANOS.
 
 🎯 OBJETIVO: Extraer SOLO los productos que el cliente COMPRÓ y PAGÓ.
 
-# 🔑 REGLA DE ORO
-Lee CUIDADOSAMENTE y extrae SOLO lo que está en la SECCIÓN DE PRODUCTOS.
+# 📋 ESTRUCTURA COMÚN DE FACTURAS COLOMBIANAS
 
-# 📋 CÓMO LEER UNA FACTURA COLOMBIANA
-
-Las facturas tienen SECCIONES bien definidas:
-
-## SECCIÓN 1: HEADER (No extraer)
-- Nombre del establecimiento (ÉXITO, JUMBO, OLÍMPICA, etc)
-- NIT, dirección, teléfono
-- Número de factura
-- Fecha y hora
-
-## SECCIÓN 2: PRODUCTOS (✅ EXTRAER AQUÍ)
-Busca la palabra "PLU" o "CODIGO" seguida de "DETALLE" y "PRECIO"
-
-Formato típico:
+Todas las facturas tienen COLUMNAS organizadas así:
 ```
-PLU      DETALLE                    PRECIO
-123456   PRODUCTO 1                 10,000
-789012   PRODUCTO 2                 25,500
+CÓDIGO/PLU    DESCRIPCIÓN/DETALLE          PRECIO/VALOR
+123456        Producto X                   12,500
+789012        Producto Y                   8,900
 ```
 
-⚠️ CLAVE: Busca "Total Item: X" al final de esta sección
-- Si dice "Total Item: 1" → Solo hay 1 producto
-- Si dice "Total Item: 3" → Solo hay 3 productos
-- NO extraigas MÁS productos que este número
+# ✅ REGLAS UNIVERSALES (Todos los establecimientos)
 
-## SECCIÓN 3: PROMOCIONES Y DESCUENTOS (❌ NO extraer)
-Aparece ENTRE los productos y el total final:
-```
-1 1/u x 26.900  V.Ahorro 4.035  ← ESTO ES DESCUENTO, NO PRODUCTO
-SUBTOTAL         26,900
-DESCUENTO         4,035
-AHORRO            4,035
-```
+## 1. IDENTIFICAR COLUMNAS CORRECTAMENTE
 
-Palabras clave de descuentos:
-- V.Ahorro, V. Ahorro, Ahorro
-- Descuento, Dto, Rebaja
-- Promoción, Promo, Oferta
-- 2x1, 3x2, %OFF
+**Columna IZQUIERDA - CÓDIGO:**
+- Números de 4-13 dígitos
+- Etiquetas: PLU, CODIGO, COD, EAN
+- ⚠️ NO es código: "1/u", "2/u", "0.750/KGM"
 
-## SECCIÓN 4: TOTALES (❌ NO extraer)
-```
-SUBTOTAL         26,900
-DESCUENTO         4,035
-VALOR TOTAL      22,865  ← Este es el total DESPUÉS del descuento
-```
+**Columna CENTRO - NOMBRE:**
+- Descripción del producto
+- ⚠️ **IMPORTANTE**: El nombre TERMINA antes de:
+  - "V.Ahorro", "V. Ahorro", "Ahorro"
+  - "/KGM", "/KG", "/U", "x 0.750"
+  - "Descuento", "Dto", "Khorro" (error OCR)
+- **Ejemplo:**
+  - ✅ Correcto: "Mango"
+  - ❌ Incorrecto: "Mango V.Ahorro 0"
 
-## SECCIÓN 5: PAGO (❌ NO extraer)
+**Columna DERECHA - PRECIO:**
+- Precio final pagado
+- Formatos: 12.500 o 12,500 o 12500
+- ⚠️ NO es precio: "V.Ahorro 1.500"
+
+## 2. DETECTAR LÍNEAS QUE NO SON PRODUCTOS
+
+**Líneas de descuento/peso (IGNORAR):**
 ```
-FORMA PAGO: CONTADO
-EFECTIVO
-TARJETA CREDITO
-MASTERCARD, VISA, etc
-CAMBIO: 17,150
+1 1/u x 26.900 V.Ahorro 4.035        ← DESCUENTO
+0.750/KGM x 8.800 V.Ahorro 1.320     ← PESO/UNIDAD
+2x1 Descuento                         ← PROMOCIÓN
 ```
 
-## SECCIÓN 6: INFO FISCAL (❌ NO extraer)
-- RES DIAN
-- Discriminación tarifas
-- Códigos QR, Cufe, etc
+**Características:**
+- Contienen "x" seguido de precio
+- Tienen "V.Ahorro", "Ahorro", "Descuento"
+- Formato de peso: "0.XXX/KGM", "1.5/KG"
+- NO tienen código PLU válido
 
-# ✅ REGLAS PARA EXTRAER PRODUCTOS
+## 3. USAR "Total Item" COMO VALIDACIÓN
 
-1. **Busca "Total Item: X"** - Este número te dice cuántos productos REALMENTE hay
-2. **Solo extrae de la sección de productos** (entre el header y los totales)
-3. **Cada producto tiene:**
-   - Código (PLU o EAN): números a la izquierda
-   - Nombre: descripción en el centro
-   - Precio: número a la derecha
+Si dice "Total Item: 5", tu respuesta debe tener EXACTAMENTE 5 productos.
 
-4. **NO extraigas:**
-   - Líneas de descuento (tienen palabras: Ahorro, Descuento, V.Ahorro)
-   - Subtotales, totales
-   - Métodos de pago
-   - Info administrativa
+# 🔍 ALGORITMO DE EXTRACCIÓN
 
-# ⚠️ CASOS ESPECIALES A IGNORAR
+Para cada línea:
 
-❌ **Líneas de numeración:**
-- "01 un", "02 un", "03 un" → NO SON PRODUCTOS
-- "1/u x 12.900", "2/u x 5.500" → NO SON PRODUCTOS
+**PASO 1: ¿Es producto o descuento?**
+```
+¿Formato "X.XXX/KG x PRECIO"? → IGNORAR
+¿Tiene "V.Ahorro" sin código? → IGNORAR
+¿Solo "Ahorro"/"Descuento"? → IGNORAR
+```
 
-❌ **Líneas de peso/unidad:**
-- "0.875/KGH" → NO ES PRODUCTO
-- "1.5/KG" → NO ES PRODUCTO
-- Solo indica peso, no es un producto comprado
+**PASO 2: Extraer datos del producto:**
+```
+Columna 1 → codigo (solo dígitos)
+Columna 2 → nombre (SOLO hasta antes de "V.Ahorro"/"KGM")
+Columna 3 → precio (número final)
+```
 
-❌ **Palabras sueltas:**
-- "AHORRO", "KG", "KGM", "UN", "%" → NO SON PRODUCTOS
-- "REDEBAN", "PAGO", "AUTORIZA", "RECIBO" → NO SON PRODUCTOS
+**PASO 3: Limpiar nombre:**
+- Eliminar todo después de "V.Ahorro"
+- Eliminar todo después de "/KGM" o "/KG"
+- Eliminar todo después de " x "
 
-Si ves alguna de estas líneas, IGNÓRALAS COMPLETAMENTE.
+# 📝 EJEMPLOS MULTI-ESTABLECIMIENTO
 
-# 📦 FORMATO JSON (sin comas en precios)
+**ÉXITO:**
+```
+PLU      DETALLE                     PRECIO
+1220     Mango                       6.280
+         V.Ahorro 0                  ← IGNORAR esta línea
+3323923  Brownie Mini Are            14.800
+```
 
+**JUMBO:**
+```
+CODIGO   DESCRIPCION                 VALOR
+4756821  LECHE ALPINA 1L             4,200
+         Descuento 2x1: -2,100       ← IGNORAR
+9182736  PAN TAJADO                  3,500
+```
+
+**D1:**
+```
+COD      PRODUCTO                    PRECIO
+123      ARROZ DIANA 500G            2,800
+456      ACEITE GIRASOL 1L           8,900
+```
+
+**Salida JSON (para todos):**
+```json
 {
-  "establecimiento": "JUMBO",
-  "fecha": "2024-12-27",
-  "total": 234890,
+  "establecimiento": "ÉXITO",
+  "fecha": "2016-11-16",
+  "total": 288486,
   "productos": [
     {
-      "codigo": "7702993047842",
-      "nombre": "CHOCOLATE BT",
+      "codigo": "1220",
+      "nombre": "Mango",
       "cantidad": 1,
-      "precio": 2190
+      "precio": 6280
+    },
+    {
+      "codigo": "3323923",
+      "nombre": "Brownie Mini Are",
+      "cantidad": 1,
+      "precio": 14800
     }
   ]
 }
+```
 
-ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
+# 🚨 VALIDACIÓN FINAL
+
+Antes de responder:
+1. ✅ ¿Número productos = "Total Item"?
+2. ✅ ¿Ningún nombre contiene "V.Ahorro", "KGM", "Descuento"?
+3. ✅ ¿Códigos son 4-13 dígitos numéricos?
+4. ✅ ¿Suma precios ≈ SUBTOTAL?
+
+Si hay inconsistencias, elimina líneas sospechosas.
+
+# 🎯 ESTABLECIMIENTOS COLOMBIANOS
+
+Para identificar:
+- Grupo Éxito: ÉXITO, Carulla, Surtimax
+- Cencosud: JUMBO, Metro
+- Otros: Olímpica, D1, ARA, Alkosto, Makro, PriceSmart
+
+ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
 
         # ✅ Llamada con HAIKU 3.5
         message = client.messages.create(
@@ -196,7 +224,7 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
         # Parsear JSON
         data = json.loads(json_str)
 
-        # ========== FILTRADO INTELIGENTE DE BASURA - VERSIÓN MEJORADA ==========
+        # ========== FILTRADO INTELIGENTE DE BASURA ==========
         if "productos" in data and data["productos"]:
             productos_originales = len(data["productos"])
 
@@ -225,7 +253,7 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
                 "dian",
                 "nit",
                 "autoretenedor",
-                # Métodos de pago - CRÍTICO
+                # Métodos de pago
                 "mastercard",
                 "visa",
                 "american express",
@@ -250,10 +278,8 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
                 "factura",
                 "ticket",
                 "recibo",
-                # 🆕 NUEVOS FILTROS
                 "pago",
                 "autoriza",
-                "recibo",
                 "aprobado",
                 "comprobante",
                 "cufe",
@@ -269,13 +295,9 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
             for prod in data["productos"]:
                 nombre = str(prod.get("nombre", "")).lower().strip()
 
-                # ❌ FILTRO 1: Basura obvia
+                # ❌ FILTROS DE BASURA
                 es_basura = any(palabra in nombre for palabra in palabras_basura)
-
-                # ❌ FILTRO 2: Solo números/símbolos (sin letras)
                 solo_numeros = not re.search(r"[A-Za-zÀ-ÿ]", nombre)
-
-                # ❌ FILTRO 3: Unidades solas
                 es_unidad = nombre in [
                     "kg",
                     "kgm",
@@ -286,27 +308,15 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
                     "x",
                     "un",
                 ]
-
-                # 🆕 FILTRO 4: Formato de peso/medida (0.875/KGH, 1.5/KG, etc.)
                 es_peso = bool(re.match(r"^\d+\.?\d*\s*/\s*kg[hm]?$", nombre))
-
-                # 🆕 FILTRO 5: Numeración de líneas (01 un, 02 un, 1/u, 2/u, etc.)
                 es_numeracion = bool(re.match(r"^\d{1,2}\s*(un|/u)\b", nombre))
-
-                # 🆕 FILTRO 6: Solo porcentajes o símbolos
                 es_simbolo = nombre in ["%", "$", "-", "=", "*", "+"]
-
-                # 🆕 FILTRO 7: Muy corto (menos de 3 caracteres)
                 muy_corto = len(nombre) < 3
-
-                # 🆕 FILTRO 8: Precio muy bajo (menos de $50 probablemente es basura)
                 precio = prod.get("precio", 0)
                 precio_invalido = precio < 50
-
-                # 🆕 FILTRO 9: Nombre repetitivo (ej: "1 1/u x 26.900")
                 patron_repetitivo = bool(re.match(r"^\d+\s+\d+/u", nombre))
 
-                # Aplicar TODOS los filtros
+                # Aplicar filtros
                 if (
                     es_basura
                     or solo_numeros
@@ -320,21 +330,7 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
                 ):
 
                     basura_eliminada += 1
-                    print(f"   🗑️ Basura eliminada: '{prod.get('nombre', 'N/A')[:50]}'")
-                    print(f"      Razón: ", end="")
-                    if es_basura:
-                        print("palabra prohibida", end=" ")
-                    if solo_numeros:
-                        print("solo números", end=" ")
-                    if es_peso:
-                        print("formato peso", end=" ")
-                    if es_numeracion:
-                        print("numeración", end=" ")
-                    if muy_corto:
-                        print("muy corto", end=" ")
-                    if precio_invalido:
-                        print("precio inválido", end=" ")
-                    print()
+                    print(f"   🗑️ Basura: '{prod.get('nombre', 'N/A')[:40]}'")
                 else:
                     productos_filtrados.append(prod)
 
@@ -342,7 +338,51 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
 
             if basura_eliminada > 0:
                 print(f"✅ {basura_eliminada} líneas de basura eliminadas")
-                print(f"📦 {len(productos_filtrados)} productos válidos guardados")
+                print(f"📦 {len(productos_filtrados)} productos pre-limpieza")
+
+        # ========== POST-PROCESAMIENTO: LIMPIEZA DE NOMBRES ==========
+        if "productos" in data and data["productos"]:
+            productos_limpios = []
+
+            print(f"\n🧹 LIMPIANDO NOMBRES DE PRODUCTOS...")
+
+            for prod in data["productos"]:
+                nombre_original = str(prod.get("nombre", "")).strip()
+                nombre_limpio = nombre_original
+
+                # 🧹 Patrones a eliminar del FINAL del nombre
+                sufijos_error = [
+                    r"\s+V\.?\s*Ahorro.*$",  # "V.Ahorro 0", "V. Ahorro 1.500"
+                    r"\s+Ahorro.*$",  # "Ahorro 3.200"
+                    r"\s+Descuento.*$",  # "Descuento 1.500"
+                    r"\s+\d+\.?\d*/KG[MH]?.*$",  # "0.750/KGM x 8.800"
+                    r"\s+x\s+\d+\.?\d+.*$",  # "x 26.900"
+                    r"\s+Khorro.*$",  # "Khorro G" (error OCR)
+                    r"\s+y\s+Khorro.*$",  # "y Khorro G"
+                ]
+
+                for patron in sufijos_error:
+                    nombre_limpio = re.sub(
+                        patron, "", nombre_limpio, flags=re.IGNORECASE
+                    )
+
+                nombre_limpio = nombre_limpio.strip()
+
+                # Log de cambios
+                if nombre_limpio != nombre_original:
+                    print(f"   🧹 '{nombre_original[:40]}' → '{nombre_limpio}'")
+
+                # Solo agregar si tiene contenido válido
+                if len(nombre_limpio) >= 3:
+                    prod["nombre"] = nombre_limpio
+                    productos_limpios.append(prod)
+                else:
+                    print(f"   🗑️ Nombre muy corto descartado: '{nombre_limpio}'")
+
+            data["productos"] = productos_limpios
+            print(
+                f"✅ Productos finales después de limpieza: {len(productos_limpios)}\n"
+            )
 
         # ========== NORMALIZACIÓN Y NIVEL DE CONFIANZA ==========
         productos_procesados = 0
@@ -386,7 +426,7 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
             else:
                 prod["codigo"] = ""
 
-            # Limpiar nombre
+            # Limpiar nombre (ya limpiado arriba, pero asegurar)
             nombre = str(prod.get("nombre", "")).strip()
             prod["nombre"] = nombre
 
@@ -405,7 +445,6 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
                 prod["nivel_confianza"] = 3
                 nivel_3 += 1
             else:
-                # Sin suficiente info - marcar para revisión
                 prod["nivel_confianza"] = 3
                 nivel_3 += 1
 
@@ -437,7 +476,7 @@ ANALIZA LA IMAGEN CUIDADOSAMENTE Y RESPONDE SOLO CON JSON:"""
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-3niveles",
+                    "metodo": "claude-vision-multi-establecimiento",
                     "modelo": "claude-3-5-haiku-20241022",
                     "productos_detectados": productos_procesados,
                     "nivel_1": nivel_1,
@@ -495,5 +534,5 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         if clave in nombre_lower:
             return normalizado
 
-    # Si no coincide con ninguno, devolver capitalizado
+    # Si no coincide, devolver capitalizado
     return nombre_raw.strip().upper()[:50]
