@@ -49,7 +49,7 @@ from claude_invoice import parse_invoice_with_claude
 
 # Importar routers
 from admin_dashboard import router as admin_dashboard_router
-from auth_routes import router as auth_router
+from auth import router as auth_router
 from image_handlers import router as image_handlers_router
 from duplicados_routes import router as duplicados_router
 
@@ -203,10 +203,10 @@ except Exception as e:
     print(f"❌ Error: {e}")
 
 try:
-    app.include_router(auth_router, tags=["auth"])
-    print("✅ auth_router registrado")
+    app.include_router(auth_router, prefix="/api", tags=["auth"])
+    print("✅ auth_router registrado en /api/auth/*")
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"❌ Error registrando auth_router: {e}")
 
 try:
     app.include_router(duplicados_router, tags=["duplicados"])
@@ -1724,57 +1724,6 @@ async def get_pending_jobs(usuario_id: int = 1):
         return JSONResponse(
             status_code=500, content={"success": False, "error": str(e)}
         )
-
-
-# ==========================================
-# ENDPOINTS DE USUARIOS
-# ==========================================
-@app.post("/users/register")
-async def register_user(user: UserRegister):
-    """Registro de nuevo usuario"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT id FROM usuarios WHERE email = %s", (user.email,))
-        if cursor.fetchone():
-            raise HTTPException(400, "Email ya registrado")
-
-        password_hash = hash_password(user.password)
-        cursor.execute(
-            "INSERT INTO usuarios (email, password_hash, nombre) VALUES (%s, %s, %s) RETURNING id",
-            (user.email, password_hash, user.nombre),
-        )
-        user_id = cursor.fetchone()[0]
-
-        conn.commit()
-        conn.close()
-
-        return {"success": True, "user_id": user_id}
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-@app.post("/users/login")
-async def login_user(user: UserLogin):
-    """Login de usuario"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT id, password_hash, nombre FROM usuarios WHERE email = %s",
-            (user.email,),
-        )
-        result = cursor.fetchone()
-        conn.close()
-
-        if not result or not verify_password(user.password, result[1]):
-            raise HTTPException(401, "Email o contraseña incorrectos")
-
-        return {"success": True, "user_id": result[0], "nombre": result[2]}
-    except Exception as e:
-        raise HTTPException(500, str(e))
 
 
 # ==========================================
