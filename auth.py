@@ -311,6 +311,13 @@ async def register(user_data: UserRegister):
         # Hashear la contraseña
         password_hash = hash_password(user_data.password)
 
+        # ✅ CONSTRUIR NOMBRE COMPLETO
+        nombre_completo = (
+            f"{user_data.nombres or ''} {user_data.apellidos or ''}".strip()
+        )
+        if not nombre_completo:
+            nombre_completo = user_data.email.split("@")[0]
+
         # Insertar usuario
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
@@ -319,7 +326,7 @@ async def register(user_data: UserRegister):
                 VALUES (%s, %s, %s, TRUE, 'usuario')
                 RETURNING id, email, nombre, fecha_registro
             """,
-                (user_data.email, password_hash, user_data.nombre),
+                (user_data.email, password_hash, nombre_completo),
             )
 
             new_user = cursor.fetchone()
@@ -334,12 +341,12 @@ async def register(user_data: UserRegister):
                 INSERT INTO usuarios (email, password_hash, nombre, activo, rol)
                 VALUES (?, ?, ?, 1, 'usuario')
             """,
-                (user_data.email, password_hash, user_data.nombre),
+                (user_data.email, password_hash, nombre_completo),
             )
 
             user_id = cursor.lastrowid
             email = user_data.email
-            nombre = user_data.nombre
+            nombre = nombre_completo
             fecha_registro = datetime.utcnow()
 
         conn.commit()
