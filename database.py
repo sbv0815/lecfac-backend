@@ -140,19 +140,52 @@ def create_postgresql_tables():
         # ============================================
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id SERIAL PRIMARY KEY,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            nombre VARCHAR(255),
-            facturas_aportadas INTEGER DEFAULT 0,
-            productos_aportados INTEGER DEFAULT 0,
-            puntos_contribucion INTEGER DEFAULT 0,
-            fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                nombre VARCHAR(255),
+                facturas_aportadas INTEGER DEFAULT 0,
+                productos_aportados INTEGER DEFAULT 0,
+                puntos_contribucion INTEGER DEFAULT 0,
+                fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
         print("✓ Tabla 'usuarios' creada")
+
+        # ✅ CORREGIDO: Agregar columnas adicionales
+        print("🔧 Verificando columnas adicionales en usuarios...")
+
+        columnas_usuarios_requeridas = {
+            "ultimo_acceso": "TIMESTAMP",
+            "activo": "BOOLEAN DEFAULT TRUE",
+            "rol": "VARCHAR(50) DEFAULT 'usuario'",
+        }
+
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'usuarios'
+        """
+        )
+        columnas_existentes = [row[0] for row in cursor.fetchall()]
+
+        for columna, tipo in columnas_usuarios_requeridas.items():
+            if columna not in columnas_existentes:
+                try:
+                    cursor.execute(
+                        f"""
+                        ALTER TABLE usuarios
+                        ADD COLUMN {columna} {tipo}
+                    """
+                    )
+                    conn.commit()
+                    print(f"   ✅ Columna '{columna}' agregada a usuarios")
+                except Exception as e:
+                    print(f"   ⚠️ {columna}: {e}")
+                    conn.rollback()
 
         # ============================================
         # TABLA DE RECUPERACIÓN DE CONTRASEÑAS
@@ -166,7 +199,6 @@ def create_postgresql_tables():
                 expire_at TIMESTAMP NOT NULL,
                 used BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
                 CONSTRAINT unique_user_reset UNIQUE(user_id)
             )
         """
@@ -193,59 +225,51 @@ def create_postgresql_tables():
         # NIVEL 1: BASE UNIFICADA (GLOBAL)
         # ============================================
 
-        # 1.1. ESTABLECIMIENTOS (NUEVA - Normalización de tiendas)
+        # 1.1. ESTABLECIMIENTOS
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS establecimientos (
-            id SERIAL PRIMARY KEY,
-            nombre_normalizado VARCHAR(200) UNIQUE NOT NULL,
-            cadena VARCHAR(50),
-            tipo VARCHAR(50),
-            ciudad VARCHAR(100),
-            direccion TEXT,
-            latitud DECIMAL(10, 8),
-            longitud DECIMAL(11, 8),
-
-            -- Estadísticas
-            total_facturas_reportadas INTEGER DEFAULT 0,
-            calificacion_promedio DECIMAL(3, 2),
-
-            activo BOOLEAN DEFAULT TRUE,
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS establecimientos (
+                id SERIAL PRIMARY KEY,
+                nombre_normalizado VARCHAR(200) UNIQUE NOT NULL,
+                cadena VARCHAR(50),
+                tipo VARCHAR(50),
+                ciudad VARCHAR(100),
+                direccion TEXT,
+                latitud DECIMAL(10, 8),
+                longitud DECIMAL(11, 8),
+                total_facturas_reportadas INTEGER DEFAULT 0,
+                calificacion_promedio DECIMAL(3, 2),
+                activo BOOLEAN DEFAULT TRUE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
         print("✓ Tabla 'establecimientos' creada")
 
-        # 1.2. PRODUCTOS_MAESTROS (NUEVA - Catálogo global unificado)
+        # 1.2. PRODUCTOS_MAESTROS
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos_maestros (
-            id SERIAL PRIMARY KEY,
-            codigo_ean VARCHAR(13) UNIQUE NOT NULL,
-            nombre_normalizado VARCHAR(200) NOT NULL,
-            nombre_comercial VARCHAR(200),
-            marca VARCHAR(100),
-            categoria VARCHAR(50),
-            subcategoria VARCHAR(50),
-            presentacion VARCHAR(50),
-            es_producto_fresco BOOLEAN DEFAULT FALSE,
-            imagen_url TEXT,
-
-            -- Estadísticas globales
-            total_reportes INTEGER DEFAULT 0,
-            total_usuarios_reportaron INTEGER DEFAULT 0,
-            precio_promedio_global INTEGER,
-            precio_minimo_historico INTEGER,
-            precio_maximo_historico INTEGER,
-
-            -- Metadatos
-            primera_vez_reportado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            CHECK (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14),
-            CHECK (total_reportes >= 0)
-        )
+            CREATE TABLE IF NOT EXISTS productos_maestros (
+                id SERIAL PRIMARY KEY,
+                codigo_ean VARCHAR(13) UNIQUE NOT NULL,
+                nombre_normalizado VARCHAR(200) NOT NULL,
+                nombre_comercial VARCHAR(200),
+                marca VARCHAR(100),
+                categoria VARCHAR(50),
+                subcategoria VARCHAR(50),
+                presentacion VARCHAR(50),
+                es_producto_fresco BOOLEAN DEFAULT FALSE,
+                imagen_url TEXT,
+                total_reportes INTEGER DEFAULT 0,
+                total_usuarios_reportaron INTEGER DEFAULT 0,
+                precio_promedio_global INTEGER,
+                precio_minimo_historico INTEGER,
+                precio_maximo_historico INTEGER,
+                primera_vez_reportado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14),
+                CHECK (total_reportes >= 0)
+            )
         """
         )
         print("✓ Tabla 'productos_maestros' creada")
@@ -277,7 +301,6 @@ def create_postgresql_tables():
         # 1.3. PRECIOS_PRODUCTOS (MIGRACIÓN INTELIGENTE)
         print("🔧 Configurando tabla precios_productos...")
 
-        # Verificar si la tabla existe
         cursor.execute(
             """
             SELECT EXISTS (
@@ -291,7 +314,6 @@ def create_postgresql_tables():
         if tabla_precios_existe:
             print("   📋 Tabla precios_productos existe, verificando estructura...")
 
-            # Obtener columnas existentes
             cursor.execute(
                 """
                 SELECT column_name
@@ -302,7 +324,6 @@ def create_postgresql_tables():
             columnas_existentes = [row[0] for row in cursor.fetchall()]
             print(f"   📊 Columnas actuales: {', '.join(columnas_existentes)}")
 
-            # Agregar establecimiento_id si no existe
             if "establecimiento_id" not in columnas_existentes:
                 print("   ➕ Agregando columna establecimiento_id...")
                 try:
@@ -318,7 +339,6 @@ def create_postgresql_tables():
                     print(f"   ⚠️ Error: {e}")
                     conn.rollback()
 
-            # Manejar producto_id vs producto_maestro_id
             if (
                 "producto_id" in columnas_existentes
                 and "producto_maestro_id" not in columnas_existentes
@@ -356,7 +376,6 @@ def create_postgresql_tables():
                     print(f"   ⚠️ Error: {e}")
                     conn.rollback()
 
-            # Agregar otras columnas faltantes
             columnas_requeridas = {
                 "precio": "INTEGER",
                 "fecha_registro": "DATE",
@@ -384,7 +403,6 @@ def create_postgresql_tables():
                         print(f"   ⚠️ {columna}: {e}")
                         conn.rollback()
 
-            # Limpiar y recrear constraints
             print("   🔧 Limpiando constraints viejos...")
             cursor.execute(
                 """
@@ -407,7 +425,6 @@ def create_postgresql_tables():
                 except:
                     conn.rollback()
 
-            # Agregar constraints correctos
             print("   ✅ Agregando constraints correctos...")
 
             try:
@@ -438,6 +455,7 @@ def create_postgresql_tables():
                 print(f"   ⚠️ FK establecimiento: {e}")
                 conn.rollback()
 
+            # ✅ CORREGIDO: REFERENCES en lugar de REFERENCIAS
             try:
                 cursor.execute(
                     """
@@ -453,33 +471,32 @@ def create_postgresql_tables():
                 conn.rollback()
 
         else:
-            # Crear tabla desde cero con estructura correcta
             print("   ✨ Creando tabla precios_productos desde cero...")
             cursor.execute(
                 """
-            CREATE TABLE precios_productos (
-                id SERIAL PRIMARY KEY,
-                producto_maestro_id INTEGER NOT NULL,
-                establecimiento_id INTEGER NOT NULL,
-                precio INTEGER NOT NULL,
-                fecha_registro DATE NOT NULL,
-                usuario_id INTEGER,
-                factura_id INTEGER,
-                verificado BOOLEAN DEFAULT FALSE,
-                es_outlier BOOLEAN DEFAULT FALSE,
-                votos_confianza INTEGER DEFAULT 0,
-                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CREATE TABLE precios_productos (
+                    id SERIAL PRIMARY KEY,
+                    producto_maestro_id INTEGER NOT NULL,
+                    establecimiento_id INTEGER NOT NULL,
+                    precio INTEGER NOT NULL,
+                    fecha_registro DATE NOT NULL,
+                    usuario_id INTEGER,
+                    factura_id INTEGER,
+                    verificado BOOLEAN DEFAULT FALSE,
+                    es_outlier BOOLEAN DEFAULT FALSE,
+                    votos_confianza INTEGER DEFAULT 0,
+                    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-                CONSTRAINT precios_productos_producto_maestro_fkey
-                    FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id),
-                CONSTRAINT precios_productos_establecimiento_fkey
-                    FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id),
-                CONSTRAINT precios_productos_usuario_fkey
-                    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+                    CONSTRAINT precios_productos_producto_maestro_fkey
+                        FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id),
+                    CONSTRAINT precios_productos_establecimiento_fkey
+                        FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id),
+                    CONSTRAINT precios_productos_usuario_fkey
+                        FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
 
-                CHECK (precio > 0)
-            )
+                    CHECK (precio > 0)
+                )
             """
             )
             conn.commit()
@@ -491,117 +508,98 @@ def create_postgresql_tables():
         # NIVEL 2: BASE LOCAL (POR USUARIO)
         # ============================================
 
-        # 2.1. FACTURAS (ACTUALIZADA - ahora con establecimiento_id)
+        # 2.1. FACTURAS
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS facturas (
-            id SERIAL PRIMARY KEY,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-
-            numero_factura VARCHAR(50),
-            total_factura INTEGER,
-            fecha_factura DATE,
-            fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            estado VARCHAR(20) DEFAULT 'procesado',
-            estado_validacion VARCHAR(20) DEFAULT 'pendiente',
-            puntaje_calidad INTEGER DEFAULT 0,
-            productos_detectados INTEGER DEFAULT 0,
-            productos_guardados INTEGER DEFAULT 0,
-            porcentaje_lectura DECIMAL(5,2),
-
-            tiene_imagen BOOLEAN DEFAULT FALSE,
-            imagen_data BYTEA,
-            imagen_mime VARCHAR(20),
-
-            fecha_procesamiento TIMESTAMP,
-            fecha_validacion TIMESTAMP,
-            procesado_por VARCHAR(50),
-            notas TEXT,
-
-            establecimiento TEXT,
-            cadena VARCHAR(50)
-        )
+            CREATE TABLE IF NOT EXISTS facturas (
+                id SERIAL PRIMARY KEY,
+                usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                numero_factura VARCHAR(50),
+                total_factura INTEGER,
+                fecha_factura DATE,
+                fecha_cargue TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                estado VARCHAR(20) DEFAULT 'procesado',
+                estado_validacion VARCHAR(20) DEFAULT 'pendiente',
+                puntaje_calidad INTEGER DEFAULT 0,
+                productos_detectados INTEGER DEFAULT 0,
+                productos_guardados INTEGER DEFAULT 0,
+                porcentaje_lectura DECIMAL(5,2),
+                tiene_imagen BOOLEAN DEFAULT FALSE,
+                imagen_data BYTEA,
+                imagen_mime VARCHAR(20),
+                fecha_procesamiento TIMESTAMP,
+                fecha_validacion TIMESTAMP,
+                procesado_por VARCHAR(50),
+                notas TEXT,
+                establecimiento TEXT,
+                cadena VARCHAR(50)
+            )
         """
         )
         print("✓ Tabla 'facturas' creada")
 
-        # 2.2. ITEMS_FACTURA (NUEVA - Reemplaza tabla 'productos')
+        # 2.2. ITEMS_FACTURA
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS items_factura (
-            id SERIAL PRIMARY KEY,
-
-            factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
-            producto_maestro_id INTEGER REFERENCES productos_maestros(id),
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
-
-            codigo_leido VARCHAR(20),
-            nombre_leido VARCHAR(200),
-            precio_pagado INTEGER NOT NULL,
-            cantidad INTEGER DEFAULT 1,
-
-            matching_confianza INTEGER,
-            matching_manual BOOLEAN DEFAULT FALSE,
-
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            CHECK (precio_pagado >= 0),
-            CHECK (cantidad > 0)
-        )
+            CREATE TABLE IF NOT EXISTS items_factura (
+                id SERIAL PRIMARY KEY,
+                factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
+                producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+                usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+                codigo_leido VARCHAR(20),
+                nombre_leido VARCHAR(200),
+                precio_pagado INTEGER NOT NULL,
+                cantidad INTEGER DEFAULT 1,
+                matching_confianza INTEGER,
+                matching_manual BOOLEAN DEFAULT FALSE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (precio_pagado >= 0),
+                CHECK (cantidad > 0)
+            )
         """
         )
         print("✓ Tabla 'items_factura' creada")
 
-        # 2.3. GASTOS_MENSUALES (NUEVA - Analytics personales)
+        # 2.3. GASTOS_MENSUALES
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS gastos_mensuales (
-            id SERIAL PRIMARY KEY,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-
-            anio INTEGER NOT NULL,
-            mes INTEGER NOT NULL,
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-
-            total_gastado INTEGER NOT NULL,
-            total_facturas INTEGER DEFAULT 0,
-            total_productos INTEGER DEFAULT 0,
-            promedio_por_factura INTEGER,
-
-            fecha_calculo TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            UNIQUE(usuario_id, anio, mes, establecimiento_id),
-            CHECK (mes >= 1 AND mes <= 12)
-        )
+            CREATE TABLE IF NOT EXISTS gastos_mensuales (
+                id SERIAL PRIMARY KEY,
+                usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                anio INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                total_gastado INTEGER NOT NULL,
+                total_facturas INTEGER DEFAULT 0,
+                total_productos INTEGER DEFAULT 0,
+                promedio_por_factura INTEGER,
+                fecha_calculo TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(usuario_id, anio, mes, establecimiento_id),
+                CHECK (mes >= 1 AND mes <= 12)
+            )
         """
         )
         print("✓ Tabla 'gastos_mensuales' creada")
 
-        # 2.4. PATRONES_COMPRA (ACTUALIZADA)
+        # 2.4. PATRONES_COMPRA
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS patrones_compra (
-            id SERIAL PRIMARY KEY,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-            producto_maestro_id INTEGER REFERENCES productos_maestros(id),
-
-            frecuencia_dias INTEGER,
-            ultima_compra DATE,
-            proxima_compra_estimada DATE,
-            veces_comprado INTEGER DEFAULT 1,
-
-            establecimiento_preferido_id INTEGER REFERENCES establecimientos(id),
-            precio_promedio_pagado INTEGER,
-
-            recordatorio_activo BOOLEAN DEFAULT TRUE,
-
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            UNIQUE(usuario_id, producto_maestro_id)
-        )
+            CREATE TABLE IF NOT EXISTS patrones_compra (
+                id SERIAL PRIMARY KEY,
+                usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+                frecuencia_dias INTEGER,
+                ultima_compra DATE,
+                proxima_compra_estimada DATE,
+                veces_comprado INTEGER DEFAULT 1,
+                establecimiento_preferido_id INTEGER REFERENCES establecimientos(id),
+                precio_promedio_pagado INTEGER,
+                recordatorio_activo BOOLEAN DEFAULT TRUE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(usuario_id, producto_maestro_id)
+            )
         """
         )
         print("✓ Tabla 'patrones_compra' actualizada")
@@ -610,48 +608,42 @@ def create_postgresql_tables():
         # TABLAS AUXILIARES
         # ============================================
 
-        # 3.1. CODIGOS_LOCALES (NUEVA - Productos sin EAN)
+        # 3.1. CODIGOS_LOCALES
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS codigos_locales (
-            id SERIAL PRIMARY KEY,
-            producto_maestro_id INTEGER REFERENCES productos_maestros(id),
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-
-            codigo_local VARCHAR(20) NOT NULL,
-            descripcion_local TEXT,
-            activo BOOLEAN DEFAULT TRUE,
-
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            UNIQUE(establecimiento_id, codigo_local)
-        )
+            CREATE TABLE IF NOT EXISTS codigos_locales (
+                id SERIAL PRIMARY KEY,
+                producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                codigo_local VARCHAR(20) NOT NULL,
+                descripcion_local TEXT,
+                activo BOOLEAN DEFAULT TRUE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(establecimiento_id, codigo_local)
+            )
         """
         )
         print("✓ Tabla 'codigos_locales' creada")
 
-        # 3.2. MATCHING_LOGS (NUEVA - Auditoría de matching)
+        # 3.2. MATCHING_LOGS
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS matching_logs (
-            id SERIAL PRIMARY KEY,
-            item_factura_id INTEGER REFERENCES items_factura(id),
-
-            codigo_leido VARCHAR(20),
-            nombre_leido VARCHAR(200),
-            producto_maestro_sugerido_id INTEGER REFERENCES productos_maestros(id),
-
-            confianza INTEGER,
-            metodo_matching VARCHAR(50),
-            fue_aceptado BOOLEAN,
-
-            fecha_matching TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS matching_logs (
+                id SERIAL PRIMARY KEY,
+                item_factura_id INTEGER REFERENCES items_factura(id),
+                codigo_leido VARCHAR(20),
+                nombre_leido VARCHAR(200),
+                producto_maestro_sugerido_id INTEGER REFERENCES productos_maestros(id),
+                confianza INTEGER,
+                metodo_matching VARCHAR(50),
+                fue_aceptado BOOLEAN,
+                fecha_matching TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
         print("✓ Tabla 'matching_logs' creada")
 
-        # 3.3. CORRECCIONES_PRODUCTOS (Sistema de aprendizaje)
+        # 3.3. CORRECCIONES_PRODUCTOS
         print("🧠 Verificando tabla correcciones_productos...")
 
         cursor.execute(
@@ -668,46 +660,41 @@ def create_postgresql_tables():
             print("   ✨ Creando tabla correcciones_productos...")
             cursor.execute(
                 """
-            CREATE TABLE correcciones_productos (
-                id SERIAL PRIMARY KEY,
-
-                nombre_ocr TEXT NOT NULL,
-                codigo_ocr TEXT,
-
-                codigo_correcto TEXT NOT NULL,
-                nombre_correcto TEXT,
-
-                nombre_normalizado TEXT NOT NULL,
-                establecimiento_id INTEGER REFERENCES establecimientos(id),
-
-                factura_id INTEGER REFERENCES facturas(id),
-                usuario_id INTEGER,
-                fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                veces_aplicado INTEGER DEFAULT 0,
-
-                UNIQUE(nombre_normalizado, establecimiento_id)
-            )
+                CREATE TABLE correcciones_productos (
+                    id SERIAL PRIMARY KEY,
+                    nombre_ocr TEXT NOT NULL,
+                    codigo_ocr TEXT,
+                    codigo_correcto TEXT NOT NULL,
+                    nombre_correcto TEXT,
+                    nombre_normalizado TEXT NOT NULL,
+                    establecimiento_id INTEGER REFERENCES establecimientos(id),
+                    factura_id INTEGER REFERENCES facturas(id),
+                    usuario_id INTEGER,
+                    fecha_correccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    veces_aplicado INTEGER DEFAULT 0,
+                    UNIQUE(nombre_normalizado, establecimiento_id)
+                )
             """
             )
 
             cursor.execute(
                 """
-            CREATE INDEX idx_correcciones_nombre
-                ON correcciones_productos(nombre_normalizado)
+                CREATE INDEX idx_correcciones_nombre
+                    ON correcciones_productos(nombre_normalizado)
             """
             )
 
             cursor.execute(
                 """
-            CREATE INDEX idx_correcciones_establecimiento
-                ON correcciones_productos(establecimiento_id)
+                CREATE INDEX idx_correcciones_establecimiento
+                    ON correcciones_productos(establecimiento_id)
             """
             )
 
             cursor.execute(
                 """
-            CREATE INDEX idx_correcciones_veces
-                ON correcciones_productos(veces_aplicado DESC)
+                CREATE INDEX idx_correcciones_veces
+                    ON correcciones_productos(veces_aplicado DESC)
             """
             )
 
@@ -716,24 +703,24 @@ def create_postgresql_tables():
         else:
             print("   ✅ Tabla 'correcciones_productos' ya existe")
 
-        # 3.4. PROCESSING_JOBS (Sistema de procesamiento asíncrono)
+        # 3.4. PROCESSING_JOBS
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS processing_jobs (
-            id VARCHAR(50) PRIMARY KEY,
-            usuario_id INTEGER REFERENCES usuarios(id),
-            video_path VARCHAR(255),
-            status VARCHAR(20) DEFAULT 'pending',
-            factura_id INTEGER REFERENCES facturas(id),
-            frames_procesados INTEGER DEFAULT 0,
-            frames_exitosos INTEGER DEFAULT 0,
-            productos_detectados INTEGER DEFAULT 0,
-            error_message TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            started_at TIMESTAMP,
-            completed_at TIMESTAMP,
-            CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
-        )
+            CREATE TABLE IF NOT EXISTS processing_jobs (
+                id VARCHAR(50) PRIMARY KEY,
+                usuario_id INTEGER REFERENCES usuarios(id),
+                video_path VARCHAR(255),
+                status VARCHAR(20) DEFAULT 'pending',
+                factura_id INTEGER REFERENCES facturas(id),
+                frames_procesados INTEGER DEFAULT 0,
+                frames_exitosos INTEGER DEFAULT 0,
+                productos_detectados INTEGER DEFAULT 0,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+            )
         """
         )
         print("✓ Tabla 'processing_jobs' creada")
@@ -745,91 +732,91 @@ def create_postgresql_tables():
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos (
-            id SERIAL PRIMARY KEY,
-            factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
-            codigo VARCHAR(20),
-            nombre VARCHAR(100),
-            valor INTEGER
-        )
+            CREATE TABLE IF NOT EXISTS productos (
+                id SERIAL PRIMARY KEY,
+                factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
+                codigo VARCHAR(20),
+                nombre VARCHAR(100),
+                valor INTEGER
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos_maestro (
-            id SERIAL PRIMARY KEY,
-            codigo_ean VARCHAR(13) UNIQUE NOT NULL,
-            nombre TEXT NOT NULL,
-            marca VARCHAR(100),
-            categoria VARCHAR(50),
-            es_fresco BOOLEAN DEFAULT FALSE,
-            precio_promedio INTEGER,
-            veces_reportado INTEGER DEFAULT 1,
-            primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            CHECK (LENGTH(codigo_ean) >= 3)
-        )
+            CREATE TABLE IF NOT EXISTS productos_maestro (
+                id SERIAL PRIMARY KEY,
+                codigo_ean VARCHAR(13) UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                marca VARCHAR(100),
+                categoria VARCHAR(50),
+                es_fresco BOOLEAN DEFAULT FALSE,
+                precio_promedio INTEGER,
+                veces_reportado INTEGER DEFAULT 1,
+                primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (LENGTH(codigo_ean) >= 3)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos_catalogo (
-            id SERIAL PRIMARY KEY,
-            codigo_ean VARCHAR(13) UNIQUE,
-            nombre_producto VARCHAR(100) NOT NULL,
-            es_producto_fresco BOOLEAN DEFAULT FALSE,
-            primera_fecha_reporte TIMESTAMP,
-            total_reportes INTEGER DEFAULT 1,
-            ultimo_reporte TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS productos_catalogo (
+                id SERIAL PRIMARY KEY,
+                codigo_ean VARCHAR(13) UNIQUE,
+                nombre_producto VARCHAR(100) NOT NULL,
+                es_producto_fresco BOOLEAN DEFAULT FALSE,
+                primera_fecha_reporte TIMESTAMP,
+                total_reportes INTEGER DEFAULT 1,
+                ultimo_reporte TIMESTAMP
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS precios_historicos (
-            id SERIAL PRIMARY KEY,
-            producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
-            establecimiento TEXT NOT NULL,
-            cadena VARCHAR(50),
-            precio INTEGER NOT NULL,
-            usuario_id INTEGER REFERENCES usuarios(id),
-            factura_id INTEGER REFERENCES facturas(id),
-            fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            verificado BOOLEAN DEFAULT FALSE,
-            outlier BOOLEAN DEFAULT FALSE,
-            CHECK (precio > 0)
-        )
+            CREATE TABLE IF NOT EXISTS precios_historicos (
+                id SERIAL PRIMARY KEY,
+                producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
+                establecimiento TEXT NOT NULL,
+                cadena VARCHAR(50),
+                precio INTEGER NOT NULL,
+                usuario_id INTEGER REFERENCES usuarios(id),
+                factura_id INTEGER REFERENCES facturas(id),
+                fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                verificado BOOLEAN DEFAULT FALSE,
+                outlier BOOLEAN DEFAULT FALSE,
+                CHECK (precio > 0)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS historial_compras_usuario (
-            id SERIAL PRIMARY KEY,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-            producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
-            fecha_compra TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            precio_pagado INTEGER NOT NULL,
-            establecimiento TEXT,
-            cadena VARCHAR(50),
-            factura_id INTEGER REFERENCES facturas(id)
-        )
+            CREATE TABLE IF NOT EXISTS historial_compras_usuario (
+                id SERIAL PRIMARY KEY,
+                usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
+                fecha_compra TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                precio_pagado INTEGER NOT NULL,
+                establecimiento TEXT,
+                cadena VARCHAR(50),
+                factura_id INTEGER REFERENCES facturas(id)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS ocr_logs (
-            id SERIAL PRIMARY KEY,
-            factura_id INTEGER REFERENCES facturas(id),
-            status TEXT,
-            message TEXT,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS ocr_logs (
+                id SERIAL PRIMARY KEY,
+                factura_id INTEGER REFERENCES facturas(id),
+                status TEXT,
+                message TEXT,
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
@@ -863,7 +850,6 @@ def create_postgresql_tables():
             "CREATE INDEX IF NOT EXISTS idx_establecimientos_nombre ON establecimientos(nombre_normalizado)",
             "establecimientos.nombre",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_productos_maestros_ean ON productos_maestros(codigo_ean)",
             "productos_maestros.codigo_ean",
@@ -876,7 +862,6 @@ def create_postgresql_tables():
             "CREATE INDEX IF NOT EXISTS idx_productos_maestros_categoria ON productos_maestros(categoria)",
             "productos_maestros.categoria",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_precios_producto_maestro_fecha ON precios_productos(producto_maestro_id, fecha_registro DESC)",
             "precios_productos.producto_fecha",
@@ -889,7 +874,6 @@ def create_postgresql_tables():
             "CREATE INDEX IF NOT EXISTS idx_precios_usuario ON precios_productos(usuario_id)",
             "precios_productos.usuario",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_facturas_usuario ON facturas(usuario_id)",
             "facturas.usuario",
@@ -902,7 +886,6 @@ def create_postgresql_tables():
             "CREATE INDEX IF NOT EXISTS idx_facturas_establecimiento ON facturas(establecimiento_id)",
             "facturas.establecimiento_id",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_items_factura ON items_factura(factura_id)",
             "items_factura.factura_id",
@@ -915,17 +898,14 @@ def create_postgresql_tables():
             "CREATE INDEX IF NOT EXISTS idx_items_usuario ON items_factura(usuario_id)",
             "items_factura.usuario",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_gastos_usuario ON gastos_mensuales(usuario_id, anio DESC, mes DESC)",
             "gastos_mensuales.usuario",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_patrones_usuario_maestro ON patrones_compra(usuario_id, producto_maestro_id)",
             "patrones_compra.usuario_producto",
         )
-
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status, created_at DESC)",
             "processing_jobs.status",
@@ -965,20 +945,49 @@ def create_sqlite_tables():
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            nombre TEXT,
-            facturas_aportadas INTEGER DEFAULT 0,
-            productos_aportados INTEGER DEFAULT 0,
-            puntos_contribucion INTEGER DEFAULT 0,
-            fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                nombre TEXT,
+                facturas_aportadas INTEGER DEFAULT 0,
+                productos_aportados INTEGER DEFAULT 0,
+                puntos_contribucion INTEGER DEFAULT 0,
+                fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
-        # Tabla de recuperación de contraseñas para SQLite
+        # ✅ CORREGIDO: Agregar columnas adicionales a usuarios en SQLite
+        cursor.execute("PRAGMA table_info(usuarios)")
+        columnas_existentes = [row[1] for row in cursor.fetchall()]
+
+        if "ultimo_acceso" not in columnas_existentes:
+            try:
+                cursor.execute("ALTER TABLE usuarios ADD COLUMN ultimo_acceso DATETIME")
+                print("   ✅ Columna 'ultimo_acceso' agregada")
+            except:
+                pass
+
+        if "activo" not in columnas_existentes:
+            try:
+                cursor.execute(
+                    "ALTER TABLE usuarios ADD COLUMN activo INTEGER DEFAULT 1"
+                )
+                print("   ✅ Columna 'activo' agregada")
+            except:
+                pass
+
+        if "rol" not in columnas_existentes:
+            try:
+                cursor.execute(
+                    "ALTER TABLE usuarios ADD COLUMN rol TEXT DEFAULT 'usuario'"
+                )
+                print("   ✅ Columna 'rol' agregada")
+            except:
+                pass
+
+        # Tabla de recuperación de contraseñas
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS password_resets (
@@ -988,7 +997,6 @@ def create_sqlite_tables():
                 expire_at DATETIME NOT NULL,
                 used INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
                 UNIQUE(user_id)
             )
         """
@@ -1010,234 +1018,229 @@ def create_sqlite_tables():
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS processing_jobs (
-            id TEXT PRIMARY KEY,
-            usuario_id INTEGER REFERENCES usuarios(id),
-            video_path TEXT,
-            status TEXT DEFAULT 'pending',
-            factura_id INTEGER REFERENCES facturas(id),
-            frames_procesados INTEGER DEFAULT 0,
-            frames_exitosos INTEGER DEFAULT 0,
-            productos_detectados INTEGER DEFAULT 0,
-            error_message TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            started_at DATETIME,
-            completed_at DATETIME,
-            CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
-        )
+            CREATE TABLE IF NOT EXISTS processing_jobs (
+                id TEXT PRIMARY KEY,
+                usuario_id INTEGER REFERENCES usuarios(id),
+                video_path TEXT,
+                status TEXT DEFAULT 'pending',
+                factura_id INTEGER REFERENCES facturas(id),
+                frames_procesados INTEGER DEFAULT 0,
+                frames_exitosos INTEGER DEFAULT 0,
+                productos_detectados INTEGER DEFAULT 0,
+                error_message TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                started_at DATETIME,
+                completed_at DATETIME,
+                CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE INDEX IF NOT EXISTS idx_processing_jobs_status
-            ON processing_jobs(status, created_at DESC)
+            CREATE INDEX IF NOT EXISTS idx_processing_jobs_status
+                ON processing_jobs(status, created_at DESC)
         """
         )
 
         cursor.execute(
             """
-        CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario
-            ON processing_jobs(usuario_id, created_at DESC)
+            CREATE INDEX IF NOT EXISTS idx_processing_jobs_usuario
+                ON processing_jobs(usuario_id, created_at DESC)
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS establecimientos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre_normalizado TEXT UNIQUE NOT NULL,
-            cadena TEXT,
-            tipo TEXT,
-            ciudad TEXT,
-            direccion TEXT,
-            latitud REAL,
-            longitud REAL,
-            total_facturas_reportadas INTEGER DEFAULT 0,
-            calificacion_promedio REAL,
-            activo INTEGER DEFAULT 1,
-            fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS establecimientos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre_normalizado TEXT UNIQUE NOT NULL,
+                cadena TEXT,
+                tipo TEXT,
+                ciudad TEXT,
+                direccion TEXT,
+                latitud REAL,
+                longitud REAL,
+                total_facturas_reportadas INTEGER DEFAULT 0,
+                calificacion_promedio REAL,
+                activo INTEGER DEFAULT 1,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos_maestros (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            codigo_ean TEXT UNIQUE NOT NULL,
-            nombre_normalizado TEXT NOT NULL,
-            nombre_comercial TEXT,
-            marca TEXT,
-            categoria TEXT,
-            subcategoria TEXT,
-            presentacion TEXT,
-            es_producto_fresco INTEGER DEFAULT 0,
-            imagen_url TEXT,
-            total_reportes INTEGER DEFAULT 0,
-            total_usuarios_reportaron INTEGER DEFAULT 0,
-            precio_promedio_global INTEGER,
-            precio_minimo_historico INTEGER,
-            precio_maximo_historico INTEGER,
-            primera_vez_reportado DATETIME DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS productos_maestros (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_ean TEXT UNIQUE NOT NULL,
+                nombre_normalizado TEXT NOT NULL,
+                nombre_comercial TEXT,
+                marca TEXT,
+                categoria TEXT,
+                subcategoria TEXT,
+                presentacion TEXT,
+                es_producto_fresco INTEGER DEFAULT 0,
+                imagen_url TEXT,
+                total_reportes INTEGER DEFAULT 0,
+                total_usuarios_reportaron INTEGER DEFAULT 0,
+                precio_promedio_global INTEGER,
+                precio_minimo_historico INTEGER,
+                precio_maximo_historico INTEGER,
+                primera_vez_reportado DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS facturas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id INTEGER NOT NULL,
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-            numero_factura TEXT,
-            total_factura INTEGER,
-            fecha_factura DATE,
-            fecha_cargue DATETIME DEFAULT CURRENT_TIMESTAMP,
-            estado TEXT DEFAULT 'procesado',
-            estado_validacion TEXT DEFAULT 'pendiente',
-            puntaje_calidad INTEGER DEFAULT 0,
-            productos_detectados INTEGER DEFAULT 0,
-            productos_guardados INTEGER DEFAULT 0,
-            porcentaje_lectura REAL,
-            tiene_imagen INTEGER DEFAULT 0,
-            imagen_data BLOB,
-            imagen_mime TEXT,
-            fecha_procesamiento DATETIME,
-            fecha_validacion DATETIME,
-            procesado_por TEXT,
-            notas TEXT,
-            establecimiento TEXT,
-            cadena TEXT,
-            FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
-        )
+            CREATE TABLE IF NOT EXISTS facturas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER NOT NULL,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                numero_factura TEXT,
+                total_factura INTEGER,
+                fecha_factura DATE,
+                fecha_cargue DATETIME DEFAULT CURRENT_TIMESTAMP,
+                estado TEXT DEFAULT 'procesado',
+                estado_validacion TEXT DEFAULT 'pendiente',
+                puntaje_calidad INTEGER DEFAULT 0,
+                productos_detectados INTEGER DEFAULT 0,
+                productos_guardados INTEGER DEFAULT 0,
+                porcentaje_lectura REAL,
+                tiene_imagen INTEGER DEFAULT 0,
+                imagen_data BLOB,
+                imagen_mime TEXT,
+                fecha_procesamiento DATETIME,
+                fecha_validacion DATETIME,
+                procesado_por TEXT,
+                notas TEXT,
+                establecimiento TEXT,
+                cadena TEXT,
+                FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS items_factura (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            factura_id INTEGER NOT NULL,
-            producto_maestro_id INTEGER REFERENCES productos_maestros(id),
-            usuario_id INTEGER NOT NULL,
-            codigo_leido TEXT,
-            nombre_leido TEXT,
-            precio_pagado INTEGER NOT NULL,
-            cantidad INTEGER DEFAULT 1,
-            matching_confianza INTEGER,
-            matching_manual INTEGER DEFAULT 0,
-            fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (factura_id) REFERENCES facturas(id) ON DELETE CASCADE,
-            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
-        )
+            CREATE TABLE IF NOT EXISTS items_factura (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                factura_id INTEGER NOT NULL,
+                producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+                usuario_id INTEGER NOT NULL,
+                codigo_leido TEXT,
+                nombre_leido TEXT,
+                precio_pagado INTEGER NOT NULL,
+                cantidad INTEGER DEFAULT 1,
+                matching_confianza INTEGER,
+                matching_manual INTEGER DEFAULT 0,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (factura_id) REFERENCES facturas(id) ON DELETE CASCADE,
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS precios_productos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            producto_maestro_id INTEGER NOT NULL,
-            establecimiento_id INTEGER NOT NULL,
-            precio INTEGER NOT NULL,
-            fecha_registro DATE NOT NULL,
-            usuario_id INTEGER REFERENCES usuarios(id),
-            factura_id INTEGER,
-            verificado INTEGER DEFAULT 0,
-            es_outlier INTEGER DEFAULT 0,
-            votos_confianza INTEGER DEFAULT 0,
-            fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id),
-            FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id)
-        )
+            CREATE TABLE IF NOT EXISTS precios_productos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                producto_maestro_id INTEGER NOT NULL,
+                establecimiento_id INTEGER NOT NULL,
+                precio INTEGER NOT NULL,
+                fecha_registro DATE NOT NULL,
+                usuario_id INTEGER REFERENCES usuarios(id),
+                factura_id INTEGER,
+                verificado INTEGER DEFAULT 0,
+                es_outlier INTEGER DEFAULT 0,
+                votos_confianza INTEGER DEFAULT 0,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id),
+                FOREIGN KEY (establecimiento_id) REFERENCES establecimientos(id)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS gastos_mensuales (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id INTEGER NOT NULL,
-            anio INTEGER NOT NULL,
-            mes INTEGER NOT NULL,
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-            total_gastado INTEGER NOT NULL,
-            total_facturas INTEGER DEFAULT 0,
-            total_productos INTEGER DEFAULT 0,
-            promedio_por_factura INTEGER,
-            fecha_calculo DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-            UNIQUE(usuario_id, anio, mes, establecimiento_id)
-        )
+            CREATE TABLE IF NOT EXISTS gastos_mensuales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER NOT NULL,
+                anio INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                total_gastado INTEGER NOT NULL,
+                total_facturas INTEGER DEFAULT 0,
+                total_productos INTEGER DEFAULT 0,
+                promedio_por_factura INTEGER,
+                fecha_calculo DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+                UNIQUE(usuario_id, anio, mes, establecimiento_id)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS correcciones_productos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            nombre_ocr TEXT NOT NULL,
-            codigo_ocr TEXT,
-
-            codigo_correcto TEXT NOT NULL,
-            nombre_correcto TEXT,
-
-            nombre_normalizado TEXT NOT NULL,
-            establecimiento_id INTEGER REFERENCES establecimientos(id),
-
-            factura_id INTEGER REFERENCES facturas(id),
-            usuario_id INTEGER,
-            fecha_correccion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            veces_aplicado INTEGER DEFAULT 0,
-
-            UNIQUE(nombre_normalizado, establecimiento_id)
-        )
+            CREATE TABLE IF NOT EXISTS correcciones_productos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre_ocr TEXT NOT NULL,
+                codigo_ocr TEXT,
+                codigo_correcto TEXT NOT NULL,
+                nombre_correcto TEXT,
+                nombre_normalizado TEXT NOT NULL,
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                factura_id INTEGER REFERENCES facturas(id),
+                usuario_id INTEGER,
+                fecha_correccion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                veces_aplicado INTEGER DEFAULT 0,
+                UNIQUE(nombre_normalizado, establecimiento_id)
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            factura_id INTEGER NOT NULL,
-            codigo TEXT,
-            nombre TEXT,
-            valor INTEGER,
-            FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE CASCADE
-        )
+            CREATE TABLE IF NOT EXISTS productos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                factura_id INTEGER NOT NULL,
+                codigo TEXT,
+                nombre TEXT,
+                valor INTEGER,
+                FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE CASCADE
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS productos_maestro (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            codigo_ean TEXT UNIQUE NOT NULL,
-            nombre TEXT NOT NULL,
-            marca TEXT,
-            categoria TEXT,
-            es_fresco INTEGER DEFAULT 0,
-            precio_promedio INTEGER,
-            veces_reportado INTEGER DEFAULT 1,
-            primera_vez DATETIME DEFAULT CURRENT_TIMESTAMP,
-            ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS productos_maestro (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_ean TEXT UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                marca TEXT,
+                categoria TEXT,
+                es_fresco INTEGER DEFAULT 0,
+                precio_promedio INTEGER,
+                veces_reportado INTEGER DEFAULT 1,
+                primera_vez DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
         cursor.execute(
             """
-        CREATE TABLE IF NOT EXISTS ocr_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            factura_id INTEGER REFERENCES facturas(id),
-            status TEXT,
-            message TEXT,
-            details TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
+            CREATE TABLE IF NOT EXISTS ocr_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                factura_id INTEGER REFERENCES facturas(id),
+                status TEXT,
+                message TEXT,
+                details TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
@@ -1252,7 +1255,7 @@ def create_sqlite_tables():
 
 
 # ============================================
-# FUNCIONES AUXILIARES (sin cambios)
+# FUNCIONES AUXILIARES
 # ============================================
 
 
@@ -1485,11 +1488,6 @@ def detectar_cadena(establecimiento: str) -> str:
                 return cadena
 
     return "otro"
-
-
-# El resto de funciones permanecen igual...
-# (Las funciones auxiliares como test_database_connection, crear_processing_job, etc.
-# no necesitan cambios)
 
 
 def test_database_connection():
