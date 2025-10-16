@@ -72,17 +72,6 @@ class FacturaManual(BaseModel):
     productos: List[dict]
 
 
-class UserRegister(BaseModel):
-    email: str
-    password: str
-    nombre: Optional[str] = None
-
-
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-
 class ProductoItem(BaseModel):
     nombre: str
     cantidad: int = 1
