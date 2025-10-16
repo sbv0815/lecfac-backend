@@ -879,15 +879,14 @@ async def update_item(item_id: int, request: dict):
                     )
                     precio_actualizado = True
                 else:
-
-                    # Insertar nuevo registro (usando producto_maestro_id)  ✅ CORRECTO
+                    # Insertar nuevo registro en precios_productos
                     if database_type == "postgresql":
                         cursor.execute(
                             """
                             INSERT INTO precios_productos
-                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)  # ✅
-                             VALUES (%s, %s, %s, %s, %s, %s)
-                            """,
+                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
                             (
                                 producto_maestro_id,
                                 establecimiento_id,
@@ -901,7 +900,7 @@ async def update_item(item_id: int, request: dict):
                         cursor.execute(
                             """
                             INSERT INTO precios_productos
-                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)  # ✅
+                            (producto_maestro_id, establecimiento_id, precio, fecha_registro, usuario_id, factura_id)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """,
                             (
