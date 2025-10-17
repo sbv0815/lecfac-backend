@@ -1505,3 +1505,268 @@ async def comparar_precios_establecimientos(producto_id: int):
 
 
 print("✅ admin_dashboard.py cargado correctamente")
+
+# ========================================
+# AGREGAR ESTAS RUTAS A admin_dashboard.py
+# Al final del archivo, antes del print final
+# ========================================
+
+
+@router.get("/inventarios/todos")
+async def get_todos_inventarios():
+    """
+    Obtener inventarios de todos los usuarios para el dashboard admin
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+    try:
+        # Obtener resumen por usuario
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    u.id as usuario_id,
+                    u.email as usuario_email,
+                    COUNT(DISTINCT iu.id) as total_productos,
+                    SUM(CASE WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1 ELSE 0 END) as productos_bajo,
+                    SUM(CASE WHEN iu.cantidad_actual > iu.nivel_alerta
+                             AND iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 1 ELSE 0 END) as productos_medio,
+                    SUM(CASE WHEN iu.cantidad_actual > (iu.nivel_alerta * 2) THEN 1 ELSE 0 END) as productos_normal
+                FROM usuarios u
+                LEFT JOIN inventario_usuario iu ON u.id = iu.usuario_id
+                GROUP BY u.id, u.email
+                HAVING COUNT(DISTINCT iu.id) > 0
+                ORDER BY productos_bajo DESC, total_productos DESC
+            """
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    u.id as usuario_id,
+                    u.email as usuario_email,
+                    COUNT(DISTINCT iu.id) as total_productos,
+                    SUM(CASE WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1 ELSE 0 END) as productos_bajo,
+                    SUM(CASE WHEN iu.cantidad_actual > iu.nivel_alerta
+                             AND iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 1 ELSE 0 END) as productos_medio,
+                    SUM(CASE WHEN iu.cantidad_actual > (iu.nivel_alerta * 2) THEN 1 ELSE 0 END) as productos_normal
+                FROM usuarios u
+                LEFT JOIN inventario_usuario iu ON u.id = iu.usuario_id
+                GROUP BY u.id, u.email
+                HAVING COUNT(DISTINCT iu.id) > 0
+                ORDER BY productos_bajo DESC, total_productos DESC
+            """
+            )
+
+        inventarios = []
+        for row in cursor.fetchall():
+            usuario_id = row[0]
+
+            # Obtener productos críticos (stock bajo) para este usuario
+            if database_type == "postgresql":
+                cursor.execute(
+                    """
+                    SELECT
+                        pm.nombre_normalizado,
+                        iu.cantidad_actual,
+                        iu.unidad_medida
+                    FROM inventario_usuario iu
+                    JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                    WHERE iu.usuario_id = %s
+                      AND iu.cantidad_actual <= iu.nivel_alerta
+                    ORDER BY iu.cantidad_actual ASC
+                    LIMIT 10
+                """,
+                    (usuario_id,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        pm.nombre_normalizado,
+                        iu.cantidad_actual,
+                        iu.unidad_medida
+                    FROM inventario_usuario iu
+                    JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                    WHERE iu.usuario_id = ?
+                      AND iu.cantidad_actual <= iu.nivel_alerta
+                    ORDER BY iu.cantidad_actual ASC
+                    LIMIT 10
+                """,
+                    (usuario_id,),
+                )
+
+            productos_criticos = []
+            for prod_row in cursor.fetchall():
+                productos_criticos.append(
+                    {
+                        "nombre": prod_row[0],
+                        "cantidad": float(prod_row[1]) if prod_row[1] else 0,
+                        "unidad": prod_row[2] or "unidades",
+                    }
+                )
+
+            inventarios.append(
+                {
+                    "usuario_id": usuario_id,
+                    "usuario_email": row[1],
+                    "total_productos": row[2] or 0,
+                    "productos_bajo": row[3] or 0,
+                    "productos_medio": row[4] or 0,
+                    "productos_normal": row[5] or 0,
+                    "productos_criticos": productos_criticos,
+                }
+            )
+
+        # Calcular estadísticas globales
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(DISTINCT iu.usuario_id) as usuarios,
+                    SUM(CASE WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1 ELSE 0 END) as bajo,
+                    COUNT(DISTINCT iu.producto_maestro_id) as productos_unicos
+                FROM inventario_usuario iu
+            """
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(DISTINCT iu.usuario_id) as usuarios,
+                    SUM(CASE WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1 ELSE 0 END) as bajo,
+                    COUNT(DISTINCT iu.producto_maestro_id) as productos_unicos
+                FROM inventario_usuario iu
+            """
+            )
+
+        stats_row = cursor.fetchone()
+
+        # Contar alertas activas
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM alertas_usuario
+                WHERE activa = TRUE AND enviada = FALSE
+            """
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM alertas_usuario
+                WHERE activa = 1 AND enviada = 0
+            """
+            )
+
+        alertas_count = cursor.fetchone()[0] or 0
+
+        conn.close()
+
+        return {
+            "success": True,
+            "inventarios": inventarios,
+            "estadisticas": {
+                "usuarios_con_inventario": stats_row[0] or 0,
+                "productos_stock_bajo": stats_row[1] or 0,
+                "productos_unicos": stats_row[2] or 0,
+                "alertas_activas": alertas_count,
+            },
+        }
+
+    except Exception as e:
+        conn.close()
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/inventarios/alertas-globales")
+async def get_alertas_globales():
+    """
+    Obtener todas las alertas de stock bajo del sistema
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+    try:
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    a.id,
+                    u.email as usuario_email,
+                    pm.nombre_normalizado as producto_nombre,
+                    pm.codigo_ean,
+                    iu.cantidad_actual,
+                    iu.nivel_alerta,
+                    iu.unidad_medida,
+                    a.fecha_creacion
+                FROM alertas_usuario a
+                JOIN usuarios u ON a.usuario_id = u.id
+                JOIN productos_maestros pm ON a.producto_maestro_id = pm.id
+                JOIN inventario_usuario iu ON iu.usuario_id = a.usuario_id
+                    AND iu.producto_maestro_id = a.producto_maestro_id
+                WHERE a.tipo_alerta = 'stock_bajo'
+                  AND a.activa = TRUE
+                  AND a.enviada = FALSE
+                ORDER BY a.fecha_creacion DESC
+                LIMIT 50
+            """
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    a.id,
+                    u.email as usuario_email,
+                    pm.nombre_normalizado as producto_nombre,
+                    pm.codigo_ean,
+                    iu.cantidad_actual,
+                    iu.nivel_alerta,
+                    iu.unidad_medida,
+                    a.fecha_creacion
+                FROM alertas_usuario a
+                JOIN usuarios u ON a.usuario_id = u.id
+                JOIN productos_maestros pm ON a.producto_maestro_id = pm.id
+                JOIN inventario_usuario iu ON iu.usuario_id = a.usuario_id
+                    AND iu.producto_maestro_id = a.producto_maestro_id
+                WHERE a.tipo_alerta = 'stock_bajo'
+                  AND a.activa = 1
+                  AND a.enviada = 0
+                ORDER BY a.fecha_creacion DESC
+                LIMIT 50
+            """
+            )
+
+        alertas = []
+        for row in cursor.fetchall():
+            alertas.append(
+                {
+                    "id": row[0],
+                    "usuario_email": row[1],
+                    "producto_nombre": row[2],
+                    "producto_codigo": row[3],
+                    "cantidad_actual": float(row[4]) if row[4] else 0,
+                    "nivel_alerta": float(row[5]) if row[5] else 0,
+                    "unidad": row[6] or "unidades",
+                    "fecha_creacion": str(row[7]),
+                }
+            )
+
+        conn.close()
+
+        return {"success": True, "alertas": alertas, "total": len(alertas)}
+
+    except Exception as e:
+        conn.close()
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Rutas de inventario para admin agregadas correctamente")
