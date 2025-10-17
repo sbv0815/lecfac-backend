@@ -932,6 +932,134 @@ def create_postgresql_tables():
             conn.close()
 
 
+# Agregar al final de create_postgresql_tables() en database.py
+# Después de la línea donde creas patrones_compra
+
+# ============================================
+# NUEVAS TABLAS PERSONALES
+# ============================================
+
+# 2.5. INVENTARIO_USUARIO
+print("🏗️ Creando tabla inventario_usuario...")
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS inventario_usuario (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+        producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestros(id),
+        cantidad_actual DECIMAL(10, 2) DEFAULT 0,
+        unidad_medida VARCHAR(20) DEFAULT 'unidades',
+        fecha_ultima_compra DATE,
+        fecha_ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        frecuencia_compra_dias INTEGER,
+        fecha_estimada_agotamiento DATE,
+        nivel_alerta DECIMAL(10, 2) DEFAULT 0,
+        alerta_activa BOOLEAN DEFAULT TRUE,
+        notas TEXT,
+        UNIQUE(usuario_id, producto_maestro_id),
+        CHECK (cantidad_actual >= 0),
+        CHECK (nivel_alerta >= 0)
+    )
+"""
+)
+print("✓ Tabla 'inventario_usuario' creada")
+
+# 2.6. PRESUPUESTO_USUARIO
+print("🏗️ Creando tabla presupuesto_usuario...")
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS presupuesto_usuario (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+        monto_mensual INTEGER NOT NULL,
+        monto_semanal INTEGER,
+        anio INTEGER NOT NULL,
+        mes INTEGER NOT NULL,
+        gasto_actual INTEGER DEFAULT 0,
+        gasto_semanal_actual INTEGER DEFAULT 0,
+        fecha_inicio DATE NOT NULL,
+        fecha_fin DATE NOT NULL,
+        alerta_75_enviada BOOLEAN DEFAULT FALSE,
+        alerta_90_enviada BOOLEAN DEFAULT FALSE,
+        alerta_100_enviada BOOLEAN DEFAULT FALSE,
+        activo BOOLEAN DEFAULT TRUE,
+        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(usuario_id, anio, mes),
+        CHECK (monto_mensual > 0),
+        CHECK (mes >= 1 AND mes <= 12),
+        CHECK (gasto_actual >= 0)
+    )
+"""
+)
+print("✓ Tabla 'presupuesto_usuario' creada")
+
+# 2.7. ALERTAS_USUARIO
+print("🏗️ Creando tabla alertas_usuario...")
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS alertas_usuario (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+        producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+        establecimiento_id INTEGER REFERENCES establecimientos(id),
+        tipo_alerta VARCHAR(50) NOT NULL,
+        umbral_valor INTEGER,
+        umbral_porcentaje DECIMAL(5, 2),
+        mensaje_personalizado TEXT,
+        activa BOOLEAN DEFAULT TRUE,
+        enviada BOOLEAN DEFAULT FALSE,
+        fecha_envio TIMESTAMP,
+        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        fecha_expiracion DATE,
+        prioridad VARCHAR(20) DEFAULT 'media',
+        canal_envio VARCHAR(20) DEFAULT 'app',
+        CHECK (tipo_alerta IN ('stock_bajo', 'precio_bajo', 'presupuesto', 'producto_agotado', 'nuevo_precio', 'oferta_establecimiento')),
+        CHECK (prioridad IN ('baja', 'media', 'alta', 'urgente')),
+        CHECK (canal_envio IN ('app', 'email', 'push', 'sms'))
+    )
+"""
+)
+print("✓ Tabla 'alertas_usuario' creada")
+
+# ============================================
+# ÍNDICES PARA LAS NUEVAS TABLAS
+# ============================================
+print("📊 Creando índices para tablas personales...")
+
+crear_indice_seguro(
+    "CREATE INDEX IF NOT EXISTS idx_inventario_usuario ON inventario_usuario(usuario_id, producto_maestro_id)",
+    "inventario_usuario.usuario_producto",
+)
+
+crear_indice_seguro(
+    "CREATE INDEX IF NOT EXISTS idx_inventario_alerta ON inventario_usuario(usuario_id, alerta_activa, fecha_estimada_agotamiento)",
+    "inventario_usuario.alertas",
+)
+
+crear_indice_seguro(
+    "CREATE INDEX IF NOT EXISTS idx_presupuesto_usuario_periodo ON presupuesto_usuario(usuario_id, anio DESC, mes DESC)",
+    "presupuesto_usuario.periodo",
+)
+
+crear_indice_seguro(
+    "CREATE INDEX IF NOT EXISTS idx_presupuesto_activo ON presupuesto_usuario(usuario_id, activo, fecha_inicio, fecha_fin)",
+    "presupuesto_usuario.activo",
+)
+
+crear_indice_seguro(
+    "CREATE INDEX IF NOT EXISTS idx_alertas_usuario_activas ON alertas_usuario(usuario_id, activa, tipo_alerta)",
+    "alertas_usuario.activas",
+)
+
+crear_indice_seguro(
+    "CREATE INDEX IF NOT EXISTS idx_alertas_producto ON alertas_usuario(producto_maestro_id, activa)",
+    "alertas_usuario.producto",
+)
+
+print("✅ Índices de tablas personales creados")
+
+
 def create_sqlite_tables():
     """Crear tablas en SQLite con nueva arquitectura"""
     conn = get_sqlite_connection()
