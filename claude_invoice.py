@@ -25,12 +25,16 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
             "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
         )
 
-        # Cliente Anthropic
+        # Cliente Anthropic - VERSIÓN CORREGIDA
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
 
-        client = anthropic.Anthropic(api_key=api_key)
+        # ✅ CORRECCIÓN: Inicialización simple sin parámetros problemáticos
+        client = anthropic.Anthropic(
+            api_key=api_key,
+            # No pasar ningún otro parámetro para evitar incompatibilidades
+        )
 
         # ========== PROMPT GENERALIZADO MULTI-ESTABLECIMIENTO ==========
         prompt = """Eres un experto en facturas de supermercados COLOMBIANOS.
