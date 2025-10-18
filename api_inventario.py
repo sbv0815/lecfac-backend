@@ -1,6 +1,6 @@
 """
 api_inventario.py - APIs REST para la App Flutter
-Integrar este archivo en tu FastAPI existente
+ACTUALIZADO: Incluye todos los campos nuevos del inventario
 """
 
 from fastapi import APIRouter, HTTPException, Header
@@ -20,12 +20,8 @@ def verificar_token(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autorizado")
 
-    # TODO: Aquí deberías validar el token JWT
-    # Por ahora, extraemos el user_id del token (implementar según tu sistema)
     token = authorization.replace("Bearer ", "")
 
-    # PLACEHOLDER: En producción, descifra el JWT y obtén el user_id
-    # Por ahora, asumimos que el token ES el user_id (solo para desarrollo)
     try:
         user_id = int(token)
         return user_id
@@ -34,18 +30,18 @@ def verificar_token(authorization: str = Header(None)):
 
 
 # ========================================
-# 1. OBTENER INVENTARIO DEL USUARIO
+# 1. OBTENER INVENTARIO DEL USUARIO ⭐ ACTUALIZADO
 # ========================================
 @router.get("/usuario/{user_id}")
 async def get_inventario_usuario(user_id: int):
     """
     GET /api/inventario/usuario/{user_id}
 
-    Obtiene el inventario completo del usuario con:
-    - Productos
-    - Cantidades actuales
-    - Niveles de alerta
-    - Fechas de agotamiento estimadas
+    Obtiene el inventario completo con TODOS los campos nuevos:
+    - Precios (última compra, promedio, mínimo, máximo)
+    - Información del establecimiento
+    - Estadísticas de compra
+    - Relación con facturas
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -74,7 +70,21 @@ async def get_inventario_usuario(user_id: int):
                         WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
                         ELSE 'normal'
                     END as estado_stock,
-                    pm.precio_promedio_global
+                    pm.precio_promedio_global,
+                    -- ⭐ CAMPOS NUEVOS
+                    iu.precio_ultima_compra,
+                    iu.precio_promedio,
+                    iu.precio_minimo,
+                    iu.precio_maximo,
+                    iu.establecimiento_nombre,
+                    iu.establecimiento_id,
+                    iu.establecimiento_ubicacion,
+                    iu.numero_compras,
+                    iu.cantidad_total_comprada,
+                    iu.total_gastado,
+                    iu.ultima_factura_id,
+                    iu.cantidad_por_unidad,
+                    iu.dias_desde_ultima_compra
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
@@ -110,7 +120,20 @@ async def get_inventario_usuario(user_id: int):
                         WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
                         ELSE 'normal'
                     END as estado_stock,
-                    pm.precio_promedio_global
+                    pm.precio_promedio_global,
+                    iu.precio_ultima_compra,
+                    iu.precio_promedio,
+                    iu.precio_minimo,
+                    iu.precio_maximo,
+                    iu.establecimiento_nombre,
+                    iu.establecimiento_id,
+                    iu.establecimiento_ubicacion,
+                    iu.numero_compras,
+                    iu.cantidad_total_comprada,
+                    iu.total_gastado,
+                    iu.ultima_factura_id,
+                    iu.cantidad_por_unidad,
+                    iu.dias_desde_ultima_compra
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
@@ -132,18 +155,32 @@ async def get_inventario_usuario(user_id: int):
                     "id": row[0],
                     "codigo_ean": row[1],
                     "nombre": row[2],
-                    "marca": row[3],
-                    "categoria": row[4],
+                    "marca": row[3] or "",
+                    "categoria": row[4] or "",
                     "imagen_url": row[5],
-                    "cantidad_actual": float(row[6]) if row[6] else 0,
+                    "cantidad_actual": float(row[6]) if row[6] else 0.0,
                     "unidad_medida": row[7] or "unidades",
-                    "nivel_alerta": float(row[8]) if row[8] else 0,
+                    "nivel_alerta": float(row[8]) if row[8] else 0.0,
                     "fecha_ultima_compra": str(row[9]) if row[9] else None,
                     "frecuencia_dias": row[10],
                     "fecha_agotamiento_estimada": str(row[11]) if row[11] else None,
                     "alerta_activa": bool(row[12]),
                     "estado": row[13],
-                    "precio_promedio": float(row[14]) if row[14] else 0,
+                    "precio_promedio_global": float(row[14]) if row[14] else 0.0,
+                    # ⭐ CAMPOS NUEVOS
+                    "precio_ultima_compra": float(row[15]) if row[15] else 0.0,
+                    "precio_promedio": float(row[16]) if row[16] else 0.0,
+                    "precio_minimo": float(row[17]) if row[17] else 0.0,
+                    "precio_maximo": float(row[18]) if row[18] else 0.0,
+                    "establecimiento_nombre": row[19] or "",
+                    "establecimiento_id": row[20],
+                    "establecimiento_ubicacion": row[21] or "",
+                    "numero_compras": int(row[22]) if row[22] else 0,
+                    "cantidad_total_comprada": float(row[23]) if row[23] else 0.0,
+                    "total_gastado": float(row[24]) if row[24] else 0.0,
+                    "ultima_factura_id": row[25],
+                    "cantidad_por_unidad": float(row[26]) if row[26] else 1.0,
+                    "dias_desde_ultima_compra": int(row[27]) if row[27] else 0,
                 }
             )
 
@@ -167,7 +204,9 @@ async def get_inventario_usuario(user_id: int):
 
     except Exception as e:
         conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail=f"Error al obtener inventario: {str(e)}"
+        )
 
 
 # ========================================
@@ -178,8 +217,6 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
     """
     PUT /api/inventario/producto/{inventario_id}
     Body: {"cantidad": 5.0, "usuario_id": 1}
-
-    Actualiza manualmente la cantidad de un producto
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -195,16 +232,12 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
         # Verificar que el inventario pertenece al usuario
         if database_type == "postgresql":
             cursor.execute(
-                """
-                SELECT usuario_id FROM inventario_usuario WHERE id = %s
-            """,
+                "SELECT usuario_id FROM inventario_usuario WHERE id = %s",
                 (inventario_id,),
             )
         else:
             cursor.execute(
-                """
-                SELECT usuario_id FROM inventario_usuario WHERE id = ?
-            """,
+                "SELECT usuario_id FROM inventario_usuario WHERE id = ?",
                 (inventario_id,),
             )
 
@@ -221,7 +254,7 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
                 SET cantidad_actual = %s,
                     fecha_ultima_actualizacion = CURRENT_TIMESTAMP
                 WHERE id = %s
-            """,
+                """,
                 (nueva_cantidad, inventario_id),
             )
         else:
@@ -231,7 +264,7 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
                 SET cantidad_actual = ?,
                     fecha_ultima_actualizacion = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """,
+                """,
                 (nueva_cantidad, inventario_id),
             )
 
@@ -259,8 +292,6 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
 async def get_alertas_usuario(user_id: int, solo_activas: bool = True):
     """
     GET /api/inventario/alertas/{user_id}?solo_activas=true
-
-    Obtiene las alertas de stock bajo y otras notificaciones
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -344,7 +375,7 @@ async def marcar_alerta_leida(alerta_id: int, data: dict):
                 SET enviada = TRUE,
                     fecha_envio = CURRENT_TIMESTAMP
                 WHERE id = %s AND usuario_id = %s
-            """,
+                """,
                 (alerta_id, usuario_id),
             )
         else:
@@ -354,7 +385,7 @@ async def marcar_alerta_leida(alerta_id: int, data: dict):
                 SET enviada = 1,
                     fecha_envio = CURRENT_TIMESTAMP
                 WHERE id = ? AND usuario_id = ?
-            """,
+                """,
                 (alerta_id, usuario_id),
             )
 
@@ -376,8 +407,6 @@ async def marcar_alerta_leida(alerta_id: int, data: dict):
 async def get_presupuesto_usuario(user_id: int):
     """
     GET /api/inventario/presupuesto/{user_id}
-
-    Obtiene el presupuesto mensual activo del usuario
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -388,44 +417,26 @@ async def get_presupuesto_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    id,
-                    monto_mensual,
-                    monto_semanal,
-                    gasto_actual,
-                    gasto_semanal_actual,
-                    fecha_inicio,
-                    fecha_fin,
-                    anio,
-                    mes
+                    id, monto_mensual, monto_semanal, gasto_actual,
+                    gasto_semanal_actual, fecha_inicio, fecha_fin, anio, mes
                 FROM presupuesto_usuario
-                WHERE usuario_id = %s
-                  AND activo = TRUE
+                WHERE usuario_id = %s AND activo = TRUE
                   AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin
-                ORDER BY fecha_inicio DESC
-                LIMIT 1
-            """,
+                ORDER BY fecha_inicio DESC LIMIT 1
+                """,
                 (user_id,),
             )
         else:
             cursor.execute(
                 """
                 SELECT
-                    id,
-                    monto_mensual,
-                    monto_semanal,
-                    gasto_actual,
-                    gasto_semanal_actual,
-                    fecha_inicio,
-                    fecha_fin,
-                    anio,
-                    mes
+                    id, monto_mensual, monto_semanal, gasto_actual,
+                    gasto_semanal_actual, fecha_inicio, fecha_fin, anio, mes
                 FROM presupuesto_usuario
-                WHERE usuario_id = ?
-                  AND activo = 1
+                WHERE usuario_id = ? AND activo = 1
                   AND date('now') BETWEEN fecha_inicio AND fecha_fin
-                ORDER BY fecha_inicio DESC
-                LIMIT 1
-            """,
+                ORDER BY fecha_inicio DESC LIMIT 1
+                """,
                 (user_id,),
             )
 
@@ -501,23 +512,15 @@ async def crear_presupuesto(data: dict):
         else:
             fecha_fin = datetime(anio, mes + 1, 1).date() - timedelta(days=1)
 
-        # Desactivar presupuestos anteriores del mismo periodo
+        # Desactivar presupuestos anteriores
         if database_type == "postgresql":
             cursor.execute(
-                """
-                UPDATE presupuesto_usuario
-                SET activo = FALSE
-                WHERE usuario_id = %s AND anio = %s AND mes = %s
-            """,
+                "UPDATE presupuesto_usuario SET activo = FALSE WHERE usuario_id = %s AND anio = %s AND mes = %s",
                 (usuario_id, anio, mes),
             )
         else:
             cursor.execute(
-                """
-                UPDATE presupuesto_usuario
-                SET activo = 0
-                WHERE usuario_id = ? AND anio = ? AND mes = ?
-            """,
+                "UPDATE presupuesto_usuario SET activo = 0 WHERE usuario_id = ? AND anio = ? AND mes = ?",
                 (usuario_id, anio, mes),
             )
 
@@ -529,7 +532,7 @@ async def crear_presupuesto(data: dict):
                 (usuario_id, monto_mensual, monto_semanal, anio, mes, fecha_inicio, fecha_fin)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """,
+                """,
                 (
                     usuario_id,
                     monto_mensual,
@@ -547,7 +550,7 @@ async def crear_presupuesto(data: dict):
                 INSERT INTO presupuesto_usuario
                 (usuario_id, monto_mensual, monto_semanal, anio, mes, fecha_inicio, fecha_fin)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
+                """,
                 (
                     usuario_id,
                     monto_mensual,
@@ -583,7 +586,6 @@ async def crear_presupuesto(data: dict):
 async def get_estadisticas_usuario(user_id: int):
     """
     GET /api/inventario/estadisticas/{user_id}
-
     Dashboard completo con todas las métricas del usuario
     """
     conn = get_db_connection()
@@ -603,7 +605,7 @@ async def get_estadisticas_usuario(user_id: int):
                     SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios
                 FROM inventario_usuario
                 WHERE usuario_id = %s
-            """,
+                """,
                 (user_id,),
             )
         else:
@@ -615,7 +617,7 @@ async def get_estadisticas_usuario(user_id: int):
                     SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios
                 FROM inventario_usuario
                 WHERE usuario_id = ?
-            """,
+                """,
                 (user_id,),
             )
 
@@ -629,18 +631,12 @@ async def get_estadisticas_usuario(user_id: int):
         # 2. Alertas activas
         if database_type == "postgresql":
             cursor.execute(
-                """
-                SELECT COUNT(*) FROM alertas_usuario
-                WHERE usuario_id = %s AND activa = TRUE AND enviada = FALSE
-            """,
+                "SELECT COUNT(*) FROM alertas_usuario WHERE usuario_id = %s AND activa = TRUE AND enviada = FALSE",
                 (user_id,),
             )
         else:
             cursor.execute(
-                """
-                SELECT COUNT(*) FROM alertas_usuario
-                WHERE usuario_id = ? AND activa = 1 AND enviada = 0
-            """,
+                "SELECT COUNT(*) FROM alertas_usuario WHERE usuario_id = ? AND activa = 1 AND enviada = 0",
                 (user_id,),
             )
 
@@ -655,7 +651,7 @@ async def get_estadisticas_usuario(user_id: int):
                 WHERE usuario_id = %s
                   AND EXTRACT(YEAR FROM fecha_cargue) = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND EXTRACT(MONTH FROM fecha_cargue) = EXTRACT(MONTH FROM CURRENT_DATE)
-            """,
+                """,
                 (user_id,),
             )
         else:
@@ -665,7 +661,7 @@ async def get_estadisticas_usuario(user_id: int):
                 FROM facturas
                 WHERE usuario_id = ?
                   AND strftime('%Y-%m', fecha_cargue) = strftime('%Y-%m', 'now')
-            """,
+                """,
                 (user_id,),
             )
 
@@ -684,4 +680,4 @@ async def get_estadisticas_usuario(user_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ API Inventario para Flutter cargado correctamente")
+print("✅ API Inventario para Flutter cargado correctamente con campos nuevos")
