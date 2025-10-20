@@ -2800,6 +2800,192 @@ async def crear_item_factura(factura_id: int, request: Request):
 
 
 # ==========================================
+# 🔍 ENDPOINT DEBUG - AGREGAR TEMPORALMENTE A main.py
+# ==========================================
+
+
+@app.get("/debug/inventario/{usuario_id}")
+async def debug_inventario(usuario_id: int):
+    """
+    DEBUG: Ver todo lo relacionado con inventario del usuario
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        resultado = {"usuario_id": usuario_id, "timestamp": datetime.now().isoformat()}
+
+        # 1. ¿Existen facturas del usuario?
+        cursor.execute(
+            """
+            SELECT COUNT(*), MAX(id), MAX(fecha_cargue)
+            FROM facturas
+            WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+
+        facturas_data = cursor.fetchone()
+        resultado["facturas"] = {
+            "total": facturas_data[0],
+            "ultima_id": facturas_data[1],
+            "ultima_fecha": str(facturas_data[2]) if facturas_data[2] else None,
+        }
+
+        # 2. ¿Existen items_factura del usuario?
+        cursor.execute(
+            """
+            SELECT COUNT(*), COUNT(DISTINCT producto_maestro_id)
+            FROM items_factura
+            WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+
+        items_data = cursor.fetchone()
+        resultado["items_factura"] = {
+            "total_items": items_data[0],
+            "productos_unicos": items_data[1],
+        }
+
+        # 3. ¿Existen registros en inventario_usuario?
+        cursor.execute(
+            """
+            SELECT COUNT(*),
+                   SUM(cantidad_actual),
+                   COUNT(CASE WHEN precio_ultima_compra IS NOT NULL THEN 1 END)
+            FROM inventario_usuario
+            WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+
+        inventario_data = cursor.fetchone()
+        resultado["inventario_usuario"] = {
+            "total_productos": inventario_data[0],
+            "cantidad_total": float(inventario_data[1]) if inventario_data[1] else 0,
+            "con_precios": inventario_data[2],
+        }
+
+        # 4. Últimos 5 productos en inventario (si existen)
+        cursor.execute(
+            """
+            SELECT
+                iu.id,
+                pm.nombre_normalizado,
+                iu.cantidad_actual,
+                iu.precio_ultima_compra,
+                iu.establecimiento_nombre,
+                iu.fecha_ultima_compra
+            FROM inventario_usuario iu
+            LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+            WHERE iu.usuario_id = %s
+            ORDER BY iu.fecha_ultima_actualizacion DESC
+            LIMIT 5
+        """,
+            (usuario_id,),
+        )
+
+        ultimos_productos = []
+        for row in cursor.fetchall():
+            ultimos_productos.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "cantidad": float(row[2]) if row[2] else 0,
+                    "precio": row[3],
+                    "establecimiento": row[4],
+                    "fecha": str(row[5]) if row[5] else None,
+                }
+            )
+
+        resultado["ultimos_productos"] = ultimos_productos
+
+        # 5. ¿Qué columnas tiene la tabla inventario_usuario?
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'inventario_usuario'
+            ORDER BY ordinal_position
+        """
+        )
+
+        columnas = [{"nombre": row[0], "tipo": row[1]} for row in cursor.fetchall()]
+        resultado["columnas_tabla"] = columnas
+
+        # 6. Últimos items_factura con detalles
+        cursor.execute(
+            """
+            SELECT
+                if.id,
+                if.nombre_leido,
+                if.precio_pagado,
+                if.cantidad,
+                if.producto_maestro_id,
+                f.establecimiento,
+                f.fecha_cargue
+            FROM items_factura if
+            JOIN facturas f ON if.factura_id = f.id
+            WHERE if.usuario_id = %s
+            ORDER BY f.fecha_cargue DESC
+            LIMIT 5
+        """,
+            (usuario_id,),
+        )
+
+        ultimos_items = []
+        for row in cursor.fetchall():
+            ultimos_items.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "precio": row[2],
+                    "cantidad": row[3],
+                    "producto_maestro_id": row[4],
+                    "establecimiento": row[5],
+                    "fecha": str(row[6]) if row[6] else None,
+                }
+            )
+
+        resultado["ultimos_items_factura"] = ultimos_items
+
+        conn.close()
+
+        return resultado
+
+    except Exception as e:
+        conn.close()
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.post("/debug/forzar-actualizacion-inventario/{factura_id}")
+async def forzar_actualizacion_inventario(factura_id: int, usuario_id: int = 1):
+    """
+    DEBUG: Forzar actualización de inventario para una factura específica
+    """
+    try:
+        print(
+            f"🔧 DEBUG: Forzando actualización de inventario para factura {factura_id}"
+        )
+
+        from database import actualizar_inventario_desde_factura
+
+        resultado = actualizar_inventario_desde_factura(factura_id, usuario_id)
+
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "usuario_id": usuario_id,
+            "resultado": resultado,
+            "message": "Inventario actualizado manualmente",
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+# ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
 if __name__ == "__main__":
