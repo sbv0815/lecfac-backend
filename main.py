@@ -671,6 +671,35 @@ async def save_invoice_with_image(
 
         print(f"✅ {productos_guardados} productos guardados")
 
+        # ⭐ AGREGAR AQUÍ - Actualizar contador
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
+                (productos_guardados, factura_id),
+            )
+        else:
+            cursor.execute(
+                "UPDATE facturas SET productos_guardados = ? WHERE id = ?",
+                (productos_guardados, factura_id),
+            )
+
+        conn.commit()
+
+        # ⭐⭐⭐ AGREGAR ESTO AQUÍ ⭐⭐⭐
+        # Actualizar inventario del usuario
+        print(f"📦 Actualizando inventario del usuario...")
+        try:
+            actualizar_inventario_desde_factura(factura_id, usuario_id)
+        except Exception as e:
+            print(f"⚠️ Error actualizando inventario: {e}")
+            import traceback
+
+            traceback.print_exc()
+        # ⭐⭐⭐ FIN DE LA ADICIÓN ⭐⭐⭐
+
+        # Guardar imagen en BD
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
+
         # 7. Actualizar contador
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
