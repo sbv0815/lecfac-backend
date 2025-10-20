@@ -46,6 +46,7 @@ from database import (
     # confirmar_producto_manual,
     obtener_o_crear_establecimiento,
     obtener_o_crear_producto_maestro,
+    actualizar_inventario_desde_factura,  # ⭐ AGREGAR ESTA LÍNEA
 )
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
@@ -1378,8 +1379,24 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
             conn.commit()
             print(f"✅ Productos guardados: {productos_guardados}")
+            print(f"✅ Productos guardados: {productos_guardados}")
             if productos_fallidos > 0:
                 print(f"⚠️ Productos no guardados: {productos_fallidos}")
+
+                # ⭐⭐⭐ AGREGAR ESTO AQUÍ ⭐⭐⭐
+                # Actualizar inventario del usuario
+                print(f"📦 Actualizando inventario del usuario...")
+                try:
+                    actualizar_inventario_desde_factura(factura_id, usuario_id)
+                    print(f"✅ Inventario actualizado correctamente")
+                except Exception as e:
+                    print(f"⚠️ Error actualizando inventario: {e}")
+                    import traceback
+
+                    traceback.print_exc()
+                    # ⭐⭐⭐ FIN ⭐⭐⭐
+
+            # 5.6 Marcar job como completado...
 
             # 5.6 Marcar job como completado (⭐ CON VALIDACIÓN ADICIONAL)
             if os.environ.get("DATABASE_TYPE") == "postgresql":
