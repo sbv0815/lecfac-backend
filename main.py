@@ -29,6 +29,9 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from api_inventario import router as inventario_router
+from api_stats import router as stats_router
+
+app.include_router(stats_router)
 
 # ==========================================
 # IMPORTACIONES LOCALES
