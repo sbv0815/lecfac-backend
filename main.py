@@ -140,7 +140,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="LecFac API",
-    version="3.2.0",
+    version="3.2.1",
     description="Sistema de gestión de facturas con procesamiento asíncrono",
     lifespan=lifespan,
 )
@@ -315,7 +315,7 @@ async def get_anthropic_key():
 
 
 # ==========================================
-# 🔧 ENDPOINT: /invoices/parse - CORREGIDO
+# 🔧 ENDPOINT 1: /invoices/parse - COMPLETO ✅
 # ==========================================
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...)):
@@ -348,7 +348,6 @@ async def parse_invoice(file: UploadFile = File(...)):
 
         print(f"✅ Extraídos: {len(productos_ocr)} productos")
 
-        # Aplicar correcciones automáticas
         productos_corregidos = aplicar_correcciones_automaticas(
             productos_ocr, establecimiento_raw
         )
@@ -363,7 +362,6 @@ async def parse_invoice(file: UploadFile = File(...)):
 
         usuario_id = 1
 
-        # Crear factura
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 """
@@ -402,7 +400,6 @@ async def parse_invoice(file: UploadFile = File(...)):
 
         print(f"✅ Factura creada: ID {factura_id}")
 
-        # Guardar productos en items_factura
         productos_guardados = 0
         for idx, prod in enumerate(productos_corregidos, 1):
             try:
@@ -418,7 +415,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
-                # ⭐ CREAR PRODUCTO MAESTRO - CORREGIDO
+                # ⭐ CREAR PRODUCTO MAESTRO
                 producto_maestro_id = None
                 if codigo_ean_valido:
                     try:
@@ -431,7 +428,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                     except Exception as e:
                         print(f"   ⚠️ Error creando producto maestro: {e}")
 
-                # Insertar en items_factura CON producto_maestro_id
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -475,7 +471,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                 print(f"❌ Error producto {idx}: {e}")
                 continue
 
-        # Actualizar contador
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
@@ -489,7 +484,7 @@ async def parse_invoice(file: UploadFile = File(...)):
 
         conn.commit()
 
-        # ⭐ ACTUALIZAR INVENTARIO
+        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
         print(f"📦 Actualizando inventario del usuario...")
         try:
             actualizar_inventario_desde_factura(factura_id, usuario_id)
@@ -542,7 +537,7 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 
 # ==========================================
-# 🔧 ENDPOINT: /invoices/save-with-image - CORREGIDO
+# 🔧 ENDPOINT 2: /invoices/save-with-image - COMPLETO ✅
 # ==========================================
 @app.post("/invoices/save-with-image")
 async def save_invoice_with_image(
@@ -581,7 +576,6 @@ async def save_invoice_with_image(
         cadena = detectar_cadena(establecimiento)
         establecimiento_id = obtener_o_crear_establecimiento(establecimiento, cadena)
 
-        # Crear factura
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 """
@@ -608,7 +602,6 @@ async def save_invoice_with_image(
 
         print(f"✅ Factura creada: ID {factura_id}")
 
-        # Guardar productos en items_factura
         productos_guardados = 0
 
         for prod in productos_list:
@@ -620,7 +613,7 @@ async def save_invoice_with_image(
                 if not nombre or precio <= 0:
                     continue
 
-                # ⭐ CREAR PRODUCTO MAESTRO - CORREGIDO
+                # ⭐ CREAR PRODUCTO MAESTRO
                 producto_maestro_id = None
                 if codigo and len(codigo) >= 8 and codigo.isdigit():
                     try:
@@ -633,7 +626,6 @@ async def save_invoice_with_image(
                     except Exception as e:
                         print(f"   ⚠️ Error creando producto maestro: {e}")
 
-                # Insertar en items_factura CON producto_maestro_id
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -677,7 +669,6 @@ async def save_invoice_with_image(
 
         print(f"✅ {productos_guardados} productos guardados")
 
-        # Actualizar contador
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
@@ -691,7 +682,7 @@ async def save_invoice_with_image(
 
         conn.commit()
 
-        # ⭐ ACTUALIZAR INVENTARIO
+        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
         print(f"📦 Actualizando inventario del usuario...")
         try:
             actualizar_inventario_desde_factura(factura_id, usuario_id)
@@ -700,11 +691,9 @@ async def save_invoice_with_image(
             print(f"⚠️ Error actualizando inventario: {e}")
             traceback.print_exc()
 
-        # Guardar imagen en BD
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
         print(f"📸 Imagen guardada: {imagen_guardada}")
 
-        # Limpiar archivo temporal
         try:
             os.unlink(temp_file.name)
         except:
@@ -861,10 +850,10 @@ async def parse_invoice_video(
 
 
 # ==========================================
-# 🔧 FUNCIÓN DE BACKGROUND - CORREGIDA ⭐⭐⭐
+# 🔧 FUNCIÓN DE BACKGROUND - COMPLETA ✅
 # ==========================================
 async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
-    """Procesa video en BACKGROUND - Usuario ya recibió respuesta"""
+    """Procesa video en BACKGROUND"""
     conn = None
     cursor = None
     frames_paths = []
@@ -875,7 +864,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"🆔 Job: {job_id}")
         print(f"{'='*80}")
 
-        # Verificar que no esté ya procesado
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -921,7 +909,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 print(f"⚠️ Job {job_id} ya está siendo procesado")
                 return
 
-            print(f"✅ Job válido para procesar. Status actual: {current_status}")
+            print(f"✅ Job válido para procesar")
 
         except Exception as e:
             print(f"⚠️ Error verificando job: {e}")
@@ -931,7 +919,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn = None
             cursor = None
 
-        # Actualizar job a 'processing'
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -976,7 +963,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn = None
             cursor = None
 
-        # Extraer frames del video
         try:
             from video_processor import (
                 extraer_frames_video,
@@ -996,13 +982,11 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
         print(f"✅ {len(frames_paths)} frames extraídos")
 
-        # Procesar frames con Claude
         print(f"🤖 Procesando con Claude...")
 
         start_time = time.time()
 
         def procesar_frame_individual(args):
-            """Procesa un frame individual"""
             i, frame_path = args
             try:
                 resultado = parse_invoice_with_claude(frame_path)
@@ -1015,7 +999,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
         todos_productos = []
         establecimiento = None
-        total_detectado = None
         fecha = None
         frames_exitosos = 0
 
@@ -1056,12 +1039,10 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         if not todos_productos:
             raise Exception("No se detectaron productos")
 
-        # Deduplicar productos
         print(f"🔍 Deduplicando productos...")
         productos_unicos = deduplicar_productos(todos_productos)
         print(f"✅ Productos únicos: {len(productos_unicos)}")
 
-        # Guardar en base de datos
         print(f"💾 Guardando en base de datos...")
 
         conn = get_db_connection()
@@ -1078,7 +1059,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 conn=conn, establecimiento=establecimiento, cadena=cadena
             )
 
-            # Crear factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 fecha_final = (
                     validar_fecha(fecha) if fecha else datetime.now().date().isoformat()
@@ -1129,7 +1109,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
 
-            # Guardar imagen completa
             imagen_guardada = False
             if frames_paths and len(frames_paths) > 0:
                 try:
@@ -1208,7 +1187,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         except Exception as e:
                             print(f"   ⚠️ Error producto maestro '{nombre}': {e}")
 
-                    # Insertar en base de datos CON producto_maestro_id
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
                         cursor.execute(
                             """
@@ -1261,7 +1239,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
                     continue
 
-            # Actualizar contador en factura
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute(
                     """
@@ -1296,7 +1273,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 print(f"⚠️ Error actualizando inventario: {e}")
                 traceback.print_exc()
 
-            # Marcar job como completado
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute(
                     """
@@ -1359,7 +1335,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if conn:
                 conn.close()
 
-        # Limpieza de archivos temporales
         print(f"🧹 Limpiando archivos temporales...")
         try:
             if os.path.exists(video_path):
@@ -1383,7 +1358,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"{'='*80}")
         traceback.print_exc()
 
-        # Marcar job como fallido
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -1423,7 +1397,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if conn:
                 conn.close()
 
-        # Limpiar archivos temporales
         try:
             if video_path and os.path.exists(video_path):
                 os.remove(video_path)
@@ -1687,7 +1660,7 @@ async def get_invoice_status(factura_id: int):
 
 
 # ==========================================
-# ENDPOINTS DE EDICIÓN Y CONTROL DE CALIDAD (ADMIN)
+# ENDPOINTS DE EDICIÓN (ADMIN)
 # ==========================================
 @app.put("/admin/facturas/{factura_id}")
 async def actualizar_factura(factura_id: int, request: Request):
@@ -2749,5 +2722,5 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8080))
     print(f"🚀 Servidor iniciando en puerto: {port}")
-    print(f"🔧 VERSIÓN: 2025-01-20-INVENTARIO-FIX")
+    print(f"🔧 VERSIÓN: 2025-01-21-INVENTARIO-COMPLETO-FIX")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
