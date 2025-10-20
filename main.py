@@ -28,6 +28,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from api_inventario import router as inventario_router
+
 # ==========================================
 # IMPORTACIONES LOCALES
 # ==========================================
@@ -105,9 +107,6 @@ async def require_admin(user=Depends(get_current_user)):
     return user
 
 
-# ==========================================
-# CICLO DE VIDA DE LA APLICACIÓN
-# ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicialización y cierre de la aplicación"""
@@ -139,9 +138,6 @@ async def lifespan(app: FastAPI):
     print("\n👋 Cerrando LecFac API...")
 
 
-# ==========================================
-# CONFIGURACIÓN DE LA APP
-# ==========================================
 app = FastAPI(
     title="LecFac API",
     version="3.1.0",
@@ -157,9 +153,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
-# ARCHIVOS ESTÁTICOS Y TEMPLATES
-# ==========================================
+
 current_dir = Path(__file__).parent
 static_path = current_dir / "static"
 
@@ -172,9 +166,7 @@ else:
 templates = Jinja2Templates(directory=str(current_dir))
 print(f"✅ Templates: {current_dir}")
 
-# ==========================================
-# INCLUIR ROUTERS
-# ==========================================
+
 print("\n" + "=" * 60)
 print("📍 REGISTRANDO ROUTERS")
 print("=" * 60)
@@ -203,14 +195,17 @@ try:
 except Exception as e:
     print(f"❌ Error: {e}")
 
+try:
+    app.include_router(inventario_router, tags=["inventario"])
+    print("✅ inventario_router registrado en /api/inventario/*")
+except Exception as e:
+    print(f"❌ Error registrando inventario_router: {e}")
+
 print("=" * 60)
 print("✅ ROUTERS CONFIGURADOS")
 print("=" * 60 + "\n")
 
 
-# ==========================================
-# ENDPOINTS DE PÁGINAS HTML
-# ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Página principal / Dashboard"""
@@ -269,12 +264,6 @@ async def get_duplicados_js():
     raise HTTPException(404, "duplicados.js no encontrado")
 
 
-# ==========================================
-# ENDPOINTS DE SALUD Y CONFIGURACIÓN
-# ==========================================
-# ==========================================
-# ENDPOINTS DE SALUD Y CONFIGURACIÓN
-# ==========================================
 @app.get("/health")
 @app.get("/api/health-check")
 async def health_check():
@@ -298,8 +287,6 @@ async def health_check():
         )
 
 
-# ⭐ NUEVO ENDPOINT REQUERIDO POR RAILWAY
-# Después de @app.get("/health")
 @app.get("/verify-tesseract")
 async def verify_tesseract():
     """Verificar que Tesseract OCR está instalado"""
