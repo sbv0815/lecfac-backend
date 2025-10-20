@@ -1092,9 +1092,50 @@ def create_postgresql_tables():
 
         print("✅ Índices optimizados creados")
 
+        # ⭐ MIGRACIÓN FORZADA: Agregar columnas faltantes de inventario_usuario
+        print("🔄 Verificando columnas faltantes de inventario_usuario...")
+        try:
+            columnas_faltantes = [
+                ("establecimiento_nombre", "VARCHAR(255)"),
+                ("establecimiento_ubicacion", "VARCHAR(255)"),
+                ("total_gastado", "DECIMAL(12,2) DEFAULT 0.0"),
+                ("dias_desde_ultima_compra", "INTEGER DEFAULT 0"),
+            ]
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'inventario_usuario'
+            """
+            )
+            columnas_existentes_inv = [row[0] for row in cursor.fetchall()]
+
+            for nombre_col, tipo_col in columnas_faltantes:
+                if nombre_col not in columnas_existentes_inv:
+                    try:
+                        cursor.execute(
+                            f"""
+                            ALTER TABLE inventario_usuario
+                            ADD COLUMN IF NOT EXISTS {nombre_col} {tipo_col}
+                        """
+                        )
+                        conn.commit()
+                        print(
+                            f"   ✅ Columna '{nombre_col}' agregada a inventario_usuario"
+                        )
+                    except Exception as e:
+                        print(f"   ⚠️ '{nombre_col}': {e}")
+                        conn.rollback()
+
+            print("✅ Columnas de inventario_usuario verificadas")
+
+        except Exception as e:
+            print(f"⚠️ Error verificando columnas: {e}")
+            conn.rollback()
+
         conn.commit()
         print("✅ Base de datos PostgreSQL configurada correctamente")
-
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
         import traceback
