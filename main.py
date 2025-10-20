@@ -364,64 +364,34 @@ async def parse_invoice(file: UploadFile = File(...)):
         usuario_id = 1
         fecha_factura = data.get("fecha") or None
 
+        # 5. Crear factura
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 """
                 INSERT INTO facturas (
                     usuario_id, establecimiento_id, establecimiento, cadena,
-                    total_factura, fecha_factura, fecha_cargue,
-                    estado_validacion, tiene_imagen, productos_detectados
-                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
+                    total_factura, fecha_cargue, estado_validacion, tiene_imagen
+                ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'procesado', TRUE)
                 RETURNING id
             """,
-                (
-                    usuario_id,
-                    establecimiento_id,
-                    establecimiento_raw,
-                    cadena,
-                    total_factura,
-                    fecha_factura,
-                    "procesado",
-                    True,
-                    len(productos_ocr),
-                ),
+                (usuario_id, establecimiento_id, establecimiento, cadena, total),
             )
+            factura_id = cursor.fetchone()[0]
         else:
             cursor.execute(
                 """
                 INSERT INTO facturas (
                     usuario_id, establecimiento_id, establecimiento, cadena,
-                    total_factura, fecha_factura, fecha_cargue,
-                    estado_validacion, tiene_imagen, productos_detectados
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    total_factura, fecha_cargue, estado_validacion, tiene_imagen
+                ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'procesado', 1)
             """,
-                (
-                    usuario_id,
-                    establecimiento_id,
-                    establecimiento_raw,
-                    cadena,
-                    total_factura,
-                    fecha_factura,
-                    datetime.now(),
-                    "procesado",
-                    True,
-                    len(productos_ocr),
-                ),
+                (usuario_id, establecimiento_id, establecimiento, cadena, total),
             )
+            factura_id = cursor.lastrowid
 
-        factura_id = cursor.fetchone()[0]
-        print(f"✅ Factura ID: {factura_id}")
+        print(f"✅ Factura creada: ID {factura_id}")
 
-        try:
-            productos_corregidos = aplicar_correcciones_automaticas(
-                conn,
-                productos_ocr,
-                establecimiento_id=establecimiento_id,
-                umbral_similitud=0.85,
-            )
-        except:
-            productos_corregidos = productos_ocr
-
+        # 6. Guardar productos en items_factura
         productos_guardados = 0
         for idx, prod in enumerate(productos_corregidos, 1):
             try:
@@ -437,48 +407,50 @@ async def parse_invoice(file: UploadFile = File(...)):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
+                # ⭐ BUSCAR O CREAR PRODUCTO MAESTRO
+                # ⭐ BUSCAR O CREAR PRODUCTO MAESTRO (ANTES del INSERT)
                 producto_maestro_id = None
-                if codigo_ean_valido:
-                    producto_maestro_id = obtener_o_crear_producto_maestro(
-                        codigo_ean=codigo_ean_valido, nombre=nombre, precio=precio
-                    )
+                if codigo and len(codigo) >= 3:
+                    try:
+                        producto_maestro_id = obtener_o_crear_producto_maestro(
+                            codigo_ean=codigo, nombre=nombre, precio=int(precio)
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Error creando producto maestro: {e}")
 
+                # Insertar en items_factura
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, producto_maestro_id, usuario_id,
-                            codigo_leido, nombre_leido, precio_pagado, cantidad, matching_confianza
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            factura_id, usuario_id, producto_maestro_id,
+                            codigo_leido, nombre_leido, precio_pagado, cantidad
+                        ) VALUES (%s, %s, %s, %s, %s, %s, 1)
                     """,
                         (
                             factura_id,
-                            producto_maestro_id,
                             usuario_id,
-                            codigo_ean,
+                            producto_maestro_id,
+                            codigo,
                             nombre,
                             precio,
-                            cantidad,
-                            100 if codigo_ean_valido else 50,
                         ),
                     )
                 else:
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, producto_maestro_id, usuario_id,
-                            codigo_leido, nombre_leido, precio_pagado, cantidad, matching_confianza
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            factura_id, usuario_id, producto_maestro_id,
+                            codigo_leido, nombre_leido, precio_pagado, cantidad
+                        ) VALUES (?, ?, ?, ?, ?, ?, 1)
                     """,
                         (
                             factura_id,
-                            producto_maestro_id,
                             usuario_id,
-                            codigo_ean,
+                            producto_maestro_id,
+                            codigo,
                             nombre,
                             precio,
-                            cantidad,
-                            100 if codigo_ean_valido else 50,
                         ),
                     )
 
@@ -611,8 +583,8 @@ async def save_invoice_with_image(
                 (usuario_id, establecimiento_id, establecimiento, cadena, total),
             )
 
-        factura_id = cursor.fetchone()[0]
-        print(f"✅ Factura creada: ID {factura_id}")
+            factura_id = cursor.fetchone()[0]
+            print(f"✅ Factura creada: ID {factura_id}")
 
         # 6. Guardar productos en items_factura
         productos_guardados = 0
@@ -627,7 +599,7 @@ async def save_invoice_with_image(
                     continue
 
                 # Buscar o crear producto maestro si hay código válido
-                producto_maestro_id = None
+
                 if codigo and len(codigo) >= 8 and codigo.isdigit():
                     producto_maestro_id = obtener_o_crear_producto_maestro(
                         codigo_ean=codigo, nombre=nombre, precio=precio
