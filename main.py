@@ -1380,8 +1380,22 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             conn.commit()
             print(f"✅ Productos guardados: {productos_guardados}")
             print(f"✅ Productos guardados: {productos_guardados}")
+            print(f"✅ Productos guardados: {productos_guardados}")
             if productos_fallidos > 0:
                 print(f"⚠️ Productos no guardados: {productos_fallidos}")
+
+                # ⭐⭐⭐ AGREGAR ESTO AQUÍ ⭐⭐⭐
+                print(f"📦 Actualizando inventario del usuario...")
+            try:
+                from database import actualizar_inventario_desde_factura
+
+                actualizar_inventario_desde_factura(factura_id, usuario_id)
+                print(f"✅ Inventario actualizado correctamente")
+            except Exception as e:
+                print(f"⚠️ Error actualizando inventario: {e}")
+                import traceback
+
+                traceback.print_exc()
 
                 # ⭐⭐⭐ AGREGAR ESTO AQUÍ ⭐⭐⭐
                 # Actualizar inventario del usuario
@@ -1395,8 +1409,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
                     traceback.print_exc()
                     # ⭐⭐⭐ FIN ⭐⭐⭐
-
-            # 5.6 Marcar job como completado...
 
             # 5.6 Marcar job como completado (⭐ CON VALIDACIÓN ADICIONAL)
             if os.environ.get("DATABASE_TYPE") == "postgresql":
