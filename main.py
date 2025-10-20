@@ -31,7 +31,6 @@ from pydantic import BaseModel
 from api_inventario import router as inventario_router
 from api_stats import router as stats_router
 
-app.include_router(stats_router)
 
 # ==========================================
 # IMPORTACIONES LOCALES
@@ -147,6 +146,9 @@ app = FastAPI(
     description="Sistema de gestión de facturas con procesamiento asíncrono",
     lifespan=lifespan,
 )
+
+app.include_router(stats_router)
+app.include_router(inventario_router)
 
 app.add_middleware(
     CORSMiddleware,
