@@ -3,7 +3,6 @@ import sqlite3
 import bcrypt
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
-from database import get_db_connection
 
 
 # Intentar importar psycopg3 primero, luego psycopg2
