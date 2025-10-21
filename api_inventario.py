@@ -405,25 +405,30 @@ async def marcar_alerta_leida(alerta_id: int, data: dict):
 # ========================================
 # 5. OBTENER PRESUPUESTO DEL USUARIO
 # ========================================
+# ========================================
+# 5. OBTENER PRESUPUESTO DEL USUARIO - CORREGIDO ✅
+# ========================================
 @router.get("/presupuesto/{user_id}")
 async def get_presupuesto_usuario(user_id: int):
     """
     GET /api/inventario/presupuesto/{user_id}
+
+    Devuelve el presupuesto activo del usuario + gastos actuales calculados
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
     try:
+        # 1. Obtener presupuesto activo
         if database_type == "postgresql":
             cursor.execute(
                 """
                 SELECT
-                    id, monto_mensual, monto_semanal, gasto_actual,
-                    gasto_semanal_actual, fecha_inicio, fecha_fin, anio, mes
+                    id, monto_mensual, monto_semanal,
+                    fecha_inicio, fecha_fin, anio, mes, gasto_actual, gasto_semanal_actual
                 FROM presupuesto_usuario
                 WHERE usuario_id = %s AND activo = TRUE
-                  AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin
                 ORDER BY fecha_inicio DESC LIMIT 1
                 """,
                 (user_id,),
@@ -432,11 +437,10 @@ async def get_presupuesto_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    id, monto_mensual, monto_semanal, gasto_actual,
-                    gasto_semanal_actual, fecha_inicio, fecha_fin, anio, mes
+                    id, monto_mensual, monto_semanal,
+                    fecha_inicio, fecha_fin, anio, mes, gasto_actual, gasto_semanal_actual
                 FROM presupuesto_usuario
                 WHERE usuario_id = ? AND activo = 1
-                  AND date('now') BETWEEN fecha_inicio AND fecha_fin
                 ORDER BY fecha_inicio DESC LIMIT 1
                 """,
                 (user_id,),
@@ -446,49 +450,146 @@ async def get_presupuesto_usuario(user_id: int):
 
         if not presupuesto:
             conn.close()
-            return {"success": True, "tiene_presupuesto": False, "presupuesto": None}
+            return {
+                "success": True,
+                "data": {"tiene_presupuesto": False, "presupuesto": None},
+            }
 
-        monto_mensual = float(presupuesto[1])
-        gasto_actual = float(presupuesto[3]) if presupuesto[3] else 0
-        porcentaje_usado = (
-            (gasto_actual / monto_mensual * 100) if monto_mensual > 0 else 0
-        )
+        presupuesto_id = presupuesto[0]
+        monto_mensual = float(presupuesto[1]) if presupuesto[1] else 0
+        monto_semanal = float(presupuesto[2]) if presupuesto[2] else 0
+        fecha_inicio = presupuesto[3]
+        fecha_fin = presupuesto[4]
 
+        # 2. Calcular gastos reales del periodo
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = %s
+                  AND fecha_cargue >= %s
+                  AND fecha_cargue <= %s
+                """,
+                (user_id, fecha_inicio, fecha_fin),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = ?
+                  AND date(fecha_cargue) >= date(?)
+                  AND date(fecha_cargue) <= date(?)
+                """,
+                (user_id, fecha_inicio, fecha_fin),
+            )
+
+        gasto_mensual_actual = float(cursor.fetchone()[0])
+
+        # 3. Calcular gasto semanal (últimos 7 días)
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = %s
+                  AND fecha_cargue >= CURRENT_DATE - INTERVAL '7 days'
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = ?
+                  AND date(fecha_cargue) >= date('now', '-7 days')
+                """,
+                (user_id,),
+            )
+
+        gasto_semanal_actual = float(cursor.fetchone()[0])
+
+        # 4. Actualizar gastos en la tabla presupuesto_usuario
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                UPDATE presupuesto_usuario
+                SET gasto_actual = %s,
+                    gasto_semanal_actual = %s
+                WHERE id = %s
+                """,
+                (gasto_mensual_actual, gasto_semanal_actual, presupuesto_id),
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE presupuesto_usuario
+                SET gasto_actual = ?,
+                    gasto_semanal_actual = ?
+                WHERE id = ?
+                """,
+                (gasto_mensual_actual, gasto_semanal_actual, presupuesto_id),
+            )
+
+        conn.commit()
         conn.close()
+
+        # 5. Preparar respuesta
+        porcentaje_usado_mensual = (
+            (gasto_mensual_actual / monto_mensual * 100) if monto_mensual > 0 else 0
+        )
+        porcentaje_usado_semanal = (
+            (gasto_semanal_actual / monto_semanal * 100) if monto_semanal > 0 else 0
+        )
 
         return {
             "success": True,
-            "tiene_presupuesto": True,
-            "presupuesto": {
-                "id": presupuesto[0],
-                "monto_mensual": monto_mensual,
-                "monto_semanal": float(presupuesto[2]) if presupuesto[2] else 0,
-                "gasto_actual": gasto_actual,
-                "gasto_semanal_actual": float(presupuesto[4]) if presupuesto[4] else 0,
-                "disponible": monto_mensual - gasto_actual,
-                "porcentaje_usado": round(porcentaje_usado, 1),
-                "fecha_inicio": str(presupuesto[5]),
-                "fecha_fin": str(presupuesto[6]),
-                "periodo": f"{presupuesto[8]}/{presupuesto[7]}",
+            "data": {
+                "tiene_presupuesto": True,
+                "presupuesto": {
+                    "id": presupuesto_id,
+                    "usuario_id": user_id,
+                    "monto_mensual": monto_mensual,
+                    "monto_semanal": monto_semanal,
+                    "gasto_mensual_actual": gasto_mensual_actual,
+                    "gasto_semanal_actual": gasto_semanal_actual,
+                    "disponible_mensual": max(0, monto_mensual - gasto_mensual_actual),
+                    "disponible_semanal": max(0, monto_semanal - gasto_semanal_actual),
+                    "porcentaje_usado_mensual": round(porcentaje_usado_mensual, 1),
+                    "porcentaje_usado_semanal": round(porcentaje_usado_semanal, 1),
+                    "fecha_inicio": str(fecha_inicio),
+                    "fecha_fin": str(fecha_fin),
+                    "periodo": f"{presupuesto[6]}/{presupuesto[5]}",  # mes/anio
+                },
             },
         }
 
     except Exception as e:
         conn.close()
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ========================================
 # 6. CREAR/ACTUALIZAR PRESUPUESTO
 # ========================================
+# ========================================
+# 6. CREAR/ACTUALIZAR PRESUPUESTO - CORREGIDO ✅
+# ========================================
 @router.post("/presupuesto")
 async def crear_presupuesto(data: dict):
     """
     POST /api/inventario/presupuesto
     Body: {
-        "usuario_id": 1,
-        "monto_mensual": 500000,
-        "monto_semanal": 125000,
+        "user_id": 1,
+        "monto_mensual": 500000,   # ✅ Acepta ambos
+        "limite_mensual": 500000,  # ✅ Compatibilidad Flutter
+        "monto_semanal": 125000,   # ✅ Acepta ambos
+        "limite_semanal": 125000,  # ✅ Compatibilidad Flutter
         "anio": 2025,
         "mes": 10
     }
@@ -498,14 +599,23 @@ async def crear_presupuesto(data: dict):
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
     try:
-        usuario_id = data.get("usuario_id")
-        monto_mensual = data.get("monto_mensual")
-        monto_semanal = data.get("monto_semanal")
+        usuario_id = data.get("user_id") or data.get("usuario_id")
+
+        # ✅ CORREGIDO: Aceptar ambos nombres de campos
+        monto_mensual = data.get("monto_mensual") or data.get("limite_mensual")
+        monto_semanal = data.get("monto_semanal") or data.get("limite_semanal")
+
         anio = data.get("anio", datetime.now().year)
         mes = data.get("mes", datetime.now().month)
 
         if not usuario_id or not monto_mensual:
             raise HTTPException(status_code=400, detail="Faltan datos requeridos")
+
+        # Validar montos positivos
+        if monto_mensual <= 0 or (monto_semanal and monto_semanal <= 0):
+            raise HTTPException(
+                status_code=400, detail="Los montos deben ser mayores a 0"
+            )
 
         # Calcular fechas del periodo
         fecha_inicio = datetime(anio, mes, 1).date()
@@ -514,7 +624,7 @@ async def crear_presupuesto(data: dict):
         else:
             fecha_fin = datetime(anio, mes + 1, 1).date() - timedelta(days=1)
 
-        # Desactivar presupuestos anteriores
+        # Desactivar presupuestos anteriores del mismo periodo
         if database_type == "postgresql":
             cursor.execute(
                 "UPDATE presupuesto_usuario SET activo = FALSE WHERE usuario_id = %s AND anio = %s AND mes = %s",
@@ -531,8 +641,8 @@ async def crear_presupuesto(data: dict):
             cursor.execute(
                 """
                 INSERT INTO presupuesto_usuario
-                (usuario_id, monto_mensual, monto_semanal, anio, mes, fecha_inicio, fecha_fin)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (usuario_id, monto_mensual, monto_semanal, anio, mes, fecha_inicio, fecha_fin, activo)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
                 RETURNING id
                 """,
                 (
@@ -550,8 +660,8 @@ async def crear_presupuesto(data: dict):
             cursor.execute(
                 """
                 INSERT INTO presupuesto_usuario
-                (usuario_id, monto_mensual, monto_semanal, anio, mes, fecha_inicio, fecha_fin)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (usuario_id, monto_mensual, monto_semanal, anio, mes, fecha_inicio, fecha_fin, activo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                 """,
                 (
                     usuario_id,
@@ -573,11 +683,20 @@ async def crear_presupuesto(data: dict):
             "message": "Presupuesto creado correctamente",
             "presupuesto_id": presupuesto_id,
             "periodo": f"{mes}/{anio}",
+            "data": {
+                "monto_mensual": monto_mensual,
+                "monto_semanal": monto_semanal,
+            },
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
