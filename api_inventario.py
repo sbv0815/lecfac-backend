@@ -154,7 +154,7 @@ async def get_inventario_usuario(user_id: int):
                     "codigo_ean": row[1],
                     "nombre": row[2],
                     "marca": row[3]
-                    or row[29]
+                    or row[28]
                     or "",  # Priorizar marca de productos_maestros
                     "categoria": row[4] or "",
                     "imagen_url": row[5],
