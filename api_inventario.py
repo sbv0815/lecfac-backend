@@ -701,29 +701,43 @@ async def crear_presupuesto(data: dict):
 
 
 # ========================================
-# 7. ESTADÍSTICAS DEL USUARIO
+# 7. ESTADÍSTICAS COMPLETAS DEL USUARIO ⭐ AMPLIADO
 # ========================================
 @router.get("/estadisticas/{user_id}")
 async def get_estadisticas_usuario(user_id: int):
     """
     GET /api/inventario/estadisticas/{user_id}
-    Dashboard completo con todas las métricas del usuario
+
+    Dashboard completo con:
+    - Inventario (stock, categorías, próximos a agotar)
+    - Gastos (mensual, productos, establecimientos)
+    - Comparativa comunitaria (precios vs promedio global)
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
     try:
-        stats = {}
+        resultado = {
+            "success": True,
+            "inventario": {},
+            "gastos": {},
+            "comunitarias": {},
+        }
 
-        # 1. Productos en inventario
+        # ============================================================
+        # 🏠 SECCIÓN 1: ESTADÍSTICAS DE INVENTARIO
+        # ============================================================
+
+        # 1.1 Resumen de stock
         if database_type == "postgresql":
             cursor.execute(
                 """
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN cantidad_actual <= nivel_alerta THEN 1 ELSE 0 END) as bajos,
-                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios
+                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios,
+                    COALESCE(SUM(cantidad_actual * precio_ultima_compra), 0) as valor_total
                 FROM inventario_usuario
                 WHERE usuario_id = %s
                 """,
@@ -735,7 +749,8 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN cantidad_actual <= nivel_alerta THEN 1 ELSE 0 END) as bajos,
-                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios
+                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios,
+                    COALESCE(SUM(cantidad_actual * precio_ultima_compra), 0) as valor_total
                 FROM inventario_usuario
                 WHERE usuario_id = ?
                 """,
@@ -743,31 +758,133 @@ async def get_estadisticas_usuario(user_id: int):
             )
 
         inv = cursor.fetchone()
-        stats["inventario"] = {
-            "total": inv[0] or 0,
-            "stock_bajo": inv[1] or 0,
-            "stock_medio": inv[2] or 0,
-        }
+        total_productos = inv[0] or 0
+        stock_bajo = inv[1] or 0
+        stock_medio = inv[2] or 0
+        valor_total = float(inv[3]) if inv[3] else 0
 
-        # 2. Alertas activas
+        # 1.2 Productos por categoría
         if database_type == "postgresql":
             cursor.execute(
-                "SELECT COUNT(*) FROM alertas_usuario WHERE usuario_id = %s AND activa = TRUE AND enviada = FALSE",
+                """
+                SELECT
+                    COALESCE(pm.categoria, 'Sin categoría') as categoria,
+                    COUNT(*) as cantidad,
+                    COALESCE(SUM(iu.cantidad_actual * iu.precio_ultima_compra), 0) as valor_total
+                FROM inventario_usuario iu
+                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = %s
+                GROUP BY pm.categoria
+                ORDER BY cantidad DESC
+                LIMIT 10
+                """,
                 (user_id,),
             )
         else:
             cursor.execute(
-                "SELECT COUNT(*) FROM alertas_usuario WHERE usuario_id = ? AND activa = 1 AND enviada = 0",
+                """
+                SELECT
+                    COALESCE(pm.categoria, 'Sin categoría') as categoria,
+                    COUNT(*) as cantidad,
+                    COALESCE(SUM(iu.cantidad_actual * iu.precio_ultima_compra), 0) as valor_total
+                FROM inventario_usuario iu
+                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = ?
+                GROUP BY pm.categoria
+                ORDER BY cantidad DESC
+                LIMIT 10
+                """,
                 (user_id,),
             )
 
-        stats["alertas_pendientes"] = cursor.fetchone()[0] or 0
+        por_categoria = []
+        for row in cursor.fetchall():
+            por_categoria.append(
+                {
+                    "categoria": row[0],
+                    "cantidad": row[1],
+                    "valor_total": float(row[2]) if row[2] else 0,
+                }
+            )
 
-        # 3. Facturas del mes actual
+        # 1.3 Productos próximos a agotarse
         if database_type == "postgresql":
             cursor.execute(
                 """
-                SELECT COUNT(*), COALESCE(SUM(total_factura), 0)
+                SELECT
+                    iu.id,
+                    pm.nombre_normalizado,
+                    iu.cantidad_actual,
+                    COALESCE(
+                        EXTRACT(DAY FROM (iu.fecha_estimada_agotamiento - CURRENT_DATE)),
+                        0
+                    )::INTEGER as dias_estimados,
+                    iu.establecimiento
+                FROM inventario_usuario iu
+                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = %s
+                  AND iu.cantidad_actual <= iu.nivel_alerta * 2
+                  AND iu.fecha_estimada_agotamiento IS NOT NULL
+                ORDER BY iu.fecha_estimada_agotamiento ASC
+                LIMIT 10
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    iu.id,
+                    pm.nombre_normalizado,
+                    iu.cantidad_actual,
+                    COALESCE(
+                        CAST((julianday(iu.fecha_estimada_agotamiento) - julianday('now')) AS INTEGER),
+                        0
+                    ) as dias_estimados,
+                    iu.establecimiento
+                FROM inventario_usuario iu
+                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = ?
+                  AND iu.cantidad_actual <= iu.nivel_alerta * 2
+                  AND iu.fecha_estimada_agotamiento IS NOT NULL
+                ORDER BY iu.fecha_estimada_agotamiento ASC
+                LIMIT 10
+                """,
+                (user_id,),
+            )
+
+        proximos_agotar = []
+        for row in cursor.fetchall():
+            proximos_agotar.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "cantidad_actual": float(row[2]) if row[2] else 0,
+                    "dias_estimados": max(0, row[3] or 0),
+                    "establecimiento": row[4],
+                }
+            )
+
+        resultado["inventario"] = {
+            "total": total_productos,
+            "stock_bajo": stock_bajo,
+            "stock_medio": stock_medio,
+            "stock_normal": total_productos - stock_bajo - stock_medio,
+            "valor_total": valor_total,
+            "por_categoria": por_categoria,
+            "proximos_agotar": proximos_agotar,
+        }
+
+        # ============================================================
+        # 💰 SECCIÓN 2: ESTADÍSTICAS DE GASTOS
+        # ============================================================
+
+        # 2.1 Gasto mensual y presupuesto
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    COALESCE(SUM(total_factura), 0)
                 FROM facturas
                 WHERE usuario_id = %s
                   AND EXTRACT(YEAR FROM fecha_cargue) = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -778,7 +895,8 @@ async def get_estadisticas_usuario(user_id: int):
         else:
             cursor.execute(
                 """
-                SELECT COUNT(*), COALESCE(SUM(total_factura), 0)
+                SELECT
+                    COALESCE(SUM(total_factura), 0)
                 FROM facturas
                 WHERE usuario_id = ?
                   AND strftime('%Y-%m', fecha_cargue) = strftime('%Y-%m', 'now')
@@ -786,19 +904,314 @@ async def get_estadisticas_usuario(user_id: int):
                 (user_id,),
             )
 
-        fac = cursor.fetchone()
-        stats["facturas_mes"] = {
-            "cantidad": fac[0] or 0,
-            "total_gastado": float(fac[1]) if fac[1] else 0,
+        gasto_mensual = float(cursor.fetchone()[0])
+
+        # Obtener presupuesto activo
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT monto_mensual, gasto_actual
+                FROM presupuesto_usuario
+                WHERE usuario_id = %s AND activo = TRUE
+                ORDER BY fecha_inicio DESC LIMIT 1
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT monto_mensual, gasto_actual
+                FROM presupuesto_usuario
+                WHERE usuario_id = ? AND activo = 1
+                ORDER BY fecha_inicio DESC LIMIT 1
+                """,
+                (user_id,),
+            )
+
+        presupuesto_row = cursor.fetchone()
+        presupuesto_mensual = (
+            float(presupuesto_row[0]) if presupuesto_row and presupuesto_row[0] else 0
+        )
+        ahorro_mensual = (
+            presupuesto_mensual - gasto_mensual if presupuesto_mensual > 0 else 0
+        )
+
+        # 2.2 Gastos por mes (últimos 6 meses)
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    TO_CHAR(fecha_cargue, 'MM') as mes,
+                    EXTRACT(YEAR FROM fecha_cargue)::INTEGER as anio,
+                    COALESCE(SUM(total_factura), 0) as total
+                FROM facturas
+                WHERE usuario_id = %s
+                  AND fecha_cargue >= CURRENT_DATE - INTERVAL '6 months'
+                GROUP BY TO_CHAR(fecha_cargue, 'MM'), EXTRACT(YEAR FROM fecha_cargue)
+                ORDER BY anio DESC, mes DESC
+                LIMIT 6
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    strftime('%m', fecha_cargue) as mes,
+                    CAST(strftime('%Y', fecha_cargue) AS INTEGER) as anio,
+                    COALESCE(SUM(total_factura), 0) as total
+                FROM facturas
+                WHERE usuario_id = ?
+                  AND date(fecha_cargue) >= date('now', '-6 months')
+                GROUP BY strftime('%Y-%m', fecha_cargue)
+                ORDER BY fecha_cargue DESC
+                LIMIT 6
+                """,
+                (user_id,),
+            )
+
+        gastos_por_mes = []
+        for row in cursor.fetchall():
+            gastos_por_mes.append(
+                {"mes": row[0], "anio": row[1], "total": float(row[2]) if row[2] else 0}
+            )
+
+        # 2.3 Top 5 productos más comprados
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    pm.nombre_normalizado,
+                    COALESCE(SUM(itf.cantidad), 0) as cantidad_comprada,
+                    COALESCE(SUM(itf.precio_pagado * itf.cantidad), 0) as total_gastado,
+                    COALESCE(AVG(itf.precio_pagado), 0) as precio_promedio
+                FROM items_factura itf
+                JOIN productos_maestros pm ON itf.producto_maestro_id = pm.id
+                WHERE itf.usuario_id = %s
+                GROUP BY pm.id, pm.nombre_normalizado
+                ORDER BY cantidad_comprada DESC
+                LIMIT 5
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    pm.nombre_normalizado,
+                    COALESCE(SUM(itf.cantidad), 0) as cantidad_comprada,
+                    COALESCE(SUM(itf.precio_pagado * itf.cantidad), 0) as total_gastado,
+                    COALESCE(AVG(itf.precio_pagado), 0) as precio_promedio
+                FROM items_factura itf
+                JOIN productos_maestros pm ON itf.producto_maestro_id = pm.id
+                WHERE itf.usuario_id = ?
+                GROUP BY pm.id, pm.nombre_normalizado
+                ORDER BY cantidad_comprada DESC
+                LIMIT 5
+                """,
+                (user_id,),
+            )
+
+        top_productos = []
+        for row in cursor.fetchall():
+            top_productos.append(
+                {
+                    "nombre": row[0],
+                    "cantidad_comprada": int(row[1]) if row[1] else 0,
+                    "total_gastado": float(row[2]) if row[2] else 0,
+                    "precio_promedio": float(row[3]) if row[3] else 0,
+                }
+            )
+
+        # 2.4 Top 3 establecimientos
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    f.establecimiento,
+                    COUNT(*) as numero_compras,
+                    COALESCE(SUM(f.total_factura), 0) as total_gastado,
+                    COALESCE(AVG(f.total_factura), 0) as promedio_compra
+                FROM facturas f
+                WHERE f.usuario_id = %s
+                GROUP BY f.establecimiento
+                ORDER BY total_gastado DESC
+                LIMIT 3
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    f.establecimiento,
+                    COUNT(*) as numero_compras,
+                    COALESCE(SUM(f.total_factura), 0) as total_gastado,
+                    COALESCE(AVG(f.total_factura), 0) as promedio_compra
+                FROM facturas f
+                WHERE f.usuario_id = ?
+                GROUP BY f.establecimiento
+                ORDER BY total_gastado DESC
+                LIMIT 3
+                """,
+                (user_id,),
+            )
+
+        top_establecimientos = []
+        for row in cursor.fetchall():
+            top_establecimientos.append(
+                {
+                    "nombre": row[0],
+                    "numero_compras": row[1],
+                    "total_gastado": float(row[2]) if row[2] else 0,
+                    "promedio_compra": float(row[3]) if row[3] else 0,
+                }
+            )
+
+        resultado["gastos"] = {
+            "gasto_mensual": gasto_mensual,
+            "presupuesto_mensual": presupuesto_mensual,
+            "ahorro_mensual": ahorro_mensual,
+            "gastos_por_mes": gastos_por_mes,
+            "top_productos": top_productos,
+            "top_establecimientos": top_establecimientos,
+        }
+
+        # ============================================================
+        # 🌍 SECCIÓN 3: COMPARATIVA COMUNITARIA
+        # ============================================================
+
+        # 3.1 Comparar precios del usuario vs precios globales
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    pm.nombre_normalizado,
+                    iu.precio_ultima_compra as mi_precio,
+                    pm.precio_promedio_global,
+                    (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
+                    pm.mejor_establecimiento,
+                    pm.mejor_precio
+                FROM inventario_usuario iu
+                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = %s
+                  AND iu.precio_ultima_compra IS NOT NULL
+                  AND pm.precio_promedio_global IS NOT NULL
+                  AND pm.precio_promedio_global > 0
+                ORDER BY ABS(iu.precio_ultima_compra - pm.precio_promedio_global) DESC
+                LIMIT 10
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    pm.nombre_normalizado,
+                    iu.precio_ultima_compra as mi_precio,
+                    pm.precio_promedio_global,
+                    (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
+                    pm.mejor_establecimiento,
+                    pm.mejor_precio
+                FROM inventario_usuario iu
+                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = ?
+                  AND iu.precio_ultima_compra IS NOT NULL
+                  AND pm.precio_promedio_global IS NOT NULL
+                  AND pm.precio_promedio_global > 0
+                ORDER BY ABS(iu.precio_ultima_compra - pm.precio_promedio_global) DESC
+                LIMIT 10
+                """,
+                (user_id,),
+            )
+
+        productos_comparativa = []
+        ahorro_vs_promedio = 0
+        productos_baratos = 0
+        productos_caros = 0
+
+        for row in cursor.fetchall():
+            diferencia = float(row[3]) if row[3] else 0
+            ahorro_vs_promedio += diferencia
+
+            if diferencia < 0:
+                productos_baratos += 1
+            elif diferencia > 0:
+                productos_caros += 1
+
+            productos_comparativa.append(
+                {
+                    "nombre": row[0],
+                    "mi_precio": float(row[1]) if row[1] else 0,
+                    "precio_promedio": float(row[2]) if row[2] else 0,
+                    "diferencia": diferencia,
+                    "mejor_establecimiento": row[4],
+                    "mejor_precio": float(row[5]) if row[5] else None,
+                }
+            )
+
+        # 3.2 Mejores establecimientos según datos comunitarios
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT
+                    e.nombre_normalizado,
+                    COUNT(DISTINCT pm.id) as productos_comprados,
+                    COALESCE(AVG(pp.precio), 0) as precio_promedio,
+                    0 as ahorro_estimado
+                FROM establecimientos e
+                JOIN precios_productos pp ON e.id = pp.establecimiento_id
+                JOIN productos_maestros pm ON pp.producto_maestro_id = pm.id
+                WHERE pp.precio IS NOT NULL
+                GROUP BY e.id, e.nombre_normalizado
+                ORDER BY precio_promedio ASC
+                LIMIT 5
+                """,
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    e.nombre_normalizado,
+                    COUNT(DISTINCT pm.id) as productos_comprados,
+                    COALESCE(AVG(pp.precio), 0) as precio_promedio,
+                    0 as ahorro_estimado
+                FROM establecimientos e
+                JOIN precios_productos pp ON e.id = pp.establecimiento_id
+                JOIN productos_maestros pm ON pp.producto_maestro_id = pm.id
+                WHERE pp.precio IS NOT NULL
+                GROUP BY e.id, e.nombre_normalizado
+                ORDER BY precio_promedio ASC
+                LIMIT 5
+                """,
+            )
+
+        mejores_establecimientos = []
+        for row in cursor.fetchall():
+            mejores_establecimientos.append(
+                {
+                    "nombre": row[0],
+                    "productos_comprados": row[1],
+                    "precio_promedio": float(row[2]) if row[2] else 0,
+                    "ahorro_estimado": float(row[3]) if row[3] else 0,
+                }
+            )
+
+        resultado["comunitarias"] = {
+            "ahorro_vs_promedio": -ahorro_vs_promedio,  # Negativo porque diferencia positiva = pago más
+            "productos_baratos": productos_baratos,
+            "productos_caros": productos_caros,
+            "productos_comparativa": productos_comparativa,
+            "mejores_establecimientos": mejores_establecimientos,
         }
 
         conn.close()
 
-        return {"success": True, "estadisticas": stats}
+        return resultado
 
     except Exception as e:
         conn.close()
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-
-print("✅ API Inventario para Flutter cargado correctamente - VERSIÓN CORREGIDA")
