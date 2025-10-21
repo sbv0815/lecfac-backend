@@ -109,6 +109,50 @@ async def require_admin(user=Depends(get_current_user)):
     return user
 
 
+# ==========================================
+# AGREGAR ESTA FUNCIÓN DESPUÉS DE require_admin
+# (Después de la línea 109 en tu main.py)
+# ==========================================
+
+
+def get_user_id_from_token(authorization: str) -> int:
+    """
+    Extraer usuario_id desde el token JWT
+
+    Args:
+        authorization: Header Authorization con formato "Bearer <token>"
+
+    Returns:
+        int: usuario_id extraído del token, o 1 como fallback
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        print("⚠️ No se encontró token de autorización válido")
+        return 1  # Usuario por defecto
+
+    try:
+        import jwt
+
+        # Extraer el token sin el prefijo "Bearer "
+        token = authorization.replace("Bearer ", "")
+
+        # Decodificar sin verificar firma (para desarrollo)
+        # En producción deberías verificar la firma con tu SECRET_KEY
+        payload = jwt.decode(token, options={"verify_signature": False})
+
+        # Extraer usuario_id del payload
+        usuario_id = payload.get("user_id", 1)
+
+        print(f"✅ Usuario extraído del token: {usuario_id}")
+        return int(usuario_id)
+
+    except jwt.DecodeError as e:
+        print(f"⚠️ Error decodificando token JWT: {e}")
+        return 1
+    except Exception as e:
+        print(f"⚠️ Error inesperado procesando token: {e}")
+        return 1
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicialización y cierre de la aplicación"""
