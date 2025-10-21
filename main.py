@@ -790,10 +790,10 @@ async def save_invoice_with_image(
 
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
-    request: Request,  # ✅ Agregar request como parámetro
+    request: Request,
+    background_tasks: BackgroundTasks,  # ✅ AGREGADO
     video: UploadFile = File(...),
 ):
-    authorization = request.headers.get("Authorization")  # ✅ Ahora funciona
     """Procesar video de factura - ASÍNCRONO"""
     print("=" * 80)
     print("📹 NUEVO VIDEO (PROCESAMIENTO ASÍNCRONO)")
@@ -831,6 +831,7 @@ async def parse_invoice_video(
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Obtener usuario desde el token
         authorization = request.headers.get("Authorization")
         usuario_id = get_user_id_from_token(authorization)
         print(f"🆔 Usuario autenticado: {usuario_id}")
@@ -874,6 +875,7 @@ async def parse_invoice_video(
 
         print(f"✅ Job creado en BD")
 
+        # ✅ Ahora background_tasks SÍ está definido
         background_tasks.add_task(
             process_video_background_task, job_id, video_path, usuario_id
         )
@@ -899,7 +901,12 @@ async def parse_invoice_video(
         traceback.print_exc()
 
         return JSONResponse(
-            status_code=500, content={"success": False, "error": str(e)}
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e),
+                "message": "Error procesando el video",
+            },
         )
 
 
