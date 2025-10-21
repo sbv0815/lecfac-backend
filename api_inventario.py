@@ -816,9 +816,9 @@ async def get_estadisticas_usuario(user_id: int):
                     pm.nombre_normalizado,
                     iu.cantidad_actual,
                     COALESCE(
-                        EXTRACT(DAY FROM (iu.fecha_estimada_agotamiento - CURRENT_DATE)),
+                        (iu.fecha_estimada_agotamiento::date - CURRENT_DATE),
                         0
-                    )::INTEGER as dias_estimados,
+                     )::INTEGER as dias_estimados,
                     iu.establecimiento
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
