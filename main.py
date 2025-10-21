@@ -2714,6 +2714,111 @@ async def forzar_actualizacion_inventario(factura_id: int, usuario_id: int = 1):
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/api/mobile/my-invoices")
+async def get_my_invoices(
+    page: int = 1,
+    limit: int = 20,
+    usuario_id: int = 1,  # Cambiar por token cuando tengas auth
+):
+    """
+    GET /api/mobile/my-invoices
+    Obtener facturas del usuario con paginación
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+    try:
+        offset = (page - 1) * limit
+
+        if database_type == "postgresql":
+            # Obtener facturas con información del establecimiento
+            cursor.execute(
+                """
+                SELECT
+                    f.id,
+                    f.usuario_id,
+                    f.establecimiento_id,
+                    f.numero_factura,
+                    f.fecha_factura,
+                    f.total_factura,
+                    f.fecha_cargue,
+                    f.estado_validacion,
+                    f.productos_guardados,
+                    e.nombre_normalizado as establecimiento_nombre,
+                    e.cadena as establecimiento_cadena
+                FROM facturas f
+                LEFT JOIN establecimientos e ON f.establecimiento_id = e.id
+                WHERE f.usuario_id = %s
+                ORDER BY f.fecha_cargue DESC
+                LIMIT %s OFFSET %s
+                """,
+                (usuario_id, limit, offset),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    f.id,
+                    f.usuario_id,
+                    f.establecimiento_id,
+                    f.numero_factura,
+                    f.fecha_factura,
+                    f.total_factura,
+                    f.fecha_cargue,
+                    f.estado_validacion,
+                    f.productos_guardados,
+                    e.nombre_normalizado as establecimiento_nombre,
+                    e.cadena as establecimiento_cadena
+                FROM facturas f
+                LEFT JOIN establecimientos e ON f.establecimiento_id = e.id
+                WHERE f.usuario_id = ?
+                ORDER BY f.fecha_cargue DESC
+                LIMIT ? OFFSET ?
+                """,
+                (usuario_id, limit, offset),
+            )
+
+        facturas = []
+        for row in cursor.fetchall():
+            facturas.append(
+                {
+                    "id": row[0],
+                    "usuario_id": row[1],
+                    "establecimiento_id": row[2],
+                    "numero_factura": row[3],
+                    "fecha": str(row[4]) if row[4] else None,
+                    "total": float(row[5]) if row[5] else 0.0,
+                    "fecha_creacion": str(row[6]) if row[6] else None,
+                    "estado": row[7],
+                    "cantidad_items": row[8] or 0,
+                    "establecimiento": {
+                        "id": row[2],
+                        "nombre": row[9] or "Sin nombre",
+                        "categoria": row[10],
+                    },
+                }
+            )
+
+        conn.close()
+
+        return {
+            "success": True,
+            "facturas": facturas,
+            "page": page,
+            "limit": limit,
+            "total": len(facturas),
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo facturas: {e}")
+        import traceback
+
+        traceback.print_exc()
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
