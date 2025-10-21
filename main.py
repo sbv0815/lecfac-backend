@@ -27,6 +27,8 @@ from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from fastapi import Request  # ✅ Importar Request
+
 
 from api_inventario import router as inventario_router
 from api_stats import router as stats_router
@@ -740,10 +742,14 @@ async def save_invoice_with_image(
 # ==========================================
 # ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO)
 # ==========================================
+
+
 @app.post("/invoices/parse-video")
 async def parse_invoice_video(
-    background_tasks: BackgroundTasks, video: UploadFile = File(...)
+    request: Request,  # ✅ Agregar request como parámetro
+    video: UploadFile = File(...),
 ):
+    authorization = request.headers.get("Authorization")  # ✅ Ahora funciona
     """Procesar video de factura - ASÍNCRONO"""
     print("=" * 80)
     print("📹 NUEVO VIDEO (PROCESAMIENTO ASÍNCRONO)")
