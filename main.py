@@ -2715,15 +2715,8 @@ async def forzar_actualizacion_inventario(factura_id: int, usuario_id: int = 1):
 
 
 @app.get("/api/mobile/my-invoices")
-async def get_my_invoices(
-    page: int = 1,
-    limit: int = 20,
-    usuario_id: int = 1,  # Cambiar por token cuando tengas auth
-):
-    """
-    GET /api/mobile/my-invoices
-    Obtener facturas del usuario con paginación
-    """
+async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
+    """Obtener facturas del usuario con paginación"""
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
@@ -2732,7 +2725,6 @@ async def get_my_invoices(
         offset = (page - 1) * limit
 
         if database_type == "postgresql":
-            # Obtener facturas con información del establecimiento
             cursor.execute(
                 """
                 SELECT
@@ -2745,10 +2737,9 @@ async def get_my_invoices(
                     f.fecha_cargue,
                     f.estado_validacion,
                     f.productos_guardados,
-                    e.nombre_normalizado as establecimiento_nombre,
-                    e.cadena as establecimiento_cadena
+                    f.establecimiento,
+                    f.cadena
                 FROM facturas f
-                LEFT JOIN establecimientos e ON f.establecimiento_id = e.id
                 WHERE f.usuario_id = %s
                 ORDER BY f.fecha_cargue DESC
                 LIMIT %s OFFSET %s
@@ -2768,10 +2759,9 @@ async def get_my_invoices(
                     f.fecha_cargue,
                     f.estado_validacion,
                     f.productos_guardados,
-                    e.nombre_normalizado as establecimiento_nombre,
-                    e.cadena as establecimiento_cadena
+                    f.establecimiento,
+                    f.cadena
                 FROM facturas f
-                LEFT JOIN establecimientos e ON f.establecimiento_id = e.id
                 WHERE f.usuario_id = ?
                 ORDER BY f.fecha_cargue DESC
                 LIMIT ? OFFSET ?

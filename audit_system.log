@@ -1,0 +1,13 @@
+2025-10-18 16:10:23,590 - AuditSystem - ERROR - Error creando tablas de auditoría: near "DO": syntax error
+Traceback (most recent call last):
+  File "C:\Programas\lecfac-backend\audit_system.py", line 1042, in create_missing_tables
+    cursor.execute("""
+    ~~~~~~~~~~~~~~^^^^
+        DO $$
+        ^^^^^
+    ...<30 lines>...
+        END $$;
+        ^^^^^^^
+    """)
+    ^^^^
+sqlite3.OperationalError: near "DO": syntax error
