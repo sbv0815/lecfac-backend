@@ -1,6 +1,7 @@
 """
 api_inventario.py - APIs REST para la App Flutter
 ACTUALIZADO: Incluye todos los campos nuevos del inventario
+CORREGIDO: Nombres de columnas correctos
 """
 
 from fastapi import APIRouter, HTTPException, Header
@@ -30,18 +31,14 @@ def verificar_token(authorization: str = Header(None)):
 
 
 # ========================================
-# 1. OBTENER INVENTARIO DEL USUARIO ⭐ ACTUALIZADO
+# 1. OBTENER INVENTARIO DEL USUARIO ⭐ CORREGIDO
 # ========================================
 @router.get("/usuario/{user_id}")
 async def get_inventario_usuario(user_id: int):
     """
     GET /api/inventario/usuario/{user_id}
 
-    Obtiene el inventario completo con TODOS los campos nuevos:
-    - Precios (última compra, promedio, mínimo, máximo)
-    - Información del establecimiento
-    - Estadísticas de compra
-    - Relación con facturas
+    Obtiene el inventario completo con TODOS los campos nuevos
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -71,20 +68,20 @@ async def get_inventario_usuario(user_id: int):
                         ELSE 'normal'
                     END as estado_stock,
                     pm.precio_promedio_global,
-                    -- ⭐ CAMPOS NUEVOS
                     iu.precio_ultima_compra,
                     iu.precio_promedio,
                     iu.precio_minimo,
                     iu.precio_maximo,
-                    iu.establecimiento_nombre,
+                    iu.establecimiento,
                     iu.establecimiento_id,
-                    iu.establecimiento_ubicacion,
+                    iu.ubicacion,
                     iu.numero_compras,
                     iu.cantidad_total_comprada,
                     iu.total_gastado,
                     iu.ultima_factura_id,
                     iu.cantidad_por_unidad,
-                    iu.dias_desde_ultima_compra
+                    iu.dias_desde_ultima_compra,
+                    iu.marca
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
@@ -94,7 +91,7 @@ async def get_inventario_usuario(user_id: int):
                         WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
                         ELSE 3
                     END,
-                    pm.nombre_normalizado
+                    iu.fecha_ultima_actualizacion DESC
             """,
                 (user_id,),
             )
@@ -125,15 +122,16 @@ async def get_inventario_usuario(user_id: int):
                     iu.precio_promedio,
                     iu.precio_minimo,
                     iu.precio_maximo,
-                    iu.establecimiento_nombre,
+                    iu.establecimiento,
                     iu.establecimiento_id,
-                    iu.establecimiento_ubicacion,
+                    iu.ubicacion,
                     iu.numero_compras,
                     iu.cantidad_total_comprada,
                     iu.total_gastado,
                     iu.ultima_factura_id,
                     iu.cantidad_por_unidad,
-                    iu.dias_desde_ultima_compra
+                    iu.dias_desde_ultima_compra,
+                    iu.marca
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
@@ -143,7 +141,7 @@ async def get_inventario_usuario(user_id: int):
                         WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
                         ELSE 3
                     END,
-                    pm.nombre_normalizado
+                    iu.fecha_ultima_actualizacion DESC
             """,
                 (user_id,),
             )
@@ -155,7 +153,9 @@ async def get_inventario_usuario(user_id: int):
                     "id": row[0],
                     "codigo_ean": row[1],
                     "nombre": row[2],
-                    "marca": row[3] or "",
+                    "marca": row[3]
+                    or row[29]
+                    or "",  # Priorizar marca de productos_maestros
                     "categoria": row[4] or "",
                     "imagen_url": row[5],
                     "cantidad_actual": float(row[6]) if row[6] else 0.0,
@@ -167,7 +167,6 @@ async def get_inventario_usuario(user_id: int):
                     "alerta_activa": bool(row[12]),
                     "estado": row[13],
                     "precio_promedio_global": float(row[14]) if row[14] else 0.0,
-                    # ⭐ CAMPOS NUEVOS
                     "precio_ultima_compra": float(row[15]) if row[15] else 0.0,
                     "precio_promedio": float(row[16]) if row[16] else 0.0,
                     "precio_minimo": float(row[17]) if row[17] else 0.0,
@@ -204,6 +203,9 @@ async def get_inventario_usuario(user_id: int):
 
     except Exception as e:
         conn.close()
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, detail=f"Error al obtener inventario: {str(e)}"
         )
@@ -680,4 +682,4 @@ async def get_estadisticas_usuario(user_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ API Inventario para Flutter cargado correctamente con campos nuevos")
+print("✅ API Inventario para Flutter cargado correctamente - VERSIÓN CORREGIDA")
