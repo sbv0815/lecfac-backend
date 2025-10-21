@@ -1490,6 +1490,10 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         usuario_id: ID del usuario
     """
     conn = get_db_connection()
+    if not conn:
+        print("❌ No se pudo obtener conexión a la base de datos")
+        return False
+
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
@@ -1521,10 +1525,25 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         factura_data = cursor.fetchone()
         if not factura_data:
             print(f"⚠️ Factura {factura_id} no encontrada")
-            return
+            cursor.close()
+            conn.close()
+            return False
 
-        establecimiento_id, establecimiento_nombre, fecha_factura = factura_data
-        fecha_compra = fecha_factura or datetime.now().date()
+        establecimiento_id = factura_data[0]
+        establecimiento_nombre = factura_data[1]
+        fecha_factura_raw = factura_data[2]
+
+        # Convertir fecha_factura a date si es necesario
+        if isinstance(fecha_factura_raw, str):
+            fecha_compra = datetime.strptime(fecha_factura_raw, "%Y-%m-%d").date()
+        elif hasattr(fecha_factura_raw, "date"):
+            fecha_compra = (
+                fecha_factura_raw.date()
+                if callable(fecha_factura_raw.date)
+                else fecha_factura_raw
+            )
+        else:
+            fecha_compra = fecha_factura_raw or datetime.now().date()
 
         print(f"   🏪 Establecimiento: {establecimiento_nombre}")
         print(f"   📅 Fecha: {fecha_compra}")
@@ -1563,7 +1582,9 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         if not items:
             print(f"⚠️ No hay items con producto_maestro_id en factura {factura_id}")
-            return
+            cursor.close()
+            conn.close()
+            return False
 
         print(f"   📦 {len(items)} productos a actualizar")
 
@@ -1572,7 +1593,11 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         # 3. Actualizar o crear cada producto en el inventario
         for item in items:
-            producto_maestro_id, nombre, precio, cantidad, codigo = item
+            producto_maestro_id = item[0]
+            nombre = item[1]
+            precio = int(item[2]) if item[2] else 0
+            cantidad = int(item[3]) if item[3] else 1
+            codigo = item[4]
 
             try:
                 # 3.1 Verificar si ya existe en inventario
@@ -1581,7 +1606,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                         """
                         SELECT
                             id, cantidad_actual, precio_promedio, precio_minimo, precio_maximo,
-                            numero_compras, cantidad_total_comprada, total_gastado
+                            numero_compras, cantidad_total_comprada, total_gastado, fecha_ultima_compra
                         FROM inventario_usuario
                         WHERE usuario_id = %s AND producto_maestro_id = %s
                     """,
@@ -1592,7 +1617,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                         """
                         SELECT
                             id, cantidad_actual, precio_promedio, precio_minimo, precio_maximo,
-                            numero_compras, cantidad_total_comprada, total_gastado
+                            numero_compras, cantidad_total_comprada, total_gastado, fecha_ultima_compra
                         FROM inventario_usuario
                         WHERE usuario_id = ? AND producto_maestro_id = ?
                     """,
@@ -1606,18 +1631,19 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                     inv_id = inventario_existente[0]
                     cantidad_actual = float(inventario_existente[1] or 0)
                     precio_promedio_actual = float(inventario_existente[2] or 0)
-                    precio_min_actual = float(inventario_existente[3] or precio)
-                    precio_max_actual = float(inventario_existente[4] or precio)
+                    precio_min_actual = int(inventario_existente[3] or precio)
+                    precio_max_actual = int(inventario_existente[4] or precio)
                     num_compras = int(inventario_existente[5] or 0)
                     cantidad_total = float(inventario_existente[6] or 0)
                     total_gastado = float(inventario_existente[7] or 0)
+                    fecha_ultima_compra_anterior = inventario_existente[8]
 
                     # Calcular nuevos valores
                     nueva_cantidad = cantidad_actual + cantidad
                     nuevo_num_compras = num_compras + 1
                     nueva_cantidad_total = cantidad_total + cantidad
                     nuevo_total_gastado = total_gastado + (precio * cantidad)
-                    nuevo_precio_promedio = (
+                    nuevo_precio_promedio = int(
                         nuevo_total_gastado / nueva_cantidad_total
                         if nueva_cantidad_total > 0
                         else precio
@@ -1626,29 +1652,25 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                     nuevo_precio_max = max(precio_max_actual, precio)
 
                     # Calcular días desde última compra
-                    if database_type == "postgresql":
-                        cursor.execute(
-                            """
-                            SELECT EXTRACT(DAY FROM (CURRENT_DATE - fecha_ultima_compra))
-                            FROM inventario_usuario
-                            WHERE id = %s
-                        """,
-                            (inv_id,),
-                        )
-                    else:
-                        cursor.execute(
-                            """
-                            SELECT julianday('now') - julianday(fecha_ultima_compra)
-                            FROM inventario_usuario
-                            WHERE id = ?
-                        """,
-                            (inv_id,),
-                        )
+                    dias_desde_ultima = 0
+                    if fecha_ultima_compra_anterior:
+                        try:
+                            if isinstance(fecha_ultima_compra_anterior, str):
+                                fecha_anterior = datetime.strptime(
+                                    fecha_ultima_compra_anterior, "%Y-%m-%d"
+                                ).date()
+                            elif hasattr(fecha_ultima_compra_anterior, "date"):
+                                fecha_anterior = (
+                                    fecha_ultima_compra_anterior.date()
+                                    if callable(fecha_ultima_compra_anterior.date)
+                                    else fecha_ultima_compra_anterior
+                                )
+                            else:
+                                fecha_anterior = fecha_ultima_compra_anterior
 
-                    dias_result = cursor.fetchone()
-                    dias_desde_ultima = (
-                        int(dias_result[0]) if dias_result and dias_result[0] else 0
-                    )
+                            dias_desde_ultima = (fecha_compra - fecha_anterior).days
+                        except:
+                            dias_desde_ultima = 0
 
                     # UPDATE
                     if database_type == "postgresql":
@@ -1660,7 +1682,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 precio_promedio = %s,
                                 precio_minimo = %s,
                                 precio_maximo = %s,
-                                establecimiento_nombre = %s,
+                                establecimiento = %s,
                                 establecimiento_id = %s,
                                 fecha_ultima_compra = %s,
                                 numero_compras = %s,
@@ -1697,7 +1719,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 precio_promedio = ?,
                                 precio_minimo = ?,
                                 precio_maximo = ?,
-                                establecimiento_nombre = ?,
+                                establecimiento = ?,
                                 establecimiento_id = ?,
                                 fecha_ultima_compra = ?,
                                 numero_compras = ?,
@@ -1738,13 +1760,13 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 usuario_id, producto_maestro_id,
                                 cantidad_actual, precio_ultima_compra,
                                 precio_promedio, precio_minimo, precio_maximo,
-                                establecimiento_nombre, establecimiento_id,
+                                establecimiento, establecimiento_id,
                                 fecha_ultima_compra, numero_compras,
                                 cantidad_total_comprada, total_gastado,
                                 ultima_factura_id, nivel_alerta,
-                                dias_desde_ultima_compra
+                                dias_desde_ultima_compra, unidad_medida
                             ) VALUES (
-                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'unidades'
                             )
                         """,
                             (
@@ -1772,13 +1794,13 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 usuario_id, producto_maestro_id,
                                 cantidad_actual, precio_ultima_compra,
                                 precio_promedio, precio_minimo, precio_maximo,
-                                establecimiento_nombre, establecimiento_id,
+                                establecimiento, establecimiento_id,
                                 fecha_ultima_compra, numero_compras,
                                 cantidad_total_comprada, total_gastado,
                                 ultima_factura_id, nivel_alerta,
-                                dias_desde_ultima_compra
+                                dias_desde_ultima_compra, unidad_medida
                             ) VALUES (
-                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'unidades'
                             )
                         """,
                             (
@@ -1807,6 +1829,9 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
             except Exception as e:
                 print(f"      ❌ Error con {nombre}: {e}")
+                import traceback
+
+                traceback.print_exc()
                 continue
 
         conn.commit()
@@ -1815,6 +1840,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         print(f"   - {actualizados} productos actualizados")
         print(f"   - {creados} productos nuevos")
 
+        cursor.close()
+        conn.close()
         return True
 
     except Exception as e:
@@ -1823,33 +1850,9 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         traceback.print_exc()
         conn.rollback()
+        cursor.close()
+        conn.close()
         return False
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
-# ============================================
-# LLAMAR ESTA FUNCIÓN AL GUARDAR FACTURA
-# ============================================
-"""
-En main.py, después de guardar items_factura, agregar:
-
-# Actualizar inventario del usuario
-try:
-    from inventario_updater import actualizar_inventario_desde_factura
-    actualizar_inventario_desde_factura(factura_id, usuario_id)
-except Exception as e:
-    print(f"⚠️ Error actualizando inventario: {e}")
-
-O si la función está en database.py:
-
-from database import actualizar_inventario_desde_factura
-actualizar_inventario_desde_factura(factura_id, usuario_id)
-"""
 
 
 if __name__ == "__main__":
