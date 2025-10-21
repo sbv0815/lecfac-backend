@@ -360,7 +360,9 @@ async def parse_invoice(file: UploadFile = File(...)):
             establecimiento_raw, cadena
         )
 
-        usuario_id = 1
+        authorization = request.headers.get("Authorization")
+        usuario_id = get_user_id_from_token(authorization)
+        print(f"🆔 Usuario autenticado: {usuario_id}")
 
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
@@ -779,7 +781,9 @@ async def parse_invoice_video(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        usuario_id = 1
+        authorization = request.headers.get("Authorization")
+        usuario_id = get_user_id_from_token(authorization)
+        print(f"🆔 Usuario autenticado: {usuario_id}")
 
         try:
             if os.environ.get("DATABASE_TYPE") == "postgresql":
