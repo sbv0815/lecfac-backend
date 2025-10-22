@@ -259,7 +259,7 @@ async def index(request: Request):
     """Página principal / Dashboard"""
     # Buscar dashboard actualizado
     possible_files = [
-        "dashboard_1761173221.html",
+        "dashboard_fixed_1761173724.html",
         "dashboard.html",
         "admin_dashboard_v2.html",
         "admin_dashboard.html",
@@ -330,7 +330,7 @@ async def dashboard():
     """Dashboard administrativo"""
     # Buscar dashboard actualizado
     possible_files = [
-        "dashboard_1761173221.html",
+        "dashboard_fixed_1761173724.html",
         "dashboard.html",
         "admin_dashboard_v2.html",
         "admin_dashboard.html",
