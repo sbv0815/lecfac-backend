@@ -267,7 +267,18 @@ async def index(request: Request):
     for filename in possible_files:
         file_path = Path(filename)
         if file_path.exists():
-            return FileResponse(str(file_path))
+            # Leer archivo y agregar headers anti-caché
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            return HTMLResponse(
+                content=content,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
 
     # Si no existe ninguno, usar template
     if templates:
