@@ -2108,26 +2108,6 @@
             facturaActualCalidad = null;
         }
 
-        // Cerrar modal con ESC
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                cerrarModalCalidad();
-                cerrarModalDetalles();
-            }
-        });
-
-        // Cerrar modales al hacer clic fuera
-        document.getElementById('modal-detalles').addEventListener('click', function (e) {
-            if (e.target === this) {
-                cerrarModalDetalles();
-            }
-        });
-
-        document.getElementById('modal-control-calidad').addEventListener('click', function (e) {
-            if (e.target === this) {
-                cerrarModalCalidad();
-            }
-        });
 
         // Formatear fecha
         function formatearFecha(fecha) {
@@ -2144,6 +2124,35 @@
         window.onload = async function () {
             console.log('🚀 Iniciando Dashboard Admin...');
             console.log('🔗 API URL:', API_URL);
+
+            // CONFIGURAR EVENT LISTENERS DESPUÉS DE QUE EL DOM ESTÉ LISTO
+            // Cerrar modal con ESC
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') {
+                    cerrarModalCalidad();
+                    cerrarModalDetalles();
+                }
+            });
+
+            // Cerrar modal de detalles al hacer clic fuera
+            const modalDetalles = document.getElementById('modal-detalles');
+            if (modalDetalles) {
+                modalDetalles.addEventListener('click', function (e) {
+                    if (e.target === this) {
+                        cerrarModalDetalles();
+                    }
+                });
+            }
+
+            // Cerrar modal de calidad al hacer clic fuera
+            const modalCalidad = document.getElementById('modal-control-calidad');
+            if (modalCalidad) {
+                modalCalidad.addEventListener('click', function (e) {
+                    if (e.target === this) {
+                        cerrarModalCalidad();
+                    }
+                });
+            }
 
             // Verificar conexión
             const conectado = await verificarConexion();
