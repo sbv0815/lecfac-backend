@@ -54,7 +54,7 @@
             margin: 20px;
             border-radius: 10px;
             border-left: 4px solid #dc3545;
-            display: none;
+            display: none !important;
         }
 
         .connection-alert.show {
@@ -82,7 +82,7 @@
         }
 
         .tabs {
-            display: flex;
+            display: flex !important;
             background: #f8f9fa;
             border-bottom: 2px solid #e9ecef;
             overflow-x: auto;
@@ -129,7 +129,7 @@
         }
 
         .tab-content {
-            display: none;
+            display: none !important;
         }
 
         .tab-content.active {
@@ -206,7 +206,7 @@
             color: #495057;
             margin-bottom: 20px;
             font-size: 1.5em;
-            display: flex;
+            display: flex !important;
             align-items: center;
             gap: 10px;
         }
@@ -354,7 +354,7 @@
         }
 
         .action-buttons {
-            display: flex;
+            display: flex !important;
             gap: 10px;
         }
 
@@ -364,7 +364,7 @@
         }
 
         .pagination {
-            display: flex;
+            display: flex !important;
             justify-content: center;
             gap: 10px;
             margin-top: 20px;
@@ -398,7 +398,7 @@
         }
 
         .filters {
-            display: flex;
+            display: flex !important;
             gap: 15px;
             margin-bottom: 20px;
             flex-wrap: wrap;
@@ -425,7 +425,7 @@
             padding: 15px 20px;
             border-radius: 8px;
             margin-bottom: 20px;
-            display: flex;
+            display: flex !important;
             align-items: center;
             gap: 10px;
         }
@@ -467,7 +467,7 @@
             height: 100%;
             background: linear-gradient(90deg, #667eea, #764ba2);
             transition: width 0.3s ease;
-            display: flex;
+            display: flex !important;
             align-items: center;
             justify-content: center;
             color: white;
@@ -477,7 +477,7 @@
 
         /* MODAL BASE (DETALLES RÁPIDOS) */
         .modal {
-            display: none;
+            display: none !important;
             position: fixed;
             top: 0;
             left: 0;
@@ -490,7 +490,7 @@
         }
 
         .modal.active {
-            display: flex;
+            display: flex !important;
             align-items: center;
             justify-content: center;
         }
@@ -523,7 +523,7 @@
             color: white;
             padding: 25px 30px;
             border-radius: 20px 20px 0 0;
-            display: flex;
+            display: flex !important;
             justify-content: space-between;
             align-items: center;
         }
@@ -543,7 +543,7 @@
             border-radius: 50%;
             cursor: pointer;
             transition: all 0.3s ease;
-            display: flex;
+            display: flex !important;
             align-items: center;
             justify-content: center;
         }
@@ -559,7 +559,7 @@
 
         /* MODAL DE CONTROL DE CALIDAD */
         #modal-control-calidad {
-            display: none;
+            display: none !important;
             position: fixed;
             top: 0;
             left: 0;
@@ -572,7 +572,7 @@
         }
 
         #modal-control-calidad.active {
-            display: flex;
+            display: flex !important;
             align-items: flex-start;
             justify-content: center;
             padding-top: 40px;
@@ -594,7 +594,7 @@
             color: white;
             padding: 25px 30px;
             border-radius: 20px 20px 0 0;
-            display: flex;
+            display: flex !important;
             justify-content: space-between;
             align-items: center;
             position: sticky;
@@ -605,7 +605,7 @@
         .modal-calidad-header h2 {
             margin: 0;
             font-size: 1.8em;
-            display: flex;
+            display: flex !important;
             align-items: center;
             gap: 12px;
         }
@@ -708,7 +708,7 @@
         }
 
         .validation-actions {
-            display: flex;
+            display: flex !important;
             gap: 12px;
             padding: 24px;
             background: #f8f9fa;
@@ -977,13 +977,13 @@
     <!-- MODAL DE CONTROL DE CALIDAD -->
 
     <!-- MODAL DE DETALLES RÁPIDOS -->
-    <div id="modal-detalles" class="modal" style="display: none;">
+    <div id="modal-detalles" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>📄 Detalles de Factura</h2>
                 <button class="modal-close" onclick="cerrarModalDetalles()">×</button>
             </div>
-            <div class="modal-body" id="modal-body-detalles">
+            <div class="modal-body" id="modal-body">
                 <div class="loading">
                     <div class="loading-spinner"></div>
                     <p>Cargando detalles...</p>
@@ -2154,6 +2154,13 @@
         window.onload = async function () {
             console.log('🚀 Iniciando Dashboard Admin...');
             console.log('🔗 API URL:', API_URL);
+
+            // 🔒 FORZAR CIERRE DE TODOS LOS MODALES AL INICIO
+            const allModals = document.querySelectorAll('.modal');
+            allModals.forEach(modal => {
+                modal.classList.remove('active');
+                console.log('✅ Modal cerrado:', modal.id);
+            });
 
             // ✅ CONFIGURAR EVENT LISTENERS DESPUÉS DE QUE EL DOM ESTÉ LISTO
             // Cerrar modales con ESC
