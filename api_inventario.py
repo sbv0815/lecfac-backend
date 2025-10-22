@@ -465,7 +465,7 @@ async def get_presupuesto_usuario(user_id: int):
         if database_type == "postgresql":
             cursor.execute(
                 """
-                SELECT COALESCE(SUM(total_factura), 0)
+                SELECT COALESCE(SUM(total_factura::decimal / 100), 0)
                 FROM facturas
                 WHERE usuario_id = %s
                   AND fecha_cargue >= %s
@@ -476,7 +476,7 @@ async def get_presupuesto_usuario(user_id: int):
         else:
             cursor.execute(
                 """
-                SELECT COALESCE(SUM(total_factura), 0)
+                SELECT COALESCE(SUM(total_factura * 1.0 / 100), 0)
                 FROM facturas
                 WHERE usuario_id = ?
                   AND date(fecha_cargue) >= date(?)
@@ -491,7 +491,7 @@ async def get_presupuesto_usuario(user_id: int):
         if database_type == "postgresql":
             cursor.execute(
                 """
-                SELECT COALESCE(SUM(total_factura), 0)
+                SELECT COALESCE(SUM(total_factura::decimal / 100), 0)
                 FROM facturas
                 WHERE usuario_id = %s
                   AND fecha_cargue >= CURRENT_DATE - INTERVAL '7 days'
@@ -501,7 +501,7 @@ async def get_presupuesto_usuario(user_id: int):
         else:
             cursor.execute(
                 """
-                SELECT COALESCE(SUM(total_factura), 0)
+                SELECT COALESCE(SUM(total_factura * 1.0 / 100), 0)
                 FROM facturas
                 WHERE usuario_id = ?
                   AND date(fecha_cargue) >= date('now', '-7 days')
@@ -884,7 +884,7 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    COALESCE(SUM(total_factura), 0)
+                    COALESCE(SUM(total_factura::decimal / 100), 0)
                 FROM facturas
                 WHERE usuario_id = %s
                   AND EXTRACT(YEAR FROM fecha_cargue) = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -896,7 +896,7 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    COALESCE(SUM(total_factura), 0)
+                    COALESCE(SUM(total_factura * 1.0 / 100), 0)
                 FROM facturas
                 WHERE usuario_id = ?
                   AND strftime('%Y-%m', fecha_cargue) = strftime('%Y-%m', 'now')
@@ -943,7 +943,7 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     TO_CHAR(fecha_cargue, 'MM') as mes,
                     EXTRACT(YEAR FROM fecha_cargue)::INTEGER as anio,
-                    COALESCE(SUM(total_factura), 0) as total
+                    COALESCE(SUM(total_factura::decimal / 100), 0) as total
                 FROM facturas
                 WHERE usuario_id = %s
                   AND fecha_cargue >= CURRENT_DATE - INTERVAL '6 months'
@@ -959,7 +959,7 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     strftime('%m', fecha_cargue) as mes,
                     CAST(strftime('%Y', fecha_cargue) AS INTEGER) as anio,
-                    COALESCE(SUM(total_factura), 0) as total
+                    COALESCE(SUM(total_factura * 1.0 / 100), 0) as total
                 FROM facturas
                 WHERE usuario_id = ?
                   AND date(fecha_cargue) >= date('now', '-6 months')
@@ -983,8 +983,8 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     pm.nombre_normalizado,
                     COALESCE(SUM(itf.cantidad), 0) as cantidad_comprada,
-                    COALESCE(SUM(itf.precio_pagado * itf.cantidad), 0) as total_gastado,
-                    COALESCE(AVG(itf.precio_pagado), 0) as precio_promedio
+                    COALESCE(SUM((itf.precio_pagado::decimal / 100) * itf.cantidad), 0) as total_gastado,
+                    COALESCE(AVG(itf.precio_pagado::decimal / 100), 0) as precio_promedio
                 FROM items_factura itf
                 JOIN productos_maestros pm ON itf.producto_maestro_id = pm.id
                 WHERE itf.usuario_id = %s
@@ -1000,8 +1000,8 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     pm.nombre_normalizado,
                     COALESCE(SUM(itf.cantidad), 0) as cantidad_comprada,
-                    COALESCE(SUM(itf.precio_pagado * itf.cantidad), 0) as total_gastado,
-                    COALESCE(AVG(itf.precio_pagado), 0) as precio_promedio
+                    COALESCE(SUM((itf.precio_pagado * 1.0 / 100) * itf.cantidad), 0) as total_gastado,
+                    COALESCE(AVG(itf.precio_pagado * 1.0 / 100), 0) as precio_promedio
                 FROM items_factura itf
                 JOIN productos_maestros pm ON itf.producto_maestro_id = pm.id
                 WHERE itf.usuario_id = ?
@@ -1030,8 +1030,8 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     f.establecimiento,
                     COUNT(*) as numero_compras,
-                    COALESCE(SUM(f.total_factura), 0) as total_gastado,
-                    COALESCE(AVG(f.total_factura), 0) as promedio_compra
+                    COALESCE(SUM(f.total_factura::decimal / 100), 0) as total_gastado,
+                    COALESCE(AVG(f.total_factura::decimal / 100), 0) as promedio_compra
                 FROM facturas f
                 WHERE f.usuario_id = %s
                 GROUP BY f.establecimiento
@@ -1046,8 +1046,8 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     f.establecimiento,
                     COUNT(*) as numero_compras,
-                    COALESCE(SUM(f.total_factura), 0) as total_gastado,
-                    COALESCE(AVG(f.total_factura), 0) as promedio_compra
+                    COALESCE(SUM(f.total_factura * 1.0 / 100), 0) as total_gastado,
+                    COALESCE(AVG(f.total_factura * 1.0 / 100), 0) as promedio_compra
                 FROM facturas f
                 WHERE f.usuario_id = ?
                 GROUP BY f.establecimiento
@@ -1111,8 +1111,8 @@ async def get_estadisticas_usuario(user_id: int):
                     iu.precio_ultima_compra as mi_precio,
                     pm.precio_promedio_global,
                     (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
-                    NULL as mejor_establecimiento,     ← CAMBIADO
-                    NULL as mejor_precio               ← CAMBIADO
+                    NULL as mejor_establecimiento,
+                    NULL as mejor_precio
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
