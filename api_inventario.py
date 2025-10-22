@@ -1090,8 +1090,8 @@ async def get_estadisticas_usuario(user_id: int):
                     iu.precio_ultima_compra as mi_precio,
                     pm.precio_promedio_global,
                     (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
-                    pm.mejor_establecimiento,
-                    pm.mejor_precio
+                    NULL as mejor_establecimiento,     ← CAMBIADO
+                    NULL as mejor_precio               ← CAMBIADO
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
@@ -1111,8 +1111,8 @@ async def get_estadisticas_usuario(user_id: int):
                     iu.precio_ultima_compra as mi_precio,
                     pm.precio_promedio_global,
                     (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
-                    pm.mejor_establecimiento,
-                    pm.mejor_precio
+                    NULL as mejor_establecimiento,     ← CAMBIADO
+                    NULL as mejor_precio               ← CAMBIADO
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
