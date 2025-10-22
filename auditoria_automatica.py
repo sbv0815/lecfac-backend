@@ -79,9 +79,11 @@ class AuditoriaAutomatica:
         "makro": "Makro",
         "d1": "D1",
         "ara": "Ara",
-        "justo y bueno": "Justo & Bueno",
+        "camacho": "Camacho",
         "surtimax": "Surtimax",
         "colsubsidio": "Colsubsidio",
+        "cruz verde": "Cruz Verde",
+        "farmatodo": "Farmatodo",
     }
 
     @staticmethod
