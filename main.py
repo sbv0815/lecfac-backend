@@ -3196,6 +3196,50 @@ async def limpiar_datos_antiguos():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/debug/columnas")
+async def debug_columnas():
+    """Ver columnas de las tablas principales"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultado = {}
+
+        # Ver columnas de items_factura
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'items_factura'
+            ORDER BY ordinal_position
+        """
+        )
+        resultado["items_factura"] = [
+            {"nombre": row[0], "tipo": row[1]} for row in cursor.fetchall()
+        ]
+
+        # Ver columnas de inventario_usuario
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'inventario_usuario'
+            ORDER BY ordinal_position
+        """
+        )
+        resultado["inventario_usuario"] = [
+            {"nombre": row[0], "tipo": row[1]} for row in cursor.fetchall()
+        ]
+
+        conn.close()
+
+        return resultado
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
