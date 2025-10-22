@@ -64,6 +64,7 @@ from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
+from api_auditoria_ia import router as auditoria_router
 
 
 # ==========================================
@@ -193,6 +194,7 @@ app = FastAPI(
 
 app.include_router(stats_router)
 app.include_router(inventario_router)
+app.include_router(auditoria_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -2870,6 +2872,8 @@ async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+app.include_router(auditoria_router)
+print("✅ Sistema de auditoría cargado")
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
