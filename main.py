@@ -2937,12 +2937,13 @@ async def admin_inventarios():
             SELECT
                 iu.usuario_id,
                 u.nombre,
-                iu.nombre_producto_normalizado,
+                iu.establecimiento_nombre,
                 iu.cantidad_actual,
-                iu.categoria,
+                iu.marca,
                 iu.fecha_ultima_actualizacion
             FROM inventario_usuario iu
             LEFT JOIN usuarios u ON iu.usuario_id = u.id
+            LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
             ORDER BY iu.fecha_ultima_actualizacion DESC
             LIMIT 100
         """
@@ -2953,10 +2954,10 @@ async def admin_inventarios():
             inventarios.append(
                 {
                     "usuario_id": row[0],
-                    "nombre_usuario": row[1],
-                    "nombre_producto": row[2],
+                    "nombre_usuario": row[1] or f"Usuario {row[0]}",
+                    "nombre_producto": row[2] or "Sin nombre",
                     "cantidad_actual": float(row[3]) if row[3] else 0,
-                    "categoria": row[4],
+                    "categoria": row[4] or "-",  # usando marca como categoría temporal
                     "ultima_actualizacion": str(row[5]) if row[5] else None,
                 }
             )
@@ -2984,13 +2985,14 @@ async def admin_productos():
         cursor.execute(
             """
             SELECT
-                nombre_leido,
-                codigo_ean,
-                categoria,
-                AVG(precio_pagado) as precio_promedio,
+                if_.nombre_leido,
+                if_.codigo_leido,
+                pm.categoria,
+                AVG(if_.precio_pagado) as precio_promedio,
                 COUNT(*) as veces_comprado
-            FROM items_factura
-            GROUP BY nombre_leido, codigo_ean, categoria
+            FROM items_factura if_
+            LEFT JOIN productos_maestros pm ON if_.producto_maestro_id = pm.id
+            GROUP BY if_.nombre_leido, if_.codigo_leido, pm.categoria
             ORDER BY veces_comprado DESC
             LIMIT 200
         """
@@ -3001,8 +3003,8 @@ async def admin_productos():
             productos.append(
                 {
                     "nombre_producto": row[0],
-                    "codigo_ean": row[1],
-                    "categoria": row[2],
+                    "codigo_ean": row[1] or "-",
+                    "categoria": row[2] or "-",
                     "precio_promedio": round(float(row[3]) if row[3] else 0, 2),
                     "veces_comprado": row[4],
                 }
