@@ -3150,6 +3150,52 @@ async def eliminar_factura_admin(factura_id: int):
 
 print("✅ Endpoints de administración registrados directamente en main.py")
 
+
+@app.post("/api/admin/normalizar-productos")
+async def normalizar_productos():
+    """Normalizar nombres de productos"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("🧹 Normalizando productos...")
+
+        # Por ahora, solo retornar un mensaje de éxito
+        # TODO: Implementar normalización real
+
+        conn.close()
+
+        return {
+            "success": True,
+            "productos_normalizados": 0,
+            "message": "Normalización pendiente de implementar",
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/limpiar-datos")
+async def limpiar_datos_antiguos():
+    """Limpiar datos antiguos"""
+    try:
+        print("🗑️ Limpiando datos antiguos...")
+
+        # Por ahora, retornar mensaje sin eliminar nada
+        # TODO: Implementar limpieza real con parámetros de días y puntaje
+
+        return {
+            "success": True,
+            "facturas_eliminadas": 0,
+            "message": "Limpieza pendiente de implementar",
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
