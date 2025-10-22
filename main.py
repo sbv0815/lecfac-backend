@@ -257,8 +257,12 @@ print("=" * 60 + "\n")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Página principal / Dashboard"""
-    # Buscar primero admin_dashboard_v2.html
-    possible_files = ["admin_dashboard_v2.html", "admin_dashboard.html"]
+    # Buscar dashboard actualizado
+    possible_files = [
+        "dashboard.html",
+        "admin_dashboard_v2.html",
+        "admin_dashboard.html",
+    ]
 
     for filename in possible_files:
         file_path = Path(filename)
@@ -312,8 +316,12 @@ async def get_duplicados_page(request: Request):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
     """Dashboard administrativo"""
-    # Buscar primero la versión v2
-    possible_files = ["admin_dashboard_v2.html", "admin_dashboard.html"]
+    # Buscar dashboard actualizado
+    possible_files = [
+        "dashboard.html",
+        "admin_dashboard_v2.html",
+        "admin_dashboard.html",
+    ]
 
     for filename in possible_files:
         html_path = Path(filename)
