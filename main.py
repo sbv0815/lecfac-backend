@@ -257,9 +257,24 @@ print("=" * 60 + "\n")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Página principal / Dashboard"""
+    # Buscar primero admin_dashboard_v2.html
+    possible_files = ["admin_dashboard_v2.html", "admin_dashboard.html"]
+
+    for filename in possible_files:
+        file_path = Path(filename)
+        if file_path.exists():
+            return FileResponse(str(file_path))
+
+    # Si no existe ninguno, usar template
     if templates:
-        return templates.TemplateResponse("admin_dashboard.html", {"request": request})
-    return HTMLResponse("<h1>LecFac API</h1>")
+        try:
+            return templates.TemplateResponse(
+                "admin_dashboard_v2.html", {"request": request}
+            )
+        except:
+            pass
+
+    return HTMLResponse("<h1>LecFac API - Dashboard no encontrado</h1>")
 
 
 @app.get("/editor", response_class=HTMLResponse)
@@ -297,9 +312,14 @@ async def get_duplicados_page(request: Request):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
     """Dashboard administrativo"""
-    html_path = Path("admin_dashboard.html")
-    if html_path.exists():
-        return FileResponse("admin_dashboard.html")
+    # Buscar primero la versión v2
+    possible_files = ["admin_dashboard_v2.html", "admin_dashboard.html"]
+
+    for filename in possible_files:
+        html_path = Path(filename)
+        if html_path.exists():
+            return FileResponse(str(html_path))
+
     raise HTTPException(404, "Dashboard no encontrado")
 
 
