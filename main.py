@@ -30,8 +30,6 @@ from pydantic import BaseModel
 from fastapi import Request  # ✅ Importar Request
 from api_inventario import router as inventario_router
 from api_stats import router as stats_router
-
-# from api_admin import router as admin_router
 from audit_system import AuditSystem
 
 # ==========================================
@@ -195,7 +193,7 @@ app = FastAPI(
 
 app.include_router(stats_router)
 app.include_router(inventario_router)
-app.include_router(admin_router)
+
 
 app.add_middleware(
     CORSMiddleware,
