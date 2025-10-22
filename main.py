@@ -28,8 +28,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from fastapi import Request  # ✅ Importar Request
-
-
 from api_inventario import router as inventario_router
 from api_stats import router as stats_router
 
@@ -197,7 +195,6 @@ app = FastAPI(
 
 app.include_router(stats_router)
 app.include_router(inventario_router)
-app.include_router(auditoria_router)
 app.include_router(admin_router)
 
 app.add_middleware(
@@ -2885,6 +2882,11 @@ print("✅ Sistema de auditoría cargado")
 # ==========================================
 
 
+# ==========================================
+# ENDPOINTS DE ADMINISTRACIÓN
+# ==========================================
+
+
 @app.get("/api/admin/estadisticas")
 async def admin_estadisticas():
     """Estadísticas generales del sistema"""
@@ -3022,14 +3024,14 @@ async def admin_productos():
 @app.get("/api/admin/duplicados/facturas")
 async def admin_duplicados_facturas():
     """Detectar facturas duplicadas"""
-    print("🔍 Buscando duplicados...")
+    print("🔍 Buscando duplicados de facturas...")
     return {"duplicados": []}
 
 
 @app.get("/api/admin/duplicados/productos")
 async def admin_duplicados_productos():
     """Detectar productos duplicados"""
-    print("🔍 Buscando duplicados...")
+    print("🔍 Buscando duplicados de productos...")
     return {"duplicados": []}
 
 
@@ -3149,6 +3151,7 @@ async def eliminar_factura_admin(factura_id: int):
 
 
 print("✅ Endpoints de administración registrados directamente en main.py")
+
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
