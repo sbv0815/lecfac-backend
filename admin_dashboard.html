@@ -598,10 +598,10 @@
                         </div>
                     </div>
 
+                    <!-- DESPUÉS -->
                     <div class="filter-controls">
-                        <input type="text" id="filter-usuario" placeholder="🔍 Buscar por usuario...">
-                        <select id="filter-categoria">
-                            <option value="">📑 Todas las categorías</option>
+                        <select id="filter-usuario-select">
+                            <option value="">👥 Todos los usuarios</option>
                         </select>
                         <button class="btn btn-primary" onclick="cargarInventarios()">🔄 Actualizar</button>
                     </div>
@@ -1599,6 +1599,78 @@
                 `;
             }
         }
+        // ==========================================
+        // REEMPLAZAR LA FUNCIÓN cargarColaRevision()
+        // en admin_dashboard.html
+        // ==========================================
+
+        async function cargarColaRevision() {
+            const container = document.getElementById('cola-revision-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando cola de revisión...</p></div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/auditoria/cola-revision`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Cola de revisión:', data);
+
+                if (!data.facturas || data.facturas.length === 0) {
+                    container.innerHTML = `
+                <div class="empty-state">
+                    <h3>✅</h3>
+                    <p>No hay facturas pendientes de revisión</p>
+                    <small>Todas las facturas han sido procesadas</small>
+                </div>
+            `;
+                    return;
+                }
+
+                let html = '<div class="table-container"><table><thead><tr>';
+                html += '<th>ID</th><th>Establecimiento</th><th>Total</th><th>Fecha</th><th>Productos</th><th>Acciones</th>';
+                html += '</tr></thead><tbody>';
+
+                data.facturas.forEach(factura => {
+                    html += `
+                <tr>
+                    <td><strong>#${factura.id}</strong></td>
+                    <td>${factura.establecimiento}</td>
+                    <td><strong>$${(factura.total || 0).toLocaleString()}</strong></td>
+                    <td>${formatearFecha(factura.fecha_cargue)}</td>
+                    <td><span class="badge badge-info">${factura.productos || 0} items</span></td>
+                    <td>
+                        <button
+                            class="btn btn-primary"
+                            onclick="abrirControlCalidad(${factura.id})"
+                            style="padding: 8px 16px; font-size: 14px;"
+                        >
+                            🔍 Revisar
+                        </button>
+                    </td>
+                </tr>
+            `;
+                });
+
+                html += '</tbody></table></div>';
+                container.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error cargando cola de revisión:', error);
+                container.innerHTML = `
+            <div class="alert alert-danger">
+                <span>❌</span>
+                <div>
+                    <strong>Error al cargar cola de revisión</strong><br>
+                    <small>${error.message}</small>
+                </div>
+            </div>
+        `;
+            }
+        }
+
 
         // ==========================================
         // INICIALIZACIÓN
@@ -1637,6 +1709,525 @@
             console.log('Filtrando productos...');
         }
     </script>
+
+    <!-- ==========================================
+     MODAL DE CONTROL DE CALIDAD
+     Copiar esto COMPLETO al final de admin_dashboard.html
+     Justo ANTES de la etiqueta </body>
+     ========================================== -->
+
+    <!-- Modal de Control de Calidad -->
+    <div id="modal-control-calidad" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>🔍 Control de Calidad - Factura #<span id="modal-factura-id">-</span></h2>
+                <button class="btn-close" onclick="cerrarModalCalidad()">×</button>
+            </div>
+
+            <div id="modal-calidad-content">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Cargando factura...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Estilos del Modal de Control de Calidad */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 0;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            padding: 24px;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            font-size: 32px;
+            cursor: pointer;
+            color: #6c757d;
+            padding: 0;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-close:hover {
+            background: #f8f9fa;
+            color: #dc3545;
+        }
+
+        .factura-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            padding: 24px;
+            background: #f8f9fa;
+        }
+
+        .info-card {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .info-card label {
+            display: block;
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .info-card .value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #212529;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .items-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .items-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .items-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .item-editable {
+            background: white;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            padding: 6px 10px;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        .item-editable:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+
+        .btn-icon {
+            padding: 6px 12px;
+            border: none;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            background: #e9ecef;
+            transform: scale(1.05);
+        }
+
+        .validation-actions {
+            display: flex;
+            gap: 12px;
+            padding: 24px;
+            border-top: 2px solid #e9ecef;
+            background: #f8f9fa;
+        }
+
+        .btn-validar {
+            flex: 1;
+            padding: 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-aprobar {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-aprobar:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-rechazar {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-rechazar:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        }
+
+        .btn-pendiente {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn-pendiente:hover {
+            background: #e0a800;
+        }
+
+        .alert-warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 16px;
+            margin: 16px 24px;
+            border-radius: 8px;
+        }
+    </style>
+
+    <script>
+        // ==========================================
+        // SISTEMA DE CONTROL DE CALIDAD
+        // ==========================================
+
+        // Variables globales
+        let facturaActualCalidad = null;
+
+        // Abrir modal de control de calidad
+        async function abrirControlCalidad(facturaId) {
+            const modal = document.getElementById('modal-control-calidad');
+            const content = document.getElementById('modal-calidad-content');
+
+            modal.style.display = 'flex';
+            document.getElementById('modal-factura-id').textContent = facturaId;
+
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando factura...</p></div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/facturas/${facturaId}/detalle-completo`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                facturaActualCalidad = data;
+                renderizarControlCalidad(data);
+
+            } catch (error) {
+                console.error('Error cargando factura:', error);
+                content.innerHTML = `
+            <div class="alert alert-danger" style="margin: 24px;">
+                <span>❌</span>
+                <div>
+                    <strong>Error al cargar factura</strong><br>
+                    <small>${error.message}</small>
+                </div>
+            </div>
+        `;
+            }
+        }
+
+        // Renderizar interfaz de control de calidad
+        function renderizarControlCalidad(factura) {
+            const content = document.getElementById('modal-calidad-content');
+
+            let html = `
+        <!-- Información de la factura -->
+        <div class="factura-info-grid">
+            <div class="info-card">
+                <label>Usuario</label>
+                <div class="value">${factura.usuario.nombre || 'Sin nombre'}</div>
+            </div>
+            <div class="info-card">
+                <label>Establecimiento</label>
+                <div class="value">${factura.establecimiento}</div>
+            </div>
+            <div class="info-card">
+                <label>Fecha</label>
+                <div class="value">${formatearFecha(factura.fecha_factura)}</div>
+            </div>
+            <div class="info-card">
+                <label>Total Factura</label>
+                <div class="value">$${factura.total_factura.toLocaleString()}</div>
+            </div>
+            <div class="info-card">
+                <label>Total Calculado</label>
+                <div class="value">$${factura.total_calculado.toLocaleString()}</div>
+            </div>
+            <div class="info-card">
+                <label>Estado</label>
+                <div class="value">
+                    <span class="badge ${factura.estado_validacion === 'validada' ? 'badge-success' :
+                    factura.estado_validacion === 'rechazada' ? 'badge-danger' :
+                        'badge-warning'
+                }">${factura.estado_validacion || 'pendiente'}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alertas de calidad -->
+        ${factura.diferencia_total > 100 ? `
+            <div class="alert-warning-box">
+                <strong>⚠️ Diferencia matemática detectada</strong><br>
+                Diferencia de $${factura.diferencia_total.toLocaleString()} entre el total de la factura y la suma de los items.
+            </div>
+        ` : ''}
+
+        ${factura.metricas.items_sin_normalizar > 0 ? `
+            <div class="alert-warning-box">
+                <strong>⚠️ ${factura.metricas.items_sin_normalizar} productos sin normalizar</strong><br>
+                Algunos productos no están vinculados al catálogo maestro.
+            </div>
+        ` : ''}
+
+        <!-- Tabla de items -->
+        <div style="padding: 0 24px 24px 24px;">
+            <h3 style="margin-bottom: 16px;">📦 Productos (${factura.items.length})</h3>
+            <div style="overflow-x: auto;">
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40%;">Nombre</th>
+                            <th style="width: 15%;">Cantidad</th>
+                            <th style="width: 15%;">Precio Unit.</th>
+                            <th style="width: 15%;">Total</th>
+                            <th style="width: 15%;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+            factura.items.forEach((item, index) => {
+                html += `
+            <tr>
+                <td>
+                    <input
+                        type="text"
+                        class="item-editable"
+                        value="${item.nombre_leido || ''}"
+                        id="item-nombre-${item.id}"
+                        onblur="guardarCambioItem(${item.id}, 'nombre_leido', this.value)"
+                    >
+                    ${item.nombre_normalizado ?
+                        `<small style="color: #28a745;">✓ ${item.nombre_normalizado}</small>` :
+                        '<small style="color: #dc3545;">Sin normalizar</small>'
+                    }
+                </td>
+                <td>
+                    <input
+                        type="number"
+                        class="item-editable"
+                        value="${item.cantidad || 0}"
+                        id="item-cantidad-${item.id}"
+                        onblur="guardarCambioItem(${item.id}, 'cantidad', this.value)"
+                        step="0.01"
+                    >
+                </td>
+                <td>
+                    <input
+                        type="number"
+                        class="item-editable"
+                        value="${item.precio_unitario || 0}"
+                        id="item-precio-${item.id}"
+                        onblur="guardarCambioItem(${item.id}, 'precio_pagado', this.value)"
+                    >
+                </td>
+                <td><strong>$${(item.precio_total || 0).toLocaleString()}</strong></td>
+                <td>
+                    <button class="btn-icon" onclick="eliminarItem(${item.id})" title="Eliminar">🗑️</button>
+                </td>
+            </tr>
+        `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Botones de validación -->
+        <div class="validation-actions">
+            <button class="btn-validar btn-aprobar" onclick="validarFactura(${factura.id}, 'validada')">
+                ✅ Aprobar Factura
+            </button>
+            <button class="btn-validar btn-pendiente" onclick="validarFactura(${factura.id}, 'pendiente')">
+                ⏸️ Dejar Pendiente
+            </button>
+            <button class="btn-validar btn-rechazar" onclick="validarFactura(${factura.id}, 'rechazada')">
+                ❌ Rechazar Factura
+            </button>
+        </div>
+    `;
+
+            content.innerHTML = html;
+        }
+
+        // Guardar cambios en un item
+        async function guardarCambioItem(itemId, campo, valor) {
+            try {
+                const datos = {};
+                datos[campo] = campo === 'nombre_leido' ? valor : parseFloat(valor);
+
+                const response = await fetch(`${API_URL}/api/items-factura/${itemId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(datos)
+                });
+
+                if (response.ok) {
+                    console.log('✅ Cambio guardado');
+                    // Mostrar feedback visual temporal
+                    const input = document.getElementById(`item-${campo.replace('_pagado', '').replace('_leido', '')}-${itemId}`);
+                    if (input) {
+                        input.style.background = '#d4edda';
+                        setTimeout(() => { input.style.background = 'white'; }, 1000);
+                    }
+                } else {
+                    console.error('Error guardando cambio');
+                    alert('Error al guardar el cambio');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error al guardar el cambio');
+            }
+        }
+
+        // Validar factura (aprobar/rechazar/pendiente)
+        async function validarFactura(facturaId, estado) {
+            const mensajes = {
+                'validada': '¿Aprobar esta factura?',
+                'rechazada': '¿Rechazar esta factura?',
+                'pendiente': '¿Marcar como pendiente?'
+            };
+
+            if (!confirm(mensajes[estado])) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/facturas/${facturaId}/validar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ estado })
+                });
+
+                if (response.ok) {
+                    alert(`✅ Factura ${estado} correctamente`);
+                    cerrarModalCalidad();
+
+                    // Recargar la cola de revisión si existe
+                    if (typeof cargarColaRevision === 'function') {
+                        cargarColaRevision();
+                    }
+                } else {
+                    alert('❌ Error al validar la factura');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('❌ Error al validar la factura');
+            }
+        }
+
+        // Eliminar item
+        async function eliminarItem(itemId) {
+            if (!confirm('¿Eliminar este producto?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/items-factura/${itemId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('✅ Producto eliminado');
+                    // Recargar el modal
+                    if (facturaActualCalidad) {
+                        abrirControlCalidad(facturaActualCalidad.id);
+                    }
+                } else {
+                    alert('❌ Error al eliminar el producto');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('❌ Error al eliminar el producto');
+            }
+        }
+
+        // Cerrar modal
+        function cerrarModalCalidad() {
+            document.getElementById('modal-control-calidad').style.display = 'none';
+            facturaActualCalidad = null;
+        }
+
+        // Cerrar modal con tecla ESC
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                cerrarModalCalidad();
+            }
+        });
+
+        console.log('✅ Sistema de control de calidad cargado');
+    </script>
+
 </body>
 
 </html>

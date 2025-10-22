@@ -3322,6 +3322,336 @@ async def debug_columnas():
 
 
 # ==========================================
+# ENDPOINTS DE CONTROL DE CALIDAD
+# Agregar en main.py con los otros endpoints admin
+# ==========================================
+
+
+@app.get("/api/facturas/{factura_id}/detalle-completo")
+async def obtener_factura_detalle_completo(factura_id: int):
+    """
+    Obtiene todos los detalles de una factura para revisión y edición
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"📋 Obteniendo detalle completo de factura {factura_id}...")
+
+        # Obtener factura
+        cursor.execute(
+            """
+            SELECT
+                f.id,
+                f.usuario_id,
+                f.establecimiento,
+                f.establecimiento_id,
+                f.total_factura,
+                f.fecha_factura,
+                f.fecha_cargue,
+                f.estado_validacion,
+                f.numero_factura,
+                u.nombre as nombre_usuario,
+                u.email as email_usuario
+            FROM facturas f
+            LEFT JOIN usuarios u ON f.usuario_id = u.id
+            WHERE f.id = %s
+        """,
+            (factura_id,),
+        )
+
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+        factura = {
+            "id": row[0],
+            "usuario_id": row[1],
+            "establecimiento": row[2],
+            "establecimiento_id": row[3],
+            "total_factura": float(row[4]) if row[4] else 0,
+            "fecha_factura": str(row[5]) if row[5] else None,
+            "fecha_cargue": str(row[6]) if row[6] else None,
+            "estado_validacion": row[7] or "pendiente",
+            "numero_factura": row[8],
+            "usuario": {"nombre": row[9], "email": row[10]},
+        }
+
+        # Obtener items con toda la información
+        cursor.execute(
+            """
+            SELECT
+                i.id,
+                i.nombre_leido,
+                i.codigo_leido,
+                i.cantidad,
+                i.precio_pagado,
+                i.producto_maestro_id,
+                pm.nombre_normalizado,
+                pm.categoria,
+                pm.marca
+            FROM items_factura i
+            LEFT JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
+            WHERE i.factura_id = %s
+            ORDER BY i.id
+        """,
+            (factura_id,),
+        )
+
+        items = []
+        total_calculado = 0
+
+        for row in cursor.fetchall():
+            precio_total = (row[3] or 0) * (row[4] or 0)
+            total_calculado += precio_total
+
+            items.append(
+                {
+                    "id": row[0],
+                    "nombre_leido": row[1],
+                    "codigo_leido": row[2],
+                    "cantidad": float(row[3]) if row[3] else 0,
+                    "precio_unitario": float(row[4]) if row[4] else 0,
+                    "precio_total": precio_total,
+                    "producto_maestro_id": row[5],
+                    "nombre_normalizado": row[6],
+                    "categoria": row[7],
+                    "marca": row[8],
+                }
+            )
+
+        factura["items"] = items
+        factura["total_calculado"] = total_calculado
+        factura["diferencia_total"] = abs(factura["total_factura"] - total_calculado)
+
+        # Calcular métricas de calidad
+        factura["metricas"] = {
+            "items_sin_normalizar": sum(
+                1 for i in items if not i["nombre_normalizado"]
+            ),
+            "items_sin_categoria": sum(1 for i in items if not i["categoria"]),
+            "diferencia_matematica": factura["diferencia_total"] > 100,
+        }
+
+        conn.close()
+
+        print(f"✅ Factura {factura_id} cargada con {len(items)} items")
+        return factura
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/items-factura/{item_id}")
+async def actualizar_item_factura(item_id: int, datos: dict):
+    """
+    Actualiza un item de factura (nombre, cantidad, precio, categoría)
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"✏️ Actualizando item {item_id}...")
+
+        # Construir UPDATE dinámico
+        campos_actualizables = []
+        valores = []
+
+        if "nombre_leido" in datos:
+            campos_actualizables.append("nombre_leido = %s")
+            valores.append(datos["nombre_leido"])
+
+        if "cantidad" in datos:
+            campos_actualizables.append("cantidad = %s")
+            valores.append(datos["cantidad"])
+
+        if "precio_pagado" in datos:
+            campos_actualizables.append("precio_pagado = %s")
+            valores.append(datos["precio_pagado"])
+
+        if "codigo_leido" in datos:
+            campos_actualizables.append("codigo_leido = %s")
+            valores.append(datos["codigo_leido"])
+
+        if not campos_actualizables:
+            raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+
+        valores.append(item_id)
+
+        query = f"""
+            UPDATE items_factura
+            SET {', '.join(campos_actualizables)}
+            WHERE id = %s
+        """
+
+        cursor.execute(query, tuple(valores))
+        conn.commit()
+        conn.close()
+
+        print(f"✅ Item {item_id} actualizado")
+        return {"success": True, "item_id": item_id}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/facturas/{factura_id}/validar")
+async def validar_factura(factura_id: int, accion: dict):
+    """
+    Valida o rechaza una factura
+
+    Body:
+    {
+        "estado": "validada" | "rechazada" | "pendiente",
+        "notas": "Razón del rechazo (opcional)"
+    }
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        estado = accion.get("estado", "validada")
+        notas = accion.get("notas", "")
+
+        print(f"✅ Validando factura {factura_id} como '{estado}'...")
+
+        cursor.execute(
+            """
+            UPDATE facturas
+            SET estado_validacion = %s
+            WHERE id = %s
+        """,
+            (estado, factura_id),
+        )
+
+        conn.commit()
+        conn.close()
+
+        print(f"✅ Factura {factura_id} marcada como '{estado}'")
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "estado": estado,
+            "message": f"Factura {estado}",
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/items-factura/{item_id}/vincular-producto")
+async def vincular_producto_maestro(item_id: int, datos: dict):
+    """
+    Vincula un item con un producto maestro existente o crea uno nuevo
+
+    Body:
+    {
+        "producto_maestro_id": 123,  // Si existe
+        "crear_nuevo": true,         // Si se debe crear
+        "nombre_normalizado": "Arroz Diana 500gr",
+        "categoria": "GRANOS",
+        "marca": "Diana"
+    }
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"🔗 Vinculando item {item_id} con producto maestro...")
+
+        producto_maestro_id = datos.get("producto_maestro_id")
+
+        # Si se debe crear un nuevo producto maestro
+        if datos.get("crear_nuevo") and not producto_maestro_id:
+            cursor.execute(
+                """
+                INSERT INTO productos_maestros (
+                    nombre_normalizado, categoria, marca, fecha_creacion
+                ) VALUES (%s, %s, %s, NOW())
+                RETURNING id
+            """,
+                (
+                    datos.get("nombre_normalizado"),
+                    datos.get("categoria"),
+                    datos.get("marca"),
+                ),
+            )
+            producto_maestro_id = cursor.fetchone()[0]
+            print(f"✅ Producto maestro creado: {producto_maestro_id}")
+
+        # Vincular item con producto maestro
+        if producto_maestro_id:
+            cursor.execute(
+                """
+                UPDATE items_factura
+                SET producto_maestro_id = %s
+                WHERE id = %s
+            """,
+                (producto_maestro_id, item_id),
+            )
+
+            conn.commit()
+            print(f"✅ Item {item_id} vinculado con producto {producto_maestro_id}")
+
+        conn.close()
+
+        return {
+            "success": True,
+            "item_id": item_id,
+            "producto_maestro_id": producto_maestro_id,
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/productos-maestros/buscar")
+async def buscar_productos_maestros(q: str, limite: int = 20):
+    """
+    Busca productos maestros por nombre para autocompletar
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT id, nombre_normalizado, categoria, marca
+            FROM productos_maestros
+            WHERE LOWER(nombre_normalizado) LIKE LOWER(%s)
+            ORDER BY nombre_normalizado
+            LIMIT %s
+        """,
+            (f"%{q}%", limite),
+        )
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append(
+                {"id": row[0], "nombre": row[1], "categoria": row[2], "marca": row[3]}
+            )
+
+        conn.close()
+
+        return {"productos": productos}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints de control de calidad registrados")
+# ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
 if __name__ == "__main__":
