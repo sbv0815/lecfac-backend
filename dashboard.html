@@ -1219,7 +1219,8 @@
         // ============================================
         async function cargarUsuarios() {
             try {
-                const usuarios = await fetchConManejo(`${API_URL}/api/admin/usuarios-lista`);
+                let response = await fetchConManejo(`${API_URL}/api/admin/usuarios-lista`);
+                const usuarios = Array.isArray(response) ? response : (response.usuarios || response.data || []);
 
                 const select = document.getElementById('usuario-select');
                 select.innerHTML = '<option value="">-- Seleccionar Usuario --</option>';
@@ -1343,7 +1344,8 @@
         // ============================================
         async function cargarProductos() {
             try {
-                const data = await fetchConManejo(`${API_URL}/api/admin/productos`);
+                let response = await fetchConManejo(`${API_URL}/api/admin/productos`);
+                const data = Array.isArray(response) ? response : (response.productos || response.data || []);
                 productosData = data;
 
                 renderizarProductos(data);
@@ -1545,7 +1547,8 @@
 
         async function cargarDuplicadosFacturas() {
             try {
-                const data = await fetchConManejo(`${API_URL}/api/admin/duplicados/facturas`);
+                let response = await fetchConManejo(`${API_URL}/api/admin/duplicados/facturas`);
+                const data = Array.isArray(response) ? response : (response.duplicados || response.data || []);
 
                 const container = document.getElementById('duplicados-facturas-container');
 
@@ -1605,7 +1608,8 @@
 
         async function cargarDuplicadosProductos() {
             try {
-                const data = await fetchConManejo(`${API_URL}/api/admin/duplicados/productos`);
+                let response = await fetchConManejo(`${API_URL}/api/admin/duplicados/productos`);
+                const data = Array.isArray(response) ? response : (response.duplicados || response.data || []);
 
                 const container = document.getElementById('duplicados-productos-container');
 
