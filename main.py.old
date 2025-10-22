@@ -259,7 +259,6 @@ async def index(request: Request):
     """Página principal / Dashboard"""
     # Buscar dashboard actualizado
     possible_files = [
-        "dashboard_1761173221.html",
         "dashboard.html",
         "admin_dashboard_v2.html",
         "admin_dashboard.html",
@@ -268,18 +267,7 @@ async def index(request: Request):
     for filename in possible_files:
         file_path = Path(filename)
         if file_path.exists():
-            # Leer archivo y agregar headers anti-caché
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            return HTMLResponse(
-                content=content,
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                },
-            )
+            return FileResponse(str(file_path))
 
     # Si no existe ninguno, usar template
     if templates:
@@ -330,7 +318,6 @@ async def dashboard():
     """Dashboard administrativo"""
     # Buscar dashboard actualizado
     possible_files = [
-        "dashboard_1761173221.html",
         "dashboard.html",
         "admin_dashboard_v2.html",
         "admin_dashboard.html",
