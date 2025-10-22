@@ -519,8 +519,38 @@
             }
         }
 
-        * Ocultar modal de detalles que aparece automáticamente */ #modal-detalles {
-            display: none !important;
+        /* Modal de Detalles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #6c757d;
+        }
+
+        .close-modal:hover {
+            color: #dc3545;
+        }
+
+        #modal-body {
+            padding: 24px;
         }
     </style>
 </head>
@@ -1705,277 +1735,287 @@
         }
     </script>
 
-    <!-- ==========================================
-         MODAL DE CONTROL DE CALIDAD
-         ========================================== -->
 
-    <!-- Modal de Control de Calidad -->
-    <div id="modal-control-calidad" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+    <div id="modal-detalles" class="modal">
+        <div class="modal-content">
             <div class="modal-header">
-                <h2>🔍 Control de Calidad - Factura #<span id="modal-factura-id">-</span></h2>
-                <button class="btn-close" onclick="cerrarModalCalidad()">×</button>
+                <h2>Detalles de Factura</h2>
+                <button class="close-modal" onclick="cerrarModal()">×</button>
             </div>
-
-            <div id="modal-calidad-content">
+            <div id="modal-body">
                 <div class="loading">
                     <div class="spinner"></div>
-                    <p>Cargando factura...</p>
+                    <p>Cargando...</p>
                 </div>
             </div>
         </div>
-    </div>
+        <!-- ==========================================
+         MODAL DE CONTROL DE CALIDAD
+         ========================================== -->
 
-    <style>
-        /* Estilos del Modal de Control de Calidad */
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        }
+        <!-- Modal de Control de Calidad -->
+        <div id="modal-control-calidad" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h2>🔍 Control de Calidad - Factura #<span id="modal-factura-id">-</span></h2>
+                    <button class="btn-close" onclick="cerrarModalCalidad()">×</button>
+                </div>
 
-        .modal-content {
-            background: white;
-            border-radius: 16px;
-            padding: 0;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            animation: slideDown 0.3s ease;
-        }
+                <div id="modal-calidad-content">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Cargando factura...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-50px);
+        <style>
+            /* Estilos del Modal de Control de Calidad */
+            .modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
             }
 
-            to {
-                opacity: 1;
-                transform: translateY(0);
+            .modal-content {
+                background: white;
+                border-radius: 16px;
+                padding: 0;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                animation: slideDown 0.3s ease;
             }
-        }
 
-        .modal-header {
-            padding: 24px;
-            border-bottom: 2px solid #e9ecef;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h2 {
-            margin: 0;
-            font-size: 24px;
-        }
-
-        .btn-close {
-            background: none;
-            border: none;
-            font-size: 32px;
-            cursor: pointer;
-            color: #6c757d;
-            padding: 0;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            transition: all 0.2s;
-        }
-
-        .btn-close:hover {
-            background: #f8f9fa;
-            color: #dc3545;
-        }
-
-        .factura-info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            padding: 24px;
-            background: #f8f9fa;
-        }
-
-        .info-card {
-            background: white;
-            padding: 16px;
-            border-radius: 8px;
-            border-left: 4px solid var(--primary-color);
-        }
-
-        .info-card label {
-            display: block;
-            font-size: 12px;
-            color: #6c757d;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-        }
-
-        .info-card .value {
-            font-size: 18px;
-            font-weight: 600;
-            color: #212529;
-        }
-
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .items-table th {
-            background: #f8f9fa;
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            border-bottom: 2px solid #dee2e6;
-        }
-
-        .items-table td {
-            padding: 12px;
-            border-bottom: 1px solid #e9ecef;
-        }
-
-        .items-table tr:hover {
-            background: #f8f9fa;
-        }
-
-        .item-editable {
-            background: white;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            padding: 6px 10px;
-            width: 100%;
-            font-size: 14px;
-        }
-
-        .item-editable:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-        }
-
-        .btn-icon {
-            padding: 6px 12px;
-            border: none;
-            background: #f8f9fa;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.2s;
-        }
-
-        .btn-icon:hover {
-            background: #e9ecef;
-            transform: scale(1.05);
-        }
-
-        .validation-actions {
-            display: flex;
-            gap: 12px;
-            padding: 24px;
-            border-top: 2px solid #e9ecef;
-            background: #f8f9fa;
-        }
-
-        .btn-validar {
-            flex: 1;
-            padding: 16px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-aprobar {
-            background: #28a745;
-            color: white;
-        }
-
-        .btn-aprobar:hover {
-            background: #218838;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-        }
-
-        .btn-rechazar {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-rechazar:hover {
-            background: #c82333;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-        }
-
-        .btn-pendiente {
-            background: #ffc107;
-            color: #212529;
-        }
-
-        .btn-pendiente:hover {
-            background: #e0a800;
-        }
-
-        .alert-warning-box {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 16px;
-            margin: 16px 24px;
-            border-radius: 8px;
-        }
-
-        /* Ocultar modal de detalles molesto */
-        #modal-detalles {
-            display: none !important;
-        }
-
-        * Ocultar modal de detalles que aparece automáticamente */ #modal-detalles {
-            display: none !important;
-        }
-    </style>
-
-    <script>
-        // ==========================================
-        // SISTEMA DE CONTROL DE CALIDAD
-        // ==========================================
-
-        // Variables globales
-        let facturaActualCalidad = null;
-
-        // Abrir modal de control de calidad
-        async function abrirControlCalidad(facturaId) {
-            const modal = document.getElementById('modal-control-calidad');
-            const content = document.getElementById('modal-calidad-content');
-
-            modal.style.display = 'flex';
-            document.getElementById('modal-factura-id').textContent = facturaId;
-
-            content.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando factura...</p></div>';
-
-            try {
-                const response = await fetch(`${API_URL}/api/facturas/${facturaId}/detalle-completo`);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+            @keyframes slideDown {
+                from {
+                    opacity: 0;
+                    transform: translateY(-50px);
                 }
 
-                const data = await response.json();
-                facturaActualCalidad = data;
-                renderizarControlCalidad(data);
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
 
-            } catch (error) {
-                console.error('Error cargando factura:', error);
-                content.innerHTML = `
+            .modal-header {
+                padding: 24px;
+                border-bottom: 2px solid #e9ecef;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .modal-header h2 {
+                margin: 0;
+                font-size: 24px;
+            }
+
+            .btn-close {
+                background: none;
+                border: none;
+                font-size: 32px;
+                cursor: pointer;
+                color: #6c757d;
+                padding: 0;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 8px;
+                transition: all 0.2s;
+            }
+
+            .btn-close:hover {
+                background: #f8f9fa;
+                color: #dc3545;
+            }
+
+            .factura-info-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 16px;
+                padding: 24px;
+                background: #f8f9fa;
+            }
+
+            .info-card {
+                background: white;
+                padding: 16px;
+                border-radius: 8px;
+                border-left: 4px solid var(--primary-color);
+            }
+
+            .info-card label {
+                display: block;
+                font-size: 12px;
+                color: #6c757d;
+                text-transform: uppercase;
+                margin-bottom: 4px;
+            }
+
+            .info-card .value {
+                font-size: 18px;
+                font-weight: 600;
+                color: #212529;
+            }
+
+            .items-table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+
+            .items-table th {
+                background: #f8f9fa;
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+                border-bottom: 2px solid #dee2e6;
+            }
+
+            .items-table td {
+                padding: 12px;
+                border-bottom: 1px solid #e9ecef;
+            }
+
+            .items-table tr:hover {
+                background: #f8f9fa;
+            }
+
+            .item-editable {
+                background: white;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                padding: 6px 10px;
+                width: 100%;
+                font-size: 14px;
+            }
+
+            .item-editable:focus {
+                outline: none;
+                border-color: var(--primary-color);
+                box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+            }
+
+            .btn-icon {
+                padding: 6px 12px;
+                border: none;
+                background: #f8f9fa;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 16px;
+                transition: all 0.2s;
+            }
+
+            .btn-icon:hover {
+                background: #e9ecef;
+                transform: scale(1.05);
+            }
+
+            .validation-actions {
+                display: flex;
+                gap: 12px;
+                padding: 24px;
+                border-top: 2px solid #e9ecef;
+                background: #f8f9fa;
+            }
+
+            .btn-validar {
+                flex: 1;
+                padding: 16px;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .btn-aprobar {
+                background: #28a745;
+                color: white;
+            }
+
+            .btn-aprobar:hover {
+                background: #218838;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+            }
+
+            .btn-rechazar {
+                background: #dc3545;
+                color: white;
+            }
+
+            .btn-rechazar:hover {
+                background: #c82333;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            }
+
+            .btn-pendiente {
+                background: #ffc107;
+                color: #212529;
+            }
+
+            .btn-pendiente:hover {
+                background: #e0a800;
+            }
+
+            .alert-warning-box {
+                background: #fff3cd;
+                border-left: 4px solid #ffc107;
+                padding: 16px;
+                margin: 16px 24px;
+                border-radius: 8px;
+            }
+
+            /* Ocultar modal de detalles molesto */
+            #modal-detalles {
+                display: none !important;
+            }
+        </style>
+
+        <script>
+            // ==========================================
+            // SISTEMA DE CONTROL DE CALIDAD
+            // ==========================================
+
+            // Variables globales
+            let facturaActualCalidad = null;
+
+            // Abrir modal de control de calidad
+            async function abrirControlCalidad(facturaId) {
+                const modal = document.getElementById('modal-control-calidad');
+                const content = document.getElementById('modal-calidad-content');
+
+                modal.style.display = 'flex';
+                document.getElementById('modal-factura-id').textContent = facturaId;
+
+                content.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando factura...</p></div>';
+
+                try {
+                    const response = await fetch(`${API_URL}/api/facturas/${facturaId}/detalle-completo`);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    facturaActualCalidad = data;
+                    renderizarControlCalidad(data);
+
+                } catch (error) {
+                    console.error('Error cargando factura:', error);
+                    content.innerHTML = `
             <div class="alert alert-danger" style="margin: 24px;">
                 <span>❌</span>
                 <div>
@@ -1984,14 +2024,14 @@
                 </div>
             </div>
         `;
+                }
             }
-        }
 
-        // Renderizar interfaz de control de calidad
-        function renderizarControlCalidad(factura) {
-            const content = document.getElementById('modal-calidad-content');
+            // Renderizar interfaz de control de calidad
+            function renderizarControlCalidad(factura) {
+                const content = document.getElementById('modal-calidad-content');
 
-            let html = `
+                let html = `
         <!-- Información de la factura -->
         <div class="factura-info-grid">
             <div class="info-card">
@@ -2018,9 +2058,9 @@
                 <label>Estado</label>
                 <div class="value">
                     <span class="badge ${factura.estado_validacion === 'validada' ? 'badge-success' :
-                    factura.estado_validacion === 'rechazada' ? 'badge-danger' :
-                        'badge-warning'
-                }">${factura.estado_validacion || 'pendiente'}</span>
+                        factura.estado_validacion === 'rechazada' ? 'badge-danger' :
+                            'badge-warning'
+                    }">${factura.estado_validacion || 'pendiente'}</span>
                 </div>
             </div>
         </div>
@@ -2057,8 +2097,8 @@
                     <tbody>
     `;
 
-            factura.items.forEach((item, index) => {
-                html += `
+                factura.items.forEach((item, index) => {
+                    html += `
             <tr>
                 <td>
                     <input
@@ -2069,9 +2109,9 @@
                         onblur="guardarCambioItem(${item.id}, 'nombre_leido', this.value)"
                     >
                     ${item.nombre_normalizado ?
-                        `<small style="color: #28a745;">✓ ${item.nombre_normalizado}</small>` :
-                        '<small style="color: #dc3545;">Sin normalizar</small>'
-                    }
+                            `<small style="color: #28a745;">✓ ${item.nombre_normalizado}</small>` :
+                            '<small style="color: #dc3545;">Sin normalizar</small>'
+                        }
                 </td>
                 <td>
                     <input
@@ -2098,9 +2138,9 @@
                 </td>
             </tr>
         `;
-            });
+                });
 
-            html += `
+                html += `
                     </tbody>
                 </table>
             </div>
@@ -2120,112 +2160,112 @@
         </div>
     `;
 
-            content.innerHTML = html;
-        }
+                content.innerHTML = html;
+            }
 
-        // Guardar cambios en un item
-        async function guardarCambioItem(itemId, campo, valor) {
-            try {
-                const datos = {};
-                datos[campo] = campo === 'nombre_leido' ? valor : parseFloat(valor);
+            // Guardar cambios en un item
+            async function guardarCambioItem(itemId, campo, valor) {
+                try {
+                    const datos = {};
+                    datos[campo] = campo === 'nombre_leido' ? valor : parseFloat(valor);
 
-                const response = await fetch(`${API_URL}/api/items-factura/${itemId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(datos)
-                });
+                    const response = await fetch(`${API_URL}/api/items-factura/${itemId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(datos)
+                    });
 
-                if (response.ok) {
-                    console.log('✅ Cambio guardado');
-                    const input = document.getElementById(`item-${campo.replace('_pagado', '').replace('_leido', '')}-${itemId}`);
-                    if (input) {
-                        input.style.background = '#d4edda';
-                        setTimeout(() => { input.style.background = 'white'; }, 1000);
+                    if (response.ok) {
+                        console.log('✅ Cambio guardado');
+                        const input = document.getElementById(`item-${campo.replace('_pagado', '').replace('_leido', '')}-${itemId}`);
+                        if (input) {
+                            input.style.background = '#d4edda';
+                            setTimeout(() => { input.style.background = 'white'; }, 1000);
+                        }
+                    } else {
+                        console.error('Error guardando cambio');
+                        alert('Error al guardar el cambio');
                     }
-                } else {
-                    console.error('Error guardando cambio');
+
+                } catch (error) {
+                    console.error('Error:', error);
                     alert('Error al guardar el cambio');
                 }
-
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error al guardar el cambio');
             }
-        }
 
-        // Validar factura
-        async function validarFactura(facturaId, estado) {
-            const mensajes = {
-                'validada': '¿Aprobar esta factura?',
-                'rechazada': '¿Rechazar esta factura?',
-                'pendiente': '¿Marcar como pendiente?'
-            };
+            // Validar factura
+            async function validarFactura(facturaId, estado) {
+                const mensajes = {
+                    'validada': '¿Aprobar esta factura?',
+                    'rechazada': '¿Rechazar esta factura?',
+                    'pendiente': '¿Marcar como pendiente?'
+                };
 
-            if (!confirm(mensajes[estado])) return;
+                if (!confirm(mensajes[estado])) return;
 
-            try {
-                const response = await fetch(`${API_URL}/api/facturas/${facturaId}/validar`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ estado })
-                });
+                try {
+                    const response = await fetch(`${API_URL}/api/facturas/${facturaId}/validar`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ estado })
+                    });
 
-                if (response.ok) {
-                    alert(`✅ Factura ${estado} correctamente`);
-                    cerrarModalCalidad();
+                    if (response.ok) {
+                        alert(`✅ Factura ${estado} correctamente`);
+                        cerrarModalCalidad();
 
-                    if (typeof cargarColaRevision === 'function') {
-                        cargarColaRevision();
+                        if (typeof cargarColaRevision === 'function') {
+                            cargarColaRevision();
+                        }
+                    } else {
+                        alert('❌ Error al validar la factura');
                     }
-                } else {
+
+                } catch (error) {
+                    console.error('Error:', error);
                     alert('❌ Error al validar la factura');
                 }
-
-            } catch (error) {
-                console.error('Error:', error);
-                alert('❌ Error al validar la factura');
             }
-        }
 
-        // Eliminar item
-        async function eliminarItem(itemId) {
-            if (!confirm('¿Eliminar este producto?')) return;
+            // Eliminar item
+            async function eliminarItem(itemId) {
+                if (!confirm('¿Eliminar este producto?')) return;
 
-            try {
-                const response = await fetch(`${API_URL}/api/items-factura/${itemId}`, {
-                    method: 'DELETE'
-                });
+                try {
+                    const response = await fetch(`${API_URL}/api/items-factura/${itemId}`, {
+                        method: 'DELETE'
+                    });
 
-                if (response.ok) {
-                    alert('✅ Producto eliminado');
-                    if (facturaActualCalidad) {
-                        abrirControlCalidad(facturaActualCalidad.id);
+                    if (response.ok) {
+                        alert('✅ Producto eliminado');
+                        if (facturaActualCalidad) {
+                            abrirControlCalidad(facturaActualCalidad.id);
+                        }
+                    } else {
+                        alert('❌ Error al eliminar el producto');
                     }
-                } else {
+
+                } catch (error) {
+                    console.error('Error:', error);
                     alert('❌ Error al eliminar el producto');
                 }
-
-            } catch (error) {
-                console.error('Error:', error);
-                alert('❌ Error al eliminar el producto');
             }
-        }
 
-        // Cerrar modal
-        function cerrarModalCalidad() {
-            document.getElementById('modal-control-calidad').style.display = 'none';
-            facturaActualCalidad = null;
-        }
-
-        // Cerrar modal con ESC
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                cerrarModalCalidad();
+            // Cerrar modal
+            function cerrarModalCalidad() {
+                document.getElementById('modal-control-calidad').style.display = 'none';
+                facturaActualCalidad = null;
             }
-        });
 
-        console.log('✅ Sistema de control de calidad cargado');
-    </script>
+            // Cerrar modal con ESC
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') {
+                    cerrarModalCalidad();
+                }
+            });
+
+            console.log('✅ Sistema de control de calidad cargado');
+        </script>
 
 </body>
 
