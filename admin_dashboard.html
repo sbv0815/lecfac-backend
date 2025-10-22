@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Admin - LeFact</title>
+    <title>Dashboard Admin Completo - LeFact</title>
     <style>
         * {
             margin: 0;
@@ -51,10 +51,12 @@
             background: #f8f9fa;
             border-bottom: 2px solid #e9ecef;
             overflow-x: auto;
+            flex-wrap: wrap;
         }
 
         .tab {
             flex: 1;
+            min-width: 150px;
             padding: 20px;
             text-align: center;
             cursor: pointer;
@@ -146,6 +148,18 @@
             font-size: 0.9em;
         }
 
+        .stat-card.success {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
+        }
+
+        .stat-card.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .stat-card.info {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
         .section {
             background: #f8f9fa;
             padding: 25px;
@@ -196,13 +210,18 @@
         }
 
         .btn-success {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
             color: white;
         }
 
         .btn-success:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+            color: white;
         }
 
         .table-container {
@@ -277,7 +296,7 @@
             border-radius: 10px;
             margin-bottom: 20px;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 10px;
         }
 
@@ -297,6 +316,12 @@
             background: #d4edda;
             color: #155724;
             border-left: 4px solid #28a745;
+        }
+
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
         }
 
         .loading {
@@ -339,8 +364,8 @@
         }
 
         .duplicate-item {
-            padding: 10px;
-            margin: 5px 0;
+            padding: 12px;
+            margin: 8px 0;
             background: #f8f9fa;
             border-radius: 5px;
             display: flex;
@@ -399,11 +424,9 @@
             color: #6c757d;
         }
 
-        .empty-state svg {
-            width: 100px;
-            height: 100px;
-            margin-bottom: 20px;
-            opacity: 0.3;
+        .empty-state h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
         }
 
         .modal {
@@ -442,6 +465,7 @@
 
         .modal-header h2 {
             color: #495057;
+            margin: 0;
         }
 
         .close-modal {
@@ -450,6 +474,26 @@
             font-size: 1.5em;
             cursor: pointer;
             color: #6c757d;
+        }
+
+        .health-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .health-good {
+            background: #28a745;
+        }
+
+        .health-warning {
+            background: #ffc107;
+        }
+
+        .health-bad {
+            background: #dc3545;
         }
 
         @media (max-width: 768px) {
@@ -469,6 +513,10 @@
             .filter-controls select {
                 min-width: 100%;
             }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
         }
     </style>
 </head>
@@ -476,8 +524,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🛡️ Dashboard de Administración</h1>
-            <p>Panel de control y auditoría de datos - LeFact</p>
+            <h1>🛡️ Dashboard de Administración - LeFact</h1>
+            <p>Sistema de auditoría, control de calidad y gestión de datos</p>
         </div>
 
         <div class="tabs">
@@ -489,7 +537,9 @@
         </div>
 
         <div class="content">
-            <!-- TAB: ESTADÍSTICAS -->
+            <!-- ============================================ -->
+            <!-- TAB: ESTADÍSTICAS GENERALES -->
+            <!-- ============================================ -->
             <div id="tab-estadisticas" class="tab-content active">
                 <div class="stats-grid" id="stats-container">
                     <div class="stat-card">
@@ -497,17 +547,17 @@
                         <div class="value" id="stat-usuarios">-</div>
                         <div class="label">usuarios registrados</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card info">
                         <h3>Total Facturas</h3>
                         <div class="value" id="stat-facturas">-</div>
                         <div class="label">facturas procesadas</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card warning">
                         <h3>Total Productos</h3>
                         <div class="value" id="stat-productos">-</div>
                         <div class="label">productos únicos</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card success">
                         <h3>Calidad Promedio</h3>
                         <div class="value" id="stat-calidad">-</div>
                         <div class="label">puntaje de auditoría</div>
@@ -515,21 +565,47 @@
                 </div>
 
                 <div class="section">
-                    <h2>📈 Resumen del Sistema</h2>
-                    <div id="sistema-salud"></div>
+                    <h2>📈 Salud del Sistema</h2>
+                    <div id="sistema-salud">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Cargando información del sistema...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>🔔 Alertas y Notificaciones</h2>
+                    <div id="alertas-container">
+                        <div class="alert alert-info">
+                            <span>ℹ️</span>
+                            <div>Sistema inicializado correctamente. Esperando datos...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
+            <!-- ============================================ -->
             <!-- TAB: INVENTARIOS -->
+            <!-- ============================================ -->
             <div id="tab-inventarios" class="tab-content">
                 <div class="section">
                     <h2>📦 Inventarios por Usuario</h2>
-                    <div class="filter-controls">
-                        <input type="text" id="filter-usuario" placeholder="Buscar por usuario...">
-                        <select id="filter-categoria">
-                            <option value="">Todas las categorías</option>
-                        </select>
+
+                    <div class="alert alert-info">
+                        <span>ℹ️</span>
+                        <div>Visualiza el stock actual de productos por usuario y detecta alertas de inventario bajo.
+                        </div>
                     </div>
+
+                    <div class="filter-controls">
+                        <input type="text" id="filter-usuario" placeholder="🔍 Buscar por usuario...">
+                        <select id="filter-categoria">
+                            <option value="">📑 Todas las categorías</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="cargarInventarios()">🔄 Actualizar</button>
+                    </div>
+
                     <div id="inventarios-container">
                         <div class="loading">
                             <div class="spinner"></div>
@@ -539,16 +615,34 @@
                 </div>
             </div>
 
+            <!-- ============================================ -->
             <!-- TAB: PRODUCTOS -->
+            <!-- ============================================ -->
             <div id="tab-productos" class="tab-content">
                 <div class="section">
-                    <h2>🏷️ Catálogo de Productos</h2>
-                    <div class="filter-controls">
-                        <input type="text" id="filter-producto" placeholder="Buscar producto...">
-                        <select id="filter-producto-categoria">
-                            <option value="">Todas las categorías</option>
-                        </select>
+                    <h2>🏷️ Catálogo Maestro de Productos</h2>
+
+                    <div class="alert alert-info">
+                        <span>ℹ️</span>
+                        <div>Catálogo completo de productos con información de precios, categorías y frecuencia de
+                            compra.</div>
                     </div>
+
+                    <div class="filter-controls">
+                        <input type="text" id="filter-producto" placeholder="🔍 Buscar producto...">
+                        <select id="filter-producto-categoria">
+                            <option value="">📑 Todas las categorías</option>
+                            <option value="Lácteos">🥛 Lácteos</option>
+                            <option value="Carnes">🥩 Carnes</option>
+                            <option value="Frutas">🍎 Frutas</option>
+                            <option value="Verduras">🥬 Verduras</option>
+                            <option value="Bebidas">🥤 Bebidas</option>
+                            <option value="Aseo">🧴 Aseo</option>
+                            <option value="Panadería">🍞 Panadería</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="cargarProductos()">🔄 Actualizar</button>
+                    </div>
+
                     <div id="productos-container">
                         <div class="loading">
                             <div class="spinner"></div>
@@ -558,16 +652,19 @@
                 </div>
             </div>
 
+            <!-- ============================================ -->
             <!-- TAB: DUPLICADOS -->
+            <!-- ============================================ -->
             <div id="tab-duplicados" class="tab-content">
                 <div class="section">
-                    <h2>🔍 Detección de Duplicados</h2>
+                    <h2>🔍 Detección y Gestión de Duplicados</h2>
 
-                    <div class="alert alert-info">
-                        <span>ℹ️</span>
+                    <div class="alert alert-warning">
+                        <span>⚠️</span>
                         <div>
                             <strong>Detección Automática:</strong> El sistema busca facturas y productos duplicados
-                            basándose en similitud de nombres, fechas y valores.
+                            basándose en similitud de nombres, fechas y valores. Revisa cuidadosamente antes de fusionar
+                            o eliminar.
                         </div>
                     </div>
 
@@ -575,40 +672,63 @@
                         <button class="btn btn-primary" onclick="buscarDuplicados()">
                             🔍 Buscar Duplicados
                         </button>
-                        <button class="btn btn-success" onclick="fusionarSeleccionados()">
-                            🔗 Fusionar Seleccionados
+                        <button class="btn btn-warning" onclick="buscarDuplicados()">
+                            📊 Ver Estadísticas
                         </button>
                     </div>
 
                     <div id="duplicados-facturas" style="margin-top: 30px;">
-                        <h3>📄 Facturas Duplicadas</h3>
-                        <div id="facturas-duplicadas-container"></div>
+                        <h3 style="color: #495057; margin-bottom: 15px;">📄 Facturas Duplicadas</h3>
+                        <div id="facturas-duplicadas-container">
+                            <div class="empty-state">
+                                <h3>🔍</h3>
+                                <p>Haz clic en "Buscar Duplicados" para iniciar el análisis</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="duplicados-productos" style="margin-top: 30px;">
-                        <h3>🏷️ Productos Duplicados</h3>
-                        <div id="productos-duplicados-container"></div>
+                        <h3 style="color: #495057; margin-bottom: 15px;">🏷️ Productos Duplicados</h3>
+                        <div id="productos-duplicados-container">
+                            <div class="empty-state">
+                                <h3>🔍</h3>
+                                <p>Haz clic en "Buscar Duplicados" para iniciar el análisis</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
+            <!-- ============================================ -->
             <!-- TAB: AUDITORÍA -->
+            <!-- ============================================ -->
             <div id="tab-auditoria" class="tab-content">
                 <div class="section">
-                    <h2>🛡️ Sistema de Auditoría</h2>
+                    <h2>🛡️ Sistema de Auditoría y Control de Calidad</h2>
+
+                    <div class="alert alert-info">
+                        <span>ℹ️</span>
+                        <div>
+                            <strong>Auditoría Automática:</strong> El sistema valida matemáticas, normaliza nombres,
+                            detecta anomalías y calcula puntajes de calidad para cada factura.
+                        </div>
+                    </div>
 
                     <div class="stats-grid">
-                        <div class="stat-card">
+                        <div class="stat-card success">
                             <h3>Calidad Promedio</h3>
                             <div class="value" id="audit-calidad">0%</div>
                             <div class="label">de las facturas</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="audit-calidad-bar" style="width: 0%"></div>
+                            </div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card info">
                             <h3>Procesadas</h3>
                             <div class="value" id="audit-procesadas">0</div>
                             <div class="label">facturas auditadas</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card warning">
                             <h3>Con Errores</h3>
                             <div class="value" id="audit-errores">0</div>
                             <div class="label">requieren atención</div>
@@ -635,12 +755,20 @@
                         <button class="btn btn-success" onclick="verColaRevision()">
                             📋 Ver Cola de Revisión
                         </button>
+                        <button class="btn btn-warning" onclick="normalizarProductos()">
+                            🧹 Normalizar Productos
+                        </button>
                         <button class="btn btn-danger" onclick="limpiarDatosAntiguos()">
                             🗑️ Limpiar Datos Antiguos
                         </button>
                     </div>
 
-                    <div id="auditoria-resultados" style="margin-top: 30px;"></div>
+                    <div id="auditoria-resultados" style="margin-top: 30px;">
+                        <div class="empty-state">
+                            <h3>📊</h3>
+                            <p>Ejecuta una auditoría para ver resultados detallados</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -663,9 +791,15 @@
         // ==========================================
 
         // 🚨 IMPORTANTE: Cambiar esta URL por tu URL de Railway
-        const API_URL = 'http://lecfac-api-production.up.railway.app';  // 👈 CAMBIAR AQUÍ
+        const API_URL = 'https://lecfac-api-production.up.railway.app';
 
         let currentTab = 'estadisticas';
+        let datosGlobales = {
+            usuarios: 0,
+            facturas: 0,
+            productos: 0,
+            calidadPromedio: 0
+        };
 
         // ==========================================
         // FUNCIONES DE NAVEGACIÓN
@@ -690,6 +824,8 @@
         }
 
         function cargarDatosTab(tabName) {
+            console.log('Cargando tab:', tabName);
+
             switch (tabName) {
                 case 'estadisticas':
                     cargarEstadisticas();
@@ -714,21 +850,37 @@
         // ==========================================
 
         async function cargarEstadisticas() {
+            console.log('Cargando estadísticas desde:', API_URL);
+
             try {
                 const response = await fetch(`${API_URL}/api/admin/estadisticas`);
-                const data = await response.json();
 
-                document.getElementById('stat-usuarios').textContent = data.total_usuarios || 0;
-                document.getElementById('stat-facturas').textContent = data.total_facturas || 0;
-                document.getElementById('stat-productos').textContent = data.total_productos || 0;
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Estadísticas recibidas:', data);
+
+                // Actualizar valores
+                datosGlobales.usuarios = data.total_usuarios || 0;
+                datosGlobales.facturas = data.total_facturas || 0;
+                datosGlobales.productos = data.total_productos || 0;
+                datosGlobales.calidadPromedio = data.calidad_promedio || 0;
+
+                document.getElementById('stat-usuarios').textContent = datosGlobales.usuarios;
+                document.getElementById('stat-facturas').textContent = datosGlobales.facturas;
+                document.getElementById('stat-productos').textContent = datosGlobales.productos;
                 document.getElementById('stat-calidad').textContent =
-                    data.calidad_promedio ? `${Math.round(data.calidad_promedio)}%` : '-';
+                    datosGlobales.calidadPromedio ? `${Math.round(datosGlobales.calidadPromedio)}%` : '0%';
 
                 // Mostrar salud del sistema
                 mostrarSaludSistema(data);
+                mostrarAlertas(data);
+
             } catch (error) {
                 console.error('Error cargando estadísticas:', error);
-                mostrarError('estadisticas');
+                mostrarErrorEstadisticas(error);
             }
         }
 
@@ -736,33 +888,128 @@
             const container = document.getElementById('sistema-salud');
             const calidad = data.calidad_promedio || 0;
 
-            let estado, color, mensaje;
+            let estado, estadoClass, color, mensaje, recomendacion;
+
             if (calidad >= 90) {
                 estado = '✅ Excelente';
+                estadoClass = 'health-good';
                 color = '#28a745';
-                mensaje = 'El sistema está funcionando óptimamente';
+                mensaje = 'El sistema está funcionando óptimamente. La calidad de datos es excelente.';
+                recomendacion = 'Mantener el proceso de auditoría actual.';
             } else if (calidad >= 70) {
                 estado = '⚠️ Bueno';
+                estadoClass = 'health-warning';
                 color = '#ffc107';
-                mensaje = 'Hay algunos aspectos que mejorar';
+                mensaje = 'La calidad es aceptable pero hay margen de mejora.';
+                recomendacion = 'Revisar facturas con puntaje menor a 80% en la pestaña de Auditoría.';
             } else {
-                estado = '🔴 Necesita atención';
+                estado = '🔴 Necesita Atención';
+                estadoClass = 'health-bad';
                 color = '#dc3545';
-                mensaje = 'Se requiere revisión de datos';
+                mensaje = 'Se requiere atención inmediata para mejorar la calidad de datos.';
+                recomendacion = 'Ejecutar auditoría completa y revisar facturas pendientes.';
             }
 
             container.innerHTML = `
-                <div style="padding: 20px; background: white; border-radius: 10px;">
+                <div style="padding: 25px; background: white; border-radius: 10px; border-left: 5px solid ${color};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h3 style="color: ${color}; margin: 0;">${estado}</h3>
-                        <span style="font-size: 2em; font-weight: bold; color: ${color};">${Math.round(calidad)}%</span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="health-indicator ${estadoClass}"></span>
+                            <h3 style="color: ${color}; margin: 0; font-size: 1.3em;">${estado}</h3>
+                        </div>
+                        <span style="font-size: 2.5em; font-weight: bold; color: ${color};">${Math.round(calidad)}%</span>
                     </div>
-                    <p style="color: #6c757d; margin-bottom: 10px;">${mensaje}</p>
-                    <div class="progress-bar">
+                    <p style="color: #495057; margin-bottom: 15px; line-height: 1.6;">${mensaje}</p>
+                    <div class="progress-bar" style="margin-bottom: 15px;">
                         <div class="progress-fill" style="width: ${calidad}%; background: ${color};"></div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px;">
+                        <strong style="color: #495057;">💡 Recomendación:</strong>
+                        <span style="color: #6c757d;"> ${recomendacion}</span>
                     </div>
                 </div>
             `;
+        }
+
+        function mostrarAlertas(data) {
+            const container = document.getElementById('alertas-container');
+            let alertas = [];
+
+            // Verificar si hay facturas con errores
+            if (data.facturas_con_errores && data.facturas_con_errores > 0) {
+                alertas.push({
+                    tipo: 'warning',
+                    icono: '⚠️',
+                    mensaje: `${data.facturas_con_errores} facturas tienen errores de validación que requieren revisión manual.`
+                });
+            }
+
+            // Verificar calidad baja
+            if (data.calidad_promedio && data.calidad_promedio < 70) {
+                alertas.push({
+                    tipo: 'danger',
+                    icono: '🔴',
+                    mensaje: 'La calidad promedio está por debajo del 70%. Se recomienda ejecutar una auditoría completa.'
+                });
+            }
+
+            // Verificar productos sin categoría
+            if (data.productos_sin_categoria && data.productos_sin_categoria > 0) {
+                alertas.push({
+                    tipo: 'info',
+                    icono: 'ℹ️',
+                    mensaje: `${data.productos_sin_categoria} productos no tienen categoría asignada.`
+                });
+            }
+
+            // Si no hay alertas
+            if (alertas.length === 0) {
+                alertas.push({
+                    tipo: 'success',
+                    icono: '✅',
+                    mensaje: 'No hay alertas. El sistema está funcionando correctamente.'
+                });
+            }
+
+            // Renderizar alertas
+            let html = '';
+            alertas.forEach(alerta => {
+                html += `
+                    <div class="alert alert-${alerta.tipo}">
+                        <span>${alerta.icono}</span>
+                        <div>${alerta.mensaje}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function mostrarErrorEstadisticas(error) {
+            const container = document.getElementById('sistema-salud');
+            container.innerHTML = `
+                <div class="alert alert-danger">
+                    <span>❌</span>
+                    <div>
+                        <strong>Error al conectar con el servidor</strong><br>
+                        <small>URL: ${API_URL}</small><br>
+                        <small>Error: ${error.message}</small><br><br>
+                        <strong>Posibles causas:</strong>
+                        <ul style="margin: 10px 0 0 20px;">
+                            <li>El servidor no está respondiendo</li>
+                            <li>La URL de Railway es incorrecta</li>
+                            <li>Los endpoints no están creados</li>
+                            <li>Problema de CORS</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            // Mostrar valores en 0
+            document.getElementById('stat-usuarios').textContent = '0';
+            document.getElementById('stat-facturas').textContent = '0';
+            document.getElementById('stat-productos').textContent = '0';
+            document.getElementById('stat-calidad').textContent = '0%';
         }
 
         // ==========================================
@@ -775,27 +1022,41 @@
 
             try {
                 const response = await fetch(`${API_URL}/api/admin/inventarios`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
+                console.log('Inventarios recibidos:', data);
 
                 if (!data.inventarios || data.inventarios.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <p>📦 No hay inventarios disponibles</p>
+                            <h3>📦</h3>
+                            <p>No hay inventarios disponibles</p>
+                            <small style="color: #6c757d;">Los inventarios se generan automáticamente al procesar facturas</small>
                         </div>
                     `;
                     return;
                 }
 
                 let html = '<div class="table-container"><table><thead><tr>';
-                html += '<th>Usuario</th><th>Producto</th><th>Cantidad</th><th>Última Actualización</th>';
+                html += '<th>Usuario</th><th>Producto</th><th>Cantidad</th><th>Categoría</th><th>Última Actualización</th>';
                 html += '</tr></thead><tbody>';
 
                 data.inventarios.forEach(inv => {
+                    const alertaStock = inv.cantidad_actual < 5;
                     html += `
                         <tr>
-                            <td>${inv.nombre_usuario || 'Usuario ' + inv.usuario_id}</td>
+                            <td><strong>${inv.nombre_usuario || 'Usuario ' + inv.usuario_id}</strong></td>
                             <td>${inv.nombre_producto}</td>
-                            <td><span class="badge ${inv.cantidad_actual < 5 ? 'badge-danger' : 'badge-success'}">${inv.cantidad_actual}</span></td>
+                            <td>
+                                <span class="badge ${alertaStock ? 'badge-danger' : 'badge-success'}">
+                                    ${inv.cantidad_actual} ${alertaStock ? '⚠️' : ''}
+                                </span>
+                            </td>
+                            <td>${inv.categoria || '-'}</td>
                             <td>${formatearFecha(inv.ultima_actualizacion)}</td>
                         </tr>
                     `;
@@ -808,7 +1069,12 @@
                 console.error('Error cargando inventarios:', error);
                 container.innerHTML = `
                     <div class="alert alert-danger">
-                        Error al cargar inventarios. Por favor, verifica la conexión con el servidor.
+                        <span>❌</span>
+                        <div>
+                            <strong>Error al cargar inventarios</strong><br>
+                            <small>${error.message}</small><br>
+                            Verifica que el endpoint <code>/api/admin/inventarios</code> esté disponible.
+                        </div>
                     </div>
                 `;
             }
@@ -824,12 +1090,20 @@
 
             try {
                 const response = await fetch(`${API_URL}/api/admin/productos`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
+                console.log('Productos recibidos:', data);
 
                 if (!data.productos || data.productos.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <p>🏷️ No hay productos disponibles</p>
+                            <h3>🏷️</h3>
+                            <p>No hay productos disponibles</p>
+                            <small style="color: #6c757d;">Los productos se registran al procesar facturas</small>
                         </div>
                     `;
                     return;
@@ -842,10 +1116,10 @@
                 data.productos.forEach(prod => {
                     html += `
                         <tr>
-                            <td>${prod.nombre_producto}</td>
-                            <td>${prod.codigo_ean || '-'}</td>
+                            <td><strong>${prod.nombre_producto}</strong></td>
+                            <td><code>${prod.codigo_ean || 'Sin código'}</code></td>
                             <td>${prod.categoria || '-'}</td>
-                            <td>$${formatearNumero(prod.precio_promedio || 0)}</td>
+                            <td><strong>$${formatearNumero(prod.precio_promedio || 0)}</strong></td>
                             <td><span class="badge badge-info">${prod.veces_comprado || 0}</span></td>
                         </tr>
                     `;
@@ -858,7 +1132,12 @@
                 console.error('Error cargando productos:', error);
                 container.innerHTML = `
                     <div class="alert alert-danger">
-                        Error al cargar productos. Por favor, verifica la conexión con el servidor.
+                        <span>❌</span>
+                        <div>
+                            <strong>Error al cargar productos</strong><br>
+                            <small>${error.message}</small><br>
+                            Verifica que el endpoint <code>/api/admin/productos</code> esté disponible.
+                        </div>
                     </div>
                 `;
             }
@@ -872,80 +1151,118 @@
             const facturasContainer = document.getElementById('facturas-duplicadas-container');
             const productosContainer = document.getElementById('productos-duplicados-container');
 
-            facturasContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>Buscando facturas duplicadas...</p></div>';
-            productosContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>Buscando productos duplicados...</p></div>';
+            facturasContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando facturas...</p></div>';
+            productosContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>Analizando productos...</p></div>';
 
             try {
                 // Buscar facturas duplicadas
                 const responseFact = await fetch(`${API_URL}/api/admin/duplicados/facturas`);
-                const dataFact = await responseFact.json();
 
-                if (dataFact.duplicados && dataFact.duplicados.length > 0) {
-                    let html = '';
-                    dataFact.duplicados.forEach((grupo, index) => {
-                        html += `
-                            <div class="duplicate-group">
-                                <h4>Grupo ${index + 1} - ${grupo.length} facturas similares</h4>
-                                ${grupo.map(f => `
-                                    <div class="duplicate-item">
-                                        <div>
-                                            <strong>${f.establecimiento}</strong> -
-                                            $${formatearNumero(f.total_factura)} -
-                                            ${formatearFecha(f.fecha_compra)}
+                if (responseFact.ok) {
+                    const dataFact = await responseFact.json();
+                    console.log('Duplicados de facturas:', dataFact);
+
+                    if (dataFact.duplicados && dataFact.duplicados.length > 0) {
+                        let html = '';
+                        dataFact.duplicados.forEach((grupo, index) => {
+                            html += `
+                                <div class="duplicate-group">
+                                    <h4 style="color: #495057; margin-bottom: 15px;">
+                                        📄 Grupo ${index + 1} - ${grupo.length} facturas similares
+                                    </h4>
+                                    ${grupo.map(f => `
+                                        <div class="duplicate-item">
+                                            <div>
+                                                <strong>${f.establecimiento}</strong> -
+                                                $${formatearNumero(f.total_factura)} -
+                                                ${formatearFecha(f.fecha_compra)}
+                                            </div>
+                                            <button class="btn btn-danger" onclick="eliminarFactura(${f.id})">
+                                                🗑️ Eliminar
+                                            </button>
                                         </div>
-                                        <button class="btn btn-danger" onclick="eliminarFactura(${f.id})">
-                                            🗑️ Eliminar
-                                        </button>
-                                    </div>
-                                `).join('')}
+                                    `).join('')}
+                                </div>
+                            `;
+                        });
+                        facturasContainer.innerHTML = html;
+                    } else {
+                        facturasContainer.innerHTML = `
+                            <div class="alert alert-success">
+                                <span>✅</span>
+                                <div>No se encontraron facturas duplicadas</div>
                             </div>
                         `;
-                    });
-                    facturasContainer.innerHTML = html;
+                    }
                 } else {
-                    facturasContainer.innerHTML = '<div class="alert alert-success">✅ No se encontraron facturas duplicadas</div>';
+                    throw new Error('Error al buscar duplicados de facturas');
                 }
 
                 // Buscar productos duplicados
                 const responseProd = await fetch(`${API_URL}/api/admin/duplicados/productos`);
-                const dataProd = await responseProd.json();
 
-                if (dataProd.duplicados && dataProd.duplicados.length > 0) {
-                    let html = '';
-                    dataProd.duplicados.forEach((grupo, index) => {
-                        html += `
-                            <div class="duplicate-group">
-                                <h4>Grupo ${index + 1} - ${grupo.length} productos similares</h4>
-                                ${grupo.map(p => `
-                                    <div class="duplicate-item">
-                                        <div>
-                                            <strong>${p.nombre_producto}</strong>
-                                            ${p.codigo_ean ? ` - EAN: ${p.codigo_ean}` : ''}
+                if (responseProd.ok) {
+                    const dataProd = await responseProd.json();
+                    console.log('Duplicados de productos:', dataProd);
+
+                    if (dataProd.duplicados && dataProd.duplicados.length > 0) {
+                        let html = '';
+                        dataProd.duplicados.forEach((grupo, index) => {
+                            html += `
+                                <div class="duplicate-group">
+                                    <h4 style="color: #495057; margin-bottom: 15px;">
+                                        🏷️ Grupo ${index + 1} - ${grupo.length} productos similares
+                                    </h4>
+                                    ${grupo.map(p => `
+                                        <div class="duplicate-item">
+                                            <div>
+                                                <strong>${p.nombre_producto}</strong>
+                                                ${p.codigo_ean ? ` - EAN: ${p.codigo_ean}` : ''}
+                                            </div>
+                                            <input type="checkbox" class="producto-fusionar"
+                                                data-id="${p.id}" data-grupo="${index}"
+                                                style="width: 20px; height: 20px; cursor: pointer;">
                                         </div>
-                                        <input type="checkbox" class="producto-fusionar" data-id="${p.id}"
-                                            data-grupo="${index}">
-                                    </div>
-                                `).join('')}
-                                <button class="btn btn-success" onclick="fusionarGrupo(${index})">
-                                    🔗 Fusionar este grupo
-                                </button>
+                                    `).join('')}
+                                    <button class="btn btn-success" onclick="fusionarGrupo(${index})"
+                                        style="margin-top: 10px;">
+                                        🔗 Fusionar este grupo
+                                    </button>
+                                </div>
+                            `;
+                        });
+                        productosContainer.innerHTML = html;
+                    } else {
+                        productosContainer.innerHTML = `
+                            <div class="alert alert-success">
+                                <span>✅</span>
+                                <div>No se encontraron productos duplicados</div>
                             </div>
                         `;
-                    });
-                    productosContainer.innerHTML = html;
+                    }
                 } else {
-                    productosContainer.innerHTML = '<div class="alert alert-success">✅ No se encontraron productos duplicados</div>';
+                    throw new Error('Error al buscar duplicados de productos');
                 }
 
             } catch (error) {
                 console.error('Error buscando duplicados:', error);
-                facturasContainer.innerHTML = '<div class="alert alert-danger">Error al buscar duplicados</div>';
-                productosContainer.innerHTML = '<div class="alert alert-danger">Error al buscar duplicados</div>';
+                facturasContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        <span>❌</span>
+                        <div>Error al buscar duplicados de facturas: ${error.message}</div>
+                    </div>
+                `;
+                productosContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        <span>❌</span>
+                        <div>Error al buscar duplicados de productos: ${error.message}</div>
+                    </div>
+                `;
             }
         }
 
         async function eliminarFactura(id) {
-            if (!confirm('¿Estás seguro de eliminar esta factura?')) return;
+            if (!confirm('¿Estás seguro de eliminar esta factura? Esta acción no se puede deshacer.')) return;
 
             try {
                 const response = await fetch(`${API_URL}/api/admin/facturas/${id}`, {
@@ -953,27 +1270,27 @@
                 });
 
                 if (response.ok) {
-                    alert('Factura eliminada exitosamente');
+                    alert('✅ Factura eliminada exitosamente');
                     buscarDuplicados();
                 } else {
-                    alert('Error al eliminar factura');
+                    alert('❌ Error al eliminar factura');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error al eliminar factura');
+                alert('❌ Error al eliminar factura: ' + error.message);
             }
         }
 
         async function fusionarGrupo(grupoIndex) {
-            const checkboxes = document.querySelectorAll(`.producto-fusionar[data-grupo="${grupoIndex}"]`);
+            const checkboxes = document.querySelectorAll(`.producto-fusionar[data-grupo="${grupoIndex}"]:checked`);
             const ids = Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
 
             if (ids.length < 2) {
-                alert('Selecciona al menos 2 productos para fusionar');
+                alert('⚠️ Selecciona al menos 2 productos para fusionar');
                 return;
             }
 
-            if (!confirm(`¿Fusionar ${ids.length} productos en uno solo?`)) return;
+            if (!confirm(`¿Fusionar ${ids.length} productos en uno solo? Esta acción no se puede deshacer.`)) return;
 
             try {
                 const response = await fetch(`${API_URL}/api/admin/productos/fusionar`, {
@@ -983,14 +1300,14 @@
                 });
 
                 if (response.ok) {
-                    alert('Productos fusionados exitosamente');
+                    alert('✅ Productos fusionados exitosamente');
                     buscarDuplicados();
                 } else {
-                    alert('Error al fusionar productos');
+                    alert('❌ Error al fusionar productos');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error al fusionar productos');
+                alert('❌ Error al fusionar productos: ' + error.message);
             }
         }
 
@@ -1001,10 +1318,18 @@
         async function cargarEstadisticasAuditoria() {
             try {
                 const response = await fetch(`${API_URL}/api/auditoria/estadisticas`);
-                const data = await response.json();
 
-                document.getElementById('audit-calidad').textContent =
-                    data.calidad_promedio ? `${Math.round(data.calidad_promedio)}%` : '0%';
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Estadísticas de auditoría:', data);
+
+                const calidad = Math.round(data.calidad_promedio || 0);
+
+                document.getElementById('audit-calidad').textContent = `${calidad}%`;
+                document.getElementById('audit-calidad-bar').style.width = `${calidad}%`;
                 document.getElementById('audit-procesadas').textContent = data.total_procesadas || 0;
                 document.getElementById('audit-errores').textContent = data.con_errores || 0;
                 document.getElementById('audit-revision').textContent = data.en_revision || 0;
@@ -1015,52 +1340,97 @@
                     const texto = document.getElementById('audit-recomendacion-texto');
                     texto.textContent = `Revisar manualmente las ${data.en_revision} facturas con puntaje menor a 80%. Corregir datos o eliminar si son inválidas.`;
                     recomendacion.style.display = 'flex';
+                } else {
+                    document.getElementById('audit-recomendacion').style.display = 'none';
                 }
 
             } catch (error) {
                 console.error('Error cargando estadísticas de auditoría:', error);
+
+                // Mostrar mensaje de error
+                document.getElementById('auditoria-resultados').innerHTML = `
+                    <div class="alert alert-warning">
+                        <span>⚠️</span>
+                        <div>
+                            <strong>Sistema de auditoría no disponible</strong><br>
+                            <small>El endpoint <code>/api/auditoria/estadisticas</code> no responde.</small><br>
+                            Esto es normal si aún no has integrado la auditoría en tu backend.
+                        </div>
+                    </div>
+                `;
             }
         }
 
         async function ejecutarAuditoria() {
-            if (!confirm('¿Ejecutar auditoría completa? Esto puede tomar varios minutos.')) return;
+            if (!confirm('¿Ejecutar auditoría completa de todas las facturas? Esto puede tomar varios minutos dependiendo de la cantidad de datos.')) return;
 
             const resultados = document.getElementById('auditoria-resultados');
-            resultados.innerHTML = '<div class="loading"><div class="spinner"></div><p>Ejecutando auditoría...</p></div>';
+            resultados.innerHTML = '<div class="loading"><div class="spinner"></div><p>Ejecutando auditoría completa... Por favor espera.</p></div>';
 
             try {
                 const response = await fetch(`${API_URL}/api/auditoria/ejecutar-completa`, {
                     method: 'POST'
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
+                console.log('Resultado de auditoría:', data);
 
                 let html = '<div class="alert alert-success">';
                 html += '<span>✅</span><div>';
-                html += `<strong>Auditoría completada</strong><br>`;
-                html += `Facturas procesadas: ${data.total_procesadas || 0}<br>`;
-                html += `Calidad promedio: ${Math.round(data.calidad_promedio || 0)}%<br>`;
-                html += `Facturas con errores: ${data.con_errores || 0}`;
+                html += `<strong>Auditoría completada exitosamente</strong><br>`;
+                html += `<ul style="margin: 10px 0 0 20px;">`;
+                html += `<li>Facturas procesadas: <strong>${data.total_procesadas || 0}</strong></li>`;
+                html += `<li>Calidad promedio: <strong>${Math.round(data.calidad_promedio || 0)}%</strong></li>`;
+                html += `<li>Facturas con errores: <strong>${data.con_errores || 0}</strong></li>`;
+                html += `<li>En revisión: <strong>${data.en_revision || 0}</strong></li>`;
+                html += `</ul>`;
                 html += '</div></div>';
 
                 resultados.innerHTML = html;
+
+                // Actualizar estadísticas
                 cargarEstadisticasAuditoria();
+                cargarEstadisticas();
 
             } catch (error) {
                 console.error('Error ejecutando auditoría:', error);
-                resultados.innerHTML = '<div class="alert alert-danger">Error al ejecutar auditoría</div>';
+                resultados.innerHTML = `
+                    <div class="alert alert-danger">
+                        <span>❌</span>
+                        <div>
+                            <strong>Error al ejecutar auditoría</strong><br>
+                            <small>${error.message}</small>
+                        </div>
+                    </div>
+                `;
             }
         }
 
         async function verColaRevision() {
             const resultados = document.getElementById('auditoria-resultados');
-            resultados.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando facturas...</p></div>';
+            resultados.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando cola de revisión...</p></div>';
 
             try {
                 const response = await fetch(`${API_URL}/api/auditoria/cola-revision`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
+                console.log('Cola de revisión:', data);
 
                 if (!data.facturas || data.facturas.length === 0) {
-                    resultados.innerHTML = '<div class="alert alert-info">✅ No hay facturas pendientes de revisión</div>';
+                    resultados.innerHTML = `
+                        <div class="alert alert-success">
+                            <span>✅</span>
+                            <div>No hay facturas pendientes de revisión. ¡Excelente trabajo!</div>
+                        </div>
+                    `;
                     return;
                 }
 
@@ -1071,13 +1441,16 @@
                 data.facturas.forEach(f => {
                     html += `
                         <tr>
-                            <td>${f.id}</td>
+                            <td><strong>#${f.id}</strong></td>
                             <td>${f.establecimiento}</td>
                             <td>$${formatearNumero(f.total_factura)}</td>
                             <td><span class="badge badge-warning">${f.puntaje_calidad}%</span></td>
-                            <td>${f.problemas}</td>
+                            <td style="max-width: 300px;"><small>${f.problemas}</small></td>
                             <td>
-                                <button class="btn btn-primary" onclick="verDetallesFactura(${f.id})">Ver</button>
+                                <button class="btn btn-primary" onclick="verDetallesFactura(${f.id})"
+                                    style="padding: 8px 16px; font-size: 0.9em;">
+                                    👁️ Ver
+                                </button>
                             </td>
                         </tr>
                     `;
@@ -1088,12 +1461,38 @@
 
             } catch (error) {
                 console.error('Error:', error);
-                resultados.innerHTML = '<div class="alert alert-danger">Error al cargar cola de revisión</div>';
+                resultados.innerHTML = `
+                    <div class="alert alert-danger">
+                        <span>❌</span>
+                        <div>Error al cargar cola de revisión: ${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        async function normalizarProductos() {
+            if (!confirm('¿Normalizar nombres de todos los productos? Esto mejorará la consistencia del catálogo.')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/admin/normalizar-productos`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(`✅ ${data.productos_normalizados || 0} productos normalizados exitosamente`);
+                    cargarProductos();
+                } else {
+                    alert('❌ Error al normalizar productos');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('❌ Error: ' + error.message);
             }
         }
 
         async function limpiarDatosAntiguos() {
-            if (!confirm('¿Eliminar datos con más de 90 días y puntaje inferior a 50%?')) return;
+            if (!confirm('¿Eliminar datos con más de 90 días y puntaje inferior a 50%? Esta acción no se puede deshacer.')) return;
 
             try {
                 const response = await fetch(`${API_URL}/api/admin/limpiar-datos`, {
@@ -1101,14 +1500,17 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ dias: 90, puntaje_minimo: 50 })
                 });
-                const data = await response.json();
 
-                alert(`Eliminados: ${data.facturas_eliminadas} facturas`);
-                cargarEstadisticas();
-
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(`✅ Eliminados: ${data.facturas_eliminadas} facturas`);
+                    cargarEstadisticas();
+                } else {
+                    alert('❌ Error al limpiar datos');
+                }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error al limpiar datos');
+                alert('❌ Error: ' + error.message);
             }
         }
 
@@ -1119,22 +1521,19 @@
         function formatearFecha(fecha) {
             if (!fecha) return '-';
             const d = new Date(fecha);
-            return d.toLocaleDateString('es-CO');
+            return d.toLocaleDateString('es-CO', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
         }
 
         function formatearNumero(num) {
-            return num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-        }
-
-        function mostrarError(seccion) {
-            const container = document.getElementById(`${seccion}-container`);
-            if (container) {
-                container.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error al cargar datos. Verifica que el backend esté funcionando en: ${API_URL}
-                    </div>
-                `;
-            }
+            if (!num) return '0';
+            return num.toLocaleString('es-CO', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            });
         }
 
         function cerrarModal() {
@@ -1150,27 +1549,54 @@
 
             try {
                 const response = await fetch(`${API_URL}/api/facturas/${id}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
 
                 let html = `
-                    <p><strong>Establecimiento:</strong> ${data.establecimiento}</p>
-                    <p><strong>Total:</strong> $${formatearNumero(data.total_factura)}</p>
-                    <p><strong>Fecha:</strong> ${formatearFecha(data.fecha_compra)}</p>
-                    <p><strong>Estado:</strong> <span class="badge badge-${data.estado_validacion === 'validada' ? 'success' : 'warning'}">${data.estado_validacion}</span></p>
+                    <div style="line-height: 1.8;">
+                        <p><strong>ID:</strong> #${data.id}</p>
+                        <p><strong>Establecimiento:</strong> ${data.establecimiento}</p>
+                        <p><strong>Total:</strong> $${formatearNumero(data.total_factura)}</p>
+                        <p><strong>Fecha:</strong> ${formatearFecha(data.fecha_compra)}</p>
+                        <p><strong>Estado:</strong>
+                            <span class="badge badge-${data.estado_validacion === 'validada' ? 'success' : 'warning'}">
+                                ${data.estado_validacion || 'pendiente'}
+                            </span>
+                        </p>
                 `;
 
                 if (data.items && data.items.length > 0) {
-                    html += '<h3 style="margin-top: 20px;">Productos:</h3><ul>';
+                    html += '<h3 style="margin-top: 20px; color: #495057;">Productos:</h3>';
+                    html += '<div style="max-height: 300px; overflow-y: auto;">';
+                    html += '<table style="width: 100%; font-size: 0.9em;"><tbody>';
+
                     data.items.forEach(item => {
-                        html += `<li>${item.nombre_producto} - ${item.cantidad} x $${formatearNumero(item.precio_unitario)}</li>`;
+                        html += `
+                            <tr style="border-bottom: 1px solid #e9ecef;">
+                                <td style="padding: 8px;">${item.nombre_producto}</td>
+                                <td style="padding: 8px; text-align: right;">${item.cantidad} x $${formatearNumero(item.precio_unitario)}</td>
+                            </tr>
+                        `;
                     });
-                    html += '</ul>';
+
+                    html += '</tbody></table></div>';
                 }
 
+                html += '</div>';
                 body.innerHTML = html;
 
             } catch (error) {
-                body.innerHTML = '<div class="alert alert-danger">Error al cargar detalles</div>';
+                console.error('Error:', error);
+                body.innerHTML = `
+                    <div class="alert alert-danger">
+                        <span>❌</span>
+                        <div>Error al cargar detalles: ${error.message}</div>
+                    </div>
+                `;
             }
         }
 
@@ -1179,9 +1605,15 @@
         // ==========================================
 
         window.addEventListener('DOMContentLoaded', () => {
-            console.log('Dashboard Admin cargado');
+            console.log('=================================');
+            console.log('Dashboard Admin LeFact v2.0');
             console.log('API URL:', API_URL);
+            console.log('=================================');
+
+            // Cargar estadísticas iniciales
             cargarEstadisticas();
+
+            console.log('✅ Dashboard inicializado correctamente');
         });
 
         // Cerrar modal al hacer clic fuera
@@ -1190,6 +1622,20 @@
                 cerrarModal();
             }
         });
+
+        // Filtros en tiempo real
+        document.getElementById('filter-usuario')?.addEventListener('input', filtrarInventarios);
+        document.getElementById('filter-producto')?.addEventListener('input', filtrarProductos);
+
+        function filtrarInventarios() {
+            // Implementar filtrado en tiempo real
+            console.log('Filtrando inventarios...');
+        }
+
+        function filtrarProductos() {
+            // Implementar filtrado en tiempo real
+            console.log('Filtrando productos...');
+        }
     </script>
 </body>
 
