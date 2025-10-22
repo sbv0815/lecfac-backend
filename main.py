@@ -2924,30 +2924,54 @@ async def admin_estadisticas():
 
 
 @app.get("/api/admin/inventarios")
-async def admin_inventarios():
-    """Inventarios por usuario"""
+async def admin_inventarios(usuario_id: int = None, limite: int = 50, pagina: int = 1):
+    """
+    Inventarios por usuario con filtros y paginación
+
+    Params:
+        usuario_id: Filtrar por usuario específico (opcional)
+        limite: Cantidad de resultados por página (default: 50)
+        pagina: Número de página (default: 1)
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print("📦 Obteniendo inventarios...")
+        print(f"📦 Obteniendo inventarios (página {pagina}, límite {limite})...")
 
-        cursor.execute(
-            """
+        # Calcular offset para paginación
+        offset = (pagina - 1) * limite
+
+        # Query base
+        query = """
             SELECT
                 iu.usuario_id,
                 u.nombre,
-                iu.establecimiento_nombre,
+                pm.nombre_normalizado,
                 iu.cantidad_actual,
-                iu.marca,
-                iu.fecha_ultima_actualizacion
+                pm.categoria,
+                iu.fecha_ultima_actualizacion,
+                iu.establecimiento_nombre
             FROM inventario_usuario iu
             LEFT JOIN usuarios u ON iu.usuario_id = u.id
             LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
-            ORDER BY iu.fecha_ultima_actualizacion DESC
-            LIMIT 100
+            WHERE 1=1
         """
-        )
+
+        params = []
+
+        # Agregar filtro por usuario si se especifica
+        if usuario_id:
+            query += " AND iu.usuario_id = %s"
+            params.append(usuario_id)
+
+        query += """
+            ORDER BY iu.fecha_ultima_actualizacion DESC
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limite, offset])
+
+        cursor.execute(query, tuple(params))
 
         inventarios = []
         for row in cursor.fetchall():
@@ -2955,21 +2979,76 @@ async def admin_inventarios():
                 {
                     "usuario_id": row[0],
                     "nombre_usuario": row[1] or f"Usuario {row[0]}",
-                    "nombre_producto": row[2] or "Sin nombre",
+                    "nombre_producto": row[2] or "Producto sin nombre",
                     "cantidad_actual": float(row[3]) if row[3] else 0,
-                    "categoria": row[4] or "-",  # usando marca como categoría temporal
+                    "categoria": row[4] or "-",
                     "ultima_actualizacion": str(row[5]) if row[5] else None,
+                    "establecimiento": row[6] or "-",
                 }
             )
 
+        # Contar total para paginación
+        count_query = """
+            SELECT COUNT(*)
+            FROM inventario_usuario iu
+            WHERE 1=1
+        """
+        count_params = []
+
+        if usuario_id:
+            count_query += " AND iu.usuario_id = %s"
+            count_params.append(usuario_id)
+
+        cursor.execute(count_query, tuple(count_params))
+        total = cursor.fetchone()[0] or 0
+
         conn.close()
 
-        print(f"✅ {len(inventarios)} inventarios")
-        return {"inventarios": inventarios}
+        print(
+            f"✅ {len(inventarios)} inventarios (página {pagina} de {(total + limite - 1) // limite})"
+        )
+
+        return {
+            "inventarios": inventarios,
+            "total": total,
+            "pagina": pagina,
+            "limite": limite,
+            "total_paginas": (total + limite - 1) // limite,
+        }
 
     except Exception as e:
         print(f"❌ Error: {e}")
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/usuarios-lista")
+async def obtener_usuarios_para_filtro():
+    """
+    Obtiene lista de usuarios para el filtro del dashboard
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT id, nombre, email
+            FROM usuarios
+            ORDER BY nombre
+        """
+        )
+
+        usuarios = []
+        for row in cursor.fetchall():
+            usuarios.append({"id": row[0], "nombre": row[1], "email": row[2]})
+
+        conn.close()
+
+        return {"usuarios": usuarios}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
