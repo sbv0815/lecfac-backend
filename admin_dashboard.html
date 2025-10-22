@@ -975,6 +975,23 @@
 
 
     <!-- MODAL DE CONTROL DE CALIDAD -->
+
+    <!-- MODAL DE DETALLES RÁPIDOS -->
+    <div id="modal-detalles" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📄 Detalles de Factura</h2>
+                <button class="modal-close" onclick="cerrarModalDetalles()">×</button>
+            </div>
+            <div class="modal-body" id="modal-body-detalles">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Cargando detalles...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-control-calidad">
         <div class="modal-calidad-content">
             <div class="modal-calidad-header">
@@ -2121,12 +2138,25 @@
         }
 
         // Cargar datos iniciales
+
+        // Formatear fecha
+        function formatearFecha(fecha) {
+            if (!fecha) return 'N/A';
+            const d = new Date(fecha);
+            return d.toLocaleDateString('es-CO', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        // ✅ CARGAR DATOS INICIALES - TODO DENTRO DE WINDOW.ONLOAD
         window.onload = async function () {
             console.log('🚀 Iniciando Dashboard Admin...');
             console.log('🔗 API URL:', API_URL);
 
-            // CONFIGURAR EVENT LISTENERS DESPUÉS DE QUE EL DOM ESTÉ LISTO
-            // Cerrar modal con ESC
+            // ✅ CONFIGURAR EVENT LISTENERS DESPUÉS DE QUE EL DOM ESTÉ LISTO
+            // Cerrar modales con ESC
             document.addEventListener('keydown', function (e) {
                 if (e.key === 'Escape') {
                     cerrarModalCalidad();
@@ -2138,34 +2168,38 @@
             const modalDetalles = document.getElementById('modal-detalles');
             if (modalDetalles) {
                 modalDetalles.addEventListener('click', function (e) {
-                    if (e.target === this) {
+                    if (e.target === modalDetalles) {
                         cerrarModalDetalles();
                     }
                 });
+            } else {
+                console.warn('⚠️ Modal de detalles no encontrado');
             }
 
             // Cerrar modal de calidad al hacer clic fuera
             const modalCalidad = document.getElementById('modal-control-calidad');
             if (modalCalidad) {
                 modalCalidad.addEventListener('click', function (e) {
-                    if (e.target === this) {
+                    if (e.target === modalCalidad) {
                         cerrarModalCalidad();
                     }
                 });
+            } else {
+                console.warn('⚠️ Modal de calidad no encontrado');
             }
 
-            // Verificar conexión
+            // Verificar conexión con el backend
             const conectado = await verificarConexion();
 
             if (conectado) {
-                console.log('✅ Conexión exitosa');
+                console.log('✅ Conexión exitosa con el backend');
                 cargarEstadisticas();
             } else {
-                console.log('❌ No se pudo conectar - Ver alerta en pantalla');
+                console.error('❌ No se pudo conectar con el backend - Ver alerta en pantalla');
             }
         };
 
-        console.log('✅ Sistema de control de calidad cargado');
+        console.log('✅ Sistema de control de calidad inicializado correctamente');
     </script>
 
 </body>
