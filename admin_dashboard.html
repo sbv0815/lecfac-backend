@@ -1711,10 +1711,8 @@
     </script>
 
     <!-- ==========================================
-     MODAL DE CONTROL DE CALIDAD
-     Copiar esto COMPLETO al final de admin_dashboard.html
-     Justo ANTES de la etiqueta </body>
-     ========================================== -->
+         MODAL DE CONTROL DE CALIDAD
+         ========================================== -->
 
     <!-- Modal de Control de Calidad -->
     <div id="modal-control-calidad" class="modal" style="display: none;">
@@ -2135,7 +2133,6 @@
 
                 if (response.ok) {
                     console.log('✅ Cambio guardado');
-                    // Mostrar feedback visual temporal
                     const input = document.getElementById(`item-${campo.replace('_pagado', '').replace('_leido', '')}-${itemId}`);
                     if (input) {
                         input.style.background = '#d4edda';
@@ -2152,7 +2149,7 @@
             }
         }
 
-        // Validar factura (aprobar/rechazar/pendiente)
+        // Validar factura
         async function validarFactura(facturaId, estado) {
             const mensajes = {
                 'validada': '¿Aprobar esta factura?',
@@ -2173,7 +2170,6 @@
                     alert(`✅ Factura ${estado} correctamente`);
                     cerrarModalCalidad();
 
-                    // Recargar la cola de revisión si existe
                     if (typeof cargarColaRevision === 'function') {
                         cargarColaRevision();
                     }
@@ -2198,7 +2194,6 @@
 
                 if (response.ok) {
                     alert('✅ Producto eliminado');
-                    // Recargar el modal
                     if (facturaActualCalidad) {
                         abrirControlCalidad(facturaActualCalidad.id);
                     }
@@ -2218,7 +2213,7 @@
             facturaActualCalidad = null;
         }
 
-        // Cerrar modal con tecla ESC
+        // Cerrar modal con ESC
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
                 cerrarModalCalidad();
