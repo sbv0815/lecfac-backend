@@ -977,8 +977,7 @@
 
     <!-- MODAL DE CONTROL DE CALIDAD -->
 
-
-    <!-- MODAL DE DETALLES DESHABILITADO TEMPORALMENTE
+    <!-- MODAL DE DETALLES RÁPIDOS -->
     <div id="modal-detalles" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -993,8 +992,6 @@
             </div>
         </div>
     </div>
-    FIN MODAL COMENTADO -->
-
 
     <div id="modal-control-calidad">
         <div class="modal-calidad-content">
@@ -1013,7 +1010,7 @@
 
     <script>
         // CONFIGURACIÓN
-        const API_URL = 'https://lefact-api-production.up.railway.app';
+        const API_URL = window.location.origin;
         let MODO_DEMO = false;
         let intentosConexion = 0;
         const MAX_INTENTOS = 3;
