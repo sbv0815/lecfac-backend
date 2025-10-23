@@ -815,7 +815,7 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando inventarios...</p></div>';
 
             try {
-                const response = await fetch(`${API_URL}/api/usuarios`);
+                const response = await fetch(`${API_URL}/api/admin/usuarios`);
                 let data = await response.json();
 
                 const usuarios = Array.isArray(data) ? data : (data.usuarios || data.data || []);
@@ -827,7 +827,7 @@
 
                 let html = '';
                 for (const usuario of usuarios) {
-                    const inventarioResp = await fetch(`${API_URL}/api/usuarios/${usuario.id}/inventario`);
+                    const inventarioResp = await fetch(`${API_URL}/api/admin/usuarios/${usuario.id}/inventario`);
                     const inventario = await inventarioResp.json();
 
                     html += `
@@ -987,7 +987,7 @@
 
             try {
                 // Obtener datos del producto
-                const response = await fetch(`${API_URL}/api/productos/${productoId}`);
+                const response = await fetch(`${API_URL}/api/admin/productos/${productoId}`);
 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
