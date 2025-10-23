@@ -4057,7 +4057,7 @@ async def admin_productos():
     """Catálogo de productos - VERSIÓN CORREGIDA"""
     try:
         conn = get_db_connection()
-        cursor = cursor()
+        cursor = conn.cursor()
 
         print("🏷️ Obteniendo productos...")
 
@@ -4616,6 +4616,72 @@ async def update_producto(producto_id: int, datos: dict):
 
 
 print("✅ Todos los endpoints corregidos registrados")
+
+
+# ==========================================
+# 📦 INVENTARIO DE USUARIO PARA ADMIN
+# ==========================================
+@app.get("/api/admin/usuarios/{usuario_id}/inventario")
+async def get_usuario_inventario_admin(usuario_id: int):
+    """Obtiene el inventario de un usuario específico"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"📦 Obteniendo inventario del usuario {usuario_id}...")
+
+        cursor.execute(
+            """
+            SELECT
+                iu.id,
+                iu.producto_maestro_id,
+                pm.nombre,
+                pm.codigo_ean,
+                iu.cantidad_actual,
+                iu.cantidad_minima,
+                iu.precio_ultima_compra,
+                iu.ultima_actualizacion,
+                iu.alertas,
+                pm.categoria,
+                pm.marca
+            FROM inventario_usuario iu
+            JOIN productos_maestro pm ON iu.producto_maestro_id = pm.id
+            WHERE iu.usuario_id = %s
+            ORDER BY iu.ultima_actualizacion DESC
+        """,
+            (usuario_id,),
+        )
+
+        inventario = []
+        for row in cursor.fetchall():
+            inventario.append(
+                {
+                    "id": row[0],
+                    "producto_maestro_id": row[1],
+                    "nombre": row[2],
+                    "codigo_ean": row[3],
+                    "cantidad_actual": row[4],
+                    "cantidad_minima": row[5],
+                    "precio_ultima_compra": float(row[6] or 0) / 100 if row[6] else 0,
+                    "ultima_actualizacion": row[7].isoformat() if row[7] else None,
+                    "alertas": row[8],
+                    "categoria": row[9],
+                    "marca": row[10],
+                }
+            )
+
+        conn.close()
+
+        print(f"✅ {len(inventario)} productos en inventario del usuario {usuario_id}")
+        return inventario
+
+    except Exception as e:
+        print(f"❌ Error obteniendo inventario del usuario {usuario_id}: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=404, detail=f"Inventario no encontrado: {str(e)}"
+        )
+
 
 if __name__ == "__main__":
     import uvicorn
