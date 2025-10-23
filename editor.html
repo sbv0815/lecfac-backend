@@ -83,12 +83,14 @@
             overflow: auto;
             background: #1a1a1a;
             padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .image-container img {
             display: block;
-            max-width: none;
-            width: auto;
+            max-width: 100%;
             height: auto;
             cursor: grab;
             transition: transform 0.1s;
@@ -96,6 +98,27 @@
 
         .image-container:active img {
             cursor: grabbing;
+        }
+
+        .no-image-message {
+            color: white;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .no-image-message .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .no-image-message h3 {
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .no-image-message p {
+            color: #999;
+            font-size: 14px;
         }
 
         .form-panel {
@@ -106,105 +129,65 @@
         }
 
         .form-header {
-            background: #1a73e8;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 15px 20px;
+            padding: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
         }
 
+        .form-header h2 {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
         .validation-badge {
-            padding: 4px 12px;
-            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 6px 14px;
+            border-radius: 20px;
             font-size: 12px;
-            font-weight: bold;
-        }
-
-        .badge-validada {
-            background: #34a853;
-        }
-
-        .badge-revisada {
-            background: #34a853;
-        }
-
-        .badge-revision_requerida {
-            background: #fbbc04;
-            color: #000;
-        }
-
-        .badge-pendiente {
-            background: #ea4335;
-        }
-
-        .badge-procesado {
-            background: #4285f4;
+            font-weight: 600;
         }
 
         .form-content {
             flex: 1;
             overflow-y: auto;
-            overflow-x: hidden;
-            padding: 20px;
-            scroll-behavior: smooth;
-        }
-
-        .form-content::-webkit-scrollbar,
-        .image-container::-webkit-scrollbar {
-            width: 12px;
-        }
-
-        .form-content::-webkit-scrollbar-track,
-        .image-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-
-        .form-content::-webkit-scrollbar-thumb,
-        .image-container::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 6px;
-        }
-
-        .form-content::-webkit-scrollbar-thumb:hover,
-        .image-container::-webkit-scrollbar-thumb:hover {
-            background: #555;
+            padding: 24px;
         }
 
         .form-section {
-            margin-bottom: 25px;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
         }
 
         .form-section h3 {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            position: sticky;
-            top: 0;
-            background: white;
-            padding: 10px 0;
-            z-index: 10;
+            margin-bottom: 16px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #202124;
         }
 
         .field-group {
-            margin-bottom: 15px;
+            margin-bottom: 16px;
         }
 
         .field-group label {
             display: block;
-            font-size: 13px;
-            color: #333;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
             font-weight: 500;
+            font-size: 14px;
+            color: #5f6368;
         }
 
         .field-group input {
             width: 100%;
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
             font-size: 14px;
         }
 
@@ -216,42 +199,49 @@
         .productos-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
-            margin-top: 10px;
+            margin-top: 12px;
         }
 
         .productos-table thead {
-            position: sticky;
-            top: 40px;
-            background: white;
-            z-index: 9;
+            background: #e8eaed;
         }
 
         .productos-table th {
-            background: #f5f5f5;
-            padding: 10px 8px;
+            padding: 10px;
             text-align: left;
             font-weight: 600;
-            color: #666;
-            border-bottom: 2px solid #ddd;
+            font-size: 13px;
+            color: #5f6368;
         }
 
         .productos-table td {
             padding: 8px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #e8eaed;
         }
 
-        .productos-table input {
+        .productos-table td input {
             width: 100%;
-            padding: 6px;
-            border: 1px solid #ddd;
+            padding: 6px 8px;
+            border: 1px solid #dadce0;
             border-radius: 4px;
             font-size: 13px;
         }
 
-        .productos-table input:focus {
-            outline: none;
-            border-color: #1a73e8;
+        .btn-add-producto {
+            background: #34a853;
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 12px;
+            width: 100%;
+        }
+
+        .btn-add-producto:hover {
+            background: #2d9348;
         }
 
         .btn-delete {
@@ -261,43 +251,29 @@
             padding: 6px 12px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 16px;
+            font-weight: bold;
         }
 
         .btn-delete:hover {
-            background: #d33;
-        }
-
-        .btn-add {
-            background: #34a853;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 10px;
-        }
-
-        .btn-add:hover {
-            background: #2d9148;
+            background: #d33828;
         }
 
         .form-actions {
-            padding: 20px;
-            background: #f9f9f9;
-            border-top: 1px solid #ddd;
+            padding: 20px 24px;
+            background: white;
+            border-top: 1px solid #e8eaed;
             display: flex;
-            gap: 10px;
+            gap: 12px;
+            justify-content: flex-end;
             flex-shrink: 0;
         }
 
         .btn-primary {
-            flex: 1;
             background: #1a73e8;
             color: white;
             border: none;
-            padding: 14px;
+            padding: 14px 28px;
             border-radius: 6px;
             font-size: 16px;
             font-weight: 600;
@@ -429,7 +405,7 @@
         <div class="form-panel">
             <div class="form-header">
                 <div>
-                    <h2>Factura #<span id="facturaId">-</span></h2>
+                    <h2>Factura #<span id="facturaIdDisplay">-</span></h2>
                     <div style="font-size: 12px; opacity: 0.9; margin-top: 4px;">
                         Puntaje: <span id="puntaje">-</span>/100
                     </div>
@@ -459,24 +435,24 @@
                     <table class="productos-table">
                         <thead>
                             <tr>
-                                <th style="width: 25%">Código</th>
-                                <th style="width: 40%">Nombre</th>
-                                <th style="width: 20%">Precio</th>
-                                <th style="width: 15%"></th>
+                                <th style="width: 20%;">Código</th>
+                                <th style="width: 45%;">Nombre</th>
+                                <th style="width: 25%;">Precio</th>
+                                <th style="width: 10%;"></th>
                             </tr>
                         </thead>
                         <tbody id="productosBody">
                             <tr>
-                                <td colspan="4" style="text-align: center; color: #999; padding: 20px;">
-                                    Cargando productos...
+                                <td colspan="4" style="text-align: center; padding: 20px; color: #999;">
+                                    Cargando...
                                 </td>
                             </tr>
                         </tbody>
                     </table>
-                    <button class="btn-add" onclick="agregarProducto()">+ Agregar Producto</button>
+                    <button class="btn-add-producto" onclick="agregarProducto()">+ Agregar Producto</button>
                 </div>
 
-                <div class="debug-section">
+                <div class="form-section debug-section">
                     <button class="debug-toggle" onclick="toggleDebugInfo()">
                         🔍 Mostrar/Ocultar Datos Crudos (Debug)
                     </button>
@@ -492,7 +468,7 @@
     </div>
 
     <script>
-        const API_URL = 'https://lecfac-api-production.up.railway.app';  // ✅ CORRECTO
+        const API_URL = 'https://lecfac-api-production.up.railway.app';
         const facturaId = new URLSearchParams(window.location.search).get('id');
 
         let zoomLevel = 1;
@@ -700,15 +676,15 @@
                     console.log('📥 Response status:', response.status);
 
                     if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`Error ${response.status}: ${errorText}`);
+                        throw new Error('Error eliminando del servidor');
                     }
 
-                    console.log('✅ Producto eliminado del servidor');
-                    showToast('✅ Producto eliminado');
-                } catch (e) {
-                    console.error('❌ Error eliminando:', e);
-                    showToast('Error al eliminar: ' + e.message, 'error');
+                    const data = await response.json();
+                    console.log('✅ Eliminado del servidor:', data);
+
+                } catch (error) {
+                    console.error('❌ Error:', error);
+                    alert('Error eliminando del servidor: ' + error.message);
                     hideLoading();
                     return;
                 } finally {
@@ -719,94 +695,73 @@
             // Eliminar del array local
             productos.splice(index, 1);
             renderProductos();
+            showToast('Producto eliminado');
+            console.log('✅ Producto eliminado localmente');
         }
 
         // ========================================
         // CARGAR FACTURA
         // ========================================
         async function cargarFactura() {
-            console.log('🔄 Cargando factura ID:', facturaId);
-
-            if (!facturaId) {
-                alert('❌ Error: No se especificó ID de factura');
-                return;
-            }
-
             showLoading();
 
             try {
-                console.log(`📡 GET ${API_URL}/admin/facturas/${facturaId}`);
+                console.log('🔄 Cargando factura ID:', facturaId);
 
-                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`);
+                const url = `${API_URL}/admin/facturas/${facturaId}`;
+                console.log('📡 GET', url);
 
-                console.log('📥 Status:', response.status);
+                const response = await fetch(url);
+                console.log('📥 Response status:', response.status);
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(`Error ${response.status}: ${errorText}`);
+                    console.error('❌ Error response:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
 
                 const factura = await response.json();
                 console.log('✅ Factura recibida:', factura);
 
-                // Guardar factura original
-                facturaOriginal = factura;
+                facturaOriginal = JSON.parse(JSON.stringify(factura));
+
+                // Debug info
                 document.getElementById('debugInfo').textContent = JSON.stringify(factura, null, 2);
 
-                // Cargar datos generales
-                document.getElementById('facturaId').textContent = factura.id || '-';
+                // Datos generales
+                document.getElementById('facturaIdDisplay').textContent = factura.id || facturaId;
                 document.getElementById('establecimiento').value = factura.establecimiento || '';
                 document.getElementById('total').value = factura.total || factura.total_factura || 0;
+                document.getElementById('puntaje').textContent = factura.puntaje || 0;
+                document.getElementById('estadoBadge').textContent = factura.estado || factura.estado_validacion || 'Pendiente';
 
-                // Cargar fecha
-                if (factura.fecha) {
-                    try {
-                        let fechaStr = factura.fecha;
-                        if (typeof fechaStr === 'string') {
-                            if (fechaStr.includes('T')) {
-                                fechaStr = fechaStr.split('T')[0];
-                            }
-                        }
-                        document.getElementById('fecha').value = fechaStr;
-                    } catch (e) {
-                        console.warn('⚠️ Error parseando fecha:', e);
+                // Fecha
+                if (factura.fecha || factura.fecha_factura || factura.fecha_compra) {
+                    const fechaStr = factura.fecha || factura.fecha_factura || factura.fecha_compra;
+                    const fecha = new Date(fechaStr);
+                    if (!isNaN(fecha.getTime())) {
+                        document.getElementById('fecha').value = fecha.toISOString().split('T')[0];
                     }
                 }
 
-                // Cargar estado
-                const estado = factura.estado || factura.estado_validacion || 'pendiente';
-                const estadoBadge = document.getElementById('estadoBadge');
-                estadoBadge.textContent = estado;
-                estadoBadge.className = 'validation-badge badge-' + estado.toLowerCase().replace(' ', '_');
+                // Productos
+                if (Array.isArray(factura.productos) && factura.productos.length > 0) {
+                    console.log('📦 Productos encontrados:', factura.productos.length);
 
-                // Cargar puntaje
-                if (factura.puntaje !== undefined && factura.puntaje !== null) {
-                    document.getElementById('puntaje').textContent = factura.puntaje;
-                }
-
-                // Cargar productos
-                console.log('🔍 Procesando productos...');
-                console.log('factura.productos:', factura.productos);
-                console.log('Es array?', Array.isArray(factura.productos));
-                console.log('Cantidad:', factura.productos?.length || 0);
-
-                if (!factura.productos || !Array.isArray(factura.productos)) {
-                    console.warn('⚠️ No hay productos o no es array');
-                    productos = [];
-                } else {
-                    productos = factura.productos.map((p, index) => {
-                        console.log(`  Producto ${index}:`, p);
-
+                    productos = factura.productos.map(p => {
                         return {
                             id: p.id,
-                            codigo: p.codigo || p.codigo_ean || p.codigo_local || '',
-                            nombre: p.nombre || p.nombre_producto || p.descripcion || 'Sin nombre',
-                            precio: parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || 0,
+                            codigo: p.codigo || p.codigo_ean || p.codigo_leido || '',
+                            nombre: p.nombre || p.nombre_producto || p.nombre_leido || 'Sin nombre',
+                            precio: parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || parseFloat(p.precio_pagado) || 0,
                             nuevo: false
                         };
                     });
 
                     console.log('✅ Productos mapeados:', productos);
+                } else {
+                    console.log('⚠️ No hay productos en la factura');
+                    productos = [];
                 }
 
                 renderProductos();
@@ -823,45 +778,89 @@
         }
 
         // ========================================
-        // CARGAR IMAGEN
+        // CARGAR IMAGEN - VERSIÓN CORREGIDA
         // ========================================
         async function cargarImagen() {
             const img = document.getElementById('facturaImage');
             const container = document.getElementById('imageContainer');
 
             try {
-                console.log('📷 Cargando imagen...');
+                console.log('📷 Intentando cargar imagen de factura', facturaId);
 
-                const timestamp = Date.now();
-                const imageUrl = `${API_URL}/admin/facturas/${facturaId}/imagen?t=${timestamp}`;
+                // 🔧 INTENTAR MÚLTIPLES ENDPOINTS POSIBLES
+                const imageUrls = [
+                    `${API_URL}/images/${facturaId}`,                     // Endpoint principal de images
+                    `${API_URL}/admin/facturas/${facturaId}/imagen`,      // Endpoint admin
+                    `${API_URL}/api/facturas/${facturaId}/imagen`,        // Variante con /api
+                    `${API_URL}/invoices/${facturaId}/image`,             // Variante inglés
+                ];
 
-                img.onload = () => {
-                    console.log('✅ Imagen cargada');
-                    img.style.display = 'block';
-                    resetZoom();
-                };
+                let imagenCargada = false;
 
-                img.onerror = () => {
-                    console.error('❌ No hay imagen');
-                    img.style.display = 'none';
-                    container.innerHTML = `
-                <div style="color: white; text-align: center; padding: 40px;">
-                    <div style="font-size: 48px; margin-bottom: 20px;">📸</div>
-                    <h3>Esta factura no tiene imagen</h3>
-                    <p style="color: #999; margin-top: 10px;">La imagen no se guardó durante el procesamiento</p>
-                </div>
-            `;
-                };
+                for (const imageUrl of imageUrls) {
+                    try {
+                        console.log(`🔍 Intentando cargar desde: ${imageUrl}`);
 
-                img.src = imageUrl;
+                        const timestamp = Date.now();
+                        const urlWithCache = `${imageUrl}?t=${timestamp}`;
+
+                        // Intentar fetch primero para verificar que existe
+                        const response = await fetch(urlWithCache, { method: 'HEAD' });
+
+                        if (response.ok) {
+                            console.log(`✅ Imagen encontrada en: ${imageUrl}`);
+
+                            // Cargar la imagen
+                            img.onload = () => {
+                                console.log('✅ Imagen cargada exitosamente');
+                                img.style.display = 'block';
+                                resetZoom();
+                                imagenCargada = true;
+                            };
+
+                            img.onerror = () => {
+                                console.error(`❌ Error cargando imagen desde ${imageUrl}`);
+                            };
+
+                            img.src = urlWithCache;
+                            return; // Salir si encontramos la imagen
+                        }
+                    } catch (e) {
+                        console.log(`⚠️ No disponible en: ${imageUrl}`);
+                    }
+                }
+
+                // Si no se pudo cargar de ningún endpoint
+                if (!imagenCargada) {
+                    console.error('❌ No se encontró imagen en ningún endpoint');
+                    mostrarMensajeSinImagen();
+                }
 
             } catch (error) {
                 console.error('❌ Error en cargarImagen:', error);
+                mostrarMensajeSinImagen();
             }
         }
 
+        function mostrarMensajeSinImagen() {
+            const container = document.getElementById('imageContainer');
+            const img = document.getElementById('facturaImage');
+
+            img.style.display = 'none';
+            container.innerHTML = `
+                <div class="no-image-message">
+                    <div class="icon">📸</div>
+                    <h3>Esta factura no tiene imagen</h3>
+                    <p>La imagen no se guardó durante el procesamiento o no está disponible en el servidor</p>
+                    <p style="margin-top: 20px; font-size: 12px; color: #666;">
+                        Factura ID: ${facturaId}
+                    </p>
+                </div>
+            `;
+        }
+
         // ========================================
-        // 🔧 GUARDAR CAMBIOS - VERSIÓN CORREGIDA
+        // GUARDAR CAMBIOS
         // ========================================
         async function guardarCambios() {
             console.log('💾 ============================================');
@@ -870,9 +869,7 @@
             showLoading();
 
             try {
-                // ====================================
                 // 1. GUARDAR DATOS GENERALES
-                // ====================================
                 const fechaValue = document.getElementById('fecha').value || null;
 
                 const datosGenerales = {
@@ -884,10 +881,7 @@
                     datosGenerales.fecha = fechaValue;
                 }
 
-                console.log('📝 Datos generales a guardar:');
-                console.log('   - Establecimiento:', datosGenerales.establecimiento);
-                console.log('   - Total:', datosGenerales.total);
-                console.log('   - Fecha:', datosGenerales.fecha || 'sin cambios');
+                console.log('📝 Datos generales a guardar:', datosGenerales);
                 console.log(`📡 PUT ${API_URL}/admin/facturas/${facturaId}`);
 
                 const respGeneral = await fetch(`${API_URL}/admin/facturas/${facturaId}`, {
@@ -906,35 +900,24 @@
 
                 console.log('✅ Datos generales guardados');
 
-                // ====================================
                 // 2. ACTUALIZAR PRODUCTOS EXISTENTES
-                // ====================================
                 console.log('\n🔄 Actualizando productos existentes...');
                 let productosActualizados = 0;
 
                 for (const prod of productos) {
                     if (!prod.nuevo && prod.id) {
-                        console.log(`\n  📦 Producto #${prod.id}:`);
-                        console.log(`     - Nombre: ${prod.nombre}`);
-                        console.log(`     - Precio: ${prod.precio}`);
-                        console.log(`     - Código: ${prod.codigo || '(vacío)'}`);
+                        console.log(`\n  📦 Producto #${prod.id}:`, prod);
 
-                        // 🔧 FIX CRÍTICO: Solo enviar código si NO está vacío
                         const itemData = {
                             nombre: prod.nombre.trim(),
                             precio: parseFloat(prod.precio) || 0
                         };
 
-                        // Solo incluir código si tiene valor
                         if (prod.codigo && prod.codigo.trim() !== '') {
                             itemData.codigo_ean = prod.codigo.trim();
-                            console.log(`     ✓ Enviando código: ${itemData.codigo_ean}`);
-                        } else {
-                            console.log(`     ⚠️ Código vacío - NO se enviará (se preserva el existente)`);
                         }
 
                         console.log(`     📡 PUT ${API_URL}/admin/items/${prod.id}`);
-                        console.log('     📤 Payload:', JSON.stringify(itemData));
 
                         const respProd = await fetch(`${API_URL}/admin/items/${prod.id}`, {
                             method: 'PUT',
@@ -942,49 +925,37 @@
                             body: JSON.stringify(itemData)
                         });
 
-                        console.log('     📥 Response status:', respProd.status);
-
                         if (!respProd.ok) {
                             const respText = await respProd.text();
-                            console.error(`     ❌ Error actualizando item ${prod.id}`);
-                            console.error('     ❌ Response:', respText);
+                            console.error(`     ❌ Error actualizando item ${prod.id}:`, respText);
                             throw new Error(`Error actualizando producto ${prod.nombre}: ${respText}`);
-                        } else {
-                            const respData = await respProd.json();
-                            console.log('     ✅ Item actualizado:', respData);
-                            productosActualizados++;
                         }
+
+                        productosActualizados++;
+                        console.log('     ✅ Item actualizado');
                     }
                 }
 
                 console.log(`\n✅ ${productosActualizados} productos actualizados`);
 
-                // ====================================
                 // 3. CREAR PRODUCTOS NUEVOS
-                // ====================================
                 console.log('\n➕ Creando productos nuevos...');
                 let productosCreados = 0;
 
                 for (const prod of productos) {
                     if (prod.nuevo && prod.nombre && prod.nombre.trim() !== '') {
-                        console.log(`\n  🆕 Nuevo producto:`);
-                        console.log(`     - Nombre: ${prod.nombre}`);
-                        console.log(`     - Precio: ${prod.precio}`);
-                        console.log(`     - Código: ${prod.codigo || '(sin código)'}`);
+                        console.log(`\n  🆕 Nuevo producto:`, prod);
 
                         const nuevoItemData = {
                             nombre: prod.nombre.trim(),
                             precio: parseFloat(prod.precio) || 0
                         };
 
-                        // Solo incluir código si tiene valor
                         if (prod.codigo && prod.codigo.trim() !== '') {
                             nuevoItemData.codigo_ean = prod.codigo.trim();
-                            console.log(`     ✓ Con código: ${nuevoItemData.codigo_ean}`);
                         }
 
                         console.log(`     📡 POST ${API_URL}/admin/facturas/${facturaId}/items`);
-                        console.log('     📤 Payload:', JSON.stringify(nuevoItemData));
 
                         const respNuevo = await fetch(`${API_URL}/admin/facturas/${facturaId}/items`, {
                             method: 'POST',
@@ -992,26 +963,20 @@
                             body: JSON.stringify(nuevoItemData)
                         });
 
-                        console.log('     📥 Response status:', respNuevo.status);
-
                         if (!respNuevo.ok) {
                             const respText = await respNuevo.text();
-                            console.error('     ❌ Error creando item');
-                            console.error('     ❌ Response:', respText);
+                            console.error('     ❌ Error creando item:', respText);
                             throw new Error(`Error creando producto ${prod.nombre}: ${respText}`);
-                        } else {
-                            const respData = await respNuevo.json();
-                            console.log('     ✅ Item creado:', respData);
-                            productosCreados++;
                         }
+
+                        productosCreados++;
+                        console.log('     ✅ Item creado');
                     }
                 }
 
                 console.log(`\n✅ ${productosCreados} productos nuevos creados`);
 
-                // ====================================
                 // 4. FINALIZAR
-                // ====================================
                 console.log('\n💾 ============================================');
                 console.log('💾 GUARDADO COMPLETADO EXITOSAMENTE');
                 console.log(`💾 - Datos generales: ✅`);
