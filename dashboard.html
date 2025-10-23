@@ -878,7 +878,7 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando productos...</p></div>';
 
             try {
-                const response = await fetch(`${API_URL}/api/productos`);
+                const response = await fetch(`${API_URL}/api/admin/productos`);
                 let data = await response.json();
 
                 const productos = Array.isArray(data) ? data : (data.productos || data.data || []);
@@ -1072,7 +1072,7 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando usuarios...</p></div>';
 
             try {
-                const response = await fetch(`${API_URL}/api/usuarios`);
+                const response = await fetch(`${API_URL}/api/admin/usuarios`);
                 let data = await response.json();
 
                 const usuarios = Array.isArray(data) ? data : (data.usuarios || data.data || []);
@@ -1590,7 +1590,9 @@
             </form>
         </div>
     </div>
-
+    <script>
+        console.log('🚀 Dashboard version: 2025-10-23-v2');
+    </script>
 </body>
 
 </html>
