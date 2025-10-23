@@ -3954,6 +3954,193 @@ async def delete_item_admin(item_id: int):
 
 print("✅ Endpoints del editor de facturas registrados")
 
+# ==========================================
+# 🆕 AGREGAR ESTOS ENDPOINTS A MAIN.PY
+# Ubicación: Antes de if __name__ == "__main__":
+# ==========================================
+
+
+# ALIAS PARA COMPATIBILIDAD (mientras se resuelve el caché)
+@app.get("/api/productos")
+async def get_productos_sin_admin():
+    """Alias temporal de /api/admin/productos para compatibilidad"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                p.id,
+                p.nombre,
+                p.codigo_ean,
+                p.precio_promedio,
+                p.categoria,
+                p.marca,
+                COUNT(DISTINCT if.id) as veces_comprado
+            FROM productos p
+            LEFT JOIN items_factura if ON if.producto_id = p.id
+            GROUP BY p.id, p.nombre, p.codigo_ean, p.precio_promedio, p.categoria, p.marca
+            ORDER BY veces_comprado DESC
+            LIMIT 500
+        """
+        )
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "codigo_ean": row[2],
+                    "precio_promedio": float(row[3] or 0),
+                    "categoria": row[4],
+                    "marca": row[5],
+                    "veces_comprado": row[6] or 0,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(productos)} productos (alias sin /admin/)")
+        return productos
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/usuarios")
+async def get_usuarios_sin_admin():
+    """Alias temporal de /api/admin/usuarios para compatibilidad"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT id, nombre, email, activo, fecha_registro
+            FROM usuarios
+            ORDER BY fecha_registro DESC
+        """
+        )
+
+        usuarios = []
+        for row in cursor.fetchall():
+            usuarios.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "email": row[2],
+                    "activo": row[3],
+                    "fecha_registro": row[4].isoformat() if row[4] else None,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(usuarios)} usuarios (alias sin /admin/)")
+        return usuarios
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ENDPOINTS FALTANTES DE DUPLICADOS
+@app.get("/api/admin/duplicados")
+async def get_duplicados():
+    """Busca facturas duplicadas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                f1.id as factura1_id,
+                f2.id as factura2_id,
+                f1.establecimiento,
+                f1.total_factura,
+                f1.fecha_compra
+            FROM facturas f1
+            INNER JOIN facturas f2 ON
+                f1.establecimiento = f2.establecimiento AND
+                f1.total_factura = f2.total_factura AND
+                f1.fecha_compra = f2.fecha_compra AND
+                f1.id < f2.id
+            ORDER BY f1.fecha_compra DESC
+            LIMIT 50
+        """
+        )
+
+        duplicados = []
+        for row in cursor.fetchall():
+            duplicados.append(
+                {
+                    "factura1_id": row[0],
+                    "factura2_id": row[1],
+                    "establecimiento": row[2],
+                    "total": float(row[3] or 0),
+                    "fecha": row[4].isoformat() if row[4] else None,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(duplicados)} duplicados encontrados")
+        return {"duplicados": duplicados, "total": len(duplicados)}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/productos-similares")
+async def get_productos_similares():
+    """Busca productos con nombres similares que podrían ser duplicados"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                p1.id as producto1_id,
+                p1.nombre as nombre1,
+                p2.id as producto2_id,
+                p2.nombre as nombre2,
+                p1.precio_promedio as precio1,
+                p2.precio_promedio as precio2
+            FROM productos p1
+            INNER JOIN productos p2 ON
+                LOWER(p1.nombre) = LOWER(p2.nombre) AND
+                p1.id < p2.id
+            LIMIT 100
+        """
+        )
+
+        similares = []
+        for row in cursor.fetchall():
+            similares.append(
+                {
+                    "producto1_id": row[0],
+                    "nombre1": row[1],
+                    "producto2_id": row[2],
+                    "nombre2": row[3],
+                    "precio1": float(row[4] or 0),
+                    "precio2": float(row[5] or 0),
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(similares)} productos similares encontrados")
+        return {"productos_similares": similares, "total": len(similares)}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints de compatibilidad y duplicados registrados")
+
 if __name__ == "__main__":
     import uvicorn
 
