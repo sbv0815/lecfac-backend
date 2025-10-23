@@ -4366,8 +4366,7 @@ async def get_duplicados():
                 f2.id as factura2_id,
                 f1.establecimiento,
                 f1.total_factura,
-                f1.fecha,
-                f1.usuario_id
+                f1.fecha
             FROM facturas f1
             INNER JOIN facturas f2 ON
                 f1.establecimiento = f2.establecimiento AND
@@ -4397,8 +4396,6 @@ async def get_duplicados():
 
     except Exception as e:
         print(f"❌ Error buscando duplicados: {e}")
-        import traceback
-
         traceback.print_exc()
         return {"duplicados": [], "total": 0}
 
@@ -4624,52 +4621,229 @@ print("✅ Todos los endpoints corregidos registrados")
 # ==========================================
 # 📦 INVENTARIO DE USUARIO PARA ADMIN
 # ==========================================
-
-
 @app.get("/api/admin/usuarios/{usuario_id}/inventario")
 async def get_usuario_inventario_admin(usuario_id: int):
-    """Obtiene estadísticas del inventario de un usuario específico"""
+    """Obtiene el inventario de un usuario específico"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print(f"📦 Obteniendo estadísticas del usuario {usuario_id}...")
+        print(f"📦 Obteniendo inventario del usuario {usuario_id}...")
 
-        # Obtener estadísticas del usuario
         cursor.execute(
             """
             SELECT
-                COUNT(DISTINCT f.id) as total_facturas,
-                COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
-                COALESCE(SUM(f.total_factura), 0) as total_gastado
-            FROM facturas f
-            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
-            WHERE f.usuario_id = %s
+                iu.id,
+                iu.producto_maestro_id,
+                pm.nombre,
+                pm.codigo_ean,
+                iu.cantidad_actual,
+                iu.cantidad_minima,
+                iu.precio_ultima_compra,
+                iu.ultima_actualizacion,
+                iu.alertas,
+                pm.categoria,
+                pm.marca
+            FROM inventario_usuario iu
+            JOIN productos_maestro pm ON iu.producto_maestro_id = pm.id
+            WHERE iu.usuario_id = %s
+            ORDER BY iu.ultima_actualizacion DESC
         """,
             (usuario_id,),
         )
 
-        stats = cursor.fetchone()
+        inventario = []
+        for row in cursor.fetchall():
+            inventario.append(
+                {
+                    "id": row[0],
+                    "producto_maestro_id": row[1],
+                    "nombre": row[2],
+                    "codigo_ean": row[3],
+                    "cantidad_actual": row[4],
+                    "cantidad_minima": row[5],
+                    "precio_ultima_compra": float(row[6] or 0) / 100 if row[6] else 0,
+                    "ultima_actualizacion": row[7].isoformat() if row[7] else None,
+                    "alertas": row[8],
+                    "categoria": row[9],
+                    "marca": row[10],
+                }
+            )
+
         conn.close()
 
-        resultado = {
-            "total_facturas": stats[0] or 0,
-            "productos_unicos": stats[1] or 0,
-            "total_gastado": float(stats[2] or 0) / 100 if stats[2] else 0,
-        }
-
-        print(f"✅ Estadísticas del usuario {usuario_id}: {resultado}")
-        return resultado
+        print(f"✅ {len(inventario)} productos en inventario del usuario {usuario_id}")
+        return inventario
 
     except Exception as e:
         print(f"❌ Error obteniendo inventario del usuario {usuario_id}: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=404, detail=f"Inventario no encontrado: {str(e)}"
+        )
+
+
+# ==========================================
+# 🗑️ ELIMINAR PRODUCTO MAESTRO
+# ==========================================
+@app.delete("/api/admin/productos/{producto_id}")
+async def delete_producto(producto_id: int):
+    """Elimina un producto maestro"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"🗑️ Eliminando producto maestro {producto_id}...")
+
+        # Verificar que el producto existe
+        cursor.execute(
+            "SELECT id, nombre FROM productos_maestro WHERE id = %s", (producto_id,)
+        )
+        producto = cursor.fetchone()
+
+        if not producto:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        print(f"Producto a eliminar: {producto[1]}")
+
+        # Eliminar el producto
+        cursor.execute("DELETE FROM productos_maestro WHERE id = %s", (producto_id,))
+
+        conn.commit()
+        rows_deleted = cursor.rowcount
+        conn.close()
+
+        if rows_deleted == 0:
+            raise HTTPException(
+                status_code=404, detail="No se pudo eliminar el producto"
+            )
+
+        print(f"✅ Producto {producto_id} eliminado correctamente")
+        return {"success": True, "message": f"Producto '{producto[1]}' eliminado"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error eliminando producto: {e}")
         import traceback
 
         traceback.print_exc()
-        raise HTTPException(
-            status_code=500, detail=f"Error al obtener inventario: {str(e)}"
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# 🖼️ SERVIR IMAGEN DE FACTURA
+# ==========================================
+@app.get("/images/{factura_id}")
+async def get_factura_image(factura_id: int):
+    """Sirve la imagen de una factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"🖼️ Buscando imagen de factura {factura_id}...")
+
+        # Buscar la imagen en la base de datos
+        cursor.execute(
+            """
+            SELECT imagen_base64, ruta_imagen
+            FROM facturas
+            WHERE id = %s
+        """,
+            (factura_id,),
         )
 
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+        imagen_base64 = result[0]
+        ruta_imagen = result[1]
+
+        # Prioridad 1: Imagen en base64
+        if imagen_base64:
+            print(f"✅ Sirviendo imagen desde base64 (factura {factura_id})")
+
+            # Detectar el tipo de imagen del base64
+            if imagen_base64.startswith("data:image/"):
+                # Extraer el tipo MIME y los datos
+                header, data = imagen_base64.split(",", 1)
+                mime_type = header.split(":")[1].split(";")[0]
+            else:
+                # Asumir JPEG por defecto
+                mime_type = "image/jpeg"
+                data = imagen_base64
+
+            # Decodificar base64
+            import base64
+
+            image_data = base64.b64decode(data)
+
+            return Response(
+                content=image_data,
+                media_type=mime_type,
+                headers={
+                    "Cache-Control": "public, max-age=3600",
+                    "Access-Control-Allow-Origin": "*",
+                },
+            )
+
+        # Prioridad 2: Archivo en el sistema
+        if ruta_imagen:
+            import os
+
+            if os.path.exists(ruta_imagen):
+                print(f"✅ Sirviendo imagen desde archivo: {ruta_imagen}")
+                return FileResponse(
+                    ruta_imagen,
+                    media_type="image/jpeg",
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "Access-Control-Allow-Origin": "*",
+                    },
+                )
+
+        # No se encontró imagen
+        print(f"⚠️ No hay imagen disponible para factura {factura_id}")
+        raise HTTPException(
+            status_code=404, detail="No hay imagen disponible para esta factura"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo imagen: {e}")
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# 🖼️ ENDPOINTS ALTERNATIVOS PARA COMPATIBILIDAD
+# ==========================================
+@app.get("/admin/facturas/{factura_id}/imagen")
+async def get_factura_image_admin(factura_id: int):
+    """Endpoint alternativo para servir imágenes (compatibilidad)"""
+    return await get_factura_image(factura_id)
+
+
+@app.get("/api/facturas/{factura_id}/imagen")
+async def get_factura_image_api(factura_id: int):
+    """Endpoint alternativo para servir imágenes (compatibilidad)"""
+    return await get_factura_image(factura_id)
+
+
+@app.get("/invoices/{factura_id}/image")
+async def get_factura_image_invoices(factura_id: int):
+    """Endpoint alternativo para servir imágenes (compatibilidad)"""
+    return await get_factura_image(factura_id)
+
+
+print("✅ Endpoints de imágenes y eliminación registrados")
 
 if __name__ == "__main__":
     import uvicorn
@@ -4679,4 +4853,4 @@ if __name__ == "__main__":
     print(f"🔧 VERSIÓN: 2025-01-21-INVENTARIO-COMPLETO-FIX")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
 
-# Updated 10/23/2025 3:57pm
+# Updated 10/23/2025 08:44:07
