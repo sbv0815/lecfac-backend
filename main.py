@@ -3970,3 +3970,5 @@ if __name__ == "__main__":
     print(f"🚀 Servidor iniciando en puerto: {port}")
     print(f"🔧 VERSIÓN: 2025-01-21-INVENTARIO-COMPLETO-FIX")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
+# Updated 10/23/2025 08:44:07
