@@ -789,7 +789,7 @@
 
                 // 🔧 INTENTAR MÚLTIPLES ENDPOINTS POSIBLES
                 const imageUrls = [
-                    `${API_URL}/images/${facturaId}`,                     // Endpoint principal de images
+                    `${API_URL}/images/${facturaId}`,                     // Endpoint principal
                     `${API_URL}/admin/facturas/${facturaId}/imagen`,      // Endpoint admin
                     `${API_URL}/api/facturas/${facturaId}/imagen`,        // Variante con /api
                     `${API_URL}/invoices/${facturaId}/image`,             // Variante inglés
@@ -797,36 +797,41 @@
 
                 let imagenCargada = false;
 
+                // ✅ CORRECCIÓN: Cargar directamente sin HEAD request
                 for (const imageUrl of imageUrls) {
+                    if (imagenCargada) break;
+
+                    console.log(`🔍 Intentando cargar desde: ${imageUrl}`);
+
+                    const timestamp = Date.now();
+                    const urlWithCache = `${imageUrl}?t=${timestamp}`;
+
+                    // Crear promesa para manejar la carga
+                    const loadPromise = new Promise((resolve, reject) => {
+                        const tempImg = new Image();
+
+                        tempImg.onload = () => {
+                            console.log(`✅ Imagen cargada desde: ${imageUrl}`);
+                            img.src = tempImg.src;
+                            img.style.display = 'block';
+                            resetZoom();
+                            imagenCargada = true;
+                            resolve();
+                        };
+
+                        tempImg.onerror = () => {
+                            console.log(`⚠️ No disponible: ${imageUrl}`);
+                            reject();
+                        };
+
+                        tempImg.src = urlWithCache;
+                    });
+
                     try {
-                        console.log(`🔍 Intentando cargar desde: ${imageUrl}`);
-
-                        const timestamp = Date.now();
-                        const urlWithCache = `${imageUrl}?t=${timestamp}`;
-
-                        // Intentar fetch primero para verificar que existe
-                        const response = await fetch(urlWithCache, { method: 'HEAD' });
-
-                        if (response.ok) {
-                            console.log(`✅ Imagen encontrada en: ${imageUrl}`);
-
-                            // Cargar la imagen
-                            img.onload = () => {
-                                console.log('✅ Imagen cargada exitosamente');
-                                img.style.display = 'block';
-                                resetZoom();
-                                imagenCargada = true;
-                            };
-
-                            img.onerror = () => {
-                                console.error(`❌ Error cargando imagen desde ${imageUrl}`);
-                            };
-
-                            img.src = urlWithCache;
-                            return; // Salir si encontramos la imagen
-                        }
+                        await loadPromise;
+                        return; // Salir si se cargó exitosamente
                     } catch (e) {
-                        console.log(`⚠️ No disponible en: ${imageUrl}`);
+                        continue; // Probar siguiente endpoint
                     }
                 }
 
