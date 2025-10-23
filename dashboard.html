@@ -750,31 +750,41 @@
                 const data = await response.json();
                 console.log('✅ Estadísticas recibidas:', data);
 
+                // ✅ CORREGIDO: Usar los nombres correctos que devuelve el API
                 document.getElementById('total-usuarios').textContent = data.total_usuarios || 0;
                 document.getElementById('total-facturas').textContent = data.total_facturas || 0;
-                document.getElementById('total-productos').textContent = data.productos_unicos || 0;
-                document.getElementById('calidad-promedio').textContent = (data.calidad_promedio_global || 0) + '%';
+                document.getElementById('total-productos').textContent = data.total_productos || 0; // ✅ Cambiado
+                document.getElementById('calidad-promedio').textContent = (data.calidad_promedio || 0) + '%'; // ✅ Cambiado
 
                 const resumen = document.getElementById('resumen-general');
                 resumen.innerHTML = `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                         <div style="background: white; padding: 15px; border-radius: 10px; border-left: 4px solid #667eea;">
-                            <div style="color: #666; font-size: 0.9em;">Facturas Validadas</div>
-                            <div style="font-size: 1.8em; font-weight: bold; color: #667eea;">${data.facturas_validadas || 0}</div>
+                            <div style="color: #666; font-size: 0.9em;">Facturas con Errores</div>
+                            <div style="font-size: 1.8em; font-weight: bold; color: #667eea;">${data.facturas_con_errores || 0}</div>
                         </div>
                         <div style="background: white; padding: 15px; border-radius: 10px; border-left: 4px solid #56ab2f;">
-                            <div style="color: #666; font-size: 0.9em;">Productos con EAN</div>
-                            <div style="font-size: 1.8em; font-weight: bold; color: #56ab2f;">${data.productos_con_ean || 0}</div>
+                            <div style="color: #666; font-size: 0.9em;">Productos Sin Categoría</div>
+                            <div style="font-size: 1.8em; font-weight: bold; color: #56ab2f;">${data.productos_sin_categoria || 0}</div>
                         </div>
                         <div style="background: white; padding: 15px; border-radius: 10px; border-left: 4px solid #f5576c;">
-                            <div style="color: #666; font-size: 0.9em;">Valor Total</div>
-                            <div style="font-size: 1.8em; font-weight: bold; color: #f5576c;">$${formatearNumero(data.valor_total_facturas || 0)}</div>
+                            <div style="color: #666; font-size: 0.9em;">Usuarios Activos</div>
+                            <div style="font-size: 1.8em; font-weight: bold; color: #f5576c;">${data.total_usuarios || 0}</div>
                         </div>
                     </div>
                 `;
 
             } catch (error) {
                 console.error('❌ Error al cargar estadísticas:', error);
+                const resumen = document.getElementById('resumen-general');
+                if (resumen) {
+                    resumen.innerHTML = `
+                        <div class="alert alert-danger">
+                            <span>❌</span>
+                            <div>Error al cargar estadísticas: ${error.message}</div>
+                        </div>
+                    `;
+                }
             }
         }
 
@@ -828,33 +838,54 @@
 
                 let html = '';
                 for (const usuario of usuarios) {
-                    const inventarioResp = await fetch(`${API_URL}/api/admin/usuarios/${usuario.id}/inventario`);
-                    const inventario = await inventarioResp.json();
+                    try {
+                        const inventarioResp = await fetch(`${API_URL}/api/admin/usuarios/${usuario.id}/inventario`);
 
-                    html += `
-                        <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                            <h3 style="color: #667eea; margin-bottom: 15px;">
-                                👤 ${usuario.nombre || usuario.email}
-                            </h3>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
-                                <div>
-                                    <div style="color: #666; font-size: 0.9em;">Facturas</div>
-                                    <div style="font-size: 1.5em; font-weight: bold;">${inventario.total_facturas || 0}</div>
+                        // ✅ CORRECCIÓN: Manejar errores 404 o 500
+                        if (!inventarioResp.ok) {
+                            console.warn(`⚠️ No se pudo cargar inventario del usuario ${usuario.id}`);
+                            html += `
+                                <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                    <h3 style="color: #667eea; margin-bottom: 15px;">
+                                        👤 ${usuario.nombre || usuario.email}
+                                    </h3>
+                                    <div style="color: #999; font-style: italic;">
+                                        Sin datos de inventario disponibles
+                                    </div>
                                 </div>
-                                <div>
-                                    <div style="color: #666; font-size: 0.9em;">Productos</div>
-                                    <div style="font-size: 1.5em; font-weight: bold;">${inventario.productos_unicos || 0}</div>
-                                </div>
-                                <div>
-                                    <div style="color: #666; font-size: 0.9em;">Total Gastado</div>
-                                    <div style="font-size: 1.5em; font-weight: bold;">$${formatearNumero(inventario.total_gastado || 0)}</div>
+                            `;
+                            continue;
+                        }
+
+                        const inventario = await inventarioResp.json();
+
+                        html += `
+                            <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                <h3 style="color: #667eea; margin-bottom: 15px;">
+                                    👤 ${usuario.nombre || usuario.email}
+                                </h3>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                                    <div>
+                                        <div style="color: #666; font-size: 0.9em;">Facturas</div>
+                                        <div style="font-size: 1.5em; font-weight: bold;">${inventario.total_facturas || 0}</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #666; font-size: 0.9em;">Productos</div>
+                                        <div style="font-size: 1.5em; font-weight: bold;">${inventario.productos_unicos || 0}</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #666; font-size: 0.9em;">Total Gastado</div>
+                                        <div style="font-size: 1.5em; font-weight: bold;">$${formatearNumero(inventario.total_gastado || 0)}</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    } catch (error) {
+                        console.error(`Error cargando inventario del usuario ${usuario.id}:`, error);
+                    }
                 }
 
-                container.innerHTML = html;
+                container.innerHTML = html || '<p>No se pudieron cargar inventarios</p>';
 
             } catch (error) {
                 console.error('Error:', error);
@@ -1144,13 +1175,16 @@
                 html += '</tr></thead><tbody>';
 
                 data.duplicados.forEach(grupo => {
+                    // ✅ CORRECCIÓN: Verificar que ids existe y es un array
+                    const idsDisplay = Array.isArray(grupo.ids) ? grupo.ids.join(', ') : (grupo.ids || 'N/A');
+
                     html += `
                         <tr>
-                            <td><strong>${grupo.ids.join(', ')}</strong></td>
-                            <td>${grupo.establecimiento}</td>
-                            <td>$${formatearNumero(grupo.total)}</td>
+                            <td><strong>${idsDisplay}</strong></td>
+                            <td>${grupo.establecimiento || 'Desconocido'}</td>
+                            <td>$${formatearNumero(grupo.total || 0)}</td>
                             <td>${formatearFecha(grupo.fecha)}</td>
-                            <td>${grupo.usuario_id}</td>
+                            <td>${grupo.usuario_id || 'N/A'}</td>
                         </tr>
                     `;
                 });

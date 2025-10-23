@@ -4366,7 +4366,8 @@ async def get_duplicados():
                 f2.id as factura2_id,
                 f1.establecimiento,
                 f1.total_factura,
-                f1.fecha
+                f1.fecha,
+                f1.usuario_id
             FROM facturas f1
             INNER JOIN facturas f2 ON
                 f1.establecimiento = f2.establecimiento AND
@@ -4382,11 +4383,11 @@ async def get_duplicados():
         for row in cursor.fetchall():
             duplicados.append(
                 {
-                    "factura1_id": row[0],
-                    "factura2_id": row[1],
+                    "ids": [row[0], row[1]],  # ✅ CORRECCIÓN: Array con ambos IDs
                     "establecimiento": row[2],
                     "total": float(row[3] or 0) / 100 if row[3] else 0,
                     "fecha": row[4].isoformat() if row[4] else None,
+                    "usuario_id": row[5],
                 }
             )
 
@@ -4396,6 +4397,8 @@ async def get_duplicados():
 
     except Exception as e:
         print(f"❌ Error buscando duplicados: {e}")
+        import traceback
+
         traceback.print_exc()
         return {"duplicados": [], "total": 0}
 
@@ -4621,65 +4624,50 @@ print("✅ Todos los endpoints corregidos registrados")
 # ==========================================
 # 📦 INVENTARIO DE USUARIO PARA ADMIN
 # ==========================================
+
+
 @app.get("/api/admin/usuarios/{usuario_id}/inventario")
 async def get_usuario_inventario_admin(usuario_id: int):
-    """Obtiene el inventario de un usuario específico"""
+    """Obtiene estadísticas del inventario de un usuario específico"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print(f"📦 Obteniendo inventario del usuario {usuario_id}...")
+        print(f"📦 Obteniendo estadísticas del usuario {usuario_id}...")
 
+        # Obtener estadísticas del usuario
         cursor.execute(
             """
             SELECT
-                iu.id,
-                iu.producto_maestro_id,
-                pm.nombre,
-                pm.codigo_ean,
-                iu.cantidad_actual,
-                iu.cantidad_minima,
-                iu.precio_ultima_compra,
-                iu.ultima_actualizacion,
-                iu.alertas,
-                pm.categoria,
-                pm.marca
-            FROM inventario_usuario iu
-            JOIN productos_maestro pm ON iu.producto_maestro_id = pm.id
-            WHERE iu.usuario_id = %s
-            ORDER BY iu.ultima_actualizacion DESC
+                COUNT(DISTINCT f.id) as total_facturas,
+                COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
+                COALESCE(SUM(f.total), 0) as total_gastado
+            FROM facturas f
+            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
+            WHERE f.usuario_id = %s
         """,
             (usuario_id,),
         )
 
-        inventario = []
-        for row in cursor.fetchall():
-            inventario.append(
-                {
-                    "id": row[0],
-                    "producto_maestro_id": row[1],
-                    "nombre": row[2],
-                    "codigo_ean": row[3],
-                    "cantidad_actual": row[4],
-                    "cantidad_minima": row[5],
-                    "precio_ultima_compra": float(row[6] or 0) / 100 if row[6] else 0,
-                    "ultima_actualizacion": row[7].isoformat() if row[7] else None,
-                    "alertas": row[8],
-                    "categoria": row[9],
-                    "marca": row[10],
-                }
-            )
-
+        stats = cursor.fetchone()
         conn.close()
 
-        print(f"✅ {len(inventario)} productos en inventario del usuario {usuario_id}")
-        return inventario
+        resultado = {
+            "total_facturas": stats[0] or 0,
+            "productos_unicos": stats[1] or 0,
+            "total_gastado": float(stats[2] or 0) / 100 if stats[2] else 0,
+        }
+
+        print(f"✅ Estadísticas del usuario {usuario_id}: {resultado}")
+        return resultado
 
     except Exception as e:
         print(f"❌ Error obteniendo inventario del usuario {usuario_id}: {e}")
+        import traceback
+
         traceback.print_exc()
         raise HTTPException(
-            status_code=404, detail=f"Inventario no encontrado: {str(e)}"
+            status_code=500, detail=f"Error al obtener inventario: {str(e)}"
         )
 
 
