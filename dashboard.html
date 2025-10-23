@@ -408,6 +408,113 @@
                 min-width: 100%;
             }
         }
+
+        /* 🆕 NUEVO: Modal para editar productos */
+        .modal-producto {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-producto.active {
+            display: flex;
+        }
+
+        .modal-producto-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-producto h2 {
+            color: #495057;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+
+        /* 🆕 NUEVO: Filtros de búsqueda mejorados */
+        .search-filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-filters input,
+        .search-filters select {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .search-filters button {
+            padding: 12px 20px;
+        }
+
+        /* 🆕 NUEVO: Indicador de productos filtrados */
+        .filter-info {
+            background: #e7f3ff;
+            border-left: 4px solid #1a73e8;
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
     </style>
 </head>
 
@@ -473,8 +580,31 @@
             <div id="tab-productos" class="tab-content">
                 <div class="section">
                     <h2>🛒 Catálogo de Productos</h2>
-                    <input type="text" id="filter-producto" placeholder="🔎 Buscar producto..."
-                        style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px;">
+
+                    <!-- 🆕 Filtros mejorados -->
+                    <div class="search-filters">
+                        <input type="text" id="filter-producto" placeholder="🔎 Buscar por nombre, código o marca..."
+                            oninput="filtrarProductos()">
+                        <select id="filter-categoria" onchange="filtrarProductos()">
+                            <option value="">Todas las categorías</option>
+                            <option value="LACTEOS">Lácteos</option>
+                            <option value="CARNES">Carnes y Pescados</option>
+                            <option value="FRUTAS_VERDURAS">Frutas y Verduras</option>
+                            <option value="PANADERIA">Panadería</option>
+                            <option value="BEBIDAS">Bebidas</option>
+                            <option value="SNACKS">Snacks y Dulces</option>
+                            <option value="ASEO_HOGAR">Aseo del Hogar</option>
+                            <option value="ASEO_PERSONAL">Aseo Personal</option>
+                            <option value="GRANOS_CEREALES">Granos y Cereales</option>
+                            <option value="ENLATADOS">Enlatados y Conservas</option>
+                            <option value="CONGELADOS">Congelados</option>
+                            <option value="OTROS">Otros</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="limpiarFiltrosProductos()">
+                            🔄 Limpiar
+                        </button>
+                    </div>
+
                     <div id="productos-container"></div>
                 </div>
             </div>
@@ -734,6 +864,15 @@
         // ==========================================
         // CARGAR PRODUCTOS
         // ==========================================
+        // ==========================================
+        // 🆕 VARIABLES GLOBALES PARA PRODUCTOS
+        // ==========================================
+        let productosOriginales = [];
+        let productosFiltrados = [];
+
+        // ==========================================
+        // 🆕 CARGAR PRODUCTOS CON FILTROS
+        // ==========================================
         async function cargarProductos() {
             const container = document.getElementById('productos-container');
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando productos...</p></div>';
@@ -749,24 +888,11 @@
                     return;
                 }
 
-                let html = '<div class="table-container"><table><thead><tr>';
-                html += '<th>ID</th><th>Nombre</th><th>Código EAN</th><th>Precio Promedio</th><th>Veces Comprado</th>';
-                html += '</tr></thead><tbody>';
+                // Guardar productos originales
+                productosOriginales = productos;
+                productosFiltrados = productos;
 
-                productos.forEach(p => {
-                    html += `
-                        <tr>
-                            <td><strong>#${p.id}</strong></td>
-                            <td>${p.nombre}</td>
-                            <td>${p.codigo_ean || '-'}</td>
-                            <td>$${formatearNumero(p.precio_promedio || 0)}</td>
-                            <td><span class="badge badge-info">${p.veces_comprado || 0}x</span></td>
-                        </tr>
-                    `;
-                });
-
-                html += '</tbody></table></div>';
-                container.innerHTML = html;
+                renderizarProductos(productos);
 
             } catch (error) {
                 console.error('Error:', error);
@@ -775,8 +901,172 @@
         }
 
         // ==========================================
-        // CARGAR USUARIOS
+        // 🆕 RENDERIZAR TABLA DE PRODUCTOS
         // ==========================================
+        function renderizarProductos(productos) {
+            const container = document.getElementById('productos-container');
+
+            let html = '';
+
+            // Mostrar info de filtrado
+            if (productos.length !== productosOriginales.length) {
+                html += `
+                    <div class="filter-info">
+                        📊 Mostrando <strong>${productos.length}</strong> de <strong>${productosOriginales.length}</strong> productos
+                        <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.85em; margin-left: 10px;" onclick="limpiarFiltrosProductos()">
+                            🔄 Ver Todos
+                        </button>
+                    </div>
+                `;
+            }
+
+            html += '<div class="table-container"><table><thead><tr>';
+            html += '<th>ID</th><th>Nombre</th><th>Código EAN</th><th>Precio Promedio</th><th>Categoría</th><th>Veces Comprado</th><th>Acciones</th>';
+            html += '</tr></thead><tbody>';
+
+            productos.forEach(p => {
+                html += `
+                    <tr>
+                        <td><strong>#${p.id}</strong></td>
+                        <td>${p.nombre}</td>
+                        <td>${p.codigo_ean || '-'}</td>
+                        <td>$${formatearNumero(p.precio_promedio || 0)}</td>
+                        <td>${p.categoria || '-'}</td>
+                        <td><span class="badge badge-info">${p.veces_comprado || 0}x</span></td>
+                        <td>
+                            <button class="btn btn-edit" onclick="editarProducto(${p.id})" style="padding: 8px 16px; font-size: 0.9em;">
+                                ✏️ Editar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // 🆕 FILTRAR PRODUCTOS
+        // ==========================================
+        function filtrarProductos() {
+            const busqueda = document.getElementById('filter-producto').value.toLowerCase();
+            const categoria = document.getElementById('filter-categoria').value;
+
+            productosFiltrados = productosOriginales.filter(p => {
+                // Filtro por texto
+                const matchTexto = !busqueda ||
+                    p.nombre.toLowerCase().includes(busqueda) ||
+                    (p.codigo_ean && p.codigo_ean.toLowerCase().includes(busqueda)) ||
+                    (p.marca && p.marca.toLowerCase().includes(busqueda));
+
+                // Filtro por categoría
+                const matchCategoria = !categoria || p.categoria === categoria;
+
+                return matchTexto && matchCategoria;
+            });
+
+            renderizarProductos(productosFiltrados);
+        }
+
+        // ==========================================
+        // 🆕 LIMPIAR FILTROS
+        // ==========================================
+        function limpiarFiltrosProductos() {
+            document.getElementById('filter-producto').value = '';
+            document.getElementById('filter-categoria').value = '';
+            productosFiltrados = productosOriginales;
+            renderizarProductos(productosOriginales);
+        }
+
+        // ==========================================
+        // 🆕 ABRIR MODAL EDITOR DE PRODUCTO
+        // ==========================================
+        async function editarProducto(productoId) {
+            console.log('✏️ Editando producto:', productoId);
+
+            try {
+                // Obtener datos del producto
+                const response = await fetch(`${API_URL}/api/productos/${productoId}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const producto = await response.json();
+
+                // Llenar formulario
+                document.getElementById('producto-id').value = producto.id;
+                document.getElementById('producto-nombre').value = producto.nombre || '';
+                document.getElementById('producto-codigo').value = producto.codigo_ean || '';
+                document.getElementById('producto-precio').value = producto.precio_promedio || '';
+                document.getElementById('producto-categoria').value = producto.categoria || '';
+                document.getElementById('producto-marca').value = producto.marca || '';
+
+                // Mostrar modal
+                document.getElementById('modal-producto').classList.add('active');
+
+            } catch (error) {
+                console.error('Error cargando producto:', error);
+                alert('❌ Error al cargar producto: ' + error.message);
+            }
+        }
+
+        // ==========================================
+        // 🆕 CERRAR MODAL PRODUCTO
+        // ==========================================
+        function cerrarModalProducto() {
+            document.getElementById('modal-producto').classList.remove('active');
+        }
+
+        // ==========================================
+        // 🆕 GUARDAR PRODUCTO
+        // ==========================================
+        async function guardarProducto(event) {
+            event.preventDefault();
+
+            const productoId = document.getElementById('producto-id').value;
+            const datos = {
+                nombre: document.getElementById('producto-nombre').value.trim(),
+                codigo_ean: document.getElementById('producto-codigo').value.trim() || null,
+                precio_promedio: parseFloat(document.getElementById('producto-precio').value) || 0,
+                categoria: document.getElementById('producto-categoria').value || null,
+                marca: document.getElementById('producto-marca').value.trim() || null
+            };
+
+            console.log('💾 Guardando producto:', productoId, datos);
+
+            try {
+                const response = await fetch(`${API_URL}/api/admin/productos/${productoId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(datos)
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const resultado = await response.json();
+                console.log('✅ Producto guardado:', resultado);
+
+                // Cerrar modal
+                cerrarModalProducto();
+
+                // Recargar productos
+                await cargarProductos();
+
+                alert('✅ Producto actualizado exitosamente');
+
+            } catch (error) {
+                console.error('❌ Error guardando producto:', error);
+                alert('❌ Error al guardar: ' + error.message);
+            }
+        }
+
         async function cargarUsuarios() {
             const container = document.getElementById('usuarios-container');
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando usuarios...</p></div>';
@@ -1223,6 +1513,14 @@
         document.getElementById('filter-usuario')?.addEventListener('input', filtrarInventarios);
         document.getElementById('filter-producto')?.addEventListener('input', filtrarProductos);
 
+        // 🆕 Cerrar modal de producto al hacer click fuera
+        document.getElementById('modal-producto')?.addEventListener('click', (e) => {
+            if (e.target.id === 'modal-producto') {
+                cerrarModalProducto();
+            }
+        });
+
+
         function filtrarInventarios() {
             // Implementar filtrado en tiempo real
             console.log('Filtrando inventarios...');
@@ -1233,6 +1531,66 @@
             console.log('Filtrando productos...');
         }
     </script>
+
+    <!-- 🆕 MODAL EDITOR DE PRODUCTOS -->
+    <div id="modal-producto" class="modal-producto">
+        <div class="modal-producto-content">
+            <h2>✏️ Editar Producto</h2>
+
+            <form id="form-producto" onsubmit="guardarProducto(event)">
+                <input type="hidden" id="producto-id">
+
+                <div class="form-group">
+                    <label>Nombre del Producto *</label>
+                    <input type="text" id="producto-nombre" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Código EAN/Barras</label>
+                    <input type="text" id="producto-codigo" placeholder="Ej: 7891234567890">
+                </div>
+
+                <div class="form-group">
+                    <label>Precio Promedio</label>
+                    <input type="number" id="producto-precio" step="0.01" min="0">
+                </div>
+
+                <div class="form-group">
+                    <label>Categoría</label>
+                    <select id="producto-categoria">
+                        <option value="">Sin categoría</option>
+                        <option value="LACTEOS">Lácteos</option>
+                        <option value="CARNES">Carnes y Pescados</option>
+                        <option value="FRUTAS_VERDURAS">Frutas y Verduras</option>
+                        <option value="PANADERIA">Panadería</option>
+                        <option value="BEBIDAS">Bebidas</option>
+                        <option value="SNACKS">Snacks y Dulces</option>
+                        <option value="ASEO_HOGAR">Aseo del Hogar</option>
+                        <option value="ASEO_PERSONAL">Aseo Personal</option>
+                        <option value="GRANOS_CEREALES">Granos y Cereales</option>
+                        <option value="ENLATADOS">Enlatados y Conservas</option>
+                        <option value="CONGELADOS">Congelados</option>
+                        <option value="OTROS">Otros</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Marca</label>
+                    <input type="text" id="producto-marca" placeholder="Ej: Colanta, Alpina, etc.">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="cerrarModalProducto()">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        💾 Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 </body>
 
 </html>
