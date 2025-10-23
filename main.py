@@ -4291,12 +4291,19 @@ async def get_usuarios_admin():
 
 
 # 1. ✅ LISTAR PRODUCTOS (REEMPLAZAR el existente)
+# ==========================================
+# ✅ ENDPOINTS CORREGIDOS - SIN ERRORES
+# Copiar y pegar estos bloques en main.py
+# ==========================================
+
+
+# 1. ✅ PRODUCTOS - BUSCAR Y REEMPLAZAR COMPLETO
 @app.get("/api/admin/productos")
 async def admin_productos():
     """Catálogo de productos maestros"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor()  # ✅ CORRECCIÓN: conn.cursor() no cursor()
 
         print("🏷️ Obteniendo productos maestros...")
 
@@ -4323,9 +4330,7 @@ async def admin_productos():
                     "id": row[0],
                     "nombre": row[1] or "Sin nombre",
                     "codigo_ean": row[2],
-                    "precio_promedio": (
-                        float(row[3] or 0) / 100 if row[3] else 0
-                    ),  # Convertir de centavos a pesos
+                    "precio_promedio": float(row[3] or 0) / 100 if row[3] else 0,
                     "categoria": row[4],
                     "marca": row[5],
                     "veces_comprado": row[6] or 0,
@@ -4343,7 +4348,149 @@ async def admin_productos():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 2. ✅ OBTENER UN PRODUCTO ESPECÍFICO (NUEVO)
+# 2. ✅ DUPLICADOS - BUSCAR Y REEMPLAZAR COMPLETO
+@app.get("/api/admin/duplicados")
+async def get_duplicados():
+    """Busca facturas duplicadas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("🔍 Buscando facturas duplicadas...")
+
+        # ✅ CORRECCIÓN: usar 'fecha' en lugar de 'fecha_compra'
+        cursor.execute(
+            """
+            SELECT
+                f1.id as factura1_id,
+                f2.id as factura2_id,
+                f1.establecimiento,
+                f1.total_factura,
+                f1.fecha
+            FROM facturas f1
+            INNER JOIN facturas f2 ON
+                f1.establecimiento = f2.establecimiento AND
+                f1.total_factura = f2.total_factura AND
+                DATE(f1.fecha) = DATE(f2.fecha) AND
+                f1.id < f2.id
+            ORDER BY f1.fecha DESC
+            LIMIT 50
+        """
+        )
+
+        duplicados = []
+        for row in cursor.fetchall():
+            duplicados.append(
+                {
+                    "factura1_id": row[0],
+                    "factura2_id": row[1],
+                    "establecimiento": row[2],
+                    "total": float(row[3] or 0) / 100 if row[3] else 0,
+                    "fecha": row[4].isoformat() if row[4] else None,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(duplicados)} duplicados encontrados")
+        return {"duplicados": duplicados, "total": len(duplicados)}
+
+    except Exception as e:
+        print(f"❌ Error buscando duplicados: {e}")
+        traceback.print_exc()
+        return {"duplicados": [], "total": 0}
+
+
+# 3. ✅ PRODUCTOS SIMILARES - YA FUNCIONA, SOLO VERIFICAR
+@app.get("/api/admin/productos-similares")
+async def get_productos_similares():
+    """Busca productos maestros con nombres similares"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("🔍 Buscando productos similares...")
+
+        cursor.execute(
+            """
+            SELECT
+                pm1.id as producto1_id,
+                pm1.nombre as nombre1,
+                pm2.id as producto2_id,
+                pm2.nombre as nombre2,
+                pm1.precio_promedio as precio1,
+                pm2.precio_promedio as precio2
+            FROM productos_maestro pm1
+            INNER JOIN productos_maestro pm2 ON
+                LOWER(pm1.nombre) = LOWER(pm2.nombre) AND
+                pm1.id < pm2.id
+            LIMIT 100
+        """
+        )
+
+        similares = []
+        for row in cursor.fetchall():
+            similares.append(
+                {
+                    "producto1_id": row[0],
+                    "nombre1": row[1],
+                    "producto2_id": row[2],
+                    "nombre2": row[3],
+                    "precio1": float(row[4] or 0) / 100 if row[4] else 0,
+                    "precio2": float(row[5] or 0) / 100 if row[5] else 0,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(similares)} productos similares encontrados")
+        return {"productos_similares": similares, "total": len(similares)}
+
+    except Exception as e:
+        print(f"❌ Error buscando productos similares: {e}")
+        traceback.print_exc()
+        return {"productos_similares": [], "total": 0}
+
+
+# 4. ✅ USUARIOS - AGREGAR SI NO EXISTE
+@app.get("/api/admin/usuarios")
+async def get_usuarios_admin():
+    """Lista todos los usuarios"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("👥 Obteniendo usuarios...")
+
+        cursor.execute(
+            """
+            SELECT id, nombre, email, activo, fecha_registro
+            FROM usuarios
+            ORDER BY fecha_registro DESC
+        """
+        )
+
+        usuarios = []
+        for row in cursor.fetchall():
+            usuarios.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "email": row[2],
+                    "activo": row[3],
+                    "fecha_registro": row[4].isoformat() if row[4] else None,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(usuarios)} usuarios obtenidos")
+        return usuarios
+
+    except Exception as e:
+        print(f"❌ Error obteniendo usuarios: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# 5. ✅ OBTENER PRODUCTO ESPECÍFICO - AGREGAR NUEVO
 @app.get("/api/admin/productos/{producto_id}")
 async def get_producto_detalle(producto_id: int):
     """Obtiene detalles de un producto maestro específico"""
@@ -4393,7 +4540,7 @@ async def get_producto_detalle(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 3. ✅ ACTUALIZAR PRODUCTO (NUEVO)
+# 6. ✅ ACTUALIZAR PRODUCTO - AGREGAR NUEVO
 @app.put("/api/admin/productos/{producto_id}")
 async def update_producto(producto_id: int, datos: dict):
     """Actualiza un producto maestro"""
@@ -4416,7 +4563,6 @@ async def update_producto(producto_id: int, datos: dict):
             params.append(datos["codigo_ean"] if datos["codigo_ean"] else None)
 
         if "precio_promedio" in datos and datos["precio_promedio"] is not None:
-            # Convertir de pesos a centavos
             precio_centavos = int(float(datos["precio_promedio"]) * 100)
             update_fields.append("precio_promedio = %s")
             params.append(precio_centavos)
@@ -4432,7 +4578,6 @@ async def update_producto(producto_id: int, datos: dict):
         if not update_fields:
             raise HTTPException(status_code=400, detail="No hay campos para actualizar")
 
-        # Agregar timestamp de actualización
         update_fields.append("ultima_actualizacion = CURRENT_TIMESTAMP")
         params.append(producto_id)
 
@@ -4470,154 +4615,7 @@ async def update_producto(producto_id: int, datos: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 4. ✅ LISTAR USUARIOS (NUEVO)
-@app.get("/api/admin/usuarios")
-async def get_usuarios_admin():
-    """Lista todos los usuarios"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("👥 Obteniendo usuarios...")
-
-        cursor.execute(
-            """
-            SELECT id, nombre, email, activo, fecha_registro
-            FROM usuarios
-            ORDER BY fecha_registro DESC
-        """
-        )
-
-        usuarios = []
-        for row in cursor.fetchall():
-            usuarios.append(
-                {
-                    "id": row[0],
-                    "nombre": row[1],
-                    "email": row[2],
-                    "activo": row[3],
-                    "fecha_registro": row[4].isoformat() if row[4] else None,
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(usuarios)} usuarios obtenidos")
-        return usuarios
-
-    except Exception as e:
-        print(f"❌ Error obteniendo usuarios: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# 5. ✅ BUSCAR DUPLICADOS (CORREGIDO)
-@app.get("/api/admin/duplicados")
-async def get_duplicados():
-    """Busca facturas duplicadas"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("🔍 Buscando facturas duplicadas...")
-
-        # Usar columna 'fecha' en lugar de 'fecha_compra'
-        cursor.execute(
-            """
-            SELECT
-                f1.id as factura1_id,
-                f2.id as factura2_id,
-                f1.establecimiento,
-                f1.total_factura,
-                f1.fecha
-            FROM facturas f1
-            INNER JOIN facturas f2 ON
-                f1.establecimiento = f2.establecimiento AND
-                f1.total_factura = f2.total_factura AND
-                DATE(f1.fecha) = DATE(f2.fecha) AND
-                f1.id < f2.id
-            ORDER BY f1.fecha DESC
-            LIMIT 50
-        """
-        )
-
-        duplicados = []
-        for row in cursor.fetchall():
-            duplicados.append(
-                {
-                    "factura1_id": row[0],
-                    "factura2_id": row[1],
-                    "establecimiento": row[2],
-                    "total": (
-                        float(row[3] or 0) / 100 if row[3] else 0
-                    ),  # Convertir centavos a pesos
-                    "fecha": row[4].isoformat() if row[4] else None,
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(duplicados)} duplicados encontrados")
-        return {"duplicados": duplicados, "total": len(duplicados)}
-
-    except Exception as e:
-        print(f"❌ Error buscando duplicados: {e}")
-        traceback.print_exc()
-        # Retornar vacío para no romper el dashboard
-        return {"duplicados": [], "total": 0}
-
-
-# 6. ✅ PRODUCTOS SIMILARES (CORREGIDO)
-@app.get("/api/admin/productos-similares")
-async def get_productos_similares():
-    """Busca productos maestros con nombres similares"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("🔍 Buscando productos similares...")
-
-        cursor.execute(
-            """
-            SELECT
-                pm1.id as producto1_id,
-                pm1.nombre as nombre1,
-                pm2.id as producto2_id,
-                pm2.nombre as nombre2,
-                pm1.precio_promedio as precio1,
-                pm2.precio_promedio as precio2
-            FROM productos_maestro pm1
-            INNER JOIN productos_maestro pm2 ON
-                LOWER(pm1.nombre) = LOWER(pm2.nombre) AND
-                pm1.id < pm2.id
-            LIMIT 100
-        """
-        )
-
-        similares = []
-        for row in cursor.fetchall():
-            similares.append(
-                {
-                    "producto1_id": row[0],
-                    "nombre1": row[1],
-                    "producto2_id": row[2],
-                    "nombre2": row[3],
-                    "precio1": float(row[4] or 0) / 100 if row[4] else 0,
-                    "precio2": float(row[5] or 0) / 100 if row[5] else 0,
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(similares)} productos similares encontrados")
-        return {"productos_similares": similares, "total": len(similares)}
-
-    except Exception as e:
-        print(f"❌ Error buscando productos similares: {e}")
-        traceback.print_exc()
-        # Retornar vacío para no romper el dashboard
-        return {"productos_similares": [], "total": 0}
-
-
-print("✅ Endpoints de productos_maestro registrados correctamente")
-
+print("✅ Todos los endpoints corregidos registrados")
 
 if __name__ == "__main__":
     import uvicorn
