@@ -4641,7 +4641,7 @@ async def get_usuario_inventario_admin(usuario_id: int):
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
                 COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
-                COALESCE(SUM(f.total), 0) as total_gastado
+                COALESCE(SUM(f.total_factura), 0) as total_gastado
             FROM facturas f
             LEFT JOIN items_factura if_ ON f.id = if_.factura_id
             WHERE f.usuario_id = %s
@@ -4679,4 +4679,4 @@ if __name__ == "__main__":
     print(f"🔧 VERSIÓN: 2025-01-21-INVENTARIO-COMPLETO-FIX")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
 
-# Updated 10/23/2025 08:44:07
+# Updated 10/23/2025 3:57pm
