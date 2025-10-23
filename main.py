@@ -4000,10 +4000,17 @@ async def get_usuarios_sin_admin():
 # ENDPOINTS FALTANTES DE DUPLICADOS
 @app.get("/api/admin/duplicados")
 async def get_duplicados():
-    """Busca facturas duplicadas"""
+    """Busca facturas duplicadas con manejo robusto de errores"""
     try:
         conn = get_db_connection()
+        if not conn:
+            raise HTTPException(
+                status_code=500, detail="No se pudo conectar a la base de datos"
+            )
+
         cursor = conn.cursor()
+
+        print("🔍 Buscando facturas duplicadas...")
 
         cursor.execute(
             """
@@ -4054,10 +4061,15 @@ async def get_duplicados():
 
 @app.get("/api/admin/productos")
 async def admin_productos():
-    """Catálogo de productos - VERSIÓN CORREGIDA"""
+    """Catálogo de productos con manejo robusto de errores"""
     try:
         conn = get_db_connection()
-        cursor = cursor()
+        if not conn:
+            raise HTTPException(
+                status_code=500, detail="No se pudo conectar a la base de datos"
+            )
+
+        cursor = conn.cursor()
 
         print("🏷️ Obteniendo productos...")
 
@@ -4488,6 +4500,92 @@ async def get_usuarios_admin():
         print(f"❌ Error obteniendo usuarios: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ NUEVO ENDPOINT: INVENTARIO DE USUARIO
+@app.get("/api/admin/usuarios/{usuario_id}/inventario")
+async def get_inventario_usuario(usuario_id: int):
+    """Obtiene el inventario completo de un usuario"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(
+                status_code=500, detail="No se pudo conectar a la base de datos"
+            )
+
+        cursor = conn.cursor()
+
+        print(f"📦 Obteniendo inventario del usuario {usuario_id}...")
+
+        # Verificar que el usuario existe
+        cursor.execute("SELECT id, nombre FROM usuarios WHERE id = %s", (usuario_id,))
+        usuario = cursor.fetchone()
+
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        # Obtener items del inventario
+        cursor.execute(
+            """
+            SELECT
+                ui.id,
+                pm.nombre as producto_nombre,
+                ui.cantidad,
+                ui.precio_unitario,
+                ui.fecha_compra,
+                ui.fecha_expiracion,
+                e.nombre as establecimiento,
+                pm.codigo_ean,
+                pm.categoria
+            FROM usuario_inventario ui
+            LEFT JOIN productos_maestro pm ON ui.producto_maestro_id = pm.id
+            LEFT JOIN establecimientos e ON ui.establecimiento_id = e.id
+            WHERE ui.usuario_id = %s AND ui.cantidad > 0
+            ORDER BY ui.fecha_compra DESC
+        """,
+            (usuario_id,),
+        )
+
+        items = []
+        for row in cursor.fetchall():
+            try:
+                items.append(
+                    {
+                        "id": row[0],
+                        "producto": row[1] or "Producto desconocido",
+                        "cantidad": row[2] or 0,
+                        "precio_unitario": float(row[3] or 0) / 100 if row[3] else 0,
+                        "fecha_compra": row[4].isoformat() if row[4] else None,
+                        "fecha_expiracion": row[5].isoformat() if row[5] else None,
+                        "establecimiento": row[6] or "Desconocido",
+                        "codigo_ean": row[7],
+                        "categoria": row[8],
+                    }
+                )
+            except Exception as row_error:
+                print(f"⚠️ Error procesando item inventario: {row_error}")
+                continue
+
+        conn.close()
+
+        print(f"✅ {len(items)} items en inventario del usuario {usuario_id}")
+        return {
+            "usuario_id": usuario_id,
+            "usuario_nombre": usuario[1],
+            "total_items": len(items),
+            "items": items,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo inventario: {e}")
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, detail=f"Error al obtener inventario: {str(e)}"
+        )
 
 
 # 5. ✅ OBTENER PRODUCTO ESPECÍFICO - AGREGAR NUEVO
