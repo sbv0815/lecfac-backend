@@ -284,7 +284,6 @@ async def index(request: Request):
     """Página principal / Dashboard"""
     # Buscar dashboard actualizado
     possible_files = [
-        "dashboard_fixed_1761173724.html",
         "dashboard.html",
         "admin_dashboard_v2.html",
         "admin_dashboard.html",
@@ -293,29 +292,21 @@ async def index(request: Request):
     for filename in possible_files:
         file_path = Path(filename)
         if file_path.exists():
-            # Leer archivo y agregar headers anti-caché
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            return HTMLResponse(
-                content=content,
+            print(f"✅ Sirviendo dashboard: {filename}")
+            # 🆕 AGREGAR HEADERS ANTI-CACHÉ
+            return FileResponse(
+                str(file_path),
+                media_type="text/html",
                 headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
                     "Pragma": "no-cache",
                     "Expires": "0",
                 },
             )
 
-    # Si no existe ninguno, usar template
-    if templates:
-        try:
-            return templates.TemplateResponse(
-                "admin_dashboard_v2.html", {"request": request}
-            )
-        except:
-            pass
-
-    return HTMLResponse("<h1>LecFac API - Dashboard no encontrado</h1>")
+    # Si no encuentra el archivo
+    print("⚠️ No se encontró dashboard.html")
+    raise HTTPException(status_code=404, detail="Dashboard no encontrado")
 
 
 @app.get("/editor.html")
