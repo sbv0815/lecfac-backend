@@ -92,6 +92,31 @@ class InvoiceConfirm(BaseModel):
     user_email: Optional[str] = None
 
 
+# 🆕 MODELOS PARA EL EDITOR DE FACTURAS
+class FacturaUpdate(BaseModel):
+    """Modelo para actualizar datos generales de factura"""
+
+    establecimiento: Optional[str] = None
+    total: Optional[float] = None
+    fecha: Optional[str] = None
+
+
+class ItemUpdate(BaseModel):
+    """Modelo para actualizar un item de factura"""
+
+    nombre: str
+    precio: float
+    codigo_ean: Optional[str] = None
+
+
+class ItemCreate(BaseModel):
+    """Modelo para crear un nuevo item"""
+
+    nombre: str
+    precio: float
+    codigo_ean: Optional[str] = None
+
+
 # ==========================================
 # FUNCIONES AUXILIARES
 # ==========================================
@@ -291,6 +316,32 @@ async def index(request: Request):
             pass
 
     return HTMLResponse("<h1>LecFac API - Dashboard no encontrado</h1>")
+
+
+@app.get("/editor.html")
+async def serve_editor():
+    """Sirve el editor de facturas con headers anti-caché"""
+    possible_files = [
+        "editor.html",
+        "editor_factura.html",
+    ]
+
+    for filename in possible_files:
+        file_path = Path(filename)
+        if file_path.exists():
+            print(f"✅ Sirviendo editor: {filename}")
+            return FileResponse(
+                str(file_path),
+                media_type="text/html",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+
+    print("❌ Archivo editor.html no encontrado")
+    raise HTTPException(status_code=404, detail="Editor no encontrado")
 
 
 @app.get("/editor", response_class=HTMLResponse)
@@ -3695,6 +3746,223 @@ print("✅ Endpoints de control de calidad registrados")
 # ==========================================
 # INICIO DEL SERVIDOR
 # ==========================================
+
+
+# ==========================================
+# 🆕 ENDPOINTS DEL EDITOR DE FACTURAS
+# ==========================================
+
+
+@app.put("/api/admin/facturas/{factura_id}")
+async def update_factura_admin(factura_id: int, datos: FacturaUpdate):
+    """
+    Actualiza datos generales de una factura (establecimiento, total, fecha)
+    Usado por el editor de facturas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"📝 Actualizando factura {factura_id}...")
+
+        update_fields = []
+        params = []
+
+        if datos.establecimiento is not None:
+            update_fields.append("establecimiento = %s")
+            params.append(datos.establecimiento)
+
+        if datos.total is not None:
+            update_fields.append("total_factura = %s")
+            params.append(datos.total)
+
+        if datos.fecha is not None:
+            update_fields.append("fecha_compra = %s")
+            params.append(datos.fecha)
+
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+
+        params.append(factura_id)
+
+        query = f"""
+            UPDATE facturas
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+            RETURNING id, establecimiento, total_factura, fecha_compra
+        """
+
+        cursor.execute(query, tuple(params))
+        result = cursor.fetchone()
+        conn.commit()
+        conn.close()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+        print(f"✅ Factura {factura_id} actualizada")
+        return {
+            "id": result[0],
+            "establecimiento": result[1],
+            "total_factura": float(result[2] or 0),
+            "fecha_compra": result[3].isoformat() if result[3] else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error actualizando factura: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/admin/items/{item_id}")
+async def update_item_admin(item_id: int, item: ItemUpdate):
+    """
+    Actualiza un item de factura (nombre, precio, código EAN)
+    Usado por el editor de facturas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"📝 Actualizando item {item_id}...")
+
+        update_fields = ["nombre_leido = %s", "precio_pagado = %s"]
+        params = [item.nombre, item.precio]
+
+        # Solo actualizar código_ean si se proporciona
+        if item.codigo_ean is not None and item.codigo_ean.strip() != "":
+            update_fields.append("codigo_leido = %s")
+            params.append(item.codigo_ean)
+
+        params.append(item_id)
+
+        query = f"""
+            UPDATE items_factura
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+            RETURNING id, nombre_leido, precio_pagado, codigo_leido
+        """
+
+        cursor.execute(query, tuple(params))
+        result = cursor.fetchone()
+        conn.commit()
+        conn.close()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Item no encontrado")
+
+        print(f"✅ Item {item_id} actualizado")
+        return {
+            "id": result[0],
+            "nombre_producto": result[1],
+            "precio_unitario": float(result[2] or 0),
+            "codigo_ean": result[3],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error actualizando item: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/facturas/{factura_id}/items")
+async def create_item_admin(factura_id: int, item: ItemCreate):
+    """
+    Crea un nuevo item en una factura
+    Usado por el editor de facturas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"➕ Creando nuevo item en factura {factura_id}...")
+
+        # Verificar que la factura existe
+        cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+        # Insertar item
+        if item.codigo_ean and item.codigo_ean.strip():
+            cursor.execute(
+                """
+                INSERT INTO items_factura (factura_id, nombre_leido, precio_pagado, cantidad, codigo_leido)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, nombre_leido, precio_pagado, cantidad, codigo_leido
+                """,
+                (factura_id, item.nombre, item.precio, 1, item.codigo_ean),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO items_factura (factura_id, nombre_leido, precio_pagado, cantidad)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, nombre_leido, precio_pagado, cantidad, codigo_leido
+                """,
+                (factura_id, item.nombre, item.precio, 1),
+            )
+
+        result = cursor.fetchone()
+        conn.commit()
+        conn.close()
+
+        print(f"✅ Item {result[0]} creado")
+        return {
+            "id": result[0],
+            "nombre_producto": result[1],
+            "precio_unitario": float(result[2] or 0),
+            "cantidad": result[3],
+            "codigo_ean": result[4],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error creando item: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/items/{item_id}")
+async def delete_item_admin(item_id: int):
+    """
+    Elimina un item de factura
+    Usado por el editor de facturas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"🗑️ Eliminando item {item_id}...")
+
+        cursor.execute(
+            "DELETE FROM items_factura WHERE id = %s RETURNING id", (item_id,)
+        )
+        result = cursor.fetchone()
+        conn.commit()
+        conn.close()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Item no encontrado")
+
+        print(f"✅ Item {item_id} eliminado")
+        return {"mensaje": "Item eliminado exitosamente", "id": result[0]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error eliminando item: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints del editor de facturas registrados")
+
 if __name__ == "__main__":
     import uvicorn
 
