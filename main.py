@@ -4183,6 +4183,58 @@ async def get_producto_detalle(producto_id: int):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/admin/usuarios")
+async def get_usuarios():
+    """Obtiene lista de usuarios con estadísticas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("👥 Obteniendo usuarios...")
+
+        cursor.execute(
+            """
+            SELECT
+                u.id,
+                u.email,
+                u.email as nombre_completo,
+                u.telefono,
+                u.fecha_registro,
+                COUNT(DISTINCT f.id) as total_facturas,
+                COALESCE(SUM(f.total_factura), 0) as total_gastado
+            FROM usuarios u
+            LEFT JOIN facturas f ON u.id = f.usuario_id
+            GROUP BY u.id, u.email, u.telefono, u.fecha_registro
+            ORDER BY total_facturas DESC
+        """
+        )
+
+        usuarios = []
+        for row in cursor.fetchall():
+            usuarios.append(
+                {
+                    "id": row[0],
+                    "email": row[1],
+                    "nombre_completo": row[2],
+                    "telefono": row[3] if row[3] else "",
+                    "fecha_registro": row[4].isoformat() if row[4] else None,
+                    "total_facturas": row[5] or 0,
+                    "total_gastado": float(row[6]) if row[6] else 0,
+                }
+            )
+
+        conn.close()
+
+        print(f"✅ {len(usuarios)} usuarios obtenidos")
+        return usuarios
+
+    except Exception as e:
+        print(f"❌ Error obteniendo usuarios: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ✅ 3. ACTUALIZAR PRODUCTO (en productos_maestros)
 @app.get("/api/admin/productos/{producto_id}")
