@@ -564,8 +564,8 @@ def obtener_estadisticas_matching(cursor) -> dict:
     }
 
 
-print("✅ Módulo product_matching cargado correctamente")
-print("📦 Funciones disponibles:")
+print("=== Modulo product_matching cargado correctamente ===")
+print("Funciones disponibles:")
 print("   - clasificar_codigo()")
 print("   - buscar_o_crear_producto_inteligente()")
 print("   - obtener_estadisticas_matching()")
