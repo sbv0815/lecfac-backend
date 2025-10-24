@@ -4663,7 +4663,7 @@ async def diagnostico_total_gastado():
         # 4. Inventario - NOMBRES CORRECTOS
         cursor.execute("""
             SELECT
-                pm.nombre,
+                pm.nombre_normalizado,
                 iu.cantidad_total_comprada,
                 iu.precio_promedio,
                 iu.total_gastado,
