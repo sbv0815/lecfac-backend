@@ -43,12 +43,12 @@ from database import (
     test_database_connection,
     detectar_cadena,
     obtener_o_crear_establecimiento,
-    obtener_o_crear_producto_maestro,
     actualizar_inventario_desde_factura,
 )
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
+from product_matching import buscar_o_crear_producto_inteligente
 
 # Importar routers
 from admin_dashboard import router as admin_dashboard_router
@@ -551,8 +551,12 @@ async def parse_invoice(file: UploadFile = File(...)):
                 producto_maestro_id = None
                 if codigo_ean_valido:
                     try:
-                        producto_maestro_id = obtener_o_crear_producto_maestro(
-                            codigo_ean=codigo_ean_valido, nombre=nombre, precio=precio
+                        producto_maestro_id = buscar_o_crear_producto_inteligente(
+                            codigo=codigo_ean_valido or "",
+                            nombre=nombre,
+                            precio=precio,
+                            establecimiento=establecimiento_raw,
+                            cursor=cursor,
                         )
                         print(
                             f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
@@ -746,17 +750,14 @@ async def save_invoice_with_image(
                     continue
 
                 # ⭐ CREAR PRODUCTO MAESTRO
-                producto_maestro_id = None
-                if codigo and len(codigo) >= 8 and codigo.isdigit():
-                    try:
-                        producto_maestro_id = obtener_o_crear_producto_maestro(
-                            codigo_ean=codigo, nombre=nombre, precio=int(precio)
-                        )
-                        print(
-                            f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
-                        )
-                    except Exception as e:
-                        print(f"   ⚠️ Error creando producto maestro: {e}")
+
+                producto_maestro_id = buscar_o_crear_producto_inteligente(
+                    codigo=codigo,
+                    nombre=nombre,
+                    precio=int(precio),
+                    establecimiento=establecimiento,
+                    cursor=cursor,
+                )
 
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
@@ -1323,8 +1324,12 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     producto_maestro_id = None
                     if codigo and len(codigo) >= 3:
                         try:
-                            producto_maestro_id = obtener_o_crear_producto_maestro(
-                                codigo_ean=codigo, nombre=nombre, precio=int(precio)
+                            producto_maestro_id = buscar_o_crear_producto_inteligente(
+                                codigo=codigo,
+                                nombre=nombre,
+                                precio=int(precio),
+                                establecimiento=establecimiento,
+                                cursor=cursor,
                             )
                             print(
                                 f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
