@@ -4642,7 +4642,9 @@ async def diagnostico_total_gastado():
                 SELECT
                     nombre_leido,
                     cantidad,
-                    precio_pagado
+                    precio_pagado,
+                    producto_maestro_id,
+                    codigo_leido
                 FROM items_factura
                 WHERE factura_id = %s
                 ORDER BY precio_pagado DESC
@@ -4655,7 +4657,10 @@ async def diagnostico_total_gastado():
                     "producto": item[0],
                     "cantidad": float(item[1]),
                     "precio_unitario": float(item[2]),
-                    "precio_total_calculado": precio_total
+                    "precio_total_calculado": precio_total,
+                    "producto_maestro_id": item[3],
+                    "codigo_leido": item[4],
+                    "tiene_producto_id": item[3] is not None
                 })
 
             print(f"✅ {len(resultado['paso_2_diagnostico']['items_muestra'])} items analizados")
