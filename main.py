@@ -4760,31 +4760,6 @@ async def diagnostico_total_gastado():
         traceback.print_exc()
         return {"error": str(e), "traceback": traceback.format_exc()}
 
-            "parece_inflado_x100": total_sistema > 10000000,
-            "recomendacion": ""
-        }
-
-        if resultado["paso_2_diagnostico"]["resumen"]["parece_inflado_x100"]:
-            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = "🚨 CRÍTICO: Total gastado está multiplicado x100"
-        elif problemas > 0:
-            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = f"⚠️ Se encontraron {problemas} productos con ratio ~100x"
-        else:
-            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = "✅ Datos parecen correctos"
-
-        print(f"📊 Total sistema: ${total_sistema:,.0f}")
-        print(f"📊 Diagnóstico: {resultado['paso_2_diagnostico']['resumen']['recomendacion']}")
-
-        cursor.close()
-        conn.close()
-
-        return resultado
-
-    except Exception as e:
-        print(f"❌ Error en diagnóstico: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"error": str(e), "traceback": traceback.format_exc()}
-
 
 
 # ========================================
