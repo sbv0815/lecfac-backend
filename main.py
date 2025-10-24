@@ -4108,20 +4108,19 @@ async def admin_productos():
 
         productos = []
         for row in cursor.fetchall():
-            # Convertir precio de centavos a pesos
-            precio_pesos = float(row[3]) / 100 if row[3] else 0
+            # ✅ NO dividir - ya está en pesos
+            precio_pesos = float(row[3]) if row[3] else 0
 
-            productos.append(
-                {
-                    "id": row[0],
-                    "nombre": row[1],
-                    "codigo_ean": row[2],
-                    "precio_promedio": precio_pesos,  # ← CORREGIDO: En pesos
-                    "categoria": row[4],
-                    "marca": row[5],
-                    "veces_comprado": row[6] or 0,
-                }
-            )
+            productos.append({
+            "id": row[0],
+            "nombre": row[1],
+            "codigo_ean": row[2],
+            "precio_promedio": precio_pesos,  # Ya en pesos
+            "categoria": row[4],
+            "marca": row[5],
+            "veces_comprado": row[6] or 0,
+            })
+
 
         conn.close()
 
