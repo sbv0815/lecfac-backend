@@ -4057,28 +4057,6 @@ async def get_duplicados():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ✅ 2. LISTAR TODOS LOS PRODUCTOS (desde productos_maestros)
-# ==========================================
-# ENDPOINTS ADMIN - VERSIÓN CORREGIDA CON NOMBRES DE COLUMNAS REALES
-# ==========================================
-# Estructura real de productos_maestros:
-# id, codigo_ean, nombre_normalizado, nombre_comercial, marca, categoria,
-# subcategoria, presentacion, es_producto_fresco, imagen_url, total_reportes,
-# total_usuarios_reportaron, precio_promedio_global, precio_minimo_historico,
-# precio_maximo_historico, primera_vez_reportado, ultima_actualizacion
-# ==========================================
-
-
-# ==========================================
-# ENDPOINTS ADMIN - VERSIÓN CORREGIDA CON NOMBRES DE COLUMNAS REALES
-# ==========================================
-# Estructura real de productos_maestros:
-# id, codigo_ean, nombre_normalizado, nombre_comercial, marca, categoria,
-# subcategoria, presentacion, es_producto_fresco, imagen_url, total_reportes,
-# total_usuarios_reportaron, precio_promedio_global, precio_minimo_historico,
-# precio_maximo_historico, primera_vez_reportado, ultima_actualizacion
-# ==========================================
-
 
 # ✅ 1. LISTAR TODOS LOS PRODUCTOS (desde productos_maestros)
 @app.get("/api/admin/productos")
@@ -4266,7 +4244,7 @@ async def get_producto_detalle(producto_id: int):
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
         # ✅ CORRECCIÓN: Convertir de centavos a pesos
-        precio_pesos = float(result[3]) / 100 if result[3] else 0
+        precio_pesos = float(result[3])  if result[3] else 0
 
         return {
             "id": result[0],
@@ -4362,8 +4340,8 @@ async def get_productos_similares():
                     "nombre1": row[1],
                     "producto2_id": row[2],
                     "nombre2": row[3],
-                    "precio1": float(row[4] or 0) / 100 if row[4] else 0,
-                    "precio2": float(row[5] or 0) / 100 if row[5] else 0,
+                    "precio1": float(row[4] or 0) if row[4] else 0,
+                    "precio2": float(row[5] or 0)  if row[5] else 0,
                 }
             )
 
@@ -4413,7 +4391,7 @@ async def get_producto_detalle(producto_id: int):
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
         # ✅ CORRECCIÓN: Convertir de centavos a pesos
-        precio_pesos = float(result[3]) / 100 if result[3] else 0
+        precio_pesos = float(result[3]) if result[3] else 0
 
         return {
             "id": result[0],
