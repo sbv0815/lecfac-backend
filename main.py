@@ -4516,4 +4516,3 @@ async def get_factura_imagen_alt3(factura_id: int):
 
 
 print("✅ Todos los endpoints admin corregidos y registrados")
-#   U p d a t e d 
