@@ -4513,3 +4513,200 @@ async def get_factura_imagen_alt3(factura_id: int):
 
 
 print("✅ Todos los endpoints admin corregidos y registrados")
+
+@app.get("/api/admin/diagnostico/total-gastado")
+async def diagnostico_total_gastado():
+    """
+    🔍 Endpoint temporal para diagnosticar el problema de Total Gastado x100
+    Acceder desde: https://tu-app.railway.app/api/admin/diagnostico/total-gastado
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultado = {
+            "timestamp": datetime.now().isoformat(),
+            "usuario": {},
+            "facturas": [],
+            "items_muestra": [],
+            "inventario": [],
+            "diagnostico": {}
+        }
+
+        print("🔍 Iniciando diagnóstico...")
+
+        # 1. Usuario
+        cursor.execute("""
+            SELECT id, email, facturas_aportadas, productos_aportados
+            FROM usuarios
+            WHERE email = 'santiago@tscamp.co'
+        """)
+        usuario = cursor.fetchone()
+
+        if not usuario:
+            cursor.close()
+            conn.close()
+            return {"error": "Usuario santiago@tscamp.co no encontrado"}
+
+        usuario_id = usuario[0]
+        resultado["usuario"] = {
+            "id": usuario[0],
+            "email": usuario[1],
+            "facturas": usuario[2],
+            "productos": usuario[3]
+        }
+
+        print(f"✅ Usuario encontrado: {usuario[1]}")
+
+        # 2. Facturas recientes
+        cursor.execute("""
+            SELECT id, establecimiento, fecha_compra, total, cantidad_productos
+            FROM facturas
+            WHERE usuario_id = %s
+            ORDER BY fecha_carga DESC
+            LIMIT 3
+        """, (usuario_id,))
+
+        for fac in cursor.fetchall():
+            resultado["facturas"].append({
+                "id": fac[0],
+                "establecimiento": fac[1],
+                "fecha": str(fac[2]),
+                "total": float(fac[3]) if fac[3] else 0,
+                "productos": fac[4]
+            })
+
+        print(f"✅ {len(resultado['facturas'])} facturas encontradas")
+
+        # 3. Items de primera factura
+        if resultado["facturas"]:
+            factura_id = resultado["facturas"][0]["id"]
+
+            cursor.execute("""
+                SELECT
+                    nombre_producto,
+                    cantidad,
+                    precio_unitario,
+                    precio_total
+                FROM items_factura
+                WHERE factura_id = %s
+                ORDER BY precio_total DESC
+                LIMIT 5
+            """, (factura_id,))
+
+            for item in cursor.fetchall():
+                calculado = float(item[1]) * float(item[2])
+                resultado["items_muestra"].append({
+                    "producto": item[0],
+                    "cantidad": float(item[1]),
+                    "precio_unitario": float(item[2]),
+                    "precio_total_bd": float(item[3]),
+                    "precio_total_calculado": calculado,
+                    "diferencia": float(item[3]) - calculado,
+                    "correcto": abs(float(item[3]) - calculado) < 1
+                })
+
+            print(f"✅ {len(resultado['items_muestra'])} items analizados")
+
+        # 4. Inventario
+        cursor.execute("""
+            SELECT
+                pm.nombre,
+                iu.cantidad_total_comprada,
+                iu.precio_promedio,
+                iu.total_gastado,
+                iu.numero_compras
+            FROM inventario_usuario iu
+            JOIN producto_maestro pm ON iu.producto_maestro_id = pm.id
+            WHERE iu.usuario_id = %s
+            ORDER BY iu.total_gastado DESC
+            LIMIT 10
+        """, (usuario_id,))
+
+        total_suma = 0
+        problemas = 0
+
+        for inv in cursor.fetchall():
+            esperado = float(inv[2]) * float(inv[1]) if inv[2] else 0
+            diferencia = float(inv[3]) - esperado
+            ratio = float(inv[3]) / esperado if esperado > 0 else 0
+
+            total_suma += float(inv[3])
+
+            es_problema = 99 < ratio < 101  # Entre 99x y 101x
+            if es_problema:
+                problemas += 1
+
+            resultado["inventario"].append({
+                "producto": inv[0],
+                "cantidad_total": float(inv[1]),
+                "precio_promedio": float(inv[2]),
+                "total_gastado_bd": float(inv[3]),
+                "total_esperado": esperado,
+                "diferencia": diferencia,
+                "ratio": round(ratio, 2),
+                "es_problema_x100": es_problema,
+                "numero_compras": inv[4]
+            })
+
+        print(f"✅ {len(resultado['inventario'])} productos en inventario")
+        print(f"⚠️ {problemas} productos con ratio ~100x")
+
+        # 5. Diagnóstico general
+        cursor.execute("""
+            SELECT SUM(total_gastado)
+            FROM inventario_usuario
+            WHERE usuario_id = %s
+        """, (usuario_id,))
+
+        total_sistema = cursor.fetchone()[0] or 0
+
+        resultado["diagnostico"] = {
+            "total_sistema": float(total_sistema),
+            "productos_con_problema": problemas,
+            "total_10_productos": total_suma,
+            "parece_inflado_x100": total_sistema > 10000000,
+            "recomendacion": ""
+        }
+
+        if resultado["diagnostico"]["parece_inflado_x100"]:
+            resultado["diagnostico"]["recomendacion"] = "🚨 CRÍTICO: Total gastado está multiplicado x100"
+        elif problemas > 0:
+            resultado["diagnostico"]["recomendacion"] = f"⚠️ Se encontraron {problemas} productos con ratio ~100x"
+        else:
+            resultado["diagnostico"]["recomendacion"] = "✅ Datos parecen correctos"
+
+        print(f"📊 Total sistema: ${total_sistema:,.0f}")
+        print(f"📊 Diagnóstico: {resultado['diagnostico']['recomendacion']}")
+
+        cursor.close()
+        conn.close()
+
+        return resultado
+
+    except Exception as e:
+        print(f"❌ Error en diagnóstico: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "traceback": traceback.format_exc()}
+# ========================================
+# INICIALIZACIÓN DEL SERVIDOR
+# ========================================
+if __name__ == "__main__":
+    print("\n" + "=" * 60)
+    print("🚀 INICIANDO SERVIDOR LECFAC")
+    print("=" * 60)
+
+    # Verificar conexión a base de datos
+    test_database_connection()
+
+    # Crear tablas si no existen
+    create_tables()
+
+    print("=" * 60)
+    print("✅ SERVIDOR LISTO")
+    print("=" * 60)
+
+    # Iniciar servidor
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
