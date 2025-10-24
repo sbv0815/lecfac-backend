@@ -4053,6 +4053,18 @@ async def get_duplicados():
 
 
 # ✅ 2. LISTAR TODOS LOS PRODUCTOS (desde productos_maestros)
+# ==========================================
+# ENDPOINTS ADMIN - VERSIÓN CORREGIDA CON NOMBRES DE COLUMNAS REALES
+# ==========================================
+# Estructura real de productos_maestros:
+# id, codigo_ean, nombre_normalizado, nombre_comercial, marca, categoria,
+# subcategoria, presentacion, es_producto_fresco, imagen_url, total_reportes,
+# total_usuarios_reportaron, precio_promedio_global, precio_minimo_historico,
+# precio_maximo_historico, primera_vez_reportado, ultima_actualizacion
+# ==========================================
+
+
+# ✅ 1. LISTAR TODOS LOS PRODUCTOS (desde productos_maestros)
 @app.get("/api/admin/productos")
 async def admin_productos():
     """Catálogo de productos maestros"""
@@ -4066,14 +4078,14 @@ async def admin_productos():
             """
             SELECT
                 pm.id,
-                pm.nombre,
+                pm.nombre_comercial,
                 pm.codigo_ean,
-                pm.precio_promedio,
+                pm.precio_promedio_global,
                 pm.categoria,
                 pm.marca,
-                pm.veces_reportado as veces_comprado
+                pm.total_reportes
             FROM productos_maestros pm
-            ORDER BY pm.veces_reportado DESC
+            ORDER BY pm.total_reportes DESC
             LIMIT 500
         """
         )
@@ -4103,7 +4115,7 @@ async def admin_productos():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ✅ 3. OBTENER UN PRODUCTO ESPECÍFICO (desde productos_maestros)
+# ✅ 2. OBTENER UN PRODUCTO ESPECÍFICO (desde productos_maestros)
 @app.get("/api/admin/productos/{producto_id}")
 async def get_producto_detalle(producto_id: int):
     """Obtiene detalles de un producto maestro específico"""
@@ -4117,12 +4129,12 @@ async def get_producto_detalle(producto_id: int):
             """
             SELECT
                 pm.id,
-                pm.nombre,
+                pm.nombre_comercial,
                 pm.codigo_ean,
-                pm.precio_promedio,
+                pm.precio_promedio_global,
                 pm.categoria,
                 pm.marca,
-                pm.veces_reportado as veces_comprado
+                pm.total_reportes
             FROM productos_maestros pm
             WHERE pm.id = %s
         """,
@@ -4153,7 +4165,7 @@ async def get_producto_detalle(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ✅ 4. ACTUALIZAR PRODUCTO (en productos_maestros)
+# ✅ 3. ACTUALIZAR PRODUCTO (en productos_maestros)
 @app.put("/api/admin/productos/{producto_id}")
 async def update_producto(producto_id: int, datos: dict):
     """Actualiza un producto maestro"""
@@ -4167,8 +4179,9 @@ async def update_producto(producto_id: int, datos: dict):
         update_fields = []
         params = []
 
+        # Mapeo de campos frontend → base de datos
         if "nombre" in datos and datos["nombre"]:
-            update_fields.append("nombre = %s")
+            update_fields.append("nombre_comercial = %s")
             params.append(datos["nombre"])
 
         if "codigo_ean" in datos:
@@ -4177,7 +4190,7 @@ async def update_producto(producto_id: int, datos: dict):
 
         if "precio_promedio" in datos and datos["precio_promedio"] is not None:
             precio_centavos = int(float(datos["precio_promedio"]) * 100)
-            update_fields.append("precio_promedio = %s")
+            update_fields.append("precio_promedio_global = %s")
             params.append(precio_centavos)
 
         if "categoria" in datos:
@@ -4198,26 +4211,38 @@ async def update_producto(producto_id: int, datos: dict):
             UPDATE productos_maestros
             SET {', '.join(update_fields)}
             WHERE id = %s
-            RETURNING id, nombre, codigo_ean, precio_promedio, categoria, marca, veces_reportado
+            RETURNING id, nombre_comercial, codigo_ean, precio_promedio_global,
+                      categoria, marca, total_reportes
         """
+
+        print(f"🔍 Query: {query}")
+        print(f"🔍 Params: {params}")
 
         cursor.execute(query, tuple(params))
         result = cursor.fetchone()
+
+        if not result:
+            conn.close()
+            raise HTTPException(
+                status_code=404, detail=f"Producto con ID {producto_id} no encontrado"
+            )
+
         conn.commit()
         conn.close()
 
-        if not result:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        print(f"✅ Producto {producto_id} actualizado")
+        print(f"✅ Producto {producto_id} actualizado en BD")
         return {
-            "id": result[0],
-            "nombre": result[1],
-            "codigo_ean": result[2],
-            "precio_promedio": float(result[3] or 0) / 100 if result[3] else 0,
-            "categoria": result[4],
-            "marca": result[5],
-            "veces_comprado": result[6] or 0,
+            "success": True,
+            "message": "Producto actualizado",
+            "producto": {
+                "id": result[0],
+                "nombre": result[1],
+                "codigo_ean": result[2],
+                "precio_promedio": float(result[3] or 0) / 100 if result[3] else 0,
+                "categoria": result[4],
+                "marca": result[5],
+                "veces_comprado": result[6] or 0,
+            },
         }
 
     except HTTPException:
@@ -4228,7 +4253,7 @@ async def update_producto(producto_id: int, datos: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ✅ 5. ELIMINAR PRODUCTO (de productos_maestros)
+# ✅ 4. ELIMINAR PRODUCTO (de productos_maestros)
 @app.delete("/api/admin/productos/{producto_id}")
 async def eliminar_producto(producto_id: int):
     """Elimina un producto maestro"""
@@ -4240,7 +4265,8 @@ async def eliminar_producto(producto_id: int):
 
         # Verificar que existe
         cursor.execute(
-            "SELECT id, nombre FROM productos_maestros WHERE id = %s", (producto_id,)
+            "SELECT id, nombre_comercial FROM productos_maestros WHERE id = %s",
+            (producto_id,),
         )
         producto = cursor.fetchone()
 
@@ -4263,7 +4289,7 @@ async def eliminar_producto(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ✅ 6. PRODUCTOS SIMILARES
+# ✅ 5. PRODUCTOS SIMILARES
 @app.get("/api/admin/productos-similares")
 async def get_productos_similares():
     """Busca productos maestros con nombres similares"""
@@ -4277,14 +4303,14 @@ async def get_productos_similares():
             """
             SELECT
                 pm1.id as producto1_id,
-                pm1.nombre as nombre1,
+                pm1.nombre_comercial as nombre1,
                 pm2.id as producto2_id,
-                pm2.nombre as nombre2,
-                pm1.precio_promedio as precio1,
-                pm2.precio_promedio as precio2
+                pm2.nombre_comercial as nombre2,
+                pm1.precio_promedio_global as precio1,
+                pm2.precio_promedio_global as precio2
             FROM productos_maestros pm1
             INNER JOIN productos_maestros pm2 ON
-                LOWER(pm1.nombre) = LOWER(pm2.nombre) AND
+                LOWER(pm1.nombre_comercial) = LOWER(pm2.nombre_comercial) AND
                 pm1.id < pm2.id
             LIMIT 100
         """
@@ -4311,6 +4337,9 @@ async def get_productos_similares():
         print(f"❌ Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints admin corregidos con nombres de columnas reales")
 
 
 # ✅ 7. LISTAR USUARIOS
