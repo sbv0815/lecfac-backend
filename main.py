@@ -4518,8 +4518,7 @@ print("✅ Todos los endpoints admin corregidos y registrados")
 async def diagnostico_total_gastado():
     """
     🔍 Endpoint de diagnóstico para el problema Total Gastado x100
-    PASO 1: Muestra nombres de columnas
-    PASO 2: Análisis completo de datos
+    VERSIÓN CORREGIDA: Usa los nombres correctos de columnas
     """
     try:
         conn = get_db_connection()
@@ -4537,7 +4536,7 @@ async def diagnostico_total_gastado():
             }
         }
 
-        print("🔍 Iniciando diagnóstico...")
+        print("🔍 Iniciando diagnóstico con nombres correctos...")
 
         # ==========================================
         # PASO 1: MOSTRAR NOMBRES DE COLUMNAS
@@ -4608,12 +4607,18 @@ async def diagnostico_total_gastado():
 
         print(f"✅ Usuario encontrado: {usuario[1]}")
 
-        # 2. Facturas recientes (usamos los nombres que vimos en columnas)
+        # 2. Facturas recientes - NOMBRES CORRECTOS
         cursor.execute("""
-            SELECT id, establecimiento, fecha_factura, total_factura, cantidad_productos
+            SELECT
+                id,
+                establecimiento,
+                fecha_factura,
+                total_factura,
+                productos_detectados,
+                productos_guardados
             FROM facturas
             WHERE usuario_id = %s
-            ORDER BY fecha_carga DESC
+            ORDER BY fecha_cargue DESC
             LIMIT 3
         """, (usuario_id,))
 
@@ -4623,12 +4628,13 @@ async def diagnostico_total_gastado():
                 "establecimiento": fac[1],
                 "fecha": str(fac[2]) if fac[2] else "N/A",
                 "total": float(fac[3]) if fac[3] else 0,
-                "productos": fac[4]
+                "productos_detectados": fac[4],
+                "productos_guardados": fac[5]
             })
 
         print(f"✅ {len(resultado['paso_2_diagnostico']['facturas'])} facturas encontradas")
 
-        # 3. Items de primera factura
+        # 3. Items de primera factura - NOMBRES CORRECTOS
         if resultado["paso_2_diagnostico"]["facturas"]:
             factura_id = resultado["paso_2_diagnostico"]["facturas"][0]["id"]
 
@@ -4636,38 +4642,35 @@ async def diagnostico_total_gastado():
                 SELECT
                     nombre_leido,
                     cantidad,
-                    precio_unitario,
-                    precio_total
+                    precio_pagado
                 FROM items_factura
                 WHERE factura_id = %s
-                ORDER BY precio_total DESC
+                ORDER BY precio_pagado DESC
                 LIMIT 5
             """, (factura_id,))
 
             for item in cursor.fetchall():
-                calculado = float(item[1]) * float(item[2])
+                precio_total = float(item[1]) * float(item[2])
                 resultado["paso_2_diagnostico"]["items_muestra"].append({
                     "producto": item[0],
                     "cantidad": float(item[1]),
                     "precio_unitario": float(item[2]),
-                    "precio_total_bd": float(item[3]),
-                    "precio_total_calculado": calculado,
-                    "diferencia": float(item[3]) - calculado,
-                    "correcto": abs(float(item[3]) - calculado) < 1
+                    "precio_total_calculado": precio_total
                 })
 
             print(f"✅ {len(resultado['paso_2_diagnostico']['items_muestra'])} items analizados")
 
-        # 4. Inventario
+        # 4. Inventario - NOMBRES CORRECTOS
         cursor.execute("""
             SELECT
                 pm.nombre,
                 iu.cantidad_total_comprada,
                 iu.precio_promedio,
                 iu.total_gastado,
-                iu.numero_compras
+                iu.numero_compras,
+                iu.precio_ultima_compra
             FROM inventario_usuario iu
-            JOIN producto_maestro pm ON iu.producto_maestro_id = pm.id
+            JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
             WHERE iu.usuario_id = %s
             ORDER BY iu.total_gastado DESC
             LIMIT 10
@@ -4677,26 +4680,33 @@ async def diagnostico_total_gastado():
         problemas = 0
 
         for inv in cursor.fetchall():
-            esperado = float(inv[2]) * float(inv[1]) if inv[2] else 0
-            diferencia = float(inv[3]) - esperado
-            ratio = float(inv[3]) / esperado if esperado > 0 else 0
+            total_gastado_bd = float(inv[3]) if inv[3] else 0
+            cantidad = float(inv[1]) if inv[1] else 0
+            precio_promedio = float(inv[2]) if inv[2] else 0
 
-            total_suma += float(inv[3])
+            # Calcular lo que DEBERÍA ser el total_gastado
+            esperado = precio_promedio * cantidad if precio_promedio and cantidad else 0
+            diferencia = total_gastado_bd - esperado
+            ratio = total_gastado_bd / esperado if esperado > 0 else 0
 
-            es_problema = 99 < ratio < 101  # Entre 99x y 101x
+            total_suma += total_gastado_bd
+
+            # Detectar si está inflado x100 (ratio entre 99 y 101)
+            es_problema = 99 < ratio < 101
             if es_problema:
                 problemas += 1
 
             resultado["paso_2_diagnostico"]["inventario"].append({
                 "producto": inv[0],
-                "cantidad_total": float(inv[1]),
-                "precio_promedio": float(inv[2]),
-                "total_gastado_bd": float(inv[3]),
+                "cantidad_total": cantidad,
+                "precio_promedio": precio_promedio,
+                "total_gastado_bd": total_gastado_bd,
                 "total_esperado": esperado,
                 "diferencia": diferencia,
                 "ratio": round(ratio, 2),
                 "es_problema_x100": es_problema,
-                "numero_compras": inv[4]
+                "numero_compras": inv[4],
+                "precio_ultima_compra": float(inv[5]) if inv[5] else None
             })
 
         print(f"✅ {len(resultado['paso_2_diagnostico']['inventario'])} productos en inventario")
@@ -4710,11 +4720,46 @@ async def diagnostico_total_gastado():
         """, (usuario_id,))
 
         total_sistema = cursor.fetchone()[0] or 0
+        total_sistema = float(total_sistema)
 
+        # Diagnóstico inteligente
         resultado["paso_2_diagnostico"]["resumen"] = {
-            "total_sistema": float(total_sistema),
+            "total_sistema": total_sistema,
+            "total_sistema_formateado": f"${total_sistema:,.0f}",
             "productos_con_problema_x100": problemas,
             "total_10_productos": total_suma,
+            "parece_inflado_x100": total_sistema > 10000000,
+            "si_divide_100": total_sistema / 100,
+            "recomendacion": ""
+        }
+
+        if resultado["paso_2_diagnostico"]["resumen"]["parece_inflado_x100"]:
+            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = (
+                "🚨 CRÍTICO: Total gastado parece estar multiplicado x100. "
+                f"Valor actual: ${total_sistema:,.0f} → Debería ser: ${total_sistema/100:,.0f}"
+            )
+        elif problemas > 0:
+            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = (
+                f"⚠️ Se encontraron {problemas} productos con ratio ~100x. "
+                "Revisar cálculo de inventario."
+            )
+        else:
+            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = "✅ Datos parecen correctos"
+
+        print(f"📊 Total sistema: ${total_sistema:,.0f}")
+        print(f"📊 Diagnóstico: {resultado['paso_2_diagnostico']['resumen']['recomendacion']}")
+
+        cursor.close()
+        conn.close()
+
+        return resultado
+
+    except Exception as e:
+        print(f"❌ Error en diagnóstico: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
             "parece_inflado_x100": total_sistema > 10000000,
             "recomendacion": ""
         }
