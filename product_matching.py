@@ -320,12 +320,18 @@ def buscar_o_crear_por_codigo_interno(
     CRÍTICO: Los códigos internos NO son únicos globalmente.
     Ejemplo: "625" en Jumbo puede ser pan, pero "625" en Éxito puede ser leche.
 
-    Por eso buscamos: mismo código + mismo establecimiento + nombre similar.
+    Por eso:
+    - NO guardamos código interno en codigo_ean (esa columna es solo para EAN-13)
+    - Guardamos código interno en subcategoria con formato: "CODIGO_INTERNO|ESTABLECIMIENTO"
+    - Buscamos por: subcategoria + nombre similar
     """
 
     nombre_norm = normalizar_nombre(nombre)
 
-    # Buscar productos con el mismo código en el mismo establecimiento
+    # Formato especial para identificar código interno: "CODIGO|ESTABLECIMIENTO"
+    codigo_interno_compuesto = f"{codigo}|{establecimiento}"
+
+    # Buscar productos con el mismo código interno en el mismo establecimiento
     cursor.execute(
         """
         SELECT
@@ -335,12 +341,12 @@ def buscar_o_crear_por_codigo_interno(
             SIMILARITY(pm.nombre_normalizado, %s) as similitud,
             pm.total_reportes
         FROM productos_maestros pm
-        WHERE pm.codigo_ean = %s
-        AND pm.subcategoria = %s
+        WHERE pm.subcategoria = %s
+        AND pm.codigo_ean IS NULL
         ORDER BY similitud DESC
         LIMIT 1
         """,
-        (nombre_norm, codigo, establecimiento),
+        (nombre_norm, codigo_interno_compuesto),
     )
 
     resultado = cursor.fetchone()
@@ -359,7 +365,7 @@ def buscar_o_crear_por_codigo_interno(
         actualizar_precio_producto(producto_id, precio, cursor)
         return producto_id
 
-    # No existe → crear nuevo CON establecimiento en subcategoria
+    # No existe → crear nuevo CON código interno en subcategoria (NO en codigo_ean)
     print(f"   🆕 Creando producto con código interno: {codigo} ({establecimiento})")
 
     cursor.execute(
@@ -373,14 +379,15 @@ def buscar_o_crear_por_codigo_interno(
             total_reportes,
             primera_vez_reportado,
             ultima_actualizacion
-        ) VALUES (%s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
         """,
-        (codigo, nombre_norm, nombre, precio, establecimiento),
+        (nombre_norm, nombre, precio, codigo_interno_compuesto),
     )
 
     nuevo_id = cursor.fetchone()[0]
     print(f"   ✅ Producto creado (ID: {nuevo_id})")
+    print(f"   📝 Código interno guardado: {codigo_interno_compuesto}")
 
     return nuevo_id
 
@@ -406,12 +413,12 @@ def buscar_o_crear_por_nombre(
             SIMILARITY(pm.nombre_normalizado, %s) as similitud,
             pm.total_reportes
         FROM productos_maestros pm
-        WHERE pm.subcategoria = %s
+        WHERE pm.subcategoria LIKE %s
         AND pm.codigo_ean IS NULL
         ORDER BY similitud DESC
         LIMIT 1
         """,
-        (nombre_norm, establecimiento),
+        (nombre_norm, f"SIN_CODIGO|{establecimiento}"),
     )
 
     resultado = cursor.fetchone()
@@ -439,14 +446,14 @@ def buscar_o_crear_por_nombre(
             nombre_normalizado,
             nombre_comercial,
             precio_promedio_global,
-            subcategoria,
+            codigo_ean, subcategoria,
             total_reportes,
             primera_vez_reportado,
             ultima_actualizacion
-        ) VALUES (%s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
         """,
-        (nombre_norm, nombre, precio, establecimiento),
+        (nombre_norm, nombre, precio, f"SIN_CODIGO|{establecimiento}"),
     )
 
     nuevo_id = cursor.fetchone()[0]
