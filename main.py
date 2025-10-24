@@ -4518,7 +4518,6 @@ print("✅ Todos los endpoints admin corregidos y registrados")
 async def diagnostico_total_gastado():
     """
     🔍 Endpoint temporal para diagnosticar el problema de Total Gastado x100
-    Acceder desde: https://tu-app.railway.app/api/admin/diagnostico/total-gastado
     """
     try:
         conn = get_db_connection()
@@ -4558,9 +4557,9 @@ async def diagnostico_total_gastado():
 
         print(f"✅ Usuario encontrado: {usuario[1]}")
 
-        # 2. Facturas recientes
+        # 2. Facturas recientes - CORREGIDO
         cursor.execute("""
-            SELECT id, establecimiento, fecha_compra, total, cantidad_productos
+            SELECT id, establecimiento, fecha_factura, total_factura, cantidad_productos
             FROM facturas
             WHERE usuario_id = %s
             ORDER BY fecha_carga DESC
@@ -4571,20 +4570,20 @@ async def diagnostico_total_gastado():
             resultado["facturas"].append({
                 "id": fac[0],
                 "establecimiento": fac[1],
-                "fecha": str(fac[2]),
+                "fecha": str(fac[2]) if fac[2] else "N/A",
                 "total": float(fac[3]) if fac[3] else 0,
                 "productos": fac[4]
             })
 
         print(f"✅ {len(resultado['facturas'])} facturas encontradas")
 
-        # 3. Items de primera factura
+        # 3. Items de primera factura - CORREGIDO
         if resultado["facturas"]:
             factura_id = resultado["facturas"][0]["id"]
 
             cursor.execute("""
                 SELECT
-                    nombre_producto,
+                    nombre_leido,
                     cantidad,
                     precio_unitario,
                     precio_total
@@ -4689,6 +4688,8 @@ async def diagnostico_total_gastado():
         import traceback
         traceback.print_exc()
         return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 # ========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ========================================
