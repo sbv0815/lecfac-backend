@@ -4197,14 +4197,13 @@ async def get_usuarios():
             SELECT
                 u.id,
                 u.email,
-                u.email as nombre_completo,
-                u.telefono,
+                COALESCE(u.nombre, u.email) as nombre_completo,
                 u.fecha_registro,
                 COUNT(DISTINCT f.id) as total_facturas,
                 COALESCE(SUM(f.total_factura), 0) as total_gastado
             FROM usuarios u
             LEFT JOIN facturas f ON u.id = f.usuario_id
-            GROUP BY u.id, u.email, u.telefono, u.fecha_registro
+            GROUP BY u.id, u.email, u.nombre, u.fecha_registro
             ORDER BY total_facturas DESC
         """
         )
@@ -4216,10 +4215,10 @@ async def get_usuarios():
                     "id": row[0],
                     "email": row[1],
                     "nombre_completo": row[2],
-                    "telefono": row[3] if row[3] else "",
-                    "fecha_registro": row[4].isoformat() if row[4] else None,
-                    "total_facturas": row[5] or 0,
-                    "total_gastado": float(row[6]) if row[6] else 0,
+                    "telefono": "",  # Campo no existe en BD
+                    "fecha_registro": row[3].isoformat() if row[3] else None,
+                    "total_facturas": row[4] or 0,
+                    "total_gastado": float(row[5]) if row[5] else 0,
                 }
             )
 
@@ -4234,7 +4233,6 @@ async def get_usuarios():
         if conn:
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ✅ 3. ACTUALIZAR PRODUCTO (en productos_maestros)
 @app.get("/api/admin/productos/{producto_id}")
