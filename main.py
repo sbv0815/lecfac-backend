@@ -4064,6 +4064,17 @@ async def get_duplicados():
 # ==========================================
 
 
+# ==========================================
+# ENDPOINTS ADMIN - VERSIÓN CORREGIDA CON NOMBRES DE COLUMNAS REALES
+# ==========================================
+# Estructura real de productos_maestros:
+# id, codigo_ean, nombre_normalizado, nombre_comercial, marca, categoria,
+# subcategoria, presentacion, es_producto_fresco, imagen_url, total_reportes,
+# total_usuarios_reportaron, precio_promedio_global, precio_minimo_historico,
+# precio_maximo_historico, primera_vez_reportado, ultima_actualizacion
+# ==========================================
+
+
 # ✅ 1. LISTAR TODOS LOS PRODUCTOS (desde productos_maestros)
 @app.get("/api/admin/productos")
 async def admin_productos():
@@ -4078,7 +4089,7 @@ async def admin_productos():
             """
             SELECT
                 pm.id,
-                pm.nombre_comercial,
+                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
                 pm.codigo_ean,
                 pm.precio_promedio_global,
                 pm.categoria,
@@ -4095,7 +4106,7 @@ async def admin_productos():
             productos.append(
                 {
                     "id": row[0],
-                    "nombre": row[1] or "Sin nombre",
+                    "nombre": row[1],
                     "codigo_ean": row[2],
                     "precio_promedio": float(row[3] or 0) / 100 if row[3] else 0,
                     "categoria": row[4],
@@ -4129,7 +4140,7 @@ async def get_producto_detalle(producto_id: int):
             """
             SELECT
                 pm.id,
-                pm.nombre_comercial,
+                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
                 pm.codigo_ean,
                 pm.precio_promedio_global,
                 pm.categoria,
@@ -4149,7 +4160,7 @@ async def get_producto_detalle(producto_id: int):
 
         return {
             "id": result[0],
-            "nombre": result[1] or "Sin nombre",
+            "nombre": result[1],
             "codigo_ean": result[2],
             "precio_promedio": float(result[3] or 0) / 100 if result[3] else 0,
             "categoria": result[4],
@@ -4211,8 +4222,13 @@ async def update_producto(producto_id: int, datos: dict):
             UPDATE productos_maestros
             SET {', '.join(update_fields)}
             WHERE id = %s
-            RETURNING id, nombre_comercial, codigo_ean, precio_promedio_global,
-                      categoria, marca, total_reportes
+            RETURNING id,
+                      COALESCE(nombre_comercial, nombre_normalizado, 'Sin nombre') as nombre,
+                      codigo_ean,
+                      precio_promedio_global,
+                      categoria,
+                      marca,
+                      total_reportes
         """
 
         print(f"🔍 Query: {query}")
@@ -4265,7 +4281,11 @@ async def eliminar_producto(producto_id: int):
 
         # Verificar que existe
         cursor.execute(
-            "SELECT id, nombre_comercial FROM productos_maestros WHERE id = %s",
+            """
+            SELECT id, COALESCE(nombre_comercial, nombre_normalizado, 'Sin nombre')
+            FROM productos_maestros
+            WHERE id = %s
+            """,
             (producto_id,),
         )
         producto = cursor.fetchone()
@@ -4303,14 +4323,15 @@ async def get_productos_similares():
             """
             SELECT
                 pm1.id as producto1_id,
-                pm1.nombre_comercial as nombre1,
+                COALESCE(pm1.nombre_comercial, pm1.nombre_normalizado, 'Sin nombre') as nombre1,
                 pm2.id as producto2_id,
-                pm2.nombre_comercial as nombre2,
+                COALESCE(pm2.nombre_comercial, pm2.nombre_normalizado, 'Sin nombre') as nombre2,
                 pm1.precio_promedio_global as precio1,
                 pm2.precio_promedio_global as precio2
             FROM productos_maestros pm1
             INNER JOIN productos_maestros pm2 ON
-                LOWER(pm1.nombre_comercial) = LOWER(pm2.nombre_comercial) AND
+                COALESCE(pm1.nombre_comercial, pm1.nombre_normalizado) =
+                COALESCE(pm2.nombre_comercial, pm2.nombre_normalizado) AND
                 pm1.id < pm2.id
             LIMIT 100
         """
