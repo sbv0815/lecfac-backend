@@ -3997,7 +3997,15 @@ async def get_usuarios_sin_admin():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ENDPOINTS FALTANTES DE DUPLICADOS
+# ==========================================
+# ENDPOINTS ADMIN - VERSIÓN CORREGIDA
+# ==========================================
+# Este archivo contiene SOLO los endpoints correctos
+# Elimina todos los que usan items_factura con ROW_NUMBER()
+# ==========================================
+
+
+# ✅ 1. ENDPOINT DE DUPLICADOS
 @app.get("/api/admin/duplicados")
 async def get_duplicados():
     """Busca facturas duplicadas"""
@@ -4028,8 +4036,7 @@ async def get_duplicados():
         for row in cursor.fetchall():
             duplicados.append(
                 {
-                    "factura1_id": row[0],
-                    "factura2_id": row[1],
+                    "ids": [row[0], row[1]],  # ✅ FORMATO CORRECTO
                     "establecimiento": row[2],
                     "total": float(row[3] or 0),
                     "fecha": row[4].isoformat() if row[4] else None,
@@ -4045,265 +4052,13 @@ async def get_duplicados():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==========================================
-# 🔧 REEMPLAZAR ENDPOINT /api/admin/productos
-# Buscar en main.py el endpoint @app.get("/api/admin/productos")
-# y REEMPLAZARLO completamente con este:
-# ==========================================
-
-
-@app.get("/api/admin/productos")
-async def admin_productos():
-    """Catálogo de productos - VERSIÓN CORREGIDA"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("🏷️ Obteniendo productos...")
-
-        # ESTRUCTURA BASADA EN items_factura (la que SÍ existe)
-        cursor.execute(
-            """
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) as id,
-                if_.nombre_leido as nombre,
-                if_.codigo_leido as codigo_ean,
-                AVG(if_.precio_pagado) as precio_promedio,
-                pm.categoria,
-                pm.marca,
-                COUNT(*) as veces_comprado
-            FROM items_factura if_
-            LEFT JOIN productos_maestros pm ON if_.producto_maestro_id = pm.id
-            GROUP BY if_.nombre_leido, if_.codigo_leido, pm.categoria, pm.marca
-            ORDER BY veces_comprado DESC
-            LIMIT 500
-        """
-        )
-
-        productos = []
-        for row in cursor.fetchall():
-            productos.append(
-                {
-                    "id": row[0],
-                    "nombre": row[1] or "Sin nombre",
-                    "codigo_ean": row[2],
-                    "precio_promedio": float(row[3] or 0),
-                    "categoria": row[4],
-                    "marca": row[5],
-                    "veces_comprado": row[6] or 0,
-                }
-            )
-
-        conn.close()
-
-        print(f"✅ {len(productos)} productos")
-        return productos
-
-    except Exception as e:
-        print(f"❌ Error obteniendo productos: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# 🆕 AGREGAR ENDPOINT PARA OBTENER PRODUCTO ESPECÍFICO
-# Agregar DESPUÉS del endpoint anterior
-# ==========================================
-
-
-@app.get("/api/admin/productos/{producto_id}")
-async def get_producto_detalle(producto_id: int):
-    """Obtiene detalles de un producto específico por su ID temporal"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print(f"📦 Buscando producto {producto_id}...")
-
-        # Usar la misma consulta pero con LIMIT para obtener el producto específico
-        cursor.execute(
-            """
-            WITH productos_numerados AS (
-                SELECT
-                    ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) as id,
-                    if_.nombre_leido as nombre,
-                    if_.codigo_leido as codigo_ean,
-                    AVG(if_.precio_pagado) as precio_promedio,
-                    pm.categoria,
-                    pm.marca,
-                    COUNT(*) as veces_comprado
-                FROM items_factura if_
-                LEFT JOIN productos_maestros pm ON if_.producto_maestro_id = pm.id
-                GROUP BY if_.nombre_leido, if_.codigo_leido, pm.categoria, pm.marca
-            )
-            SELECT *
-            FROM productos_numerados
-            WHERE id = %s
-        """,
-            (producto_id,),
-        )
-
-        result = cursor.fetchone()
-        conn.close()
-
-        if not result:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        return {
-            "id": result[0],
-            "nombre": result[1] or "Sin nombre",
-            "codigo_ean": result[2],
-            "precio_promedio": float(result[3] or 0),
-            "categoria": result[4],
-            "marca": result[5],
-            "veces_comprado": result[6] or 0,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# 🆕 AGREGAR ENDPOINT PARA ACTUALIZAR PRODUCTO
-# Esto actualizará el productos_maestros vinculado
-# ==========================================
-
-
-@app.put("/api/admin/productos/{producto_id}")
-async def update_producto(producto_id: int, datos: dict):
-    """Actualiza un producto maestro"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print(f"📝 Actualizando producto {producto_id}...")
-
-        # Primero, obtener el nombre del producto para encontrar su producto_maestro
-        cursor.execute(
-            """
-            SELECT if_.nombre_leido, if_.producto_maestro_id
-            FROM items_factura if_
-            GROUP BY if_.nombre_leido, if_.producto_maestro_id
-            ORDER BY COUNT(*) DESC
-            LIMIT 1 OFFSET %s
-        """,
-            (producto_id - 1,),
-        )
-
-        result = cursor.fetchone()
-        if not result:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        nombre_original, producto_maestro_id = result
-
-        # Si tiene producto_maestro, actualizarlo
-        if producto_maestro_id:
-            update_fields = []
-            params = []
-
-            if "categoria" in datos:
-                update_fields.append("categoria = %s")
-                params.append(datos["categoria"])
-
-            if "marca" in datos:
-                update_fields.append("marca = %s")
-                params.append(datos["marca"])
-
-            if update_fields:
-                params.append(producto_maestro_id)
-                query = f"""
-                    UPDATE productos_maestros
-                    SET {', '.join(update_fields)}
-                    WHERE id = %s
-                """
-                cursor.execute(query, tuple(params))
-                conn.commit()
-
-        conn.close()
-
-        print(f"✅ Producto actualizado")
-        return {"success": True, "message": "Producto actualizado"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# 🆕 AGREGAR ENDPOINT PARA USUARIOS
-# ==========================================
-
-
-@app.get("/api/admin/usuarios")
-async def get_usuarios_admin():
-    """Lista todos los usuarios"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            SELECT id, nombre, email, activo, fecha_registro
-            FROM usuarios
-            ORDER BY fecha_registro DESC
-        """
-        )
-
-        usuarios = []
-        for row in cursor.fetchall():
-            usuarios.append(
-                {
-                    "id": row[0],
-                    "nombre": row[1],
-                    "email": row[2],
-                    "activo": row[3],
-                    "fecha_registro": row[4].isoformat() if row[4] else None,
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(usuarios)} usuarios obtenidos")
-        return usuarios
-
-    except Exception as e:
-        print(f"❌ Error obteniendo usuarios: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# 🔧 REEMPLAZAR ENDPOINTS DE DUPLICADOS
-# Buscar y reemplazar con versiones simplificadas
-# ==========================================
-
-
-# ==========================================
-# ✅ ENDPOINTS DEFINITIVOS - USANDO productos_maestros
-# Reemplazar/Agregar estos endpoints en main.py
-# ==========================================
-
-
-# 1. ✅ LISTAR PRODUCTOS (REEMPLAZAR el existente)
-# ==========================================
-# ✅ ENDPOINTS CORREGIDOS - SIN ERRORES
-# Copiar y pegar estos bloques en main.py
-# ==========================================
-
-
-# 1. ✅ PRODUCTOS - BUSCAR Y REEMPLAZAR COMPLETO
+# ✅ 2. LISTAR TODOS LOS PRODUCTOS (desde productos_maestros)
 @app.get("/api/admin/productos")
 async def admin_productos():
     """Catálogo de productos maestros"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()  # ✅ CORRECCIÓN: conn.cursor() no cursor()
+        cursor = conn.cursor()
 
         print("🏷️ Obteniendo productos maestros...")
 
@@ -4348,149 +4103,7 @@ async def admin_productos():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 2. ✅ DUPLICADOS - BUSCAR Y REEMPLAZAR COMPLETO
-@app.get("/api/admin/duplicados")
-async def get_duplicados():
-    """Busca facturas duplicadas"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("🔍 Buscando facturas duplicadas...")
-
-        # ✅ CORRECCIÓN: usar 'fecha' en lugar de 'fecha_factura'
-        cursor.execute(
-            """
-            SELECT
-                f1.id as factura1_id,
-                f2.id as factura2_id,
-                f1.establecimiento,
-                f1.total_factura,
-                f1.fecha
-            FROM facturas f1
-            INNER JOIN facturas f2 ON
-                f1.establecimiento = f2.establecimiento AND
-                f1.total_factura = f2.total_factura AND
-                DATE(f1.fecha) = DATE(f2.fecha) AND
-                f1.id < f2.id
-            ORDER BY f1.fecha DESC
-            LIMIT 50
-        """
-        )
-
-        duplicados = []
-        for row in cursor.fetchall():
-            duplicados.append(
-                {
-                    "ids": [row[0], row[1]],  # ✅ CORRECCIÓN: Array con ambos IDs
-                    "establecimiento": row[2],
-                    "total": float(row[3] or 0) / 100 if row[3] else 0,
-                    "fecha": row[4].isoformat() if row[4] else None,
-                    "usuario_id": row[5],
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(duplicados)} duplicados encontrados")
-        return {"duplicados": duplicados, "total": len(duplicados)}
-
-    except Exception as e:
-        print(f"❌ Error buscando duplicados: {e}")
-        traceback.print_exc()
-        return {"duplicados": [], "total": 0}
-
-
-# 3. ✅ PRODUCTOS SIMILARES - YA FUNCIONA, SOLO VERIFICAR
-@app.get("/api/admin/productos-similares")
-async def get_productos_similares():
-    """Busca productos maestros con nombres similares"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("🔍 Buscando productos similares...")
-
-        cursor.execute(
-            """
-            SELECT
-                pm1.id as producto1_id,
-                pm1.nombre as nombre1,
-                pm2.id as producto2_id,
-                pm2.nombre as nombre2,
-                pm1.precio_promedio as precio1,
-                pm2.precio_promedio as precio2
-            FROM productos_maestros pm1
-            INNER JOIN productos_maestros pm2 ON
-                LOWER(pm1.nombre) = LOWER(pm2.nombre) AND
-                pm1.id < pm2.id
-            LIMIT 100
-        """
-        )
-
-        similares = []
-        for row in cursor.fetchall():
-            similares.append(
-                {
-                    "producto1_id": row[0],
-                    "nombre1": row[1],
-                    "producto2_id": row[2],
-                    "nombre2": row[3],
-                    "precio1": float(row[4] or 0) / 100 if row[4] else 0,
-                    "precio2": float(row[5] or 0) / 100 if row[5] else 0,
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(similares)} productos similares encontrados")
-        return {"productos_similares": similares, "total": len(similares)}
-
-    except Exception as e:
-        print(f"❌ Error buscando productos similares: {e}")
-        traceback.print_exc()
-        return {"productos_similares": [], "total": 0}
-
-
-# 4. ✅ USUARIOS - AGREGAR SI NO EXISTE
-@app.get("/api/admin/usuarios")
-async def get_usuarios_admin():
-    """Lista todos los usuarios"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("👥 Obteniendo usuarios...")
-
-        cursor.execute(
-            """
-            SELECT id, nombre, email, activo, fecha_registro
-            FROM usuarios
-            ORDER BY fecha_registro DESC
-        """
-        )
-
-        usuarios = []
-        for row in cursor.fetchall():
-            usuarios.append(
-                {
-                    "id": row[0],
-                    "nombre": row[1],
-                    "email": row[2],
-                    "activo": row[3],
-                    "fecha_registro": row[4].isoformat() if row[4] else None,
-                }
-            )
-
-        conn.close()
-        print(f"✅ {len(usuarios)} usuarios obtenidos")
-        return usuarios
-
-    except Exception as e:
-        print(f"❌ Error obteniendo usuarios: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# 5. ✅ OBTENER PRODUCTO ESPECÍFICO - AGREGAR NUEVO
+# ✅ 3. OBTENER UN PRODUCTO ESPECÍFICO (desde productos_maestros)
 @app.get("/api/admin/productos/{producto_id}")
 async def get_producto_detalle(producto_id: int):
     """Obtiene detalles de un producto maestro específico"""
@@ -4540,7 +4153,7 @@ async def get_producto_detalle(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 6. ✅ ACTUALIZAR PRODUCTO - AGREGAR NUEVO
+# ✅ 4. ACTUALIZAR PRODUCTO (en productos_maestros)
 @app.put("/api/admin/productos/{producto_id}")
 async def update_producto(producto_id: int, datos: dict):
     """Actualiza un producto maestro"""
@@ -4615,27 +4228,158 @@ async def update_producto(producto_id: int, datos: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ Todos los endpoints corregidos registrados")
-
-
-# ==========================================
-# 📦 INVENTARIO DE USUARIO PARA ADMIN
-# ==========================================
-@app.get("/api/admin/usuarios/{usuario_id}/inventario")
-async def get_usuario_inventario_admin(usuario_id: int):
-    """Obtiene estadísticas del inventario de un usuario específico"""
+# ✅ 5. ELIMINAR PRODUCTO (de productos_maestros)
+@app.delete("/api/admin/productos/{producto_id}")
+async def eliminar_producto(producto_id: int):
+    """Elimina un producto maestro"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print(f"📦 Obteniendo estadísticas del usuario {usuario_id}...")
+        print(f"🗑️ Eliminando producto maestro {producto_id}...")
 
-        # Obtener estadísticas del usuario
+        # Verificar que existe
+        cursor.execute(
+            "SELECT id, nombre FROM productos_maestros WHERE id = %s", (producto_id,)
+        )
+        producto = cursor.fetchone()
+
+        if not producto:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Eliminar
+        cursor.execute("DELETE FROM productos_maestros WHERE id = %s", (producto_id,))
+        conn.commit()
+        conn.close()
+
+        print(f"✅ Producto {producto_id} eliminado: {producto[1]}")
+        return {"success": True, "message": f"Producto '{producto[1]}' eliminado"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error eliminando producto: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ 6. PRODUCTOS SIMILARES
+@app.get("/api/admin/productos-similares")
+async def get_productos_similares():
+    """Busca productos maestros con nombres similares"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("🔍 Buscando productos similares...")
+
+        cursor.execute(
+            """
+            SELECT
+                pm1.id as producto1_id,
+                pm1.nombre as nombre1,
+                pm2.id as producto2_id,
+                pm2.nombre as nombre2,
+                pm1.precio_promedio as precio1,
+                pm2.precio_promedio as precio2
+            FROM productos_maestros pm1
+            INNER JOIN productos_maestros pm2 ON
+                LOWER(pm1.nombre) = LOWER(pm2.nombre) AND
+                pm1.id < pm2.id
+            LIMIT 100
+        """
+        )
+
+        similares = []
+        for row in cursor.fetchall():
+            similares.append(
+                {
+                    "producto1_id": row[0],
+                    "nombre1": row[1],
+                    "producto2_id": row[2],
+                    "nombre2": row[3],
+                    "precio1": float(row[4] or 0) / 100 if row[4] else 0,
+                    "precio2": float(row[5] or 0) / 100 if row[5] else 0,
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(similares)} pares similares encontrados")
+        return {"similares": similares, "total": len(similares)}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ 7. LISTAR USUARIOS
+@app.get("/api/admin/usuarios")
+async def get_usuarios():
+    """Obtiene lista de usuarios con estadísticas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("👥 Obteniendo usuarios...")
+
+        cursor.execute(
+            """
+            SELECT
+                u.id,
+                u.email,
+                u.nombre_completo,
+                u.telefono,
+                u.fecha_registro,
+                COUNT(DISTINCT f.id) as total_facturas,
+                COALESCE(SUM(f.total_factura), 0) as total_gastado
+            FROM usuarios u
+            LEFT JOIN facturas f ON u.id = f.usuario_id
+            GROUP BY u.id, u.email, u.nombre_completo, u.telefono, u.fecha_registro
+            ORDER BY total_facturas DESC
+        """
+        )
+
+        usuarios = []
+        for row in cursor.fetchall():
+            usuarios.append(
+                {
+                    "id": row[0],
+                    "email": row[1],
+                    "nombre_completo": row[2] or "Sin nombre",
+                    "telefono": row[3],
+                    "fecha_registro": row[4].isoformat() if row[4] else None,
+                    "total_facturas": row[5] or 0,
+                    "total_gastado": float(row[6] or 0),
+                }
+            )
+
+        conn.close()
+        print(f"✅ {len(usuarios)} usuarios")
+        return usuarios
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ 8. INVENTARIO DE USUARIO
+@app.get("/api/admin/usuarios/{usuario_id}/inventario")
+async def get_usuario_inventario(usuario_id: int):
+    """Obtiene estadísticas del inventario de un usuario"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"📊 Obteniendo inventario del usuario {usuario_id}...")
+
+        # Estadísticas agregadas
         cursor.execute(
             """
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
-                COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
+                COUNT(DISTINCT if_.nombre_leido) as productos_unicos,
                 COALESCE(SUM(f.total_factura), 0) as total_gastado
             FROM facturas f
             LEFT JOIN items_factura if_ ON f.id = if_.factura_id
@@ -4644,196 +4388,81 @@ async def get_usuario_inventario_admin(usuario_id: int):
             (usuario_id,),
         )
 
-        stats = cursor.fetchone()
+        result = cursor.fetchone()
         conn.close()
 
-        resultado = {
-            "total_facturas": stats[0] or 0,
-            "productos_unicos": stats[1] or 0,
-            "total_gastado": float(stats[2] or 0) / 100 if stats[2] else 0,
+        if not result:
+            return {
+                "total_facturas": 0,
+                "productos_unicos": 0,
+                "total_gastado": 0,
+            }
+
+        return {
+            "total_facturas": result[0] or 0,
+            "productos_unicos": result[1] or 0,
+            "total_gastado": float(result[2] or 0),
         }
 
-        print(f"✅ Estadísticas del usuario {usuario_id}: {resultado}")
-        return resultado
-
     except Exception as e:
-        print(f"❌ Error obteniendo inventario del usuario {usuario_id}: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500, detail=f"Error al obtener inventario: {str(e)}"
-        )
-
-
-# ==========================================
-# 🗑️ ELIMINAR PRODUCTO MAESTRO
-# ==========================================
-@app.delete("/api/admin/productos/{producto_id}")
-async def delete_producto(producto_id: int):
-    """Elimina un producto maestro"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print(f"🗑️ Eliminando producto maestro {producto_id}...")
-
-        # Verificar que el producto existe
-        cursor.execute(
-            "SELECT id, nombre FROM productos_maestros WHERE id = %s", (producto_id,)
-        )
-        producto = cursor.fetchone()
-
-        if not producto:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        print(f"Producto a eliminar: {producto[1]}")
-
-        # Eliminar el producto
-        cursor.execute("DELETE FROM productos_maestros WHERE id = %s", (producto_id,))
-
-        conn.commit()
-        rows_deleted = cursor.rowcount
-        conn.close()
-
-        if rows_deleted == 0:
-            raise HTTPException(
-                status_code=404, detail="No se pudo eliminar el producto"
-            )
-
-        print(f"✅ Producto {producto_id} eliminado correctamente")
-        return {"success": True, "message": f"Producto '{producto[1]}' eliminado"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error eliminando producto: {e}")
-        import traceback
-
+        print(f"❌ Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==========================================
-# 🖼️ SERVIR IMAGEN DE FACTURA
-# ==========================================
+# ✅ 9. SERVIR IMÁGENES DE FACTURAS
 @app.get("/images/{factura_id}")
-async def get_factura_image(factura_id: int):
+async def get_factura_imagen(factura_id: int):
     """Sirve la imagen de una factura"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print(f"🖼️ Buscando imagen de factura {factura_id}...")
-
-        # Buscar la imagen en la base de datos
-        cursor.execute(
-            """
-            SELECT imagen_base64, ruta_imagen
-            FROM facturas
-            WHERE id = %s
-        """,
-            (factura_id,),
-        )
-
+        cursor.execute("SELECT ruta_imagen FROM facturas WHERE id = %s", (factura_id,))
         result = cursor.fetchone()
         conn.close()
 
-        if not result:
-            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        if not result or not result[0]:
+            raise HTTPException(status_code=404, detail="Imagen no encontrada")
 
-        imagen_base64 = result[0]
-        ruta_imagen = result[1]
+        ruta_imagen = result[0]
 
-        # Prioridad 1: Imagen en base64
-        if imagen_base64:
-            print(f"✅ Sirviendo imagen desde base64 (factura {factura_id})")
+        # Buscar en diferentes ubicaciones posibles
+        posibles_rutas = [
+            ruta_imagen,
+            os.path.join("uploads", os.path.basename(ruta_imagen)),
+            os.path.join("static", "uploads", os.path.basename(ruta_imagen)),
+        ]
 
-            # Detectar el tipo de imagen del base64
-            if imagen_base64.startswith("data:image/"):
-                # Extraer el tipo MIME y los datos
-                header, data = imagen_base64.split(",", 1)
-                mime_type = header.split(":")[1].split(";")[0]
-            else:
-                # Asumir JPEG por defecto
-                mime_type = "image/jpeg"
-                data = imagen_base64
+        for ruta in posibles_rutas:
+            if os.path.exists(ruta):
+                return FileResponse(ruta)
 
-            # Decodificar base64
-            import base64
-
-            image_data = base64.b64decode(data)
-
-            return Response(
-                content=image_data,
-                media_type=mime_type,
-                headers={
-                    "Cache-Control": "public, max-age=3600",
-                    "Access-Control-Allow-Origin": "*",
-                },
-            )
-
-        # Prioridad 2: Archivo en el sistema
-        if ruta_imagen:
-            import os
-
-            if os.path.exists(ruta_imagen):
-                print(f"✅ Sirviendo imagen desde archivo: {ruta_imagen}")
-                return FileResponse(
-                    ruta_imagen,
-                    media_type="image/jpeg",
-                    headers={
-                        "Cache-Control": "public, max-age=3600",
-                        "Access-Control-Allow-Origin": "*",
-                    },
-                )
-
-        # No se encontró imagen
-        print(f"⚠️ No hay imagen disponible para factura {factura_id}")
-        raise HTTPException(
-            status_code=404, detail="No hay imagen disponible para esta factura"
-        )
+        raise HTTPException(status_code=404, detail="Archivo de imagen no encontrado")
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error obteniendo imagen: {e}")
-        import traceback
-
-        traceback.print_exc()
+        print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==========================================
-# 🖼️ ENDPOINTS ALTERNATIVOS PARA COMPATIBILIDAD
+# NOTA: Los siguientes endpoints son aliases del anterior
 # ==========================================
 @app.get("/admin/facturas/{factura_id}/imagen")
-async def get_factura_image_admin(factura_id: int):
-    """Endpoint alternativo para servir imágenes (compatibilidad)"""
-    return await get_factura_image(factura_id)
+async def get_factura_imagen_alt1(factura_id: int):
+    return await get_factura_imagen(factura_id)
 
 
 @app.get("/api/facturas/{factura_id}/imagen")
-async def get_factura_image_api(factura_id: int):
-    """Endpoint alternativo para servir imágenes (compatibilidad)"""
-    return await get_factura_image(factura_id)
+async def get_factura_imagen_alt2(factura_id: int):
+    return await get_factura_imagen(factura_id)
 
 
 @app.get("/invoices/{factura_id}/image")
-async def get_factura_image_invoices(factura_id: int):
-    """Endpoint alternativo para servir imágenes (compatibilidad)"""
-    return await get_factura_image(factura_id)
+async def get_factura_imagen_alt3(factura_id: int):
+    return await get_factura_imagen(factura_id)
 
 
-print("✅ Endpoints de imágenes y eliminación registrados")
-
-if __name__ == "__main__":
-    import uvicorn
-
-    port = int(os.environ.get("PORT", 8080))
-    print(f"🚀 Servidor iniciando en puerto: {port}")
-    print(f"🔧 VERSIÓN: 2025-01-21-INVENTARIO-COMPLETO-FIX")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
-
-# Updated 10/23/2025 08:44:07
+print("✅ Todos los endpoints admin corregidos y registrados")
