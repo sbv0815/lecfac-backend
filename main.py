@@ -4517,7 +4517,9 @@ print("✅ Todos los endpoints admin corregidos y registrados")
 @app.get("/api/admin/diagnostico/total-gastado")
 async def diagnostico_total_gastado():
     """
-    🔍 Endpoint temporal para diagnosticar el problema de Total Gastado x100
+    🔍 Endpoint de diagnóstico para el problema Total Gastado x100
+    PASO 1: Muestra nombres de columnas
+    PASO 2: Análisis completo de datos
     """
     try:
         conn = get_db_connection()
@@ -4525,14 +4527,60 @@ async def diagnostico_total_gastado():
 
         resultado = {
             "timestamp": datetime.now().isoformat(),
-            "usuario": {},
-            "facturas": [],
-            "items_muestra": [],
-            "inventario": [],
-            "diagnostico": {}
+            "paso_1_columnas": {},
+            "paso_2_diagnostico": {
+                "usuario": {},
+                "facturas": [],
+                "items_muestra": [],
+                "inventario": [],
+                "resumen": {}
+            }
         }
 
         print("🔍 Iniciando diagnóstico...")
+
+        # ==========================================
+        # PASO 1: MOSTRAR NOMBRES DE COLUMNAS
+        # ==========================================
+
+        # Columnas de facturas
+        cursor.execute("""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'facturas'
+            ORDER BY ordinal_position
+        """)
+        resultado["paso_1_columnas"]["facturas"] = [
+            {"nombre": col[0], "tipo": col[1]} for col in cursor.fetchall()
+        ]
+
+        # Columnas de items_factura
+        cursor.execute("""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'items_factura'
+            ORDER BY ordinal_position
+        """)
+        resultado["paso_1_columnas"]["items_factura"] = [
+            {"nombre": col[0], "tipo": col[1]} for col in cursor.fetchall()
+        ]
+
+        # Columnas de inventario_usuario
+        cursor.execute("""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'inventario_usuario'
+            ORDER BY ordinal_position
+        """)
+        resultado["paso_1_columnas"]["inventario_usuario"] = [
+            {"nombre": col[0], "tipo": col[1]} for col in cursor.fetchall()
+        ]
+
+        print("✅ PASO 1: Nombres de columnas obtenidos")
+
+        # ==========================================
+        # PASO 2: DIAGNÓSTICO COMPLETO
+        # ==========================================
 
         # 1. Usuario
         cursor.execute("""
@@ -4545,10 +4593,13 @@ async def diagnostico_total_gastado():
         if not usuario:
             cursor.close()
             conn.close()
-            return {"error": "Usuario santiago@tscamp.co no encontrado"}
+            return {
+                "error": "Usuario santiago@tscamp.co no encontrado",
+                "columnas": resultado["paso_1_columnas"]
+            }
 
         usuario_id = usuario[0]
-        resultado["usuario"] = {
+        resultado["paso_2_diagnostico"]["usuario"] = {
             "id": usuario[0],
             "email": usuario[1],
             "facturas": usuario[2],
@@ -4557,7 +4608,7 @@ async def diagnostico_total_gastado():
 
         print(f"✅ Usuario encontrado: {usuario[1]}")
 
-        # 2. Facturas recientes - CORREGIDO
+        # 2. Facturas recientes (usamos los nombres que vimos en columnas)
         cursor.execute("""
             SELECT id, establecimiento, fecha_factura, total_factura, cantidad_productos
             FROM facturas
@@ -4567,7 +4618,7 @@ async def diagnostico_total_gastado():
         """, (usuario_id,))
 
         for fac in cursor.fetchall():
-            resultado["facturas"].append({
+            resultado["paso_2_diagnostico"]["facturas"].append({
                 "id": fac[0],
                 "establecimiento": fac[1],
                 "fecha": str(fac[2]) if fac[2] else "N/A",
@@ -4575,11 +4626,11 @@ async def diagnostico_total_gastado():
                 "productos": fac[4]
             })
 
-        print(f"✅ {len(resultado['facturas'])} facturas encontradas")
+        print(f"✅ {len(resultado['paso_2_diagnostico']['facturas'])} facturas encontradas")
 
-        # 3. Items de primera factura - CORREGIDO
-        if resultado["facturas"]:
-            factura_id = resultado["facturas"][0]["id"]
+        # 3. Items de primera factura
+        if resultado["paso_2_diagnostico"]["facturas"]:
+            factura_id = resultado["paso_2_diagnostico"]["facturas"][0]["id"]
 
             cursor.execute("""
                 SELECT
@@ -4595,7 +4646,7 @@ async def diagnostico_total_gastado():
 
             for item in cursor.fetchall():
                 calculado = float(item[1]) * float(item[2])
-                resultado["items_muestra"].append({
+                resultado["paso_2_diagnostico"]["items_muestra"].append({
                     "producto": item[0],
                     "cantidad": float(item[1]),
                     "precio_unitario": float(item[2]),
@@ -4605,7 +4656,7 @@ async def diagnostico_total_gastado():
                     "correcto": abs(float(item[3]) - calculado) < 1
                 })
 
-            print(f"✅ {len(resultado['items_muestra'])} items analizados")
+            print(f"✅ {len(resultado['paso_2_diagnostico']['items_muestra'])} items analizados")
 
         # 4. Inventario
         cursor.execute("""
@@ -4636,7 +4687,7 @@ async def diagnostico_total_gastado():
             if es_problema:
                 problemas += 1
 
-            resultado["inventario"].append({
+            resultado["paso_2_diagnostico"]["inventario"].append({
                 "producto": inv[0],
                 "cantidad_total": float(inv[1]),
                 "precio_promedio": float(inv[2]),
@@ -4648,10 +4699,10 @@ async def diagnostico_total_gastado():
                 "numero_compras": inv[4]
             })
 
-        print(f"✅ {len(resultado['inventario'])} productos en inventario")
+        print(f"✅ {len(resultado['paso_2_diagnostico']['inventario'])} productos en inventario")
         print(f"⚠️ {problemas} productos con ratio ~100x")
 
-        # 5. Diagnóstico general
+        # 5. Resumen del diagnóstico
         cursor.execute("""
             SELECT SUM(total_gastado)
             FROM inventario_usuario
@@ -4660,23 +4711,23 @@ async def diagnostico_total_gastado():
 
         total_sistema = cursor.fetchone()[0] or 0
 
-        resultado["diagnostico"] = {
+        resultado["paso_2_diagnostico"]["resumen"] = {
             "total_sistema": float(total_sistema),
-            "productos_con_problema": problemas,
+            "productos_con_problema_x100": problemas,
             "total_10_productos": total_suma,
             "parece_inflado_x100": total_sistema > 10000000,
             "recomendacion": ""
         }
 
-        if resultado["diagnostico"]["parece_inflado_x100"]:
-            resultado["diagnostico"]["recomendacion"] = "🚨 CRÍTICO: Total gastado está multiplicado x100"
+        if resultado["paso_2_diagnostico"]["resumen"]["parece_inflado_x100"]:
+            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = "🚨 CRÍTICO: Total gastado está multiplicado x100"
         elif problemas > 0:
-            resultado["diagnostico"]["recomendacion"] = f"⚠️ Se encontraron {problemas} productos con ratio ~100x"
+            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = f"⚠️ Se encontraron {problemas} productos con ratio ~100x"
         else:
-            resultado["diagnostico"]["recomendacion"] = "✅ Datos parecen correctos"
+            resultado["paso_2_diagnostico"]["resumen"]["recomendacion"] = "✅ Datos parecen correctos"
 
         print(f"📊 Total sistema: ${total_sistema:,.0f}")
-        print(f"📊 Diagnóstico: {resultado['diagnostico']['recomendacion']}")
+        print(f"📊 Diagnóstico: {resultado['paso_2_diagnostico']['resumen']['recomendacion']}")
 
         cursor.close()
         conn.close()
@@ -4688,6 +4739,7 @@ async def diagnostico_total_gastado():
         import traceback
         traceback.print_exc()
         return {"error": str(e), "traceback": traceback.format_exc()}
+
 
 
 # ========================================
