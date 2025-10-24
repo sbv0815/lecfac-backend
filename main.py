@@ -4108,12 +4108,15 @@ async def admin_productos():
 
         productos = []
         for row in cursor.fetchall():
+            # Convertir precio de centavos a pesos
+            precio_pesos = float(row[3]) / 100 if row[3] else 0
+
             productos.append(
                 {
                     "id": row[0],
                     "nombre": row[1],
                     "codigo_ean": row[2],
-                    "precio_promedio": float(row[3] or 0) / 100 if row[3] else 0,
+                    "precio_promedio": precio_pesos,  # ← CORREGIDO: En pesos
                     "categoria": row[4],
                     "marca": row[5],
                     "veces_comprado": row[6] or 0,
@@ -4182,94 +4185,54 @@ async def get_producto_detalle(producto_id: int):
 
 
 # ✅ 3. ACTUALIZAR PRODUCTO (en productos_maestros)
-@app.put("/api/admin/productos/{producto_id}")
-async def update_producto(producto_id: int, datos: dict):
-    """Actualiza un producto maestro"""
+@app.get("/api/admin/productos/{producto_id}")
+async def get_producto_detalle(producto_id: int):
+    """Obtiene detalles de un producto maestro específico"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print(f"📝 Actualizando producto maestro {producto_id}...")
-        print(f"Datos recibidos: {datos}")
+        print(f"📦 Buscando producto maestro {producto_id}...")
 
-        update_fields = []
-        params = []
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
+                pm.codigo_ean,
+                pm.precio_promedio_global,
+                pm.categoria,
+                pm.marca,
+                pm.total_reportes
+            FROM productos_maestros pm
+            WHERE pm.id = %s
+        """,
+            (producto_id,),
+        )
 
-        # Mapeo de campos frontend → base de datos
-        if "nombre" in datos and datos["nombre"]:
-            update_fields.append("nombre_comercial = %s")
-            params.append(datos["nombre"])
-
-        if "codigo_ean" in datos:
-            update_fields.append("codigo_ean = %s")
-            params.append(datos["codigo_ean"] if datos["codigo_ean"] else None)
-
-        if "precio_promedio" in datos and datos["precio_promedio"] is not None:
-            precio_centavos = int(float(datos["precio_promedio"]) * 100)
-            update_fields.append("precio_promedio_global = %s")
-            params.append(precio_centavos)
-
-        if "categoria" in datos:
-            update_fields.append("categoria = %s")
-            params.append(datos["categoria"] if datos["categoria"] else None)
-
-        if "marca" in datos:
-            update_fields.append("marca = %s")
-            params.append(datos["marca"] if datos["marca"] else None)
-
-        if not update_fields:
-            raise HTTPException(status_code=400, detail="No hay campos para actualizar")
-
-        update_fields.append("ultima_actualizacion = CURRENT_TIMESTAMP")
-        params.append(producto_id)
-
-        query = f"""
-            UPDATE productos_maestros
-            SET {', '.join(update_fields)}
-            WHERE id = %s
-            RETURNING id,
-                      COALESCE(nombre_comercial, nombre_normalizado, 'Sin nombre') as nombre,
-                      codigo_ean,
-                      precio_promedio_global,
-                      categoria,
-                      marca,
-                      total_reportes
-        """
-
-        print(f"🔍 Query: {query}")
-        print(f"🔍 Params: {params}")
-
-        cursor.execute(query, tuple(params))
         result = cursor.fetchone()
-
-        if not result:
-            conn.close()
-            raise HTTPException(
-                status_code=404, detail=f"Producto con ID {producto_id} no encontrado"
-            )
-
-        conn.commit()
         conn.close()
 
-        print(f"✅ Producto {producto_id} actualizado en BD")
+        if not result:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # ✅ CORRECCIÓN: Convertir de centavos a pesos
+        precio_pesos = float(result[3]) / 100 if result[3] else 0
+
         return {
-            "success": True,
-            "message": "Producto actualizado",
-            "producto": {
-                "id": result[0],
-                "nombre": result[1],
-                "codigo_ean": result[2],
-                "precio_promedio": float(result[3] or 0) / 100 if result[3] else 0,
-                "categoria": result[4],
-                "marca": result[5],
-                "veces_comprado": result[6] or 0,
-            },
+            "id": result[0],
+            "nombre": result[1],
+            "codigo_ean": result[2],
+            "precio_promedio": precio_pesos,  # ← En pesos, no centavos
+            "categoria": result[4],
+            "marca": result[5],
+            "veces_comprado": result[6] or 0,
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error actualizando producto: {e}")
+        print(f"❌ Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -4369,50 +4332,52 @@ print("✅ Endpoints admin corregidos con nombres de columnas reales")
 
 
 # ✅ 7. LISTAR USUARIOS
-@app.get("/api/admin/usuarios")
-async def get_usuarios():
-    """Obtiene lista de usuarios con estadísticas"""
+@app.get("/api/admin/productos/{producto_id}")
+async def get_producto_detalle(producto_id: int):
+    """Obtiene detalles de un producto maestro específico"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print("👥 Obteniendo usuarios...")
+        print(f"📦 Buscando producto maestro {producto_id}...")
 
         cursor.execute(
             """
             SELECT
-                u.id,
-                u.email,
-                u.nombre_completo,
-                u.telefono,
-                u.fecha_registro,
-                COUNT(DISTINCT f.id) as total_facturas,
-                COALESCE(SUM(f.total_factura), 0) as total_gastado
-            FROM usuarios u
-            LEFT JOIN facturas f ON u.id = f.usuario_id
-            GROUP BY u.id, u.email, u.nombre_completo, u.telefono, u.fecha_registro
-            ORDER BY total_facturas DESC
-        """
+                pm.id,
+                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
+                pm.codigo_ean,
+                pm.precio_promedio_global,
+                pm.categoria,
+                pm.marca,
+                pm.total_reportes
+            FROM productos_maestros pm
+            WHERE pm.id = %s
+        """,
+            (producto_id,),
         )
 
-        usuarios = []
-        for row in cursor.fetchall():
-            usuarios.append(
-                {
-                    "id": row[0],
-                    "email": row[1],
-                    "nombre_completo": row[2] or "Sin nombre",
-                    "telefono": row[3],
-                    "fecha_registro": row[4].isoformat() if row[4] else None,
-                    "total_facturas": row[5] or 0,
-                    "total_gastado": float(row[6] or 0),
-                }
-            )
-
+        result = cursor.fetchone()
         conn.close()
-        print(f"✅ {len(usuarios)} usuarios")
-        return usuarios
 
+        if not result:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # ✅ CORRECCIÓN: Convertir de centavos a pesos
+        precio_pesos = float(result[3]) / 100 if result[3] else 0
+
+        return {
+            "id": result[0],
+            "nombre": result[1],
+            "codigo_ean": result[2],
+            "precio_promedio": precio_pesos,  # ← En pesos, no centavos
+            "categoria": result[4],
+            "marca": result[5],
+            "veces_comprado": result[6] or 0,
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error: {e}")
         traceback.print_exc()
