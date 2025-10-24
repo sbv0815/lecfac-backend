@@ -4285,7 +4285,7 @@ async def get_usuarios_admin():
 
 
 # ==========================================
-# ✅ ENDPOINTS DEFINITIVOS - USANDO productos_maestro
+# ✅ ENDPOINTS DEFINITIVOS - USANDO productos_maestros
 # Reemplazar/Agregar estos endpoints en main.py
 # ==========================================
 
@@ -4317,7 +4317,7 @@ async def admin_productos():
                 pm.categoria,
                 pm.marca,
                 pm.veces_reportado as veces_comprado
-            FROM productos_maestro pm
+            FROM productos_maestros pm
             ORDER BY pm.veces_reportado DESC
             LIMIT 500
         """
@@ -4419,8 +4419,8 @@ async def get_productos_similares():
                 pm2.nombre as nombre2,
                 pm1.precio_promedio as precio1,
                 pm2.precio_promedio as precio2
-            FROM productos_maestro pm1
-            INNER JOIN productos_maestro pm2 ON
+            FROM productos_maestros pm1
+            INNER JOIN productos_maestros pm2 ON
                 LOWER(pm1.nombre) = LOWER(pm2.nombre) AND
                 pm1.id < pm2.id
             LIMIT 100
@@ -4510,7 +4510,7 @@ async def get_producto_detalle(producto_id: int):
                 pm.categoria,
                 pm.marca,
                 pm.veces_reportado as veces_comprado
-            FROM productos_maestro pm
+            FROM productos_maestros pm
             WHERE pm.id = %s
         """,
             (producto_id,),
@@ -4582,7 +4582,7 @@ async def update_producto(producto_id: int, datos: dict):
         params.append(producto_id)
 
         query = f"""
-            UPDATE productos_maestro
+            UPDATE productos_maestros
             SET {', '.join(update_fields)}
             WHERE id = %s
             RETURNING id, nombre, codigo_ean, precio_promedio, categoria, marca, veces_reportado
@@ -4680,7 +4680,7 @@ async def delete_producto(producto_id: int):
 
         # Verificar que el producto existe
         cursor.execute(
-            "SELECT id, nombre FROM productos_maestro WHERE id = %s", (producto_id,)
+            "SELECT id, nombre FROM productos_maestros WHERE id = %s", (producto_id,)
         )
         producto = cursor.fetchone()
 
@@ -4691,7 +4691,7 @@ async def delete_producto(producto_id: int):
         print(f"Producto a eliminar: {producto[1]}")
 
         # Eliminar el producto
-        cursor.execute("DELETE FROM productos_maestro WHERE id = %s", (producto_id,))
+        cursor.execute("DELETE FROM productos_maestros WHERE id = %s", (producto_id,))
 
         conn.commit()
         rows_deleted = cursor.rowcount
