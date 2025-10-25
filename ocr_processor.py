@@ -558,3 +558,5 @@ class OCRProcessor:
 
 # Instancia global del procesador
 processor = OCRProcessor()
+
+# Force deploy: 10/25/2025 16:47:36
