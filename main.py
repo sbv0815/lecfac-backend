@@ -64,6 +64,9 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
 from api_auditoria_ia import router as auditoria_router
+# Al inicio del archivo, con los otros imports
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 
 
 # ==========================================
@@ -218,6 +221,7 @@ app = FastAPI(
 
 app.include_router(stats_router)
 app.include_router(inventario_router)
+app.include_router(diagnostico_router)
 
 
 app.add_middleware(
