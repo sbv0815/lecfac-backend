@@ -6,6 +6,7 @@ Router de diagnóstico temporal
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 from database import get_db_connection
+from datetime import datetime
 
 router = APIRouter(prefix="/diagnostico", tags=["Diagnóstico"])
 
@@ -133,7 +134,7 @@ async def diagnostico_precios_inventario():
 
             # 3. PRODUCTOS MAESTROS
             cursor.execute("""
-                SELECT pm.id, pm.nombre, pm.codigo_ean, pm.codigo_interno, pm.precio_referencia
+                SELECT pm.id, pm.nombre_producto, pm.codigo_ean, pm.codigo_interno, pm.precio_referencia
                 FROM productos_maestros pm
                 WHERE pm.id IN (SELECT DISTINCT producto_maestro_id FROM items_factura
                                 WHERE factura_id = %s AND producto_maestro_id IS NOT NULL)
@@ -164,7 +165,7 @@ async def diagnostico_precios_inventario():
 
             # 4. INVENTARIO
             cursor.execute("""
-                SELECT iu.id, pm.nombre, iu.cantidad_actual, iu.precio_ultima_compra,
+                SELECT iu.id, pm.nombre_producto, iu.cantidad_actual, iu.precio_ultima_compra,
                        iu.precio_promedio, iu.numero_compras
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
