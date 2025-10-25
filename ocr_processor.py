@@ -1,7 +1,6 @@
 """
 Sistema de Procesamiento Automático de OCR para Facturas
-Procesa facturas de manera asíncrona y completamente automatizada
-VERSIÓN CORREGIDA: Guarda en items_factura y productos_maestros
+FIX CRÍTICO: Parámetros correctos para buscar_o_crear_producto_inteligente
 """
 
 import threading
@@ -282,12 +281,117 @@ class OCRProcessor:
             print(f"⚠️ No se pudo guardar log: {e}")
 
         print(f"📊 Factura #{factura_id}: {productos_guardados} productos guardados, {productos_rechazados} rechazados")
+"""
+SCRIPT DE DIAGNÓSTICO TEMPORAL
+Agregar al inicio de _save_product_to_items_factura en ocr_processor.py
+"""
+
+def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id: int,
+                                   user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
+    """Versión con diagnóstico completo"""
+
+    # 🔍 DIAGNÓSTICO 1: ¿Qué datos llegan?
+    print(f"\n{'='*60}")
+    print(f"🔍 DIAGNÓSTICO - Producto: {product.get('nombre', 'SIN NOMBRE')}")
+    print(f"   Código: {product.get('codigo', 'SIN CODIGO')}")
+    print(f"   Precio: {product.get('precio', 0)}")
+    print(f"   Establecimiento: '{establecimiento}'")
+    print(f"   Cadena: '{cadena}'")
+    print(f"   Factura ID: {factura_id}")
+    print(f"   Usuario ID: {user_id}")
+
+    try:
+        codigo = str(product.get("codigo", "")).strip()
+        nombre = str(product.get("nombre", "")).strip()
+        precio = int(float(product.get("precio", 0)))
+        cantidad = int(product.get("cantidad", 1))
+
+        # 🔍 DIAGNÓSTICO 2: Validaciones
+        print(f"   ✓ Datos extraídos: codigo='{codigo}', nombre='{nombre}', precio={precio}")
+
+        if not nombre:
+            print(f"   ❌ VALIDACIÓN FALLÓ: Producto sin nombre")
+            return None
+
+        if precio <= 0:
+            print(f"   ❌ VALIDACIÓN FALLÓ: Precio inválido: {precio}")
+            return None
+
+        # 🔍 DIAGNÓSTICO 3: Llamada a buscar_o_crear
+        print(f"   🔄 Llamando buscar_o_crear_producto_inteligente...")
+        print(f"      Parámetros:")
+        print(f"      - codigo: '{codigo}'")
+        print(f"      - nombre: '{nombre}'")
+        print(f"      - precio: {precio}")
+        print(f"      - establecimiento: '{establecimiento}'")
+
+        producto_maestro_id = buscar_o_crear_producto_inteligente(
+            codigo=codigo,
+            nombre=nombre,
+            precio=precio,
+            establecimiento=establecimiento,
+            cursor=cursor
+        )
+
+        # 🔍 DIAGNÓSTICO 4: ¿Qué retornó?
+        print(f"   📊 RETORNO de buscar_o_crear: {producto_maestro_id}")
+        print(f"   📊 Tipo: {type(producto_maestro_id)}")
+
+        if not producto_maestro_id:
+            print(f"   ❌ CRÍTICO: producto_maestro_id es NULL/None/False")
+            print(f"   ❌ NO SE GUARDARÁ en items_factura")
+            return None
+
+        print(f"   ✅ producto_maestro_id válido: {producto_maestro_id}")
+
+        # 🔍 DIAGNÓSTICO 5: INSERT en items_factura
+        print(f"   💾 Guardando en items_factura...")
+        cursor.execute("""
+            INSERT INTO items_factura (
+                factura_id,
+                producto_maestro_id,
+                usuario_id,
+                codigo_leido,
+                nombre_leido,
+                precio_pagado,
+                cantidad,
+                matching_confianza,
+                fecha_creacion
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            factura_id,
+            producto_maestro_id,
+            user_id,
+            codigo if codigo else None,
+            nombre,
+            precio,
+            cantidad,
+            90,
+            datetime.now()
+        ))
+
+        item_id = cursor.fetchone()[0]
+        conn.commit()
+
+        print(f"   ✅ ÉXITO - Item ID: {item_id}, Producto Maestro ID: {producto_maestro_id}")
+        print(f"{'='*60}\n")
+
+        return producto_maestro_id
+
+    except Exception as e:
+        print(f"   ❌ EXCEPCIÓN CAPTURADA: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        conn.rollback()
+        return None
 
     def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id: int,
                                        user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
         """
         Guarda un producto en items_factura usando el sistema de matching inteligente
-        Retorna el producto_maestro_id si tiene éxito
+        🔧 FIX: Parámetros correctos para buscar_o_crear_producto_inteligente
         """
         try:
             codigo = str(product.get("codigo", "")).strip()
@@ -299,20 +403,27 @@ class OCRProcessor:
                 print(f"   ⚠️ Producto sin nombre, omitiendo")
                 return None
 
-            # Usar el sistema de matching inteligente
-            producto_maestro_id = buscar_o_crear_producto_inteligente(
-                cursor=cursor,
-                conn=conn,
-                codigo_leido=codigo if codigo and len(codigo) >= 3 else None,
-                nombre_leido=nombre,
-                establecimiento=establecimiento,
-                cadena=cadena
-            )
-
-            if not producto_maestro_id:
-                print(f"   ⚠️ No se pudo obtener producto_maestro_id para: {nombre}")
+            if precio <= 0:
+                print(f"   ⚠️ Precio inválido: {precio}")
                 return None
 
+            # 🔧 FIX: Usar los parámetros CORRECTOS según product_matching.py
+            # Los parámetros son: codigo, nombre, precio, establecimiento, cursor
+            producto_maestro_id = buscar_o_crear_producto_inteligente(
+                codigo=codigo,              # ✅ Parámetro 1
+                nombre=nombre,              # ✅ Parámetro 2
+                precio=precio,              # ✅ Parámetro 3 (antes faltaba!)
+                establecimiento=establecimiento,  # ✅ Parámetro 4
+                cursor=cursor               # ✅ Parámetro 5
+            )
+
+            # 🚨 CRÍTICO: Si no se pudo obtener producto_maestro_id, NO continuar
+            if not producto_maestro_id:
+                print(f"   ❌ No se pudo obtener producto_maestro_id para: {nombre} ({codigo})")
+                print(f"      → Saltando este producto")
+                return None
+
+            # ✅ Solo si llegamos aquí, producto_maestro_id es válido
             # Guardar en items_factura
             cursor.execute("""
                 INSERT INTO items_factura (
@@ -335,12 +446,14 @@ class OCRProcessor:
                 nombre,
                 precio,
                 cantidad,
-                90,  # Confianza alta del matching
+                90,
                 datetime.now()
             ))
 
             item_id = cursor.fetchone()[0]
             conn.commit()
+
+            print(f"   ✅ Item guardado - ID: {item_id}, producto_maestro_id: {producto_maestro_id}")
 
             return producto_maestro_id
 
