@@ -55,6 +55,7 @@ from admin_dashboard import router as admin_dashboard_router
 from auth import router as auth_router
 from image_handlers import router as image_handlers_router
 from duplicados_routes import router as duplicados_router
+from diagnostico_routes import router as diagnostico_router
 
 # Importar procesador OCR y auditoría
 from ocr_processor import processor, ocr_queue, processing
