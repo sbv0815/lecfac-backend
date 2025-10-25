@@ -2,7 +2,7 @@
 PRODUCT MATCHING - LECFAC
 ==========================
 Sistema inteligente de clasificación y matching de productos para supermercados colombianos.
-VERSIÓN CORREGIDA: Robusta para grandes volúmenes, con transacciones y logging optimizado
+VERSIÓN FINAL: Con conn.commit() después de cada INSERT
 """
 
 import unicodedata
@@ -126,11 +126,11 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
 
 
 def buscar_o_crear_producto_inteligente(
-    codigo: str, nombre: str, precio: int, establecimiento: str, cursor
+    codigo: str, nombre: str, precio: int, establecimiento: str, cursor, conn
 ) -> Optional[int]:
     """
     Busca o crea producto maestro usando clasificación inteligente de códigos.
-    VERSIÓN ROBUSTA: Maneja errores, logging optimizado, y garantiza creación.
+    VERSIÓN FINAL: Con conn para hacer commits.
     """
 
     if not nombre or not nombre.strip():
@@ -150,6 +150,7 @@ def buscar_o_crear_producto_inteligente(
                 nombre=nombre,
                 precio=precio,
                 cursor=cursor,
+                conn=conn,
             )
 
         elif clasificacion["requiere_establecimiento"]:
@@ -159,6 +160,7 @@ def buscar_o_crear_producto_inteligente(
                 precio=precio,
                 establecimiento=establecimiento,
                 cursor=cursor,
+                conn=conn,
             )
 
         else:
@@ -168,6 +170,7 @@ def buscar_o_crear_producto_inteligente(
                 precio=precio,
                 establecimiento=establecimiento,
                 cursor=cursor,
+                conn=conn,
             )
 
     except Exception as e:
@@ -183,11 +186,11 @@ def buscar_o_crear_producto_inteligente(
 
 
 def buscar_o_crear_por_ean(
-    codigo_ean: str, nombre: str, precio: int, cursor
+    codigo_ean: str, nombre: str, precio: int, cursor, conn
 ) -> int:
     """
     Buscar o crear producto por código EAN-13.
-    VERSIÓN ROBUSTA: Garantiza creación del producto.
+    VERSIÓN ROBUSTA: Garantiza creación del producto con commit.
     """
 
     nombre_norm = normalizar_nombre(nombre)
@@ -229,19 +232,21 @@ def buscar_o_crear_por_ean(
         )
 
         nuevo_id = cursor.fetchone()[0]
+        conn.commit()  # ← CRÍTICO: Commit inmediato
         return nuevo_id
 
     except Exception as e:
         print(f"   ❌ Error en buscar_o_crear_por_ean: {e}")
+        conn.rollback()
         raise
 
 
 def buscar_o_crear_por_codigo_interno(
-    codigo: str, nombre: str, precio: int, establecimiento: str, cursor
+    codigo: str, nombre: str, precio: int, establecimiento: str, cursor, conn
 ) -> int:
     """
     Buscar o crear producto por código interno de cadena.
-    VERSIÓN ROBUSTA: Garantiza creación del producto.
+    VERSIÓN ROBUSTA: Garantiza creación del producto con commit.
     """
 
     nombre_norm = normalizar_nombre(nombre)
@@ -295,19 +300,21 @@ def buscar_o_crear_por_codigo_interno(
         )
 
         nuevo_id = cursor.fetchone()[0]
+        conn.commit()  # ← CRÍTICO: Commit inmediato
         return nuevo_id
 
     except Exception as e:
         print(f"   ❌ Error en buscar_o_crear_por_codigo_interno: {e}")
+        conn.rollback()
         raise
 
 
 def buscar_o_crear_por_nombre(
-    nombre: str, precio: int, establecimiento: str, cursor
+    nombre: str, precio: int, establecimiento: str, cursor, conn
 ) -> int:
     """
     Buscar producto solo por similitud de nombre en el mismo establecimiento.
-    VERSIÓN ROBUSTA: Garantiza creación del producto.
+    VERSIÓN ROBUSTA: Garantiza creación del producto con commit.
     """
 
     nombre_norm = normalizar_nombre(nombre)
@@ -359,10 +366,12 @@ def buscar_o_crear_por_nombre(
         )
 
         nuevo_id = cursor.fetchone()[0]
+        conn.commit()  # ← CRÍTICO: Commit inmediato
         return nuevo_id
 
     except Exception as e:
         print(f"   ❌ Error en buscar_o_crear_por_nombre: {e}")
+        conn.rollback()
         raise
 
 
