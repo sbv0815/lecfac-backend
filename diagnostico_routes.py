@@ -60,7 +60,7 @@ async def diagnostico_precios_inventario():
                    f.fecha_factura, f.productos_detectados, f.productos_guardados,
                    f.estado_validacion
             FROM facturas f WHERE f.usuario_id = 3
-            ORDER BY f.created_at DESC LIMIT 1
+            ORDER BY f.id DESC LIMIT 1
         """)
 
         factura = cursor.fetchone()
@@ -125,6 +125,9 @@ async def diagnostico_precios_inventario():
                     """)
 
                 html_output.append("</table>")
+
+                if prod_null > 0:
+                    html_output.append(f'<p class="error">❌ CRÍTICO: {prod_null} items sin producto_maestro_id</p>')
             else:
                 html_output.append('<p class="error">❌ No hay items_factura</p>')
 
@@ -141,6 +144,21 @@ async def diagnostico_precios_inventario():
             html_output.append("<h2>3️⃣ Productos Maestros</h2>")
             if productos:
                 html_output.append(f"<p>📦 Total: <strong>{len(productos)}</strong></p>")
+                html_output.append("""
+                <table>
+                    <tr><th>ID</th><th>Nombre</th><th>EAN</th><th>Cód Interno</th><th>Precio Ref</th></tr>
+                """)
+                for prod in productos:
+                    html_output.append(f"""
+                    <tr>
+                        <td>{prod[0]}</td>
+                        <td>{prod[1]}</td>
+                        <td>{prod[2] or '-'}</td>
+                        <td>{prod[3] or '-'}</td>
+                        <td>${prod[4] or 0:,.0f}</td>
+                    </tr>
+                    """)
+                html_output.append("</table>")
             else:
                 html_output.append('<p class="error">❌ No hay productos_maestros</p>')
 
@@ -151,7 +169,7 @@ async def diagnostico_precios_inventario():
                 FROM inventario_usuario iu
                 JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = 3
-                ORDER BY iu.fecha_ultima_actualizacion DESC
+                ORDER BY iu.id DESC
             """)
 
             inventario = cursor.fetchall()
@@ -159,34 +177,84 @@ async def diagnostico_precios_inventario():
             html_output.append("<h2>4️⃣ Inventario del Usuario</h2>")
             if inventario:
                 html_output.append(f"<p>📦 Total productos: <strong>{len(inventario)}</strong></p>")
+
+                precios_cero = sum(1 for i in inventario if i[3] == 0 or i[4] == 0)
+                if precios_cero > 0:
+                    html_output.append(f'<p class="error">❌ {precios_cero} productos con precio $0</p>')
+
+                html_output.append("""
+                <table>
+                    <tr><th>ID</th><th>Nombre</th><th>Cantidad</th><th>Precio Ult</th><th>Precio Prom</th><th>Compras</th></tr>
+                """)
+
+                for inv in inventario:
+                    precio_class = 'class="error"' if (inv[3] == 0 or inv[4] == 0) else ''
+                    html_output.append(f"""
+                    <tr>
+                        <td>{inv[0]}</td>
+                        <td>{inv[1]}</td>
+                        <td>{inv[2]}</td>
+                        <td {precio_class}>${inv[3]:,.0f}</td>
+                        <td {precio_class}>${inv[4]:,.0f}</td>
+                        <td>{inv[5]}</td>
+                    </tr>
+                    """)
+                html_output.append("</table>")
             else:
                 html_output.append('<p class="error">❌ INVENTARIO VACÍO</p>')
 
             # 5. DIAGNÓSTICO
             html_output.append("<h2>5️⃣ Diagnóstico Final</h2>")
             problemas = []
-            if factura[6] == 0: problemas.append("❌ productos_guardados = 0")
-            if not items: problemas.append("❌ No hay items_factura")
-            if items and prod_null > 0: problemas.append(f"❌ {prod_null} items sin producto_maestro_id")
-            if not inventario: problemas.append("❌ Inventario VACÍO")
+
+            if factura[6] == 0:
+                problemas.append("❌ productos_guardados = 0 en tabla facturas")
+            if not items:
+                problemas.append("❌ No hay registros en items_factura")
+            if items and prod_null > 0:
+                problemas.append(f"❌ {prod_null} items sin producto_maestro_id (NO se pueden agregar al inventario)")
+            if items and (precios_null > 0 or precios_cero > 0):
+                problemas.append(f"❌ Precios incorrectos: {precios_null} NULL, {precios_cero} en $0")
+            if not inventario:
+                problemas.append("❌ inventario_usuario está VACÍO")
 
             if problemas:
-                html_output.append('<div style="background:#ffe6e6;padding:15px;border-left:4px solid #e74c3c;">')
-                html_output.append('<h3>🚨 Problemas:</h3><ul>')
+                html_output.append('<div style="background:#ffe6e6;padding:15px;border-left:4px solid #e74c3c;margin:20px 0;">')
+                html_output.append('<h3>🚨 Problemas Encontrados:</h3><ul>')
                 for p in problemas:
                     html_output.append(f'<li class="error">{p}</li>')
                 html_output.append('</ul></div>')
+
+                html_output.append('<div style="background:#e6f3ff;padding:15px;border-left:4px solid #3498db;margin:20px 0;">')
+                html_output.append('<h3>💡 Recomendaciones:</h3><ol>')
+                html_output.append('<li>Verificar que <code>buscar_o_crear_producto_inteligente()</code> recibe el parámetro <code>conn=conn</code></li>')
+                html_output.append('<li>Verificar que los INSERT en <code>product_matching.py</code> hacen <code>conn.commit()</code></li>')
+                html_output.append('<li>Asegurar que <code>actualizar_inventario_desde_factura()</code> se ejecuta después del commit de items</li>')
+                html_output.append('<li>Revisar logs de Railway para errores específicos durante el procesamiento OCR</li>')
+                html_output.append('</ol></div>')
+            else:
+                html_output.append('<p class="success" style="color:#27ae60;font-weight:bold;font-size:18px;">✅ No se detectaron problemas obvios. El sistema parece estar funcionando correctamente.</p>')
+
         else:
-            html_output.append('<h2>⚠️ No se encontró factura</h2>')
+            html_output.append('<h2>⚠️ No se encontró ninguna factura para el usuario 3</h2>')
+            html_output.append('<p>Escanea una factura primero para poder hacer el diagnóstico.</p>')
 
     except Exception as e:
         html_output.append(f'<h2 class="error">❌ Error: {e}</h2>')
         import traceback
-        html_output.append(f'<pre>{traceback.format_exc()}</pre>')
+        html_output.append(f'<pre style="background:#f8f9fa;padding:15px;border-radius:4px;overflow:auto;">{traceback.format_exc()}</pre>')
 
     finally:
         cursor.close()
         conn.close()
 
-    html_output.append("</div></body></html>")
+    html_output.append("""
+            <div style="margin-top:40px;padding-top:20px;border-top:2px solid #ecf0f1;text-align:center;color:#7f8c8d;">
+                <p>🔍 Diagnóstico LecFac v1.0 - Generado el """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """)
+
     return "".join(html_output)
