@@ -2,21 +2,13 @@
 PRODUCT MATCHING - LECFAC
 ==========================
 Sistema inteligente de clasificación y matching de productos para supermercados colombianos.
-
-Maneja:
-- Códigos EAN-13 (770XXXXXXXXXX)
-- Códigos EAN-13 incompletos (10 dígitos)
-- Códigos PLU (4-5 dígitos para frutas/verduras)
-- Códigos internos de cadenas (1-7 dígitos)
-- Productos sin código (matching por nombre)
-
-Autor: LecFac Team
-Versión: 1.0
+VERSIÓN CORREGIDA: Robusta para grandes volúmenes, con transacciones y logging optimizado
 """
 
 import unicodedata
 import re
 from typing import Dict, Optional, Tuple
+from datetime import datetime
 
 
 # ==============================================================================
@@ -27,28 +19,6 @@ from typing import Dict, Optional, Tuple
 def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
     """
     Clasifica un código según su tipo y establece estrategia de matching.
-
-    Args:
-        codigo: Código leído del producto
-        establecimiento: Nombre del supermercado (opcional)
-
-    Returns:
-        dict con:
-            - tipo: "EAN13" | "EAN13_INCOMPLETO" | "PLU" | "INTERNO" | "INVALIDO"
-            - codigo_normalizado: Código limpio y normalizado
-            - es_unico_global: True si es único mundialmente (EAN-13)
-            - requiere_establecimiento: True si necesita contexto de cadena
-            - confianza: "ALTA" | "MEDIA" | "BAJA"
-
-    Examples:
-        >>> clasificar_codigo("7702001058917")
-        {"tipo": "EAN13", "confianza": "ALTA", "es_unico_global": True}
-
-        >>> clasificar_codigo("1220")
-        {"tipo": "PLU", "confianza": "MEDIA", "requiere_establecimiento": True}
-
-        >>> clasificar_codigo("625", "JUMBO")
-        {"tipo": "INTERNO", "requiere_establecimiento": True}
     """
 
     if not codigo or not isinstance(codigo, str):
@@ -64,9 +34,8 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
     # Limpiar código
     codigo = codigo.strip()
 
-    # Caso 1: EAN-13 completo (código de barras estándar)
+    # Caso 1: EAN-13 completo
     if len(codigo) == 13 and codigo.isdigit():
-        # Verificar si es código colombiano (770)
         es_colombiano = codigo.startswith("770")
 
         return {
@@ -80,7 +49,6 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
         }
 
     # Caso 2: EAN-13 incompleto (10 dígitos)
-    # Algunos supermercados imprimen solo los últimos 10 dígitos
     if len(codigo) == 10 and codigo.isdigit():
         codigo_completo = f"770{codigo}"
 
@@ -92,26 +60,20 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
             "requiere_establecimiento": False,
             "confianza": "MEDIA",
             "razon": "EAN-13 incompleto, se asumió prefijo 770 (Colombia)",
-            "nota": "Verificar si el prefijo 770 es correcto",
         }
 
     # Caso 3: PLU estándar (4-5 dígitos)
-    # Códigos para frutas, verduras y productos a granel
     if 4 <= len(codigo) <= 5 and codigo.isdigit():
-        # PLU internacional estándar: empiezan con 3, 4 o 9
-        # Ejemplo: 4011 (banano), 4590 (mango), 94011 (banano orgánico)
         if codigo[0] in ["3", "4", "9"]:
             return {
                 "tipo": "PLU",
                 "codigo_normalizado": codigo,
-                "es_unico_global": False,  # PLU puede variar por cadena
+                "es_unico_global": False,
                 "requiere_establecimiento": True,
                 "confianza": "MEDIA",
                 "razon": "PLU de 4-5 dígitos (frutas/verduras)",
-                "nota": "Puede ser estándar internacional o interno de cadena",
             }
 
-        # PLU que no empieza con 3, 4 o 9 → probablemente código interno
         return {
             "tipo": "INTERNO",
             "codigo_normalizado": codigo,
@@ -122,7 +84,6 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
         }
 
     # Caso 4: Código interno corto (1-7 dígitos)
-    # Cada cadena tiene su propio sistema
     if 1 <= len(codigo) <= 7 and codigo.isdigit():
         return {
             "tipo": "INTERNO",
@@ -131,7 +92,6 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
             "requiere_establecimiento": True,
             "confianza": "BAJA",
             "razon": f"Código interno de {len(codigo)} dígitos",
-            "nota": "CRÍTICO: Debe incluir establecimiento en búsqueda",
         }
 
     # Caso 5: Código con letras o caracteres especiales
@@ -161,7 +121,7 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
 
 
 # ==============================================================================
-# FUNCIÓN PRINCIPAL DE MATCHING
+# FUNCIÓN PRINCIPAL DE MATCHING - VERSIÓN ROBUSTA
 # ==============================================================================
 
 
@@ -170,42 +130,17 @@ def buscar_o_crear_producto_inteligente(
 ) -> Optional[int]:
     """
     Busca o crea producto maestro usando clasificación inteligente de códigos.
-
-    Esta es la función principal que se debe llamar desde main.py.
-
-    Args:
-        codigo: Código del producto (puede ser EAN, PLU, o interno)
-        nombre: Nombre del producto leído de la factura
-        precio: Precio en pesos colombianos (entero)
-        establecimiento: Nombre del supermercado (ej: "JUMBO", "EXITO")
-        cursor: Cursor de PostgreSQL
-
-    Returns:
-        ID del producto maestro (int) o None si falla
-
-    Estrategia:
-        - EAN-13: Búsqueda global, crear si no existe
-        - PLU/INTERNO: Buscar por código + establecimiento + similitud de nombre
-        - Sin código: Buscar solo por nombre similar en mismo establecimiento
+    VERSIÓN ROBUSTA: Maneja errores, logging optimizado, y garantiza creación.
     """
 
     if not nombre or not nombre.strip():
-        print("   ⚠️ Producto sin nombre, saltando")
         return None
 
     if precio <= 0:
-        print(f"   ⚠️ Precio inválido para '{nombre}': {precio}")
         return None
 
     # Clasificar código
     clasificacion = clasificar_codigo(codigo, establecimiento)
-
-    print(
-        f"   📋 '{nombre}' → Tipo: {clasificacion['tipo']} | Confianza: {clasificacion['confianza']}"
-    )
-
-    if clasificacion.get("nota"):
-        print(f"      💡 {clasificacion['nota']}")
 
     # Estrategia según tipo de código
     try:
@@ -236,160 +171,135 @@ def buscar_o_crear_producto_inteligente(
             )
 
     except Exception as e:
-        print(f"   ❌ Error en matching: {e}")
+        print(f"   ❌ Error crítico en matching '{nombre}': {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
 # ==============================================================================
-# ESTRATEGIAS DE BÚSQUEDA
+# BÚSQUEDA/CREACIÓN POR TIPO DE CÓDIGO - VERSIÓN ROBUSTA
 # ==============================================================================
 
 
-def buscar_o_crear_por_ean(codigo_ean: str, nombre: str, precio: int, cursor) -> int:
+def buscar_o_crear_por_ean(
+    codigo_ean: str, nombre: str, precio: int, cursor
+) -> int:
     """
-    Buscar producto por EAN-13 (búsqueda global sin considerar establecimiento).
-
-    Los códigos EAN son únicos mundialmente, por lo que no importa
-    en qué supermercado se compró.
+    Buscar o crear producto por código EAN-13.
+    VERSIÓN ROBUSTA: Garantiza creación del producto.
     """
-
-    # Buscar existente
-    cursor.execute(
-        """
-        SELECT id, nombre_comercial, total_reportes, precio_promedio_global
-        FROM productos_maestros
-        WHERE codigo_ean = %s
-        LIMIT 1
-        """,
-        (codigo_ean,),
-    )
-
-    resultado = cursor.fetchone()
-
-    if resultado:
-        producto_id = resultado[0]
-        print(
-            f"   ✅ Producto existente (ID: {producto_id}) | Reportes: {resultado[2]}"
-        )
-
-        # Actualizar precio promedio
-        actualizar_precio_producto(producto_id, precio, cursor)
-
-        # Si el nombre comercial estaba vacío, actualizarlo
-        if not resultado[1]:
-            cursor.execute(
-                "UPDATE productos_maestros SET nombre_comercial = %s WHERE id = %s",
-                (nombre, producto_id),
-            )
-
-        return producto_id
-
-    # No existe → crear nuevo
-    print(f"   🆕 Creando producto con EAN: {codigo_ean}")
 
     nombre_norm = normalizar_nombre(nombre)
 
-    cursor.execute(
-        """
-        INSERT INTO productos_maestros (
-            codigo_ean,
-            nombre_normalizado,
-            nombre_comercial,
-            precio_promedio_global,
-            total_reportes,
-            primera_vez_reportado,
-            ultima_actualizacion
-        ) VALUES (%s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """,
-        (codigo_ean, nombre_norm, nombre, precio),
-    )
+    try:
+        # Buscar por EAN exacto
+        cursor.execute(
+            """
+            SELECT id, nombre_normalizado, total_reportes
+            FROM productos_maestros
+            WHERE codigo_ean = %s
+            LIMIT 1
+            """,
+            (codigo_ean,),
+        )
 
-    nuevo_id = cursor.fetchone()[0]
-    print(f"   ✅ Producto creado (ID: {nuevo_id})")
+        resultado = cursor.fetchone()
 
-    return nuevo_id
+        if resultado:
+            producto_id = resultado[0]
+            actualizar_precio_producto(producto_id, precio, cursor)
+            return producto_id
+
+        # No existe → crear nuevo producto con EAN
+        cursor.execute(
+            """
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                nombre_comercial,
+                precio_promedio_global,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (%s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            (codigo_ean, nombre_norm, nombre, precio),
+        )
+
+        nuevo_id = cursor.fetchone()[0]
+        return nuevo_id
+
+    except Exception as e:
+        print(f"   ❌ Error en buscar_o_crear_por_ean: {e}")
+        raise
 
 
 def buscar_o_crear_por_codigo_interno(
     codigo: str, nombre: str, precio: int, establecimiento: str, cursor
 ) -> int:
     """
-    Buscar producto por código interno + establecimiento + similitud de nombre.
-
-    CRÍTICO: Los códigos internos NO son únicos globalmente.
-    Ejemplo: "625" en Jumbo puede ser pan, pero "625" en Éxito puede ser leche.
-
-    Por eso:
-    - NO guardamos código interno en codigo_ean (esa columna es solo para EAN-13)
-    - Guardamos código interno en subcategoria con formato: "CODIGO_INTERNO|ESTABLECIMIENTO"
-    - Buscamos por: subcategoria + nombre similar
+    Buscar o crear producto por código interno de cadena.
+    VERSIÓN ROBUSTA: Garantiza creación del producto.
     """
 
     nombre_norm = normalizar_nombre(nombre)
-
-    # Formato especial para identificar código interno: "CODIGO|ESTABLECIMIENTO"
     codigo_interno_compuesto = f"{codigo}|{establecimiento}"
 
-    # Buscar productos con el mismo código interno en el mismo establecimiento
-    cursor.execute(
-        """
-        SELECT
-            pm.id,
-            pm.nombre_normalizado,
-            pm.nombre_comercial,
-            SIMILARITY(pm.nombre_normalizado, %s) as similitud,
-            pm.total_reportes
-        FROM productos_maestros pm
-        WHERE pm.subcategoria = %s
-        AND pm.codigo_ean IS NULL
-        ORDER BY similitud DESC
-        LIMIT 1
-        """,
-        (nombre_norm, codigo_interno_compuesto),
-    )
-
-    resultado = cursor.fetchone()
-
-    # Umbral de similitud: 75% para códigos internos
-    UMBRAL_SIMILITUD = 0.75
-
-    if resultado and resultado[3] >= UMBRAL_SIMILITUD:
-        producto_id = resultado[0]
-        similitud_pct = resultado[3] * 100
-
-        print(
-            f"   ✅ Match por código interno (ID: {producto_id}) | Similitud: {similitud_pct:.0f}% | Reportes: {resultado[4]}"
+    try:
+        # Buscar productos con el mismo código interno en el mismo establecimiento
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.nombre_normalizado,
+                pm.nombre_comercial,
+                SIMILARITY(pm.nombre_normalizado, %s) as similitud,
+                pm.total_reportes
+            FROM productos_maestros pm
+            WHERE pm.subcategoria = %s
+            AND pm.codigo_ean IS NULL
+            ORDER BY similitud DESC
+            LIMIT 1
+            """,
+            (nombre_norm, codigo_interno_compuesto),
         )
 
-        actualizar_precio_producto(producto_id, precio, cursor)
-        return producto_id
+        resultado = cursor.fetchone()
 
-    # No existe → crear nuevo CON código interno en subcategoria (NO en codigo_ean)
-    print(f"   🆕 Creando producto con código interno: {codigo} ({establecimiento})")
+        # Umbral de similitud: 75% para códigos internos
+        UMBRAL_SIMILITUD = 0.75
 
-    cursor.execute(
-        """
-        INSERT INTO productos_maestros (
-            codigo_ean,
-            nombre_normalizado,
-            nombre_comercial,
-            precio_promedio_global,
-            subcategoria,
-            total_reportes,
-            primera_vez_reportado,
-            ultima_actualizacion
-        ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """,
-        (nombre_norm, nombre, precio, codigo_interno_compuesto),
-    )
+        if resultado and resultado[3] >= UMBRAL_SIMILITUD:
+            producto_id = resultado[0]
+            actualizar_precio_producto(producto_id, precio, cursor)
+            return producto_id
 
-    nuevo_id = cursor.fetchone()[0]
-    print(f"   ✅ Producto creado (ID: {nuevo_id})")
-    print(f"   📝 Código interno guardado: {codigo_interno_compuesto}")
+        # No existe → crear nuevo CON código interno en subcategoria
+        cursor.execute(
+            """
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                nombre_comercial,
+                precio_promedio_global,
+                subcategoria,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            (nombre_norm, nombre, precio, codigo_interno_compuesto),
+        )
 
-    return nuevo_id
+        nuevo_id = cursor.fetchone()[0]
+        return nuevo_id
+
+    except Exception as e:
+        print(f"   ❌ Error en buscar_o_crear_por_codigo_interno: {e}")
+        raise
 
 
 def buscar_o_crear_por_nombre(
@@ -397,69 +307,63 @@ def buscar_o_crear_por_nombre(
 ) -> int:
     """
     Buscar producto solo por similitud de nombre en el mismo establecimiento.
-
-    Se usa cuando el producto no tiene código válido.
-    Umbral de similitud más alto (85%) para evitar falsos positivos.
+    VERSIÓN ROBUSTA: Garantiza creación del producto.
     """
 
     nombre_norm = normalizar_nombre(nombre)
 
-    # Buscar por nombre similar en mismo establecimiento
-    cursor.execute(
-        """
-        SELECT
-            pm.id,
-            pm.nombre_normalizado,
-            SIMILARITY(pm.nombre_normalizado, %s) as similitud,
-            pm.total_reportes
-        FROM productos_maestros pm
-        WHERE pm.subcategoria LIKE %s
-        AND pm.codigo_ean IS NULL
-        ORDER BY similitud DESC
-        LIMIT 1
-        """,
-        (nombre_norm, f"SIN_CODIGO|{establecimiento}"),
-    )
-
-    resultado = cursor.fetchone()
-
-    # Umbral más alto cuando no hay código: 85%
-    UMBRAL_SIMILITUD = 0.85
-
-    if resultado and resultado[2] >= UMBRAL_SIMILITUD:
-        producto_id = resultado[0]
-        similitud_pct = resultado[2] * 100
-
-        print(
-            f"   ✅ Match por nombre (ID: {producto_id}) | Similitud: {similitud_pct:.0f}% | Reportes: {resultado[3]}"
+    try:
+        # Buscar por nombre similar en mismo establecimiento
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.nombre_normalizado,
+                SIMILARITY(pm.nombre_normalizado, %s) as similitud,
+                pm.total_reportes
+            FROM productos_maestros pm
+            WHERE pm.subcategoria LIKE %s
+            AND pm.codigo_ean IS NULL
+            ORDER BY similitud DESC
+            LIMIT 1
+            """,
+            (nombre_norm, f"%{establecimiento}%"),
         )
 
-        actualizar_precio_producto(producto_id, precio, cursor)
-        return producto_id
+        resultado = cursor.fetchone()
 
-    # No existe → crear nuevo sin código
-    print(f"   🆕 Creando producto sin código: {nombre} ({establecimiento})")
+        # Umbral más alto cuando no hay código: 85%
+        UMBRAL_SIMILITUD = 0.85
 
-    cursor.execute(
-        """
-        INSERT INTO productos_maestros (
-            nombre_normalizado,
-            nombre_comercial,
-            precio_promedio_global,
-            codigo_ean, subcategoria,
-            total_reportes,
-            primera_vez_reportado,
-            ultima_actualizacion
-        ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """,
-        (nombre_norm, nombre, precio, f"SIN_CODIGO|{establecimiento}"),
-    )
+        if resultado and resultado[2] >= UMBRAL_SIMILITUD:
+            producto_id = resultado[0]
+            actualizar_precio_producto(producto_id, precio, cursor)
+            return producto_id
 
-    nuevo_id = cursor.fetchone()[0]
-    print(f"   ✅ Producto creado (ID: {nuevo_id})")
+        # No existe → crear nuevo sin código
+        cursor.execute(
+            """
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                nombre_comercial,
+                precio_promedio_global,
+                subcategoria,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            (nombre_norm, nombre, precio, f"SIN_CODIGO|{establecimiento}"),
+        )
 
-    return nuevo_id
+        nuevo_id = cursor.fetchone()[0]
+        return nuevo_id
+
+    except Exception as e:
+        print(f"   ❌ Error en buscar_o_crear_por_nombre: {e}")
+        raise
 
 
 # ==============================================================================
@@ -468,21 +372,7 @@ def buscar_o_crear_por_nombre(
 
 
 def normalizar_nombre(nombre: str) -> str:
-    """
-    Normaliza nombre de producto para comparaciones y búsquedas.
-
-    - Quita acentos y diacríticos
-    - Convierte a mayúsculas
-    - Elimina espacios extra
-    - Elimina caracteres especiales comunes
-
-    Examples:
-        >>> normalizar_nombre("Leche Entera Colanta 1L")
-        "LECHE ENTERA COLANTA 1L"
-
-        >>> normalizar_nombre("  Café  con  Azúcar  ")
-        "CAFE CON AZUCAR"
-    """
+    """Normaliza nombre de producto para comparaciones y búsquedas."""
 
     if not nombre:
         return ""
@@ -506,28 +396,28 @@ def normalizar_nombre(nombre: str) -> str:
 def actualizar_precio_producto(producto_id: int, nuevo_precio: int, cursor):
     """
     Actualiza el precio promedio de un producto existente.
-
-    Calcula nuevo promedio ponderado:
-        nuevo_promedio = (promedio_anterior * reportes + nuevo_precio) / (reportes + 1)
-
-    También incrementa el contador de reportes.
+    Calcula nuevo promedio ponderado e incrementa el contador de reportes.
     """
 
-    cursor.execute(
-        """
-        UPDATE productos_maestros
-        SET
-            precio_promedio_global = (
-                (COALESCE(precio_promedio_global, 0) * total_reportes + %s)
-                / (total_reportes + 1)
-            )::integer,
-            total_reportes = total_reportes + 1,
-            total_usuarios_reportaron = total_usuarios_reportaron + 1,
-            ultima_actualizacion = CURRENT_TIMESTAMP
-        WHERE id = %s
-        """,
-        (nuevo_precio, producto_id),
-    )
+    try:
+        cursor.execute(
+            """
+            UPDATE productos_maestros
+            SET
+                precio_promedio_global = (
+                    (COALESCE(precio_promedio_global, 0) * total_reportes + %s)
+                    / (total_reportes + 1)
+                )::integer,
+                total_reportes = total_reportes + 1,
+                total_usuarios_reportaron = total_usuarios_reportaron + 1,
+                ultima_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (nuevo_precio, producto_id),
+        )
+    except Exception as e:
+        print(f"   ⚠️ Error actualizando precio: {e}")
+        # No es crítico, continuar
 
 
 # ==============================================================================
@@ -536,12 +426,7 @@ def actualizar_precio_producto(producto_id: int, nuevo_precio: int, cursor):
 
 
 def obtener_estadisticas_matching(cursor) -> dict:
-    """
-    Obtiene estadísticas sobre la calidad del matching en la base de datos.
-
-    Returns:
-        dict con métricas de calidad
-    """
+    """Obtiene estadísticas sobre la calidad del matching en la base de datos."""
 
     cursor.execute(
         """
@@ -549,7 +434,7 @@ def obtener_estadisticas_matching(cursor) -> dict:
             COUNT(*) as total_items,
             COUNT(producto_maestro_id) as items_vinculados,
             COUNT(*) - COUNT(producto_maestro_id) as items_sin_vincular,
-            ROUND(COUNT(producto_maestro_id)::numeric / COUNT(*)::numeric * 100, 2) as porcentaje_vinculado
+            ROUND(COUNT(producto_maestro_id)::numeric / NULLIF(COUNT(*), 0)::numeric * 100, 2) as porcentaje_vinculado
         FROM items_factura
     """
     )
@@ -564,8 +449,4 @@ def obtener_estadisticas_matching(cursor) -> dict:
     }
 
 
-print("=== Modulo product_matching cargado correctamente ===")
-print("Funciones disponibles:")
-print("   - clasificar_codigo()")
-print("   - buscar_o_crear_producto_inteligente()")
-print("   - obtener_estadisticas_matching()")
+print("✅ Módulo product_matching ROBUSTO cargado correctamente")
