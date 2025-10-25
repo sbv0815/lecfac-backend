@@ -330,7 +330,8 @@ def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id
             nombre=nombre,
             precio=precio,
             establecimiento=establecimiento,
-            cursor=cursor
+            cursor=cursor,
+            conn=conn
         )
 
         # 🔍 DIAGNÓSTICO 4: ¿Qué retornó?
