@@ -304,14 +304,14 @@ class OCRProcessor:
 
             # 🔧 FIX: Usar los parámetros CORRECTOS según product_matching.py
             # CRÍTICO: Incluir conn=conn para que las funciones puedan hacer commit
-                producto_maestro_id = buscar_o_crear_producto_inteligente(
+            producto_maestro_id = buscar_o_crear_producto_inteligente(
                 codigo=codigo,
                 nombre=nombre,
                 precio=precio,
                 establecimiento=establecimiento,
                 cursor=cursor,
                 conn=conn
-                )
+            )
 
             # 🚨 CRÍTICO: Si no se pudo obtener producto_maestro_id, NO continuar
             if not producto_maestro_id:
