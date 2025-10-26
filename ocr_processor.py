@@ -560,3 +560,5 @@ class OCRProcessor:
 processor = OCRProcessor()
 
 # Force deploy: 10/25/2025 15:28:36
+
+# Deploy fix conn parameter 2025-10-26 15:37:06
