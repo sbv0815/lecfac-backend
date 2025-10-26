@@ -59,6 +59,12 @@ def get_postgresql_connection():
     try:
         database_url = os.environ.get("DATABASE_URL")
 
+        # FALLBACK: Si Railway no tiene la variable, usar URL directa
+        if not database_url:
+            print("⚠️  DATABASE_URL no encontrada en variables de entorno")
+            print("🔧 Usando URL hardcodeada de Railway PostgreSQL")
+            database_url = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@postgres.railway.internal:5432/railway"
+
         print(f"🔍 DATABASE_URL configurada: {'Sí' if database_url else 'No'}")
 
         if not database_url:
@@ -69,11 +75,9 @@ def get_postgresql_connection():
 
         if PSYCOPG_VERSION == 3:
             import psycopg
-
             conn = psycopg.connect(database_url)
         else:
             import psycopg2
-
             url = urlparse(database_url)
             conn = psycopg2.connect(
                 host=url.hostname,
@@ -89,10 +93,8 @@ def get_postgresql_connection():
     except Exception as e:
         print(f"❌ ERROR CONECTANDO A POSTGRESQL: {e}")
         import traceback
-
         traceback.print_exc()
         return get_sqlite_connection()
-
 
 def get_sqlite_connection():
     """Conexión a SQLite (fallback)"""
