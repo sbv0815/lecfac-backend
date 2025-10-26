@@ -265,7 +265,7 @@ def create_postgresql_tables():
             """
             CREATE TABLE IF NOT EXISTS productos_maestros (
                 id SERIAL PRIMARY KEY,
-                codigo_ean VARCHAR(13) UNIQUE NOT NULL,
+                codigo_ean VARCHAR(13),
                 nombre_normalizado VARCHAR(200) NOT NULL,
                 nombre_comercial VARCHAR(200),
                 marca VARCHAR(100),
@@ -281,7 +281,7 @@ def create_postgresql_tables():
                 precio_maximo_historico INTEGER,
                 primera_vez_reportado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                CHECK (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14),
+                CHECK (codigo_ean IS NULL OR (LENGTH(codigo_ean) >= 3 AND LENGTH(codigo_ean) <= 14)),
                 CHECK (total_reportes >= 0)
             )
         """
