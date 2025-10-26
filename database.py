@@ -59,16 +59,11 @@ def get_postgresql_connection():
     try:
         database_url = os.environ.get("DATABASE_URL")
 
-        # FALLBACK: Si Railway no tiene la variable, usar URL directa
-        if not database_url:
-            print("⚠️  DATABASE_URL no encontrada en variables de entorno")
-            print("🔧 Usando URL hardcodeada de Railway PostgreSQL")
-            database_url = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@postgres.railway.internal:5432/railway"
-
         print(f"🔍 DATABASE_URL configurada: {'Sí' if database_url else 'No'}")
 
         if not database_url:
             print("❌ DATABASE_URL no configurada en variables de entorno")
+            print("💡 Verifica que Railway tenga la variable DATABASE_URL configurada")
             return None
 
         print(f"🔗 Intentando conectar a PostgreSQL (psycopg{PSYCOPG_VERSION})...")
@@ -78,13 +73,29 @@ def get_postgresql_connection():
             conn = psycopg.connect(database_url)
         else:
             import psycopg2
+
             url = urlparse(database_url)
+
+            # Debug: Ver qué estamos parseando
+            print(f"🔍 Parseando DATABASE_URL:")
+            print(f"   Host: {url.hostname}")
+            print(f"   Port: {url.port or 5432}")
+            print(f"   Database: {url.path[1:] if url.path else 'N/A'}")
+            print(f"   User: {url.username}")
+
+            # Validar que tenemos todos los componentes necesarios
+            if not url.hostname:
+                raise ValueError(f"DATABASE_URL inválida - hostname es None. URL: {database_url[:50]}...")
+
             conn = psycopg2.connect(
                 host=url.hostname,
                 database=url.path[1:],
                 user=url.username,
                 password=url.password,
                 port=url.port or 5432,
+                connect_timeout=10,
+                sslmode='prefer',
+                options='-c search_path=public'
             )
 
         print(f"✅ Conexión PostgreSQL exitosa (psycopg{PSYCOPG_VERSION})")
