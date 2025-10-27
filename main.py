@@ -57,7 +57,7 @@ from mobile_endpoints import router as mobile_router
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
-from product_matching_v2 import buscar_o_crear_producto_inteligente
+from product_matcher import buscar_o_crear_producto_inteligente
 
 # Importar routers
 from admin_dashboard import router as admin_dashboard_router
