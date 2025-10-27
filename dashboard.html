@@ -500,6 +500,7 @@
 
         <div class="tabs">
             <button class="tab active" onclick="cambiarTab('estadisticas')">📊 Estadísticas</button>
+            <button class="tab" onclick="cambiarTab('facturas')">📄 Facturas</button>
             <button class="tab" onclick="cambiarTab('inventarios')">📦 Inventarios</button>
             <button class="tab" onclick="cambiarTab('productos')">🛒 Productos</button>
             <button class="tab" onclick="cambiarTab('duplicados')">🔍 Duplicados</button>
@@ -536,6 +537,37 @@
                 <div class="section">
                     <h2>📈 Resumen General</h2>
                     <div id="resumen-general"></div>
+                </div>
+            </div>
+
+            <!-- TAB: FACTURAS -->
+            <div id="tab-facturas" class="tab-content">
+                <div class="section">
+                    <h2>📄 Gestión de Facturas</h2>
+
+                    <!-- Filtros -->
+                    <div class="search-filters" style="margin-bottom: 20px;">
+                        <input type="text" id="filter-factura" placeholder="🔎 Buscar por establecimiento..."
+                            oninput="filtrarFacturas()"
+                            style="padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <select id="filter-estado-factura" onchange="filtrarFacturas()"
+                            style="padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            <option value="">Todos los estados</option>
+                            <option value="pendiente">Pendiente</option>
+                            <option value="revisada">Revisada</option>
+                            <option value="validada">Validada</option>
+                            <option value="necesita_revision">Necesita Revisión</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="cargarFacturas()">
+                            🔄 Recargar
+                        </button>
+                    </div>
+
+                    <div id="facturas-container">
+                        <p style="text-align: center; color: #999; padding: 40px;">
+                            Cargando facturas...
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -690,6 +722,9 @@
             switch (tabName) {
                 case 'estadisticas':
                     cargarEstadisticas();
+                    break;
+                case 'facturas':
+                    cargarFacturas();
                     break;
                 case 'inventarios':
                     cargarInventarios();
@@ -969,6 +1004,122 @@
             });
 
             renderizarProductos(productosFiltrados);
+        }
+
+        // ==========================================
+        // CARGAR FACTURAS
+        // ==========================================
+        let facturasOriginales = [];
+
+        async function cargarFacturas() {
+            console.log('📄 Cargando facturas...');
+            const container = document.getElementById('facturas-container');
+
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const data = await response.json();
+                facturasOriginales = data.facturas || [];
+
+                console.log('✅ Facturas cargadas:', facturasOriginales.length);
+
+                if (facturasOriginales.length === 0) {
+                    container.innerHTML = `
+                        <p style="text-align: center; color: #999; padding: 40px;">
+                            No hay facturas registradas
+                        </p>
+                    `;
+                    return;
+                }
+
+                renderizarFacturas(facturasOriginales);
+
+            } catch (error) {
+                console.error('❌ Error cargando facturas:', error);
+                container.innerHTML = `
+                    <p style="text-align: center; color: #e53935; padding: 40px;">
+                        ❌ Error al cargar facturas: ${error.message}
+                    </p>
+                `;
+            }
+        }
+
+        function renderizarFacturas(facturas) {
+            const container = document.getElementById('facturas-container');
+
+            let html = `
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: #f5f5f5;">
+                            <tr>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">ID</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Establecimiento</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Total</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Fecha</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Estado</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Productos</th>
+                                <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            facturas.forEach(f => {
+                const estadoClass = f.estado === 'validada' ? 'success' :
+                    f.estado === 'revisada' ? 'info' :
+                        f.estado === 'necesita_revision' ? 'warning' : '';
+
+                html += `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 12px;">#${f.id}</td>
+                        <td style="padding: 12px;">${f.establecimiento || 'Sin datos'}</td>
+                        <td style="padding: 12px;">$${formatearNumero(f.total)}</td>
+                        <td style="padding: 12px;">${f.fecha || '-'}</td>
+                        <td style="padding: 12px;">
+                            <span class="badge badge-${estadoClass}">${f.estado || 'pendiente'}</span>
+                        </td>
+                        <td style="padding: 12px; text-align: center;">
+                            <span class="badge badge-info">${f.productos || 0} items</span>
+                        </td>
+                        <td style="padding: 12px; text-align: center;">
+                            <button class="btn btn-primary" onclick="verDetallesFactura(${f.id})"
+                                style="padding: 8px 16px; font-size: 0.9em; margin-right: 5px;">
+                                👁️ Ver
+                            </button>
+                            <button class="btn btn-edit" onclick="editarFactura(${f.id})"
+                                style="padding: 8px 16px; font-size: 0.9em;">
+                                ✏️ Editar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                <p style="text-align: center; margin-top: 20px; color: #666;">
+                    Total: ${facturas.length} factura${facturas.length !== 1 ? 's' : ''}
+                </p>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function filtrarFacturas() {
+            const busqueda = document.getElementById('filter-factura').value.toLowerCase();
+            const estado = document.getElementById('filter-estado-factura').value;
+
+            const facturasFiltradas = facturasOriginales.filter(f => {
+                const matchTexto = !busqueda ||
+                    (f.establecimiento && f.establecimiento.toLowerCase().includes(busqueda));
+                const matchEstado = !estado || f.estado === estado;
+                return matchTexto && matchEstado;
+            });
+
+            renderizarFacturas(facturasFiltradas);
         }
 
         // ==========================================
