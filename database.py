@@ -30,7 +30,7 @@ except ImportError:
 
 def get_db_connection():
     """Obtiene conexión a la base de datos"""
-    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
     print(f"🔍 DATABASE_TYPE configurado: {database_type}")
     print(f"🔍 POSTGRESQL_AVAILABLE: {POSTGRESQL_AVAILABLE}")
@@ -121,7 +121,7 @@ def get_sqlite_connection():
 
 def create_tables():
     """Crear tablas según el tipo de base de datos"""
-    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
     if database_type == "postgresql" and POSTGRESQL_AVAILABLE:
         create_postgresql_tables()
@@ -1508,7 +1508,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         return False
 
     cursor = conn.cursor()
-    database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
     try:
         print(
