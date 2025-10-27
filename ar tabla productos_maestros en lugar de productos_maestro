@@ -1,0 +1,70 @@
+warning: in the working copy of 'main.py', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/main.py b/main.py[m
+[1mindex bfab987..fda3b93 100644[m
+[1m--- a/main.py[m
+[1m+++ b/main.py[m
+[36m@@ -4285,7 +4285,7 @@[m [masync def get_usuarios_admin():[m
+ [m
+ [m
+ # ==========================================[m
+[31m-# ✅ ENDPOINTS DEFINITIVOS - USANDO productos_maestro[m
+[32m+[m[32m# ✅ ENDPOINTS DEFINITIVOS - USANDO productos_maestros[m
+ # Reemplazar/Agregar estos endpoints en main.py[m
+ # ==========================================[m
+ [m
+[36m@@ -4317,7 +4317,7 @@[m [masync def admin_productos():[m
+                 pm.categoria,[m
+                 pm.marca,[m
+                 pm.veces_reportado as veces_comprado[m
+[31m-            FROM productos_maestro pm[m
+[32m+[m[32m            FROM productos_maestros pm[m
+             ORDER BY pm.veces_reportado DESC[m
+             LIMIT 500[m
+         """[m
+[36m@@ -4419,8 +4419,8 @@[m [masync def get_productos_similares():[m
+                 pm2.nombre as nombre2,[m
+                 pm1.precio_promedio as precio1,[m
+                 pm2.precio_promedio as precio2[m
+[31m-            FROM productos_maestro pm1[m
+[31m-            INNER JOIN productos_maestro pm2 ON[m
+[32m+[m[32m            FROM productos_maestros pm1[m
+[32m+[m[32m            INNER JOIN productos_maestros pm2 ON[m
+                 LOWER(pm1.nombre) = LOWER(pm2.nombre) AND[m
+                 pm1.id < pm2.id[m
+             LIMIT 100[m
+[36m@@ -4510,7 +4510,7 @@[m [masync def get_producto_detalle(producto_id: int):[m
+                 pm.categoria,[m
+                 pm.marca,[m
+                 pm.veces_reportado as veces_comprado[m
+[31m-            FROM productos_maestro pm[m
+[32m+[m[32m            FROM productos_maestros pm[m
+             WHERE pm.id = %s[m
+         """,[m
+             (producto_id,),[m
+[36m@@ -4582,7 +4582,7 @@[m [masync def update_producto(producto_id: int, datos: dict):[m
+         params.append(producto_id)[m
+ [m
+         query = f"""[m
+[31m-            UPDATE productos_maestro[m
+[32m+[m[32m            UPDATE productos_maestros[m
+             SET {', '.join(update_fields)}[m
+             WHERE id = %s[m
+             RETURNING id, nombre, codigo_ean, precio_promedio, categoria, marca, veces_reportado[m
+[36m@@ -4680,7 +4680,7 @@[m [masync def delete_producto(producto_id: int):[m
+ [m
+         # Verificar que el producto existe[m
+         cursor.execute([m
+[31m-            "SELECT id, nombre FROM productos_maestro WHERE id = %s", (producto_id,)[m
+[32m+[m[32m            "SELECT id, nombre FROM productos_maestros WHERE id = %s", (producto_id,)[m
+         )[m
+         producto = cursor.fetchone()[m
+ [m
+[36m@@ -4691,7 +4691,7 @@[m [masync def delete_producto(producto_id: int):[m
+         print(f"Producto a eliminar: {producto[1]}")[m
+ [m
+         # Eliminar el producto[m
+[31m-        cursor.execute("DELETE FROM productos_maestro WHERE id = %s", (producto_id,))[m
+[32m+[m[32m        cursor.execute("DELETE FROM productos_maestros WHERE id = %s", (producto_id,))[m
+ [m
+         conn.commit()[m
+         rows_deleted = cursor.rowcount[m
