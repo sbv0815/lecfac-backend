@@ -67,7 +67,7 @@ from duplicados_routes import router as duplicados_router
 from diagnostico_routes import router as diagnostico_router
 
 # Importar procesador OCR y auditoría
-from ocr_processor import processor, ocr_queue, processing
+from ocr_processor import processor, ocr_queue, processing, buscar_o_crear_producto_inteligente_inline
 from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
@@ -566,13 +566,11 @@ async def parse_invoice(file: UploadFile = File(...)):
                 producto_maestro_id = None
                 if codigo_ean_valido:
                     try:
-                        producto_maestro_id = buscar_o_crear_producto_inteligente(
-                            codigo=codigo_ean_valido or "",
+                        producto_maestro_id = buscar_o_crear_producto_inteligente_inline(codigo=codigo_ean_valido or "",
                             nombre=nombre,
                             precio=precio,
                             establecimiento=establecimiento_raw,
-                            cursor=cursor,
-                        )
+                            cursor=cursor, conn=conn)
                         print(
                             f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
                         )
@@ -766,13 +764,11 @@ async def save_invoice_with_image(
 
                 # ⭐ CREAR PRODUCTO MAESTRO
 
-                producto_maestro_id = buscar_o_crear_producto_inteligente(
-                    codigo=codigo,
+                producto_maestro_id = buscar_o_crear_producto_inteligente_inline(codigo=codigo,
                     nombre=nombre,
                     precio=int(precio),
                     establecimiento=establecimiento,
-                    cursor=cursor,
-                )
+                    cursor=cursor, conn=conn)
 
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
@@ -1339,13 +1335,11 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     producto_maestro_id = None
                     if codigo and len(codigo) >= 3:
                         try:
-                            producto_maestro_id = buscar_o_crear_producto_inteligente(
-                                codigo=codigo,
+                            producto_maestro_id = buscar_o_crear_producto_inteligente_inline(codigo=codigo,
                                 nombre=nombre,
                                 precio=int(precio),
                                 establecimiento=establecimiento,
-                                cursor=cursor,
-                            )
+                                cursor=cursor, conn=conn)
                             print(
                                 f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
                             )
