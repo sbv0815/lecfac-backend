@@ -935,13 +935,7 @@ async def obtener_factura_detalle(factura_id: int):
         if database_type == "postgresql":
             cursor.execute(
                 """
-                SELECT
-                    id,
-                    establecimiento,
-                    total_factura,
-                    fecha,
-                    estado_validacion,
-                    tiene_imagen
+                SELECT *
                 FROM facturas
                 WHERE id = %s
             """,
@@ -950,13 +944,7 @@ async def obtener_factura_detalle(factura_id: int):
         else:
             cursor.execute(
                 """
-                SELECT
-                    id,
-                    establecimiento,
-                    total_factura,
-                    fecha,
-                    estado_validacion,
-                    tiene_imagen
+                SELECT *
                 FROM facturas
                 WHERE id = ?
             """,
@@ -983,9 +971,9 @@ async def obtener_factura_detalle(factura_id: int):
                 """
                 SELECT
                     id,
-                    nombre_producto,
-                    precio_unitario,
-                    codigo_ean
+                    nombre_leido,
+                    precio_pagado,
+                    codigo_leido
                 FROM items_factura
                 WHERE factura_id = %s
                 ORDER BY id
@@ -997,9 +985,9 @@ async def obtener_factura_detalle(factura_id: int):
                 """
                 SELECT
                     id,
-                    nombre_producto,
-                    precio_unitario,
-                    codigo_ean
+                    nombre_leido,
+                    precio_pagado,
+                    codigo_leido
                 FROM items_factura
                 WHERE factura_id = ?
                 ORDER BY id
@@ -1063,7 +1051,7 @@ async def actualizar_factura(factura_id: int, data: FacturaUpdate):
             values.append(data.total)
 
         if data.fecha is not None:
-            updates.append("fecha = " + ("%s" if database_type == "postgresql" else "?"))
+            updates.append("fecha_factura = " + ("%s" if database_type == "postgresql" else "?"))
             values.append(data.fecha)
 
         if not updates:
@@ -1115,9 +1103,9 @@ async def actualizar_item(item_id: int, data: ItemUpdate):
             cursor.execute(
                 """
                 UPDATE items_factura
-                SET nombre_producto = %s,
-                    precio_unitario = %s,
-                    codigo_ean = %s
+                SET nombre_leido = %s,
+                    precio_pagado = %s,
+                    codigo_leido = %s
                 WHERE id = %s
             """,
                 (data.nombre, data.precio, data.codigo_ean, item_id),
@@ -1126,9 +1114,9 @@ async def actualizar_item(item_id: int, data: ItemUpdate):
             cursor.execute(
                 """
                 UPDATE items_factura
-                SET nombre_producto = ?,
-                    precio_unitario = ?,
-                    codigo_ean = ?
+                SET nombre_leido = ?,
+                    precio_pagado = ?,
+                    codigo_leido = ?
                 WHERE id = ?
             """,
                 (data.nombre, data.precio, data.codigo_ean, item_id),
@@ -1184,14 +1172,17 @@ async def crear_item(factura_id: int, data: ItemCreate):
                 """
                 INSERT INTO items_factura (
                     factura_id,
-                    nombre_producto,
-                    precio_unitario,
+                    usuario_id,
+                    nombre_leido,
+                    precio_pagado,
                     cantidad,
-                    codigo_ean
-                ) VALUES (%s, %s, %s, %s, %s)
+                    codigo_leido
+                )
+                SELECT %s, usuario_id, %s, %s, %s, %s
+                FROM facturas WHERE id = %s
                 RETURNING id
             """,
-                (factura_id, data.nombre, data.precio, 1, data.codigo_ean),
+                (factura_id, data.nombre, data.precio, 1, data.codigo_ean, factura_id),
             )
             nuevo_item_id = cursor.fetchone()[0]
         else:
@@ -1199,13 +1190,16 @@ async def crear_item(factura_id: int, data: ItemCreate):
                 """
                 INSERT INTO items_factura (
                     factura_id,
-                    nombre_producto,
-                    precio_unitario,
+                    usuario_id,
+                    nombre_leido,
+                    precio_pagado,
                     cantidad,
-                    codigo_ean
-                ) VALUES (?, ?, ?, ?, ?)
+                    codigo_leido
+                )
+                SELECT ?, usuario_id, ?, ?, ?, ?
+                FROM facturas WHERE id = ?
             """,
-                (factura_id, data.nombre, data.precio, 1, data.codigo_ean),
+                (factura_id, data.nombre, data.precio, 1, data.codigo_ean, factura_id),
             )
             nuevo_item_id = cursor.lastrowid
 
