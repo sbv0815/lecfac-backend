@@ -3,6 +3,14 @@ import tempfile
 import traceback
 import json
 import uuid
+# LIMPIEZA DE CACHÉ AL INICIO
+import shutil
+print("🧹 Limpiando caché de Python...")
+for root, dirs, files in os.walk('.'):
+    if '__pycache__' in dirs:
+        shutil.rmtree(os.path.join(root, '__pycache__'))
+        print(f"   ✓ Eliminado: {os.path.join(root, '__pycache__')}")
+print("✅ Caché limpiado - Iniciando servidor...")
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
