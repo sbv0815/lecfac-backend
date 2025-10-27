@@ -53,6 +53,7 @@ from database import (
     obtener_o_crear_establecimiento,
     actualizar_inventario_desde_factura,
 )
+from mobile_endpoints import router as mobile_router
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
@@ -231,6 +232,7 @@ app = FastAPI(
 app.include_router(stats_router)
 app.include_router(inventario_router)
 app.include_router(diagnostico_router)
+app.include_router(mobile_router, tags=["mobile"])
 
 
 app.add_middleware(
