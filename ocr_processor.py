@@ -15,7 +15,7 @@ import traceback
 # Importar funciones necesarias del proyecto
 from database import get_db_connection, detectar_cadena, actualizar_inventario_desde_factura
 from claude_invoice import parse_invoice_with_claude
-from product_matching import buscar_o_crear_producto_inteligente
+from product_matching_v2 import buscar_o_crear_producto_inteligente
 
 # Colas y tracking globales
 ocr_queue = Queue()
