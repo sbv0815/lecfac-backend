@@ -468,9 +468,13 @@
     </div>
 
     <script>
-        const API_URL = 'https://lecfac-api-production.up.railway.app';
+        const API_URL = window.location.origin; // API URL dinámica
         const facturaId = new URLSearchParams(window.location.search).get('id');
 
+        if (!facturaId) {
+            alert('⚠️ No se especificó ID de factura.\n\nUso: /editor.html?id=123');
+            window.location.href = '/';
+        }
         let zoomLevel = 1;
         let rotation = 0;
         let productos = [];
@@ -789,10 +793,9 @@
 
                 // 🔧 INTENTAR MÚLTIPLES ENDPOINTS POSIBLES
                 const imageUrls = [
-                    `${API_URL}/images/${facturaId}`,                     // Endpoint principal
-                    `${API_URL}/admin/facturas/${facturaId}/imagen`,      // Endpoint admin
+                    `${API_URL}/admin/facturas/${facturaId}/imagen`,      // ✅ Endpoint correcto
+                    `${API_URL}/images/${facturaId}`,                     // Alternativo
                     `${API_URL}/api/facturas/${facturaId}/imagen`,        // Variante con /api
-                    `${API_URL}/invoices/${facturaId}/image`,             // Variante inglés
                 ];
 
                 let imagenCargada = false;
