@@ -1,8 +1,7 @@
 """
 PRODUCT MATCHING - LECFAC
 ==========================
-Sistema inteligente de clasificación y matching de productos para supermercados colombianos.
-VERSIÓN SIN SIMILARITY: Compatible con PostgreSQL básico sin extensiones
+VERSIÓN: 2025-10-27-16:30 - FORZAR ACTUALIZACIÓN
 """
 
 import unicodedata
