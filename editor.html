@@ -735,7 +735,11 @@
                 // Datos generales
                 document.getElementById('facturaIdDisplay').textContent = factura.id || facturaId;
                 document.getElementById('establecimiento').value = factura.establecimiento || '';
-                document.getElementById('total').value = factura.total || factura.total_factura || 0;
+                // 🔧 CORRECCIÓN: Total viene en centavos, dividir entre 100
+                const totalCentavos = factura.total || factura.total_factura || 0;
+                const totalPesos = totalCentavos / 100;
+                document.getElementById('total').value = totalPesos;
+                console.log(`💵 Total: ${totalCentavos} centavos → ${totalPesos} pesos`);
                 document.getElementById('puntaje').textContent = factura.puntaje || 0;
                 document.getElementById('estadoBadge').textContent = factura.estado || factura.estado_validacion || 'Pendiente';
 
@@ -753,16 +757,22 @@
                     console.log('📦 Productos encontrados:', factura.productos.length);
 
                     productos = factura.productos.map(p => {
+                        // 🔧 CORRECCIÓN: Precios vienen en centavos, dividir entre 100
+                        let precioCentavos = parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || parseFloat(p.precio_pagado) || 0;
+                        let precioPesos = precioCentavos / 100;
+
+                        console.log(`  💰 ${p.nombre}: ${precioCentavos} centavos → ${precioPesos} pesos`);
+
                         return {
                             id: p.id,
                             codigo: p.codigo || p.codigo_ean || p.codigo_leido || '',
                             nombre: p.nombre || p.nombre_producto || p.nombre_leido || 'Sin nombre',
-                            precio: parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || parseFloat(p.precio_pagado) || 0,
+                            precio: precioPesos,
                             nuevo: false
                         };
                     });
 
-                    console.log('✅ Productos mapeados:', productos);
+                    console.log('✅ Productos mapeados con precios en PESOS:', productos);
                 } else {
                     console.log('⚠️ No hay productos en la factura');
                     productos = [];
@@ -882,7 +892,8 @@
 
                 const datosGenerales = {
                     establecimiento: document.getElementById('establecimiento').value.trim(),
-                    total: parseFloat(document.getElementById('total').value) || 0
+                    // 🔧 CORRECCIÓN: Convertir total a centavos antes de guardar
+                    total: Math.round((parseFloat(document.getElementById('total').value) || 0) * 100)
                 };
 
                 if (fechaValue) {
@@ -916,9 +927,15 @@
                     if (!prod.nuevo && prod.id) {
                         console.log(`\n  📦 Producto #${prod.id}:`, prod);
 
+                        // 🔧 CORRECCIÓN: Convertir pesos a centavos antes de guardar
+                        const precioPesos = parseFloat(prod.precio) || 0;
+                        const precioCentavos = Math.round(precioPesos * 100);
+
+                        console.log(`     💰 Convirtiendo: ${precioPesos} pesos → ${precioCentavos} centavos`);
+
                         const itemData = {
                             nombre: prod.nombre.trim(),
-                            precio: parseFloat(prod.precio) || 0
+                            precio: precioCentavos  // ✅ Guardamos en centavos
                         };
 
                         if (prod.codigo && prod.codigo.trim() !== '') {
@@ -954,9 +971,15 @@
                     if (prod.nuevo && prod.nombre && prod.nombre.trim() !== '') {
                         console.log(`\n  🆕 Nuevo producto:`, prod);
 
+                        // 🔧 CORRECCIÓN: Convertir pesos a centavos antes de guardar
+                        const precioPesos = parseFloat(prod.precio) || 0;
+                        const precioCentavos = Math.round(precioPesos * 100);
+
+                        console.log(`     💰 Convirtiendo: ${precioPesos} pesos → ${precioCentavos} centavos`);
+
                         const nuevoItemData = {
                             nombre: prod.nombre.trim(),
-                            precio: parseFloat(prod.precio) || 0
+                            precio: precioCentavos  // ✅ Guardamos en centavos
                         };
 
                         if (prod.codigo && prod.codigo.trim() !== '') {
