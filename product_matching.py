@@ -2,7 +2,7 @@
 PRODUCT MATCHING - LECFAC
 ==========================
 Sistema inteligente de clasificación y matching de productos para supermercados colombianos.
-VERSIÓN FINAL: Con conn.commit() después de cada INSERT
+VERSIÓN SIN SIMILARITY: Compatible con PostgreSQL básico sin extensiones
 """
 
 import unicodedata
@@ -121,7 +121,7 @@ def clasificar_codigo(codigo: str, establecimiento: str = None) -> dict:
 
 
 # ==============================================================================
-# FUNCIÓN PRINCIPAL DE MATCHING - VERSIÓN ROBUSTA
+# FUNCIÓN PRINCIPAL DE MATCHING - VERSIÓN SIN SIMILARITY
 # ==============================================================================
 
 
@@ -130,7 +130,7 @@ def buscar_o_crear_producto_inteligente(
 ) -> Optional[int]:
     """
     Busca o crea producto maestro usando clasificación inteligente de códigos.
-    VERSIÓN FINAL: Con conn para hacer commits.
+    VERSIÓN SIN SIMILARITY: Usa matching exacto por nombre normalizado.
     """
 
     if not nombre or not nombre.strip():
@@ -181,7 +181,7 @@ def buscar_o_crear_producto_inteligente(
 
 
 # ==============================================================================
-# BÚSQUEDA/CREACIÓN POR TIPO DE CÓDIGO - VERSIÓN ROBUSTA
+# BÚSQUEDA/CREACIÓN POR TIPO DE CÓDIGO - VERSIÓN SIN SIMILARITY
 # ==============================================================================
 
 
@@ -211,7 +211,8 @@ def buscar_o_crear_por_ean(
 
         if resultado:
             producto_id = resultado[0]
-            actualizar_precio_producto(producto_id, precio, cursor)
+            print(f"   ✅ Producto encontrado por EAN: ID={producto_id}")
+            actualizar_precio_producto(producto_id, precio, cursor, conn)
             return producto_id
 
         # No existe → crear nuevo producto con EAN
@@ -233,6 +234,7 @@ def buscar_o_crear_por_ean(
 
         nuevo_id = cursor.fetchone()[0]
         conn.commit()  # ← CRÍTICO: Commit inmediato
+        print(f"   ✅ Producto creado con EAN: ID={nuevo_id}")
         return nuevo_id
 
     except Exception as e:
@@ -246,39 +248,32 @@ def buscar_o_crear_por_codigo_interno(
 ) -> int:
     """
     Buscar o crear producto por código interno de cadena.
-    VERSIÓN ROBUSTA: Garantiza creación del producto con commit.
+    VERSIÓN SIN SIMILARITY: Usa matching exacto por nombre normalizado.
     """
 
     nombre_norm = normalizar_nombre(nombre)
     codigo_interno_compuesto = f"{codigo}|{establecimiento}"
 
     try:
-        # Buscar productos con el mismo código interno en el mismo establecimiento
+        # Buscar por nombre exacto en el mismo establecimiento
         cursor.execute(
             """
-            SELECT
-                pm.id,
-                pm.nombre_normalizado,
-                pm.nombre_comercial,
-                SIMILARITY(pm.nombre_normalizado, %s) as similitud,
-                pm.total_reportes
-            FROM productos_maestros pm
-            WHERE pm.subcategoria = %s
-            AND pm.codigo_ean IS NULL
-            ORDER BY similitud DESC
+            SELECT id, nombre_normalizado, nombre_comercial, total_reportes
+            FROM productos_maestros
+            WHERE subcategoria = %s
+            AND nombre_normalizado = %s
+            AND codigo_ean IS NULL
             LIMIT 1
             """,
-            (nombre_norm, codigo_interno_compuesto),
+            (codigo_interno_compuesto, nombre_norm),
         )
 
         resultado = cursor.fetchone()
 
-        # Umbral de similitud: 75% para códigos internos
-        UMBRAL_SIMILITUD = 0.75
-
-        if resultado and resultado[3] >= UMBRAL_SIMILITUD:
+        if resultado:
             producto_id = resultado[0]
-            actualizar_precio_producto(producto_id, precio, cursor)
+            print(f"   ✅ Producto encontrado por código interno: ID={producto_id}")
+            actualizar_precio_producto(producto_id, precio, cursor, conn)
             return producto_id
 
         # No existe → crear nuevo CON código interno en subcategoria
@@ -301,6 +296,7 @@ def buscar_o_crear_por_codigo_interno(
 
         nuevo_id = cursor.fetchone()[0]
         conn.commit()  # ← CRÍTICO: Commit inmediato
+        print(f"   ✅ Producto creado con código interno: ID={nuevo_id}")
         return nuevo_id
 
     except Exception as e:
@@ -313,38 +309,32 @@ def buscar_o_crear_por_nombre(
     nombre: str, precio: int, establecimiento: str, cursor, conn
 ) -> int:
     """
-    Buscar producto solo por similitud de nombre en el mismo establecimiento.
-    VERSIÓN ROBUSTA: Garantiza creación del producto con commit.
+    Buscar producto solo por nombre exacto en el mismo establecimiento.
+    VERSIÓN SIN SIMILARITY: Usa matching exacto por nombre normalizado.
     """
 
     nombre_norm = normalizar_nombre(nombre)
 
     try:
-        # Buscar por nombre similar en mismo establecimiento
+        # Buscar por nombre exacto en mismo establecimiento
         cursor.execute(
             """
-            SELECT
-                pm.id,
-                pm.nombre_normalizado,
-                SIMILARITY(pm.nombre_normalizado, %s) as similitud,
-                pm.total_reportes
-            FROM productos_maestros pm
-            WHERE pm.subcategoria LIKE %s
-            AND pm.codigo_ean IS NULL
-            ORDER BY similitud DESC
+            SELECT id, nombre_normalizado, total_reportes
+            FROM productos_maestros
+            WHERE subcategoria LIKE %s
+            AND nombre_normalizado = %s
+            AND codigo_ean IS NULL
             LIMIT 1
             """,
-            (nombre_norm, f"%{establecimiento}%"),
+            (f"%{establecimiento}%", nombre_norm),
         )
 
         resultado = cursor.fetchone()
 
-        # Umbral más alto cuando no hay código: 85%
-        UMBRAL_SIMILITUD = 0.85
-
-        if resultado and resultado[2] >= UMBRAL_SIMILITUD:
+        if resultado:
             producto_id = resultado[0]
-            actualizar_precio_producto(producto_id, precio, cursor)
+            print(f"   ✅ Producto encontrado por nombre: ID={producto_id}")
+            actualizar_precio_producto(producto_id, precio, cursor, conn)
             return producto_id
 
         # No existe → crear nuevo sin código
@@ -367,6 +357,7 @@ def buscar_o_crear_por_nombre(
 
         nuevo_id = cursor.fetchone()[0]
         conn.commit()  # ← CRÍTICO: Commit inmediato
+        print(f"   ✅ Producto creado sin código: ID={nuevo_id}")
         return nuevo_id
 
     except Exception as e:
@@ -402,7 +393,7 @@ def normalizar_nombre(nombre: str) -> str:
     return nombre.strip()
 
 
-def actualizar_precio_producto(producto_id: int, nuevo_precio: int, cursor):
+def actualizar_precio_producto(producto_id: int, nuevo_precio: int, cursor, conn):
     """
     Actualiza el precio promedio de un producto existente.
     Calcula nuevo promedio ponderado e incrementa el contador de reportes.
@@ -424,8 +415,11 @@ def actualizar_precio_producto(producto_id: int, nuevo_precio: int, cursor):
             """,
             (nuevo_precio, producto_id),
         )
+        conn.commit()
+        print(f"      → Precio actualizado")
     except Exception as e:
         print(f"   ⚠️ Error actualizando precio: {e}")
+        conn.rollback()
         # No es crítico, continuar
 
 
@@ -458,4 +452,4 @@ def obtener_estadisticas_matching(cursor) -> dict:
     }
 
 
-print("✅ Módulo product_matching ROBUSTO cargado correctamente")
+print("✅ Módulo product_matching SIN SIMILARITY cargado correctamente")
