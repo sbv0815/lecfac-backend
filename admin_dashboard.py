@@ -939,7 +939,7 @@ async def obtener_factura_detalle(factura_id: int):
                     id,
                     establecimiento,
                     total_factura,
-                    fecha_compra,
+                    fecha,
                     estado_validacion,
                     tiene_imagen
                 FROM facturas
@@ -954,7 +954,7 @@ async def obtener_factura_detalle(factura_id: int):
                     id,
                     establecimiento,
                     total_factura,
-                    fecha_compra,
+                    fecha,
                     estado_validacion,
                     tiene_imagen
                 FROM facturas
@@ -1063,7 +1063,7 @@ async def actualizar_factura(factura_id: int, data: FacturaUpdate):
             values.append(data.total)
 
         if data.fecha is not None:
-            updates.append("fecha_compra = " + ("%s" if database_type == "postgresql" else "?"))
+            updates.append("fecha = " + ("%s" if database_type == "postgresql" else "?"))
             values.append(data.fecha)
 
         if not updates:
