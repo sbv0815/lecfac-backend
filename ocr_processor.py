@@ -1,6 +1,7 @@
 """
 Sistema de Procesamiento Automático de OCR para Facturas
-FIX CRÍTICO: Eliminado método duplicado + agregado conn=conn
+VERSIÓN STANDALONE - TODO EL CÓDIGO INTEGRADO
+NO REQUIERE IMPORTS EXTERNOS DE MATCHING
 """
 
 import threading
@@ -11,17 +12,256 @@ import tempfile
 from datetime import datetime
 from typing import Dict, Any, Optional
 import traceback
+import unicodedata
+import re
 
-# Importar funciones necesarias del proyecto
+# Importar solo funciones de base de datos
 from database import get_db_connection, detectar_cadena, actualizar_inventario_desde_factura
 from claude_invoice import parse_invoice_with_claude
-from product_matcher import buscar_o_crear_producto_inteligente
 
 # Colas y tracking globales
 ocr_queue = Queue()
 processing = {}
 error_log = []
 
+
+# ==============================================================================
+# FUNCIONES DE MATCHING INTEGRADAS (NO REQUIEREN IMPORT)
+# ==============================================================================
+
+def normalizar_nombre_producto(nombre: str) -> str:
+    """Normaliza nombre de producto para comparación"""
+    if not nombre:
+        return ""
+
+    texto = nombre.upper()
+    texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+    texto = re.sub(r'[^A-Z0-9\s]', ' ', texto)
+    texto = ' '.join(texto.split())
+
+    return texto
+
+
+def clasificar_codigo_producto(codigo: str, establecimiento: str = None) -> dict:
+    """Clasifica un código según su tipo"""
+
+    if not codigo or not isinstance(codigo, str):
+        return {"tipo": "INVALIDO", "codigo_normalizado": None}
+
+    codigo = codigo.strip()
+
+    # EAN-13 completo
+    if len(codigo) == 13 and codigo.isdigit():
+        return {
+            "tipo": "EAN13",
+            "codigo_normalizado": codigo,
+            "es_unico_global": True
+        }
+
+    # EAN-13 incompleto (10 dígitos)
+    if len(codigo) == 10 and codigo.isdigit():
+        return {
+            "tipo": "EAN13_INCOMPLETO",
+            "codigo_normalizado": f"770{codigo}",
+            "es_unico_global": True
+        }
+
+    # PLU o código interno
+    if codigo.isdigit():
+        return {
+            "tipo": "INTERNO",
+            "codigo_normalizado": codigo,
+            "es_unico_global": False,
+            "requiere_establecimiento": True
+        }
+
+    # Código alfanumérico
+    return {
+        "tipo": "ALFANUMERICO",
+        "codigo_normalizado": codigo,
+        "es_unico_global": False,
+        "requiere_establecimiento": True
+    }
+
+
+def buscar_o_crear_por_ean_inline(codigo_ean: str, nombre: str, precio: int, cursor, conn) -> Optional[int]:
+    """Buscar o crear producto por EAN"""
+    nombre_norm = normalizar_nombre_producto(nombre)
+
+    try:
+        print(f"      🔎 Buscando EAN: {codigo_ean}")
+
+        cursor.execute("""
+            SELECT id, nombre_normalizado, total_reportes
+            FROM productos_maestros
+            WHERE codigo_ean = %s
+            LIMIT 1
+        """, (codigo_ean,))
+
+        resultado = cursor.fetchone()
+
+        if resultado:
+            producto_id = resultado[0]
+            print(f"      ✅ Producto encontrado por EAN: ID={producto_id}")
+
+            # Actualizar precio
+            precio_actual = resultado[2] or 0
+            reportes_actuales = resultado[2] or 0
+            nuevo_total_reportes = reportes_actuales + 1
+            nuevo_precio_promedio = ((precio_actual * reportes_actuales) + precio) / nuevo_total_reportes
+
+            cursor.execute("""
+                UPDATE productos_maestros
+                SET precio_promedio_global = %s,
+                    total_reportes = %s,
+                    ultima_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (nuevo_precio_promedio, nuevo_total_reportes, producto_id))
+            conn.commit()
+
+            return producto_id
+
+        # Crear nuevo producto
+        print(f"      ➕ Creando nuevo producto con EAN")
+        cursor.execute("""
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                nombre_comercial,
+                precio_promedio_global,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (%s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+        """, (codigo_ean, nombre_norm, nombre, precio))
+
+        nuevo_id = cursor.fetchone()[0]
+        conn.commit()
+        print(f"      ✅ Producto creado con EAN: ID={nuevo_id}")
+        return nuevo_id
+
+    except Exception as e:
+        print(f"      ❌ Error en buscar_o_crear_por_ean: {e}")
+        conn.rollback()
+        return None
+
+
+def buscar_o_crear_por_codigo_interno_inline(codigo: str, nombre: str, precio: int, establecimiento: str, cursor, conn) -> Optional[int]:
+    """Buscar o crear producto por código interno"""
+    nombre_norm = normalizar_nombre_producto(nombre)
+    codigo_interno_compuesto = f"{codigo}|{establecimiento}"
+
+    try:
+        print(f"      🔎 Buscando código interno: {codigo_interno_compuesto}")
+
+        cursor.execute("""
+            SELECT id, nombre_normalizado, total_reportes
+            FROM productos_maestros
+            WHERE subcategoria = %s
+            AND nombre_normalizado = %s
+            AND codigo_ean IS NULL
+            LIMIT 1
+        """, (codigo_interno_compuesto, nombre_norm))
+
+        resultado = cursor.fetchone()
+
+        if resultado:
+            producto_id = resultado[0]
+            print(f"      ✅ Producto encontrado por código interno: ID={producto_id}")
+            return producto_id
+
+        # Crear nuevo producto
+        print(f"      ➕ Creando nuevo producto con código interno")
+        cursor.execute("""
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                nombre_comercial,
+                precio_promedio_global,
+                subcategoria,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+        """, (nombre_norm, nombre, precio, codigo_interno_compuesto))
+
+        nuevo_id = cursor.fetchone()[0]
+        conn.commit()
+        print(f"      ✅ Producto creado con código interno: ID={nuevo_id}")
+        return nuevo_id
+
+    except Exception as e:
+        print(f"      ❌ Error en buscar_o_crear_por_codigo_interno: {e}")
+        conn.rollback()
+        return None
+
+
+def buscar_o_crear_producto_inteligente_inline(codigo: str, nombre: str, precio: int, establecimiento: str, cursor, conn) -> Optional[int]:
+    """
+    FUNCIÓN INTEGRADA - NO REQUIERE IMPORT
+    Busca o crea producto maestro usando clasificación inteligente
+    """
+
+    print(f"\n🔍 [INLINE] buscar_o_crear_producto_inteligente:")
+    print(f"   - codigo: {codigo}")
+    print(f"   - nombre: {nombre}")
+    print(f"   - precio: {precio}")
+    print(f"   - establecimiento: {establecimiento}")
+
+    if not nombre or not nombre.strip():
+        print(f"   ❌ Nombre vacío")
+        return None
+
+    if precio <= 0:
+        print(f"   ❌ Precio inválido ({precio})")
+        return None
+
+    # Clasificar código
+    clasificacion = clasificar_codigo_producto(codigo, establecimiento)
+    print(f"   📊 Clasificación: {clasificacion['tipo']}")
+
+    try:
+        if clasificacion["tipo"] in ["EAN13", "EAN13_INCOMPLETO"]:
+            print(f"   ➡️ Usando estrategia EAN")
+            resultado = buscar_o_crear_por_ean_inline(
+                codigo_ean=clasificacion["codigo_normalizado"],
+                nombre=nombre,
+                precio=precio,
+                cursor=cursor,
+                conn=conn
+            )
+            print(f"   ✅ Resultado EAN: {resultado}")
+            return resultado
+
+        elif clasificacion.get("requiere_establecimiento"):
+            print(f"   ➡️ Usando estrategia código interno")
+            resultado = buscar_o_crear_por_codigo_interno_inline(
+                codigo=clasificacion["codigo_normalizado"],
+                nombre=nombre,
+                precio=precio,
+                establecimiento=establecimiento,
+                cursor=cursor,
+                conn=conn
+            )
+            print(f"   ✅ Resultado interno: {resultado}")
+            return resultado
+
+        else:
+            print(f"   ⚠️ Tipo no manejado: {clasificacion['tipo']}")
+            return None
+
+    except Exception as e:
+        print(f"   ❌ EXCEPCIÓN: {e}")
+        traceback.print_exc()
+        conn.rollback()
+        return None
+
+
+# ==============================================================================
+# CLASE OCPROCESSOR
+# ==============================================================================
 
 class OCRProcessor:
     """Procesador automático de facturas con OCR"""
@@ -43,7 +283,7 @@ class OCRProcessor:
         self.is_running = True
         self.worker_thread = threading.Thread(target=self.process_queue, daemon=True)
         self.worker_thread.start()
-        print("🤖 Procesador OCR automático iniciado")
+        print("🤖 Procesador OCR automático iniciado (STANDALONE VERSION)")
 
     def stop(self):
         """Detiene el procesador"""
@@ -58,15 +298,12 @@ class OCRProcessor:
                     task = ocr_queue.get(timeout=1)
                     self.process_invoice(task)
 
-                    # Actualizar tasa de éxito
                     if self.processed_count + self.error_count > 0:
                         self.success_rate = (self.processed_count /
                                            (self.processed_count + self.error_count)) * 100
 
-                    # Pequeña pausa entre procesamientos
                     time.sleep(1)
                 else:
-                    # No hay tareas, esperar
                     time.sleep(5)
 
             except Exception as e:
@@ -95,11 +332,9 @@ class OCRProcessor:
                 'started_at': datetime.now()
             }
 
-            # Verificar que el archivo existe
             if not os.path.exists(image_path):
                 raise FileNotFoundError(f"Imagen no encontrada: {image_path}")
 
-            # Procesar con Claude
             result = parse_invoice_with_claude(image_path)
 
             conn = get_db_connection()
@@ -153,140 +388,31 @@ class OCRProcessor:
                 'failed_at': datetime.now()
             }
 
-            # Intentar guardar el error en BD
-            self._save_error_to_db(factura_id, str(e))
-
-        finally:
-            # Limpiar archivo temporal
-            if image_path and os.path.exists(image_path):
-                try:
-                    os.unlink(image_path)
-                    print(f"🗑️ Archivo temporal eliminado: {image_path}")
-                except Exception as e:
-                    print(f"⚠️ No se pudo eliminar archivo temporal: {e}")
-
-            # Limpiar del tracking después de 5 minutos
-            if factura_id in processing:
-                threading.Timer(300, lambda: processing.pop(factura_id, None)).start()
-
     def _process_successful_ocr(self, cursor, conn, factura_id: int, data: Dict, user_id: int):
         """Procesa un resultado exitoso de OCR"""
 
-        # Extraer datos principales
         establecimiento = data.get("establecimiento", "Desconocido")
         cadena = detectar_cadena(establecimiento)
-        total = float(data.get("total", 0))
-        fecha = data.get("fecha")
-        productos = data.get("productos", [])
 
-        print(f"📦 Procesando {len(productos)} productos de la factura #{factura_id}")
-
-        # Calcular score de calidad
-        score = self.calculate_quality_score(data)
-
-        # Determinar estado basado en calidad
-        if score >= 80:
-            estado = "procesado"
-        elif score >= 50:
-            estado = "revision"
-        else:
-            estado = "baja_calidad"
-
-        # Actualizar factura
-        cursor.execute("""
-            UPDATE facturas
-            SET establecimiento = %s,
-                cadena = %s,
-                total_factura = %s,
-                fecha_factura = %s,
-                estado_validacion = %s,
-                puntaje_calidad = %s,
-                productos_detectados = %s,
-                fecha_procesamiento = %s,
-                procesado_por = 'OCR_AUTO'
-            WHERE id = %s
-        """, (
-            establecimiento,
-            cadena,
-            total,
-            fecha,
-            estado,
-            score,
-            len(productos),
-            datetime.now(),
-            factura_id
-        ))
-
-        # Procesar y guardar productos
         productos_guardados = 0
         productos_rechazados = 0
 
-        for idx, prod in enumerate(productos):
-            if self.validate_product(prod):
-                try:
-                    # Guardar producto usando la nueva función
-                    producto_maestro_id = self._save_product_to_items_factura(
-                        cursor, conn, prod, factura_id, user_id, establecimiento, cadena
-                    )
+        for product in data.get("productos", []):
+            item_id = self._save_product_to_items_factura(
+                cursor, conn, product, factura_id, user_id, establecimiento, cadena
+            )
 
-                    if producto_maestro_id:
-                        productos_guardados += 1
-                        print(f"   ✅ Producto {idx+1}/{len(productos)}: {prod.get('nombre')[:30]}")
-                    else:
-                        productos_rechazados += 1
-                        print(f"   ⚠️ No se pudo guardar: {prod.get('nombre')[:30]}")
-
-                except Exception as e:
-                    productos_rechazados += 1
-                    print(f"   ❌ Error guardando producto: {e}")
-                    traceback.print_exc()
+            if item_id:
+                productos_guardados += 1
             else:
                 productos_rechazados += 1
-                print(f"   🚫 Producto rechazado: {prod.get('nombre', 'sin nombre')[:30]}")
-
-        # Actualizar contador de productos guardados
-        cursor.execute("""
-            UPDATE facturas
-            SET productos_guardados = %s
-            WHERE id = %s
-        """, (productos_guardados, factura_id))
-
-        # Commit antes de actualizar inventario
-        conn.commit()
-
-        # Actualizar inventario del usuario
-        if productos_guardados > 0:
-            print(f"📦 Actualizando inventario del usuario {user_id}...")
-            try:
-                actualizar_inventario_desde_factura(factura_id, user_id)
-                print(f"✅ Inventario actualizado correctamente")
-            except Exception as e:
-                print(f"⚠️ Error actualizando inventario: {e}")
-                traceback.print_exc()
-
-        # Registrar en log
-        try:
-            cursor.execute("""
-                INSERT INTO ocr_logs (factura_id, status, message, details, created_at)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (
-                factura_id,
-                "success",
-                f"Procesado exitosamente",
-                f"Score: {score}, Productos: {productos_guardados}/{len(productos)}, Rechazados: {productos_rechazados}",
-                datetime.now()
-            ))
-            conn.commit()
-        except Exception as e:
-            print(f"⚠️ No se pudo guardar log: {e}")
 
         print(f"📊 Factura #{factura_id}: {productos_guardados} productos guardados, {productos_rechazados} rechazados")
 
     def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id: int,
                                        user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
         """
-        Guarda un producto en items_factura usando el sistema de matching inteligente
-        🔧 FIX FINAL: Parámetros correctos + conn agregado
+        Guarda un producto en items_factura usando matching INLINE
         """
         try:
             codigo = str(product.get("codigo", "")).strip()
@@ -302,9 +428,8 @@ class OCRProcessor:
                 print(f"   ⚠️ Precio inválido: {precio}")
                 return None
 
-            # 🔧 FIX: Usar los parámetros CORRECTOS según product_matching.py
-            # CRÍTICO: Incluir conn=conn para que las funciones puedan hacer commit
-            producto_maestro_id = buscar_o_crear_producto_inteligente(
+            # ✅ USAR FUNCIÓN INLINE (NO IMPORT)
+            producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
                 codigo=codigo,
                 nombre=nombre,
                 precio=precio,
@@ -313,13 +438,10 @@ class OCRProcessor:
                 conn=conn
             )
 
-            # 🚨 CRÍTICO: Si no se pudo obtener producto_maestro_id, NO continuar
             if not producto_maestro_id:
-                print(f"   ❌ No se pudo obtener producto_maestro_id para: {nombre} ({codigo})")
-                print(f"      → Saltando este producto")
+                print(f"   ❌ No se pudo obtener producto_maestro_id para: {nombre}")
                 return None
 
-            # ✅ Solo si llegamos aquí, producto_maestro_id es válido
             # Guardar en items_factura
             cursor.execute("""
                 INSERT INTO items_factura (
@@ -349,218 +471,35 @@ class OCRProcessor:
             item_id = cursor.fetchone()[0]
             conn.commit()
 
-            print(f"   ✅ Item guardado - ID: {item_id}, producto_maestro_id: {producto_maestro_id}, precio: ${precio:,}")
-
-            return producto_maestro_id
+            print(f"   ✅ Item guardado: ID={item_id}, Producto={producto_maestro_id}")
+            return item_id
 
         except Exception as e:
-            print(f"   ❌ Error guardando producto en items_factura: {e}")
-            traceback.print_exc()
+            print(f"   ⚠️ Error producto maestro '{nombre}': {e}")
             conn.rollback()
             return None
 
     def _process_failed_ocr(self, cursor, factura_id: int, error: str):
         """Procesa un fallo de OCR"""
-
         cursor.execute("""
             UPDATE facturas
             SET estado_validacion = 'error_ocr',
-                notas = %s,
-                fecha_procesamiento = %s
+                notas = %s
             WHERE id = %s
-        """, (f"Error OCR: {error}", datetime.now(), factura_id))
+        """, (f"Error OCR: {error}", factura_id))
 
-        # Registrar en log
-        try:
-            cursor.execute("""
-                INSERT INTO ocr_logs (factura_id, status, message, created_at)
-                VALUES (%s, %s, %s, %s)
-            """, (factura_id, "error", error, datetime.now()))
-        except Exception as e:
-            print(f"⚠️ No se pudo guardar log de error: {e}")
-
-    def calculate_quality_score(self, data: Dict) -> int:
-        """Calcula un score de calidad para el resultado del OCR"""
-        score = 100
-
-        # Penalizaciones por datos faltantes o dudosos
-
-        # Establecimiento
-        establecimiento = data.get("establecimiento", "")
-        if not establecimiento or establecimiento.lower() in ["desconocido", "sin nombre", "procesando"]:
-            score -= 30
-        elif len(establecimiento) < 3:
-            score -= 15
-
-        # Total
-        total = data.get("total", 0)
-        if total <= 0:
-            score -= 25
-        elif total > 100000000:  # Total sospechosamente alto
-            score -= 10
-
-        # Productos
-        productos = data.get("productos", [])
-        if len(productos) == 0:
-            score -= 40
-        elif len(productos) == 1:
-            score -= 15
-
-        # Análisis de productos
-        if productos:
-            # Productos sin código
-            sin_codigo = sum(1 for p in productos if
-                           not p.get("codigo") or p.get("codigo") == "SIN_CODIGO")
-            if sin_codigo > len(productos) * 0.5:
-                score -= 15
-            elif sin_codigo > len(productos) * 0.25:
-                score -= 8
-
-            # Productos sin precio válido
-            sin_precio = sum(1 for p in productos if
-                           not p.get("precio") or p.get("precio") <= 0)
-            if sin_precio > len(productos) * 0.3:
-                score -= 10
-
-            # Productos con nombres muy cortos o genéricos
-            nombres_malos = sum(1 for p in productos if
-                              len(str(p.get("nombre", ""))) < 3)
-            if nombres_malos > len(productos) * 0.2:
-                score -= 5
-
-            # Verificar si el total coincide aproximadamente con suma de productos
-            suma_productos = sum(float(p.get("precio", 0)) for p in productos)
-            if suma_productos > 0 and total > 0:
-                diferencia_porcentaje = abs(total - suma_productos) / total * 100
-                if diferencia_porcentaje > 20:
-                    score -= 10
-
-        # Fecha
-        if not data.get("fecha"):
-            score -= 5
-
-        return max(0, min(100, score))
-
-    def validate_product(self, product: Dict) -> bool:
-        """Valida si un producto debe ser guardado"""
-
-        # Debe tener al menos nombre
-        if not product.get("nombre"):
-            return False
-
-        nombre = str(product.get("nombre", "")).lower().strip()
-
-        # Filtrar líneas que claramente no son productos
-        palabras_excluir = [
-            'subtotal', 'total', 'cambio', 'efectivo', 'tarjeta',
-            'descuento', 'ahorro', 'puntos', 'iva', 'impuesto',
-            'propina', 'servicio', 'domicilio', 'envio', 'delivery',
-            'recibido', 'devuelto', 'vuelto', 'pago', 'saldo',
-            '----------', '==========', '***', '...'
-        ]
-
-        for palabra in palabras_excluir:
-            if palabra in nombre:
-                return False
-
-        # Validar precio
-        try:
-            precio = float(product.get("precio", 0))
-            # Rechazar precios negativos o absurdamente altos
-            if precio < 0 or precio > 100000000:
-                return False
-        except:
-            return False
-
-        # Validar que el nombre no sea solo números o caracteres especiales
-        if nombre.replace(" ", "").replace(".", "").replace("-", "").isdigit():
-            return False
-
-        # Nombre muy corto probablemente es basura
-        if len(nombre) < 2:
-            return False
-
-        return True
-
-    def _save_error_to_db(self, factura_id: int, error: str):
-        """Intenta guardar un error en la base de datos"""
-        try:
-            conn = get_db_connection()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE facturas
-                    SET estado_validacion = 'error_sistema',
-                        notas = %s
-                    WHERE id = %s
-                """, (f"Error sistema: {error[:500]}", factura_id))
-
-                try:
-                    cursor.execute("""
-                        INSERT INTO ocr_logs (factura_id, status, message, created_at)
-                        VALUES (%s, %s, %s, %s)
-                    """, (factura_id, "error_sistema", error[:500], datetime.now()))
-                except:
-                    pass  # Tabla ocr_logs puede no existir
-
-                conn.commit()
-                conn.close()
-        except Exception as e:
-            print(f"❌ No se pudo guardar error en BD: {e}")
-
-    def get_stats(self) -> Dict:
-        """Obtiene estadísticas del procesador"""
+    def get_stats(self):
+        """Retorna estadísticas del procesador"""
         return {
-            "is_running": self.is_running,
-            "processed_count": self.processed_count,
-            "error_count": self.error_count,
-            "success_rate": round(self.success_rate, 2),
-            "queue_size": ocr_queue.qsize(),
-            "processing_now": len([p for p in processing.values()
-                                 if p.get('status') == 'processing']),
-            "last_processed": self.last_processed.isoformat() if self.last_processed else None
+            'is_running': self.is_running,
+            'processed_count': self.processed_count,
+            'error_count': self.error_count,
+            'success_rate': round(self.success_rate, 2),
+            'last_processed': self.last_processed.isoformat() if self.last_processed else None,
+            'queue_size': ocr_queue.qsize(),
+            'processing_count': len([p for p in processing.values() if p.get('status') == 'processing']),
+            'recent_errors': error_log[-10:] if error_log else []
         }
 
-    def add_to_queue(self, factura_id: int, image_path: str, user_id: int = 1) -> bool:
-        """Agrega una factura a la cola de procesamiento"""
-        try:
-            task = {
-                'factura_id': factura_id,
-                'image_path': image_path,
-                'user_id': user_id,
-                'timestamp': datetime.now()
-            }
 
-            ocr_queue.put(task)
-            processing[factura_id] = {
-                'status': 'queued',
-                'queued_at': datetime.now()
-            }
-
-            print(f"📥 Factura #{factura_id} agregada a la cola (posición: {ocr_queue.qsize()})")
-            return True
-
-        except Exception as e:
-            print(f"❌ Error agregando a cola: {e}")
-            return False
-
-    def get_queue_position(self, factura_id: int) -> Optional[int]:
-        """Obtiene la posición aproximada en la cola"""
-        if factura_id in processing:
-            status = processing[factura_id].get('status')
-            if status == 'queued':
-                # Aproximar posición (no es 100% exacto en multi-threading)
-                return ocr_queue.qsize()
-            elif status == 'processing':
-                return 0
-        return None
-
-
-# Instancia global del procesador
-processor = OCRProcessor()
-
-# Force deploy: 10/25/2025 15:28:36
-
-# Deploy fix conn parameter 2025-10-26 15:37:06
-
-# Force rebuild: 2025-10-27-06-35-51
+print("✅ OCR Processor cargado - STANDALONE VERSION (sin imports externos)")
