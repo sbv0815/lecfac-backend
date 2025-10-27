@@ -503,3 +503,6 @@ class OCRProcessor:
 
 
 print("✅ OCR Processor cargado - STANDALONE VERSION (sin imports externos)")
+
+# Crear instancia global del procesador
+processor = OCRProcessor()
