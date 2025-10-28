@@ -26,6 +26,54 @@ error_log = []
 
 
 # ==============================================================================
+# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
+# ==============================================================================
+
+def limpiar_precio_colombiano(precio_str):
+    """
+    Convierte precio colombiano a entero (sin decimales).
+
+    En Colombia NO se usan decimales/centavos, solo pesos enteros.
+    Las facturas muestran separadores de miles con comas o puntos.
+
+    Ejemplos:
+    - "15,540" → 15540 pesos
+    - "15.540" → 15540 pesos
+    - "1.234.567" → 1234567 pesos
+    - "1,234,567" → 1234567 pesos
+    - "$ 15,540" → 15540 pesos
+    - 15540 → 15540 pesos
+    - 15.54 → 1554 pesos (asume que era separador de miles mal leído)
+
+    Returns:
+        int: Precio en pesos enteros
+    """
+    if precio_str is None or precio_str == "":
+        return 0
+
+    # Si ya es número, convertir a string
+    precio_str = str(precio_str)
+
+    # Eliminar espacios
+    precio_str = precio_str.strip()
+
+    # Eliminar símbolos de moneda
+    precio_str = precio_str.replace("$", "").replace("COP", "").replace("cop", "").strip()
+
+    # CLAVE: Eliminar TODOS los separadores (comas y puntos)
+    # En Colombia, tanto 15,540 como 15.540 significan 15540 pesos
+    precio_str = precio_str.replace(",", "").replace(".", "")
+
+    # Convertir a entero
+    try:
+        precio = int(precio_str)
+        return precio
+    except (ValueError, TypeError) as e:
+        print(f"   ⚠️ No se pudo convertir precio '{precio_str}': {e}")
+        return 0
+
+
+# ==============================================================================
 # FUNCIONES DE MATCHING INTEGRADAS (NO REQUIEREN IMPORT)
 # ==============================================================================
 
@@ -92,7 +140,7 @@ def buscar_o_crear_por_ean_inline(codigo_ean: str, nombre: str, precio: int, cur
         print(f"      🔎 Buscando EAN: {codigo_ean}")
 
         cursor.execute("""
-            SELECT id, nombre_normalizado, total_reportes
+            SELECT id, precio_promedio_global, total_reportes
             FROM productos_maestros
             WHERE codigo_ean = %s
             LIMIT 1
@@ -104,8 +152,8 @@ def buscar_o_crear_por_ean_inline(codigo_ean: str, nombre: str, precio: int, cur
             producto_id = resultado[0]
             print(f"      ✅ Producto encontrado por EAN: ID={producto_id}")
 
-            # Actualizar precio
-            precio_actual = resultado[2] or 0
+            # Actualizar precio promedio
+            precio_actual = resultado[1] or 0
             reportes_actuales = resultado[2] or 0
             nuevo_total_reportes = reportes_actuales + 1
             nuevo_precio_promedio = ((precio_actual * reportes_actuales) + precio) / nuevo_total_reportes
@@ -156,7 +204,7 @@ def buscar_o_crear_por_codigo_interno_inline(codigo: str, nombre: str, precio: i
         print(f"      🔎 Buscando código interno: {codigo_interno_compuesto}")
 
         cursor.execute("""
-            SELECT id, nombre_normalizado, total_reportes
+            SELECT id, precio_promedio_global, total_reportes
             FROM productos_maestros
             WHERE subcategoria = %s
             AND nombre_normalizado = %s
@@ -169,6 +217,22 @@ def buscar_o_crear_por_codigo_interno_inline(codigo: str, nombre: str, precio: i
         if resultado:
             producto_id = resultado[0]
             print(f"      ✅ Producto encontrado por código interno: ID={producto_id}")
+
+            # Actualizar precio promedio
+            precio_actual = resultado[1] or 0
+            reportes_actuales = resultado[2] or 0
+            nuevo_total_reportes = reportes_actuales + 1
+            nuevo_precio_promedio = ((precio_actual * reportes_actuales) + precio) / nuevo_total_reportes
+
+            cursor.execute("""
+                UPDATE productos_maestros
+                SET precio_promedio_global = %s,
+                    total_reportes = %s,
+                    ultima_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (nuevo_precio_promedio, nuevo_total_reportes, producto_id))
+            conn.commit()
+
             return producto_id
 
         # Crear nuevo producto
@@ -207,7 +271,7 @@ def buscar_o_crear_producto_inteligente_inline(codigo: str, nombre: str, precio:
     print(f"\n🔍 [INLINE] buscar_o_crear_producto_inteligente:")
     print(f"   - codigo: {codigo}")
     print(f"   - nombre: {nombre}")
-    print(f"   - precio: {precio}")
+    print(f"   - precio: ${precio:,} pesos")
     print(f"   - establecimiento: {establecimiento}")
 
     if not nombre or not nombre.strip():
@@ -413,20 +477,38 @@ class OCRProcessor:
                                        user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
         """
         Guarda un producto en items_factura usando matching INLINE
+        VERSIÓN CORREGIDA: Maneja correctamente precios colombianos (sin decimales)
         """
         try:
             codigo = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
-            precio = int(float(product.get("precio", 0)))
+
+            # ✅ CORRECCIÓN: Usar función de limpieza de precios colombianos
+            precio_raw = product.get("precio", 0)
+            precio = limpiar_precio_colombiano(precio_raw)
+
             cantidad = int(product.get("cantidad", 1))
 
+            # Validación 1: Producto debe tener nombre
             if not nombre:
                 print(f"   ⚠️ Producto sin nombre, omitiendo")
                 return None
 
+            # Validación 2: Precio debe ser positivo
             if precio <= 0:
-                print(f"   ⚠️ Precio inválido: {precio}")
+                print(f"   ⚠️ Precio inválido para '{nombre}': {precio_raw} → {precio}")
                 return None
+
+            # Validación 3: Precio razonable (entre $10 y $10 millones)
+            if precio < 10:
+                print(f"   ⚠️ Precio muy bajo para '{nombre}': ${precio:,}, omitiendo")
+                return None
+
+            if precio > 10_000_000:
+                print(f"   ⚠️ Precio sospechoso para '{nombre}': ${precio:,}, verificar")
+                # No rechazar, solo advertir
+
+            print(f"   💰 '{nombre}': {precio_raw} → ${precio:,} pesos")
 
             # ✅ USAR FUNCIÓN INLINE (NO IMPORT)
             producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
@@ -471,11 +553,12 @@ class OCRProcessor:
             item_id = cursor.fetchone()[0]
             conn.commit()
 
-            print(f"   ✅ Item guardado: ID={item_id}, Producto={producto_maestro_id}")
+            print(f"   ✅ Item guardado: ID={item_id}, Producto={producto_maestro_id}, Precio=${precio:,}")
             return item_id
 
         except Exception as e:
-            print(f"   ⚠️ Error producto maestro '{nombre}': {e}")
+            print(f"   ⚠️ Error guardando producto '{nombre}': {e}")
+            traceback.print_exc()
             conn.rollback()
             return None
 
@@ -502,7 +585,7 @@ class OCRProcessor:
         }
 
 
-print("✅ OCR Processor cargado - STANDALONE VERSION (sin imports externos)")
+print("✅ OCR Processor cargado - VERSIÓN CORREGIDA CON PRECIOS COLOMBIANOS")
 
 # Crear instancia global del procesador
 processor = OCRProcessor()
