@@ -1088,8 +1088,12 @@
                                 👁️ Ver
                             </button>
                             <button class="btn btn-edit" onclick="editarFactura(${f.id})"
-                                style="padding: 8px 16px; font-size: 0.9em;">
+                                style="padding: 8px 16px; font-size: 0.9em; margin-right: 5px;">
                                 ✏️ Editar
+                            </button>
+                            <button class="btn btn-danger" onclick="eliminarFactura(${f.id})"
+                                style="padding: 8px 16px; font-size: 0.9em;">
+                                🗑️ Eliminar
                             </button>
                         </td>
                     </tr>
@@ -1465,6 +1469,45 @@
             // Abrir editor.html en nueva pestaña con el ID de la factura
             const editorUrl = `/editor.html?id=${facturaId}`;
             window.open(editorUrl, '_blank');
+        }
+
+        async function eliminarFactura(facturaId) {
+            console.log('🗑️ Intentando eliminar factura:', facturaId);
+
+            // Confirmar eliminación
+            const confirmacion = confirm(
+                `⚠️ ¿Estás seguro de eliminar la factura #${facturaId}?\n\n` +
+                `Esta acción NO se puede deshacer.\n` +
+                `Se eliminarán también todos los productos asociados.`
+            );
+
+            if (!confirmacion) {
+                console.log('❌ Eliminación cancelada por el usuario');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Error al eliminar');
+                }
+
+                const result = await response.json();
+                console.log('✅ Factura eliminada:', result);
+
+                alert('✅ Factura eliminada correctamente');
+
+                // Recargar lista de facturas
+                cargarFacturas();
+
+            } catch (error) {
+                console.error('❌ Error eliminando factura:', error);
+                alert(`❌ Error al eliminar factura:\n${error.message}`);
+            }
         }
 
         // ==========================================
