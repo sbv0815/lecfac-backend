@@ -1006,7 +1006,7 @@ async def obtener_factura_detalle(factura_id: int):
                 }
             )
 
-        factura["items"] = items
+        factura["productos"] = items
 
         cursor.close()
         conn.close()
