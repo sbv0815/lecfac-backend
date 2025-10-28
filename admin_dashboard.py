@@ -956,10 +956,13 @@ async def obtener_factura_detalle(factura_id: int):
         if not factura_row:
             raise HTTPException(status_code=404, detail="Factura no encontrada")
 
+        total_centavos = float(factura_row[2]) if factura_row[2] else 0
+        total_pesos = total_centavos / 100  # Convertir centavos → pesos
+
         factura = {
             "id": factura_row[0],
             "establecimiento": factura_row[1] or "",
-            "total": float(factura_row[2]) if factura_row[2] else 0,
+            "total": total_pesos,  # Ya en pesos
             "fecha": str(factura_row[3]) if factura_row[3] else "",
             "estado": factura_row[4] or "pendiente",
             "tiene_imagen": factura_row[5] or False,

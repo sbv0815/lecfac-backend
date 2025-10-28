@@ -735,11 +735,10 @@
                 // Datos generales
                 document.getElementById('facturaIdDisplay').textContent = factura.id || facturaId;
                 document.getElementById('establecimiento').value = factura.establecimiento || '';
-                // 🔧 CORRECCIÓN: Total viene en centavos, dividir entre 100
-                const totalCentavos = factura.total || factura.total_factura || 0;
-                const totalPesos = totalCentavos / 100;
+                // ✅ Total ya viene en PESOS desde el backend
+                const totalPesos = factura.total || factura.total_factura || 0;
                 document.getElementById('total').value = totalPesos;
-                console.log(`💵 Total: ${totalCentavos} centavos → ${totalPesos} pesos`);
+                console.log(`💵 Total: ${totalPesos} pesos`);
                 document.getElementById('puntaje').textContent = factura.puntaje || 0;
                 document.getElementById('estadoBadge').textContent = factura.estado || factura.estado_validacion || 'Pendiente';
 
