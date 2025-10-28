@@ -997,11 +997,14 @@ async def obtener_factura_detalle(factura_id: int):
 
         items = []
         for item_row in cursor.fetchall():
+            precio_centavos = float(item_row[2]) if item_row[2] else 0
+            precio_pesos = precio_centavos / 100  # Convertir centavos → pesos
+
             items.append(
                 {
                     "id": item_row[0],
                     "nombre": item_row[1] or "",
-                    "precio": float(item_row[2]) if item_row[2] else 0,
+                    "precio": precio_pesos,  # Ahora en pesos
                     "codigo": item_row[3] or "",
                 }
             )
@@ -1081,6 +1084,66 @@ async def actualizar_factura(factura_id: int, data: FacturaUpdate):
     except Exception as e:
         import traceback
 
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/facturas/{factura_id}")
+async def eliminar_factura(factura_id: int):
+    """
+    Eliminar una factura y todos sus items asociados
+    Usado por dashboard.html para eliminar facturas duplicadas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+        print(f"🗑️ Eliminando factura {factura_id}...")
+
+        # Verificar que la factura existe
+        if database_type == "postgresql":
+            cursor.execute("SELECT id FROM facturas WHERE id = %s", (factura_id,))
+        else:
+            cursor.execute("SELECT id FROM facturas WHERE id = ?", (factura_id,))
+
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+        # Eliminar items primero (por si no hay CASCADE)
+        if database_type == "postgresql":
+            cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (factura_id,))
+        else:
+            cursor.execute("DELETE FROM items_factura WHERE factura_id = ?", (factura_id,))
+
+        items_eliminados = cursor.rowcount
+        print(f"  ✓ {items_eliminados} items eliminados")
+
+        # Eliminar factura
+        if database_type == "postgresql":
+            cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
+        else:
+            cursor.execute("DELETE FROM facturas WHERE id = ?", (factura_id,))
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Factura {factura_id} eliminada correctamente")
+
+        return {
+            "success": True,
+            "message": f"Factura #{factura_id} eliminada correctamente",
+            "items_eliminados": items_eliminados
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 

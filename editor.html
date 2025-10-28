@@ -757,11 +757,10 @@
                     console.log('📦 Productos encontrados:', factura.productos.length);
 
                     productos = factura.productos.map(p => {
-                        // 🔧 CORRECCIÓN: Precios vienen en centavos, dividir entre 100
-                        let precioCentavos = parseFloat(p.precio) || parseFloat(p.valor) || parseFloat(p.precio_unitario) || parseFloat(p.precio_pagado) || 0;
-                        let precioPesos = precioCentavos / 100;
+                        // ✅ Precios ya vienen en PESOS desde el backend
+                        let precioPesos = parseFloat(p.precio) || 0;
 
-                        console.log(`  💰 ${p.nombre}: ${precioCentavos} centavos → ${precioPesos} pesos`);
+                        console.log(`  💰 ${p.nombre}: ${precioPesos} pesos`);
 
                         return {
                             id: p.id,
