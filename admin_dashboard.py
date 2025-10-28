@@ -1119,6 +1119,19 @@ async def eliminar_factura(factura_id: int):
         items_eliminados = cursor.rowcount
         print(f"  ✓ {items_eliminados} items eliminados")
 
+        # Eliminar de processing_jobs (si existe la tabla)
+        try:
+            if database_type == "postgresql":
+                cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (factura_id,))
+            else:
+                cursor.execute("DELETE FROM processing_jobs WHERE factura_id = ?", (factura_id,))
+
+            jobs_eliminados = cursor.rowcount
+            print(f"  ✓ {jobs_eliminados} processing jobs eliminados")
+        except Exception as e:
+            print(f"  ⚠️ No se pudo eliminar de processing_jobs (puede que no exista): {e}")
+            # Continuar de todos modos
+
         # Eliminar factura
         if database_type == "postgresql":
             cursor.execute("DELETE FROM facturas WHERE id = %s", (factura_id,))
