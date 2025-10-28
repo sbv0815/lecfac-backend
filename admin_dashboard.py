@@ -968,13 +968,14 @@ async def obtener_factura_detalle(factura_id: int):
         if not factura_row:
             raise HTTPException(status_code=404, detail="Factura no encontrada")
 
+        # Backend envía total en CENTAVOS (como está en BD)
+        # El frontend divide por 100 para mostrar en pesos
         total_centavos = float(factura_row[2]) if factura_row[2] else 0
-        total_pesos = total_centavos / 100  # Convertir centavos → pesos
 
         factura = {
             "id": factura_row[0],
             "establecimiento": factura_row[1] or "",
-            "total": total_pesos,  # Ya en pesos
+            "total": total_centavos,  # En centavos
             "fecha": str(factura_row[3]) if factura_row[3] else "",
             "estado": factura_row[4] or "pendiente",
             "tiene_imagen": factura_row[5] or False,
@@ -1012,14 +1013,15 @@ async def obtener_factura_detalle(factura_id: int):
 
         items = []
         for item_row in cursor.fetchall():
+            # Backend envía precios en CENTAVOS (como están en BD)
+            # El frontend divide por 100 para mostrar en pesos
             precio_centavos = float(item_row[2]) if item_row[2] else 0
-            precio_pesos = precio_centavos / 100  # Convertir centavos → pesos
 
             items.append(
                 {
                     "id": item_row[0],
                     "nombre": item_row[1] or "",
-                    "precio": precio_pesos,  # Ahora en pesos
+                    "precio": precio_centavos,  # En centavos
                     "codigo": item_row[3] or "",
                 }
             )

@@ -2,6 +2,7 @@
 <html lang="es">
 
 <head>
+    <!-- Version: 2025-10-28-v2 - Fix precios en pesos -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de Factura - LecFac</title>
@@ -735,10 +736,11 @@
                 // Datos generales
                 document.getElementById('facturaIdDisplay').textContent = factura.id || facturaId;
                 document.getElementById('establecimiento').value = factura.establecimiento || '';
-                // ✅ Total ya viene en PESOS desde el backend
-                const totalPesos = factura.total || factura.total_factura || 0;
+                // Backend envía CENTAVOS, dividir por 100 para mostrar PESOS
+                const totalCentavos = factura.total || factura.total_factura || 0;
+                const totalPesos = totalCentavos / 100;
                 document.getElementById('total').value = totalPesos;
-                console.log(`💵 Total: ${totalPesos} pesos`);
+                console.log(`💵 Total: ${totalPesos} pesos (${totalCentavos} centavos)`);
                 document.getElementById('puntaje').textContent = factura.puntaje || 0;
                 document.getElementById('estadoBadge').textContent = factura.estado || factura.estado_validacion || 'Pendiente';
 
@@ -756,16 +758,17 @@
                     console.log('📦 Productos encontrados:', factura.productos.length);
 
                     productos = factura.productos.map(p => {
-                        // ✅ Precios ya vienen en PESOS desde el backend
-                        let precioPesos = parseFloat(p.precio) || 0;
+                        // Backend envía CENTAVOS, dividir por 100 para mostrar PESOS
+                        let precioCentavos = parseFloat(p.precio) || 0;
+                        let precioPesos = precioCentavos / 100;
 
-                        console.log(`  💰 ${p.nombre}: ${precioPesos} pesos`);
+                        console.log(`  💰 ${p.nombre}: ${precioPesos} pesos (${precioCentavos} centavos)`);
 
                         return {
                             id: p.id,
                             codigo: p.codigo || p.codigo_ean || p.codigo_leido || '',
                             nombre: p.nombre || p.nombre_producto || p.nombre_leido || 'Sin nombre',
-                            precio: precioPesos,
+                            precio: precioPesos,  // En pesos para mostrar
                             nuevo: false
                         };
                     });
