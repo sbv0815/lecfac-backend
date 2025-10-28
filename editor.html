@@ -736,11 +736,10 @@
                 // Datos generales
                 document.getElementById('facturaIdDisplay').textContent = factura.id || facturaId;
                 document.getElementById('establecimiento').value = factura.establecimiento || '';
-                // Backend envía CENTAVOS, dividir por 100 para mostrar PESOS
-                const totalCentavos = factura.total || factura.total_factura || 0;
-                const totalPesos = totalCentavos / 100;
+                // Los precios YA están correctos en pesos (sin decimales)
+                const totalPesos = factura.total || factura.total_factura || 0;
                 document.getElementById('total').value = totalPesos;
-                console.log(`💵 Total: ${totalPesos} pesos (${totalCentavos} centavos)`);
+                console.log(`💵 Total: ${totalPesos} pesos`);
                 document.getElementById('puntaje').textContent = factura.puntaje || 0;
                 document.getElementById('estadoBadge').textContent = factura.estado || factura.estado_validacion || 'Pendiente';
 
@@ -758,17 +757,16 @@
                     console.log('📦 Productos encontrados:', factura.productos.length);
 
                     productos = factura.productos.map(p => {
-                        // Backend envía CENTAVOS, dividir por 100 para mostrar PESOS
-                        let precioCentavos = parseFloat(p.precio) || 0;
-                        let precioPesos = precioCentavos / 100;
+                        // Los precios YA están correctos en pesos (sin decimales)
+                        let precioPesos = parseFloat(p.precio) || 0;
 
-                        console.log(`  💰 ${p.nombre}: ${precioPesos} pesos (${precioCentavos} centavos)`);
+                        console.log(`  💰 ${p.nombre}: ${precioPesos} pesos`);
 
                         return {
                             id: p.id,
                             codigo: p.codigo || p.codigo_ean || p.codigo_leido || '',
                             nombre: p.nombre || p.nombre_producto || p.nombre_leido || 'Sin nombre',
-                            precio: precioPesos,  // En pesos para mostrar
+                            precio: precioPesos,  // En pesos enteros
                             nuevo: false
                         };
                     });
