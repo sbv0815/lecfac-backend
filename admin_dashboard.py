@@ -10,60 +10,71 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/stats")
+async def estadisticas_stats():
+    """Obtener estadísticas generales del sistema (ruta legacy)"""
+    return await estadisticas()
+
+
+@router.get("/estadisticas")
 async def estadisticas():
     """Obtener estadísticas generales del sistema"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Total de facturas
+        # 1. Total de usuarios
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        total_usuarios = cursor.fetchone()[0]
+
+        # 2. Total de facturas
         cursor.execute("SELECT COUNT(*) FROM facturas")
         total_facturas = cursor.fetchone()[0]
 
-        # 2. Productos únicos en catálogo NUEVO
+        # 3. Productos únicos en catálogo
+        cursor.execute("SELECT COUNT(DISTINCT id) FROM productos_maestros")
+        total_productos = cursor.fetchone()[0]
+
+        # 4. Calidad promedio (puntaje de confianza)
         cursor.execute(
             """
-            SELECT COUNT(DISTINCT id)
-            FROM productos_maestros
+            SELECT COALESCE(AVG(puntaje_confianza), 0)
+            FROM facturas
+            WHERE puntaje_confianza IS NOT NULL
         """
         )
-        productos_unicos = cursor.fetchone()[0]
+        calidad_promedio = int(cursor.fetchone()[0] or 0)
 
-        # 3. Facturas pendientes de revisión
+        # 5. Facturas con errores (puntaje < 70)
         cursor.execute(
             """
             SELECT COUNT(*) FROM facturas
-            WHERE COALESCE(estado_validacion, 'pendiente') NOT IN ('revisada', 'validada')
+            WHERE COALESCE(puntaje_confianza, 0) < 70
         """
         )
-        facturas_pendientes = cursor.fetchone()[0]
+        facturas_con_errores = cursor.fetchone()[0]
 
-        # 4. Alertas activas (productos con variación de precio)
+        # 6. Productos sin categoría
         cursor.execute(
             """
-            SELECT COUNT(*) FROM (
-                SELECT producto_maestro_id
-                FROM precios_productos
-                WHERE producto_maestro_id IS NOT NULL
-                GROUP BY producto_maestro_id
-                HAVING COUNT(DISTINCT precio) > 1
-            ) AS cambios
+            SELECT COUNT(*) FROM productos_maestros
+            WHERE categoria IS NULL OR categoria = ''
         """
         )
-        alertas_activas = cursor.fetchone()[0]
+        productos_sin_categoria = cursor.fetchone()[0]
 
         cursor.close()
         conn.close()
 
         return {
+            "total_usuarios": total_usuarios,
             "total_facturas": total_facturas,
-            "productos_unicos": productos_unicos,
-            "alertas_activas": alertas_activas,
-            "pendientes_revision": facturas_pendientes,
+            "total_productos": total_productos,
+            "calidad_promedio": calidad_promedio,
+            "facturas_con_errores": facturas_con_errores,
+            "productos_sin_categoria": productos_sin_categoria,
         }
     except Exception as e:
         import traceback
-
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
