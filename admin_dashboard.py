@@ -173,9 +173,9 @@ async def obtener_catalogo_productos():
                     "nombre": row[2] or "Sin nombre",
                     "marca": row[3],
                     "veces_visto": row[4] or 0,
-                    "precio_promedio": float(row[5]) if row[5] else 0,
-                    "precio_min": float(row[6]) if row[6] else 0,
-                    "precio_max": float(row[7]) if row[7] else 0,
+                    "precio_promedio": int(row[5]) if row[5] else 0,  # ✅ Pesos enteros
+                    "precio_min": int(row[6]) if row[6] else 0,        # ✅ Pesos enteros
+                    "precio_max": int(row[7]) if row[7] else 0,        # ✅ Pesos enteros
                     "verificado": False,
                     "necesita_revision": False,
                 }
@@ -223,7 +223,7 @@ async def obtener_facturas():
                 {
                     "id": row[0],
                     "establecimiento": row[1] or "Sin datos",
-                    "total": float(row[2]) if row[2] else 0,
+                    "total": int(row[2]) if row[2] else 0,  # ✅ Pesos enteros
                     "fecha": str(row[3]) if row[3] else "",
                     "estado": row[4] or "pendiente",
                     "tiene_imagen": row[5] or False,
@@ -280,7 +280,7 @@ async def obtener_facturas_verificacion():
                 {
                     "id": row[0],
                     "establecimiento": row[1] or "Sin datos",
-                    "total": float(row[2]) if row[2] else 0,
+                    "total": int(row[2]) if row[2] else 0,  # ✅ Pesos enteros
                     "fecha": str(row[3]) if row[3] else "",
                     "estado": row[4] or "pendiente",
                     "puntaje": row[5] or 0,
@@ -736,7 +736,7 @@ async def obtener_inventarios():
                 productos_criticos.append(
                     {
                         "nombre": prod_row[0],
-                        "cantidad": float(prod_row[1]) if prod_row[1] else 0,
+                        "cantidad": int(prod_row[1]) if prod_row[1] else 0,  # ✅ Entero para cantidades
                         "unidad": prod_row[2] or "unidades",
                     }
                 )
@@ -883,8 +883,8 @@ async def get_alertas_globales():
                     "usuario_email": row[1],
                     "producto_nombre": row[2],
                     "producto_codigo": row[3],
-                    "cantidad_actual": float(row[4]) if row[4] else 0,
-                    "nivel_alerta": float(row[5]) if row[5] else 0,
+                    "cantidad_actual": int(row[4]) if row[4] else 0,  # ✅ Entero para cantidades
+                    "nivel_alerta": int(row[5]) if row[5] else 0,      # ✅ Entero para cantidades
                     "unidad": row[6] or "unidades",
                     "fecha_creacion": str(row[7]),
                 }
@@ -968,14 +968,13 @@ async def obtener_factura_detalle(factura_id: int):
         if not factura_row:
             raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-        # Backend envía total en CENTAVOS (como está en BD)
-        # El frontend divide por 100 para mostrar en pesos
-        total_centavos = float(factura_row[2]) if factura_row[2] else 0
+        # ✅ Total en pesos enteros (como está en BD)
+        total_pesos = int(factura_row[2]) if factura_row[2] else 0
 
         factura = {
             "id": factura_row[0],
             "establecimiento": factura_row[1] or "",
-            "total": total_centavos,  # En centavos
+            "total": total_pesos,  # ✅ Pesos enteros
             "fecha": str(factura_row[3]) if factura_row[3] else "",
             "estado": factura_row[4] or "pendiente",
             "tiene_imagen": factura_row[5] or False,
@@ -1013,15 +1012,14 @@ async def obtener_factura_detalle(factura_id: int):
 
         items = []
         for item_row in cursor.fetchall():
-            # Backend envía precios en CENTAVOS (como están en BD)
-            # El frontend divide por 100 para mostrar en pesos
-            precio_centavos = float(item_row[2]) if item_row[2] else 0
+            # ✅ Precios en pesos enteros (como están en BD)
+            precio_pesos = int(item_row[2]) if item_row[2] else 0
 
             items.append(
                 {
                     "id": item_row[0],
                     "nombre": item_row[1] or "",
-                    "precio": precio_centavos,  # En centavos
+                    "precio": precio_pesos,  # ✅ Pesos enteros
                     "codigo": item_row[3] or "",
                 }
             )
