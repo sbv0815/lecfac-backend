@@ -2,10 +2,10 @@
 <html lang="es">
 
 <head>
-    <!-- Version: 2025-10-23-14:45 - Cache Buster -->
+    <!-- Version: 2025-10-29-v1 - PRECIOS EN PESOS SIN CONVERSIÓN -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Admin Completo - LeFact</title>
+    <title>Dashboard Admin Completo - LecFac</title>
     <style>
         * {
             margin: 0;
@@ -225,7 +225,6 @@
             color: white;
         }
 
-        /* 🆕 NUEVO: Botón para editar */
         .btn-edit {
             background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
             color: white;
@@ -410,11 +409,6 @@
             }
         }
 
-        /* 🆕 NUEVO: Modal para editar productos */
-
-
-
-
         .form-group {
             margin-bottom: 20px;
         }
@@ -456,7 +450,6 @@
             background: #5a6268;
         }
 
-        /* 🆕 NUEVO: Filtros de búsqueda mejorados */
         .search-filters {
             display: flex;
             gap: 15px;
@@ -479,7 +472,6 @@
             padding: 12px 20px;
         }
 
-        /* 🆕 NUEVO: Indicador de productos filtrados */
         .filter-info {
             background: #e7f3ff;
             border-left: 4px solid #1a73e8;
@@ -545,7 +537,6 @@
                 <div class="section">
                     <h2>📄 Gestión de Facturas</h2>
 
-                    <!-- Filtros -->
                     <div class="search-filters" style="margin-bottom: 20px;">
                         <input type="text" id="filter-factura" placeholder="🔎 Buscar por establecimiento..."
                             oninput="filtrarFacturas()"
@@ -586,7 +577,6 @@
                 <div class="section">
                     <h2>🛒 Catálogo de Productos</h2>
 
-                    <!-- 🆕 Filtros mejorados -->
                     <div class="search-filters">
                         <input type="text" id="filter-producto" placeholder="🔎 Buscar por nombre, código o marca..."
                             oninput="filtrarProductos()">
@@ -702,6 +692,7 @@
         const API_URL = window.location.origin;
 
         console.log('🔧 API_URL configurada:', API_URL);
+        console.log('💵 MODO: PRECIOS EN PESOS ENTEROS (sin conversiones)');
 
         // ==========================================
         // GESTIÓN DE TABS
@@ -718,7 +709,6 @@
             event.target.classList.add('active');
             document.getElementById(`tab-${tabName}`).classList.add('active');
 
-            // Cargar datos según el tab
             switch (tabName) {
                 case 'estadisticas':
                     cargarEstadisticas();
@@ -757,11 +747,10 @@
                 const data = await response.json();
                 console.log('✅ Estadísticas recibidas:', data);
 
-                // ✅ CORREGIDO: Usar los nombres correctos que devuelve el API
                 document.getElementById('total-usuarios').textContent = data.total_usuarios || 0;
                 document.getElementById('total-facturas').textContent = data.total_facturas || 0;
-                document.getElementById('total-productos').textContent = data.total_productos || 0; // ✅ Cambiado
-                document.getElementById('calidad-promedio').textContent = (data.calidad_promedio || 0) + '%'; // ✅ Cambiado
+                document.getElementById('total-productos').textContent = data.total_productos || 0;
+                document.getElementById('calidad-promedio').textContent = (data.calidad_promedio || 0) + '%';
 
                 const resumen = document.getElementById('resumen-general');
                 resumen.innerHTML = `
@@ -848,7 +837,6 @@
                     try {
                         const inventarioResp = await fetch(`${API_URL}/api/admin/usuarios/${usuario.id}/inventario`);
 
-                        // ✅ CORRECCIÓN: Manejar errores 404 o 500
                         if (!inventarioResp.ok) {
                             console.warn(`⚠️ No se pudo cargar inventario del usuario ${usuario.id}`);
                             html += `
@@ -866,6 +854,9 @@
 
                         const inventario = await inventarioResp.json();
 
+                        // ✅ CORRECCIÓN: Precios en pesos enteros
+                        const totalGastado = Math.round(parseFloat(inventario.total_gastado || 0));
+
                         html += `
                             <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                                 <h3 style="color: #667eea; margin-bottom: 15px;">
@@ -882,7 +873,7 @@
                                     </div>
                                     <div>
                                         <div style="color: #666; font-size: 0.9em;">Total Gastado</div>
-                                        <div style="font-size: 1.5em; font-weight: bold;">$${formatearNumero(inventario.total_gastado || 0)}</div>
+                                        <div style="font-size: 1.5em; font-weight: bold;">$${formatearNumero(totalGastado)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -903,15 +894,9 @@
         // ==========================================
         // CARGAR PRODUCTOS
         // ==========================================
-        // ==========================================
-        // 🆕 VARIABLES GLOBALES PARA PRODUCTOS
-        // ==========================================
         let productosOriginales = [];
         let productosFiltrados = [];
 
-        // ==========================================
-        // 🆕 CARGAR PRODUCTOS CON FILTROS
-        // ==========================================
         async function cargarProductos() {
             const container = document.getElementById('productos-container');
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando productos...</p></div>';
@@ -927,7 +912,6 @@
                     return;
                 }
 
-                // Guardar productos originales
                 productosOriginales = productos;
                 productosFiltrados = productos;
 
@@ -939,15 +923,11 @@
             }
         }
 
-        // ==========================================
-        // 🆕 RENDERIZAR TABLA DE PRODUCTOS
-        // ==========================================
         function renderizarProductos(productos) {
             const container = document.getElementById('productos-container');
 
             let html = '';
 
-            // Mostrar info de filtrado
             if (productos.length !== productosOriginales.length) {
                 html += `
                     <div class="filter-info">
@@ -960,21 +940,21 @@
             }
 
             html += '<div class="table-container"><table><thead><tr>';
-            html += '<th>ID</th><th>Nombre</th><th>Código EAN</th><th>Precio Promedio</th><th>Categoría</th><th>Veces Comprado</th><th>Acciones</th>';
+            html += '<th>ID</th><th>Nombre</th><th>Código EAN</th><th>Precio Promedio</th><th>Categoría</th><th>Veces Comprado</th>';
             html += '</tr></thead><tbody>';
 
             productos.forEach(p => {
+                // ✅ CORRECCIÓN: Precios en pesos enteros
+                const precioPromedio = Math.round(parseFloat(p.precio_promedio || 0));
+
                 html += `
                     <tr>
                         <td><strong>#${p.id}</strong></td>
                         <td>${p.nombre}</td>
                         <td>${p.codigo_ean || '-'}</td>
-                        <td>$${formatearNumero(p.precio_promedio || 0)}</td>
+                        <td>$${formatearNumero(precioPromedio)}</td>
                         <td>${p.categoria || '-'}</td>
                         <td><span class="badge badge-info">${p.veces_comprado || 0}x</span></td>
-                        <td>
-                            <!-- Botón de editar productos eliminado - usar editor de facturas -->
-                        </td>
                     </tr>
                 `;
             });
@@ -983,21 +963,16 @@
             container.innerHTML = html;
         }
 
-        // ==========================================
-        // 🆕 FILTRAR PRODUCTOS
-        // ==========================================
         function filtrarProductos() {
             const busqueda = document.getElementById('filter-producto').value.toLowerCase();
             const categoria = document.getElementById('filter-categoria').value;
 
             productosFiltrados = productosOriginales.filter(p => {
-                // Filtro por texto
                 const matchTexto = !busqueda ||
                     p.nombre.toLowerCase().includes(busqueda) ||
                     (p.codigo_ean && p.codigo_ean.toLowerCase().includes(busqueda)) ||
                     (p.marca && p.marca.toLowerCase().includes(busqueda));
 
-                // Filtro por categoría
                 const matchCategoria = !categoria || p.categoria === categoria;
 
                 return matchTexto && matchCategoria;
@@ -1070,11 +1045,14 @@
                     f.estado === 'revisada' ? 'info' :
                         f.estado === 'necesita_revision' ? 'warning' : '';
 
+                // ✅ CORRECCIÓN: Total en pesos enteros
+                const totalPesos = Math.round(parseFloat(f.total || 0));
+
                 html += `
                     <tr style="border-bottom: 1px solid #eee;">
                         <td style="padding: 12px;">#${f.id}</td>
                         <td style="padding: 12px;">${f.establecimiento || 'Sin datos'}</td>
-                        <td style="padding: 12px;">$${formatearNumero(f.total)}</td>
+                        <td style="padding: 12px;">$${formatearNumero(totalPesos)}</td>
                         <td style="padding: 12px;">${f.fecha || '-'}</td>
                         <td style="padding: 12px;">
                             <span class="badge badge-${estadoClass}">${f.estado || 'pendiente'}</span>
@@ -1126,27 +1104,12 @@
             renderizarFacturas(facturasFiltradas);
         }
 
-        // ==========================================
-        // 🆕 LIMPIAR FILTROS
-        // ==========================================
         function limpiarFiltrosProductos() {
             document.getElementById('filter-producto').value = '';
             document.getElementById('filter-categoria').value = '';
             productosFiltrados = productosOriginales;
             renderizarProductos(productosOriginales);
         }
-
-        // ==========================================
-        // 🆕 ABRIR MODAL EDITOR DE PRODUCTO
-        // ==========================================
-
-        // ==========================================
-        // 🆕 CERRAR MODAL PRODUCTO
-        // ==========================================
-
-        // ==========================================
-        // 🆕 GUARDAR PRODUCTO
-        // ==========================================
 
         async function cargarUsuarios() {
             const container = document.getElementById('usuarios-container');
@@ -1224,14 +1187,16 @@
                 html += '</tr></thead><tbody>';
 
                 data.duplicados.forEach(grupo => {
-                    // ✅ CORRECCIÓN: Verificar que ids existe y es un array
                     const idsDisplay = Array.isArray(grupo.ids) ? grupo.ids.join(', ') : (grupo.ids || 'N/A');
+
+                    // ✅ CORRECCIÓN: Total en pesos enteros
+                    const totalPesos = Math.round(parseFloat(grupo.total || 0));
 
                     html += `
                         <tr>
                             <td><strong>${idsDisplay}</strong></td>
                             <td>${grupo.establecimiento || 'Desconocido'}</td>
-                            <td>$${formatearNumero(grupo.total || 0)}</td>
+                            <td>$${formatearNumero(totalPesos)}</td>
                             <td>${formatearFecha(grupo.fecha)}</td>
                             <td>${grupo.usuario_id || 'N/A'}</td>
                         </tr>
@@ -1284,11 +1249,14 @@
                 html += '</tr></thead><tbody>';
 
                 data.similares.forEach(grupo => {
+                    // ✅ CORRECCIÓN: Precio en pesos enteros
+                    const precioPesos = Math.round(parseFloat(grupo.precio_promedio || 0));
+
                     html += `
                         <tr>
                             <td>${grupo.nombres.join(' / ')}</td>
                             <td>${grupo.ids.join(', ')}</td>
-                            <td>$${formatearNumero(grupo.precio_promedio)}</td>
+                            <td>$${formatearNumero(precioPesos)}</td>
                         </tr>
                     `;
                 });
@@ -1382,11 +1350,14 @@
                 html += '</tr></thead><tbody>';
 
                 data.facturas.forEach(f => {
+                    // ✅ CORRECCIÓN: Total en pesos enteros
+                    const totalPesos = Math.round(parseFloat(f.total_factura || 0));
+
                     html += `
                         <tr>
                             <td><strong>#${f.id}</strong></td>
                             <td>${f.establecimiento}</td>
-                            <td>$${formatearNumero(f.total_factura)}</td>
+                            <td>$${formatearNumero(totalPesos)}</td>
                             <td><span class="badge badge-warning">${f.puntaje_calidad}%</span></td>
                             <td style="max-width: 300px;"><small>${f.problemas}</small></td>
                             <td>
@@ -1460,13 +1431,8 @@
             }
         }
 
-        // ==========================================
-        // 🆕 NUEVA FUNCIÓN: ABRIR EDITOR
-        // ==========================================
         function editarFactura(facturaId) {
             console.log('✏️ Abriendo editor para factura:', facturaId);
-
-            // Abrir editor.html en nueva pestaña con el ID de la factura
             const editorUrl = `/editor.html?id=${facturaId}`;
             window.open(editorUrl, '_blank');
         }
@@ -1474,7 +1440,6 @@
         async function eliminarFactura(facturaId) {
             console.log('🗑️ Intentando eliminar factura:', facturaId);
 
-            // Confirmar eliminación
             const confirmacion = confirm(
                 `⚠️ ¿Estás seguro de eliminar la factura #${facturaId}?\n\n` +
                 `Esta acción NO se puede deshacer.\n` +
@@ -1500,8 +1465,6 @@
                 console.log('✅ Factura eliminada:', result);
 
                 alert('✅ Factura eliminada correctamente');
-
-                // Recargar lista de facturas
                 cargarFacturas();
 
             } catch (error) {
@@ -1525,11 +1488,9 @@
         }
 
         function formatearNumero(num) {
-            if (!num) return '0';
-            return num.toLocaleString('es-CO', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0
-            });
+            if (!num || num === 0) return '0';
+            const numero = Math.round(Number(num));
+            return numero.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         }
 
         function cerrarModal() {
@@ -1552,11 +1513,14 @@
 
                 const data = await response.json();
 
+                // ✅ CORRECCIÓN: Total en pesos enteros
+                const totalPesos = Math.round(parseFloat(data.total_factura || data.total || 0));
+
                 let html = `
                     <div style="line-height: 1.8;">
                         <p><strong>ID:</strong> #${data.id}</p>
                         <p><strong>Establecimiento:</strong> ${data.establecimiento}</p>
-                        <p><strong>Total:</strong> $${formatearNumero(data.total_factura)}</p>
+                        <p><strong>Total:</strong> $${formatearNumero(totalPesos)}</p>
                         <p><strong>Fecha:</strong> ${formatearFecha(data.fecha_compra)}</p>
                         <p><strong>Estado:</strong>
                             <span class="badge badge-${data.estado_validacion === 'validada' ? 'success' : 'warning'}">
@@ -1571,10 +1535,13 @@
                     html += '<table style="width: 100%; font-size: 0.9em;"><tbody>';
 
                     data.items.forEach(item => {
+                        // ✅ CORRECCIÓN: Precio en pesos enteros
+                        const precioItem = Math.round(parseFloat(item.precio_unitario || item.precio || item.precio_pagado || 0));
+
                         html += `
                             <tr style="border-bottom: 1px solid #e9ecef;">
-                                <td style="padding: 8px;">${item.nombre_producto}</td>
-                                <td style="padding: 8px; text-align: right;">${item.cantidad} x $${formatearNumero(item.precio_unitario)}</td>
+                                <td style="padding: 8px;">${item.nombre_producto || item.nombre_leido || 'Sin nombre'}</td>
+                                <td style="padding: 8px; text-align: right;">${item.cantidad || 1} x $${formatearNumero(precioItem)}</td>
                             </tr>
                         `;
                     });
@@ -1582,7 +1549,6 @@
                     html += '</tbody></table></div>';
                 }
 
-                // 🆕 Agregar botón de edición en el modal
                 html += `
                     <div style="margin-top: 20px; text-align: center;">
                         <button class="btn btn-edit" onclick="editarFactura(${id}); cerrarModal();">
@@ -1611,47 +1577,35 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             console.log('=================================');
-            console.log('Dashboard Admin LeFact v2.0');
+            console.log('Dashboard Admin LecFac v3.0');
             console.log('API URL:', API_URL);
+            console.log('💵 PRECIOS EN PESOS ENTEROS');
             console.log('=================================');
 
-            // Forzar cierre de todos los modales al cargar
             const allModals = document.querySelectorAll('.modal');
             allModals.forEach(modal => modal.classList.remove('active'));
 
-            // Cargar estadísticas iniciales
             cargarEstadisticas();
 
             console.log('✅ Dashboard inicializado correctamente');
         });
 
-        // Cerrar modal al hacer clic fuera
         document.getElementById('modal-detalles').addEventListener('click', (e) => {
             if (e.target.id === 'modal-detalles') {
                 cerrarModal();
             }
         });
 
-        // Filtros en tiempo real
         document.getElementById('filter-usuario')?.addEventListener('input', filtrarInventarios);
         document.getElementById('filter-producto')?.addEventListener('input', filtrarProductos);
 
-        // 🆕 Cerrar modal de producto al hacer click fuera
-
-
         function filtrarInventarios() {
-            // Implementar filtrado en tiempo real
             console.log('Filtrando inventarios...');
-        }
-
-        function filtrarProductos() {
-            // Implementar filtrado en tiempo real
-            console.log('Filtrando productos...');
         }
     </script>
 
     <script>
-        console.log('🚀 Dashboard version: 2025-10-23-v2');
+        console.log('🚀 Dashboard version: 2025-10-29-v1-PESOS-PUROS');
     </script>
 </body>
 
