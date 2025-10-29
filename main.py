@@ -189,7 +189,43 @@ def get_user_id_from_token(authorization: str) -> int:
     except Exception as e:
         print(f"⚠️ Error inesperado procesando token: {e}")
         return 1
+def normalizar_precio_unitario(valor_ocr: float, cantidad: int) -> int:
+    """
+    Normaliza el precio unitario desde el valor del OCR
 
+    El OCR a veces retorna precio total (cantidad × unitario)
+    Esta función detecta y corrige automáticamente
+    """
+    try:
+        valor = float(valor_ocr)
+        cantidad = int(cantidad) if cantidad else 1
+
+        if cantidad <= 0:
+            cantidad = 1
+
+        # Si cantidad es 1, el valor es precio unitario
+        if cantidad == 1:
+            return int(valor)
+
+        # Si cantidad > 1, verificar si valor parece ser total o unitario
+        precio_dividido = valor / cantidad
+
+        # Precios típicos en Colombia: 500 a 50,000 pesos
+        if 500 <= precio_dividido <= 50000:
+            return int(precio_dividido)
+
+        # Si el valor ya parece unitario, usarlo directo
+        if 500 <= valor <= 50000:
+            return int(valor)
+
+        # Si valor es muy grande, probablemente es total
+        if valor > 50000 and cantidad > 1:
+            return int(valor / cantidad)
+
+        return int(valor)
+
+    except (ValueError, TypeError, ZeroDivisionError):
+        return 0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -552,8 +588,9 @@ async def parse_invoice(file: UploadFile = File(...)):
             try:
                 codigo_ean = str(prod.get("codigo", "")).strip()
                 nombre = str(prod.get("nombre", "")).strip()
-                precio = int(prod.get("valor") or prod.get("precio") or 0)
+                valor_ocr = prod.get("valor") or prod.get("precio") or 0
                 cantidad = int(prod.get("cantidad", 1))
+                precio_unitario = normalizar_precio_unitario(valor_ocr, cantidad)
 
                 if not nombre or precio <= 0:
                     continue
