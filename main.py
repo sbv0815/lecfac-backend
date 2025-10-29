@@ -306,6 +306,12 @@ print("=" * 60 + "\n")
 # Agregar este código en main.py después de la línea 280
 # ==========================================
 
+# ==========================================
+# CORRECCIÓN PARA main.py
+# Reemplazar el endpoint /api/admin/usuarios/{usuario_id}/inventario
+# (aproximadamente líneas 286-350)
+# ==========================================
+
 @app.get("/api/admin/usuarios/{usuario_id}/inventario")
 async def get_inventario_usuario(usuario_id: int):
     """Obtener inventario de un usuario específico"""
@@ -315,6 +321,7 @@ async def get_inventario_usuario(usuario_id: int):
 
         print(f"📦 Obteniendo inventario del usuario {usuario_id}...")
 
+        # Obtener productos del inventario
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute("""
                 SELECT
@@ -363,15 +370,68 @@ async def get_inventario_usuario(usuario_id: int):
                 "categoria": row[7] or "-"
             })
 
+        # ✅ CORRECCIÓN: Calcular estadísticas adicionales que el dashboard necesita
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            # Total de facturas del usuario
+            cursor.execute("""
+                SELECT COUNT(DISTINCT id)
+                FROM facturas
+                WHERE usuario_id = %s
+            """, (usuario_id,))
+            total_facturas = cursor.fetchone()[0] or 0
+
+            # Total gastado (suma de todas las facturas)
+            cursor.execute("""
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = %s
+            """, (usuario_id,))
+            total_gastado = float(cursor.fetchone()[0] or 0)
+
+            # Productos únicos en inventario
+            cursor.execute("""
+                SELECT COUNT(DISTINCT producto_maestro_id)
+                FROM inventario_usuario
+                WHERE usuario_id = %s AND producto_maestro_id IS NOT NULL
+            """, (usuario_id,))
+            productos_unicos = cursor.fetchone()[0] or 0
+        else:
+            # SQLite
+            cursor.execute("""
+                SELECT COUNT(DISTINCT id)
+                FROM facturas
+                WHERE usuario_id = ?
+            """, (usuario_id,))
+            total_facturas = cursor.fetchone()[0] or 0
+
+            cursor.execute("""
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = ?
+            """, (usuario_id,))
+            total_gastado = float(cursor.fetchone()[0] or 0)
+
+            cursor.execute("""
+                SELECT COUNT(DISTINCT producto_maestro_id)
+                FROM inventario_usuario
+                WHERE usuario_id = ? AND producto_maestro_id IS NOT NULL
+            """, (usuario_id,))
+            productos_unicos = cursor.fetchone()[0] or 0
+
         conn.close()
 
         print(f"✅ {len(inventario)} productos en inventario")
+        print(f"📊 Stats: {total_facturas} facturas, ${total_gastado:,.0f} gastado, {productos_unicos} productos únicos")
 
+        # ✅ CORRECCIÓN: Retornar la estructura que el dashboard espera
         return {
             "success": True,
             "usuario_id": usuario_id,
             "inventario": inventario,
-            "total_productos": len(inventario)
+            "total_productos": len(inventario),
+            "total_facturas": total_facturas,          # ← AGREGADO
+            "total_gastado": total_gastado,            # ← AGREGADO
+            "productos_unicos": productos_unicos       # ← AGREGADO
         }
 
     except Exception as e:
