@@ -498,6 +498,9 @@ async def get_anthropic_key():
 # ==========================================
 # 🔧 ENDPOINT 1: /invoices/parse - COMPLETO ✅
 # ==========================================
+# ==========================================
+# 🔧 ENDPOINT 1: /invoices/parse - ✅ CORRECTO
+# ==========================================
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...)):
     """Procesar factura con OCR - Para imágenes individuales"""
@@ -588,10 +591,15 @@ async def parse_invoice(file: UploadFile = File(...)):
             try:
                 codigo_ean = str(prod.get("codigo", "")).strip()
                 nombre = str(prod.get("nombre", "")).strip()
-                valor_ocr = prod.get("valor") or prod.get("precio") or 0  # ✅ 'valor', no 'precio, 0'
-                cantidad = int(prod.get("cantidad", 1))  # ✅ Agregar int()
+
+                # ✅ CORRECTO: Obtener valor del OCR
+                valor_ocr = prod.get("valor") or prod.get("precio") or 0
+                cantidad = int(prod.get("cantidad", 1))
+
+                # ✅ CORRECTO: Normalizar precio unitario
                 precio_unitario = normalizar_precio_unitario(valor_ocr, cantidad)
 
+                # ✅ CORRECTO: Validar con precio_unitario
                 if not nombre or precio_unitario <= 0:
                     continue
 
@@ -599,21 +607,23 @@ async def parse_invoice(file: UploadFile = File(...)):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
-                # ⭐ CREAR PRODUCTO MAESTRO
+                # ⭐ CREAR PRODUCTO MAESTRO ✅ CORRECTO
                 producto_maestro_id = None
                 if codigo_ean_valido:
                     try:
-                        producto_maestro_id = buscar_o_crear_producto_inteligente_inline(codigo=codigo_ean_valido or "",
+                        producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
+                            codigo=codigo_ean_valido or "",
                             nombre=nombre,
-                            precio=precio_unitario,
+                            precio=precio_unitario,  # ✅ Usa precio_unitario
                             establecimiento=establecimiento_raw,
-                            cursor=cursor, conn=conn)
-                        print(
-                            f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
+                            cursor=cursor,
+                            conn=conn
                         )
+                        print(f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})")
                     except Exception as e:
                         print(f"   ⚠️ Error creando producto maestro: {e}")
 
+                # ✅ CORRECTO: INSERT con producto_maestro_id y precio_unitario
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -628,7 +638,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                             producto_maestro_id,
                             codigo_ean_valido,
                             nombre,
-                            precio_unitario,
+                            precio_unitario,  # ✅ Usa precio_unitario
                             cantidad,
                         ),
                     )
@@ -646,7 +656,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                             producto_maestro_id,
                             codigo_ean_valido,
                             nombre,
-                            precio_unitario,
+                            precio_unitario,  # ✅ Usa precio_unitario
                             cantidad,
                         ),
                     )
@@ -670,7 +680,7 @@ async def parse_invoice(file: UploadFile = File(...)):
 
         conn.commit()
 
-        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
+        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐ ✅ CORRECTO
         print(f"📦 Actualizando inventario del usuario...")
         try:
             actualizar_inventario_desde_factura(factura_id, usuario_id)
@@ -723,7 +733,7 @@ async def parse_invoice(file: UploadFile = File(...)):
 
 
 # ==========================================
-# 🔧 ENDPOINT 2: /invoices/save-with-image - COMPLETO ✅
+# 🔧 ENDPOINT 2: /invoices/save-with-image - ✅ CORRECTO
 # ==========================================
 @app.post("/invoices/save-with-image")
 async def save_invoice_with_image(
@@ -794,19 +804,25 @@ async def save_invoice_with_image(
             try:
                 codigo = prod.get("codigo", "").strip()
                 nombre = prod.get("nombre", "").strip()
+
+                # ✅ CORRECTO: Variable se llama "precio" (no precio_unitario)
                 precio = float(prod.get("precio", 0))
 
+                # ✅ CORRECTO: Validar con "precio" (nombre de variable local)
                 if not nombre or precio <= 0:
                     continue
 
-                # ⭐ CREAR PRODUCTO MAESTRO
-
-                producto_maestro_id = buscar_o_crear_producto_inteligente_inline(codigo=codigo,
+                # ⭐ CREAR PRODUCTO MAESTRO ✅ CORRECTO
+                producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
+                    codigo=codigo,
                     nombre=nombre,
-                    precio=int(precio),
+                    precio=int(precio),  # ✅ Usa precio (convertido a int)
                     establecimiento=establecimiento,
-                    cursor=cursor, conn=conn)
+                    cursor=cursor,
+                    conn=conn
+                )
 
+                # ✅ CORRECTO: INSERT con precio (no precio_unitario)
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -821,7 +837,7 @@ async def save_invoice_with_image(
                             producto_maestro_id,
                             codigo,
                             nombre,
-                            precio,
+                            precio,  # ✅ Usa precio
                         ),
                     )
                 else:
@@ -838,7 +854,7 @@ async def save_invoice_with_image(
                             producto_maestro_id,
                             codigo,
                             nombre,
-                            precio,
+                            precio,  # ✅ Usa precio
                         ),
                     )
 
@@ -863,7 +879,7 @@ async def save_invoice_with_image(
 
         conn.commit()
 
-        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
+        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐ ✅ CORRECTO
         print(f"📦 Actualizando inventario del usuario...")
         try:
             actualizar_inventario_desde_factura(factura_id, usuario_id)

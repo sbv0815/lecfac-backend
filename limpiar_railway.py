@@ -1,141 +1,190 @@
 """
-Script para limpiar TODOS los datos de Railway PostgreSQL
-Versión corregida con nombres reales de tablas
+Script de Limpieza Completa de Base de Datos
+VERSIÓN CORREGIDA - Usa misma conexión para verificar cambios
 """
+
 import psycopg2
 
-def limpiar_datos_railway():
-    """Elimina todos los datos de Railway PostgreSQL"""
+# URL de conexión de Railway
+DATABASE_URL = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@turntable.proxy.rlwy.net:52874/railway"
 
-    database_url = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@turntable.proxy.rlwy.net:52874/railway"
+def get_railway_connection():
+    """Conecta directamente a Railway PostgreSQL"""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        print("✅ Conectado a Railway PostgreSQL")
+        return conn
+    except Exception as e:
+        print(f"❌ Error conectando a Railway: {e}")
+        raise
 
-    print(f"🔗 Conectando a Railway PostgreSQL...")
+
+def mostrar_estado_bd(conn, titulo="Estado de la Base de Datos"):
+    """Muestra el estado actual usando la conexión existente"""
+    cursor = conn.cursor()
+
+    print("\n" + "=" * 70)
+    print(f"📊 {titulo}")
+    print("=" * 70)
+
+    tablas = [
+        ('usuarios', 'Usuarios'),
+        ('facturas', 'Facturas'),
+        ('items_factura', 'Items Factura'),
+        ('productos_maestros', 'Productos Maestros'),
+        ('inventario_usuario', 'Inventario Usuario'),
+        ('processing_jobs', 'Processing Jobs')
+    ]
+
+    for tabla, nombre in tablas:
+        try:
+            cursor.execute(f"SELECT COUNT(*) FROM {tabla}")
+            count = cursor.fetchone()[0]
+            print(f"   {nombre:.<30} {count:>6} registros")
+        except Exception as e:
+            print(f"   {nombre:.<30} ERROR: {e}")
+
+    print("=" * 70)
+
+
+def limpiar_base_datos(conn):
+    """Limpia completamente facturas, items y productos"""
+
+    cursor = conn.cursor()
 
     try:
-        conn = psycopg2.connect(database_url)
-        cursor = conn.cursor()
+        print("\n🗑️ INICIANDO LIMPIEZA...")
 
-        print("✅ Conexión exitosa a Railway")
-        print("🧹 Iniciando limpieza de datos...")
-        print("=" * 60)
+        # 0. Limpiar processing_jobs primero
+        cursor.execute("DELETE FROM processing_jobs")
+        count = cursor.rowcount
+        print(f"   ✅ Processing jobs eliminados ({count} registros)")
 
-        # DESACTIVAR foreign keys temporalmente
-        cursor.execute("SET session_replication_role = 'replica';")
-        conn.commit()
-        print("🔓 Foreign keys desactivadas temporalmente")
-        print()
+        # 1. Inventario usuario
+        cursor.execute("DELETE FROM inventario_usuario")
+        count = cursor.rowcount
+        print(f"   ✅ Inventario usuario eliminado ({count} registros)")
 
-        # ORDEN: Tablas hijas primero, luego padres
-        tablas = [
-            # Tablas hijas (dependientes)
-            "items_factura",
-            "inventario_usuario",
-            "alertas_usuario",
-            "presupuesto_usuario",
-            "historial_compras_usuario",
-            "patrones_compra",
-            "gastos_mensuales",
-            "precios_historicos",
-            "precios_productos",
-            "correcciones_productos",
-            "codigos_locales",
-            "matching_logs",
-            "ocr_logs",
-            "password_resets",
-            "audit_logs",
-            "processing_jobs",
+        # 2. Items de facturas
+        cursor.execute("DELETE FROM items_factura")
+        count = cursor.rowcount
+        print(f"   ✅ Items de facturas eliminados ({count} registros)")
 
-            # Tablas padres
-            "facturas",
-            "productos_maestros",
-            "productos_maestro",
-            "productos_catalogo",
-            "productos",
-            "establecimientos",
-            "usuarios"
+        # 3. Facturas
+        cursor.execute("DELETE FROM facturas")
+        count = cursor.rowcount
+        print(f"   ✅ Facturas eliminadas ({count} registros)")
+
+        # 4. Productos maestros
+        cursor.execute("DELETE FROM productos_maestros")
+        count = cursor.rowcount
+        print(f"   ✅ Productos maestros eliminados ({count} registros)")
+
+        # 5. Resetear secuencias
+        secuencias = [
+            'facturas_id_seq',
+            'items_factura_id_seq',
+            'productos_maestros_id_seq',
+            'inventario_usuario_id_seq'
         ]
 
-        total_eliminados = 0
-
-        for tabla in tablas:
+        for seq in secuencias:
             try:
-                # Contar registros antes
-                cursor.execute(f"SELECT COUNT(*) FROM {tabla}")
-                count_antes = cursor.fetchone()[0]
-
-                if count_antes > 0:
-                    # Limpiar datos
-                    cursor.execute(f"DELETE FROM {tabla}")
-
-                    # Reiniciar secuencia de IDs si existe
-                    try:
-                        cursor.execute(f"""
-                            SELECT setval(
-                                pg_get_serial_sequence('{tabla}', 'id'),
-                                1,
-                                false
-                            )
-                        """)
-                    except:
-                        pass  # Algunas tablas no tienen secuencias
-
-                    conn.commit()
-                    total_eliminados += count_antes
-                    print(f"✅ {tabla:30} - {count_antes:5} registros eliminados")
-                else:
-                    print(f"⚪ {tabla:30} - Ya estaba vacía")
-
+                cursor.execute(f"ALTER SEQUENCE {seq} RESTART WITH 1")
+                print(f"   ✅ Secuencia {seq} reseteada")
             except Exception as e:
-                print(f"⚠️  {tabla:30} - Error: {str(e)[:50]}")
-                conn.rollback()
+                print(f"   ⚠️ No se pudo resetear {seq}: {e}")
 
-        # REACTIVAR foreign keys
-        cursor.execute("SET session_replication_role = 'origin';")
+        # ✅ CRÍTICO: Confirmar cambios
         conn.commit()
-        print()
-        print("🔒 Foreign keys reactivadas")
-
-        print("=" * 60)
-        print(f"✅ LIMPIEZA COMPLETADA - {total_eliminados} registros eliminados")
-        print("=" * 60)
-        print()
-        print("🎯 Siguiente paso:")
-        print("   1. Abre el app móvil")
-        print("   2. Crea un usuario NUEVO desde cero")
-        print("   3. Escanea UNA factura limpia")
-        print("   4. Verifica logs en Railway → Deberías ver:")
-        print("      ✅ Producto creado: ID=1")
-        print("      ✅ Producto creado: ID=2")
-        print("      ✅ Inventario actualizado: 1 productos agregados")
-        print()
+        print("\n💾 CAMBIOS GUARDADOS EN LA BASE DE DATOS")
+        print("✅ LIMPIEZA COMPLETADA EXITOSAMENTE")
 
     except Exception as e:
-        print(f"❌ Error de conexión: {e}")
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'conn' in locals():
+        print(f"\n❌ ERROR durante limpieza: {e}")
+        conn.rollback()
+        raise
+
+
+def main():
+    """Función principal con confirmación"""
+
+    print("\n" + "=" * 70)
+    print("⚠️  LIMPIEZA TOTAL DE BASE DE DATOS - RAILWAY POSTGRESQL")
+    print("=" * 70)
+    print("""
+Este script eliminará:
+  ❌ TODAS las facturas
+  ❌ TODOS los items de facturas
+  ❌ TODOS los productos maestros
+  ❌ TODO el inventario de usuarios
+
+Conservará:
+  ✅ Usuarios
+  ✅ Estructura de la base de datos
+  ✅ Configuraciones
+
+⚠️  ESTA ACCIÓN NO SE PUEDE DESHACER
+""")
+
+    # Conectar UNA SOLA VEZ
+    conn = get_railway_connection()
+
+    try:
+        # Mostrar estado actual
+        mostrar_estado_bd(conn, "ESTADO ACTUAL (ANTES DE LIMPIAR)")
+
+        # Confirmación
+        print("\n" + "=" * 70)
+        confirmacion = input("Para continuar, escribe 'LIMPIAR TODO' (exacto): ")
+
+        if confirmacion != "LIMPIAR TODO":
+            print("\n❌ Operación CANCELADA - No se realizaron cambios")
             conn.close()
+            return
+
+        print("\n⚠️  ÚLTIMA CONFIRMACIÓN")
+        confirmar2 = input("¿Estás 100% seguro? (sí/no): ")
+
+        if confirmar2.lower() != "sí" and confirmar2.lower() != "si":
+            print("\n❌ Operación CANCELADA - No se realizaron cambios")
+            conn.close()
+            return
+
+        # Ejecutar limpieza
+        limpiar_base_datos(conn)
+
+        # Mostrar estado final (usando LA MISMA conexión)
+        mostrar_estado_bd(conn, "ESTADO FINAL (DESPUÉS DE LIMPIAR)")
+
+        print("\n" + "=" * 70)
+        print("🎉 BASE DE DATOS LISTA PARA RE-ESCANEAR FACTURAS")
+        print("=" * 70)
+        print("""
+Próximos pasos:
+  1. ✅ Sistema corregido está en producción
+  2. ✅ Base de datos limpia (verificado arriba ↑)
+  3. 📸 Escanear todas las facturas nuevamente
+  4. ✅ Los precios se guardarán CORRECTAMENTE
+
+Ejemplo:
+  - Factura dice: $284.220 → Se guarda: 284220 ✅
+  - Factura dice: $12,456 → Se guarda: 12456 ✅
+  - Factura dice: $512.352 → Se guarda: 512352 ✅
+
+IMPORTANTE: Sin conversiones, sin divisiones, sin multiplicaciones.
+Solo se limpian separadores (puntos y comas).
+""")
+
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        conn.close()
+        print("\n🔌 Conexión cerrada")
+
 
 if __name__ == "__main__":
-    print()
-    print("⚠️  ADVERTENCIA FINAL: Esto eliminará TODOS los datos de Railway PostgreSQL")
-    print()
-    print("   Se eliminarán:")
-    print("   - 3 usuarios")
-    print("   - 34 facturas")
-    print("   - 136 productos maestros")
-    print("   - 127 precios")
-    print("   - 64 items de inventario")
-    print("   - Todo el historial")
-    print()
-    print("   La base de datos quedará COMPLETAMENTE LIMPIA")
-    print()
-    respuesta = input("¿Estás ABSOLUTAMENTE SEGURO? (escribe 'SI ELIMINAR TODO'): ")
-    print()
-
-    if respuesta.strip() == "SI ELIMINAR TODO":
-        limpiar_datos_railway()
-    else:
-        print("❌ Limpieza cancelada")
-        print("   (Debes escribir exactamente: SI ELIMINAR TODO)")
+    main()
