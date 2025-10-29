@@ -905,6 +905,33 @@ def process_invoice_complete(file_path: str):
             },
         }
 
+# En invoice_processor.py - Función process_invoice_complete()
+
+def process_invoice_complete(file_path: str):
+    """Pipeline con detección automática de duplicados"""
+
+    # ... código existente de OCR ...
+
+    # [NUEVO] Detección automática de duplicados
+    resultado_deteccion = detectar_duplicados_automaticamente(
+        productos_finales,
+        total_factura
+    )
+
+    productos_finales = resultado_deteccion["productos_limpios"]
+
+    # Agregar métricas al resultado
+    return {
+        "establecimiento": establecimiento,
+        "total": total_factura,
+        "productos": productos_finales,
+        "metadatos": {
+            **metadatos_existentes,
+            "deteccion_duplicados": resultado_deteccion.get("metricas", {}),
+            "duplicados_detectados": resultado_deteccion.get("duplicados_detectados", False),
+            "estrategia_aplicada": resultado_deteccion.get("estrategia", "ninguna")
+        }
+    }
 
 # =============================
 # Alias legacy
