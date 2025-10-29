@@ -2,7 +2,7 @@
 <html lang="es">
 
 <head>
-    <!-- Version: 2025-10-28-v2 - Fix precios en pesos -->
+    <!-- Version: 2025-10-29-v4 - PRECIOS EN PESOS SIN CONVERSIÓN - CORRECCIÓN FINAL -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de Factura - LecFac</title>
@@ -423,7 +423,7 @@
                     </div>
                     <div class="field-group">
                         <label>Total ($)</label>
-                        <input type="number" id="total" step="0.01" placeholder="0.00">
+                        <input type="number" id="total" step="1" placeholder="0">
                     </div>
                     <div class="field-group">
                         <label>Fecha</label>
@@ -469,13 +469,16 @@
     </div>
 
     <script>
-        const API_URL = window.location.origin; // API URL dinámica
+        const API_URL = window.location.origin;
         const facturaId = new URLSearchParams(window.location.search).get('id');
 
+        console.log('💵 EDITOR MODO: PRECIOS EN PESOS ENTEROS (sin conversiones)');
+
         if (!facturaId) {
-            alert('⚠️ No se especificó ID de factura.\n\nUso: /editor.html?id=123');
+            alert('⚠️ No se especificó ID de factura.');
             window.location.href = '/';
         }
+
         let zoomLevel = 1;
         let rotation = 0;
         let productos = [];
@@ -485,9 +488,6 @@
         const resizeHandle = document.getElementById('resizeHandle');
         const editorContainer = document.querySelector('.editor-container');
 
-        // ========================================
-        // RESIZE PANEL
-        // ========================================
         resizeHandle.addEventListener('mousedown', () => {
             isResizing = true;
             document.body.style.cursor = 'col-resize';
@@ -495,10 +495,8 @@
 
         document.addEventListener('mousemove', (e) => {
             if (!isResizing) return;
-
             const containerWidth = editorContainer.offsetWidth;
             const leftWidth = (e.clientX / containerWidth) * 100;
-
             if (leftWidth > 30 && leftWidth < 70) {
                 editorContainer.style.gridTemplateColumns = `${leftWidth}% ${100 - leftWidth}%`;
                 resizeHandle.style.left = `${leftWidth}%`;
@@ -512,9 +510,6 @@
             }
         });
 
-        // ========================================
-        // UI HELPERS
-        // ========================================
         function showLoading() {
             const overlay = document.createElement('div');
             overlay.className = 'loading';
@@ -542,9 +537,6 @@
             debugContent.style.display = debugContent.style.display === 'block' ? 'none' : 'block';
         }
 
-        // ========================================
-        // IMAGE CONTROLS
-        // ========================================
         function zoomIn() {
             zoomLevel *= 1.2;
             updateZoom();
@@ -572,9 +564,6 @@
             document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
         }
 
-        // ========================================
-        // IMAGE PANNING
-        // ========================================
         let isPanning = false;
         let startX, startY, scrollLeft, scrollTop;
 
@@ -600,14 +589,11 @@
             imageContainer.scrollTop = scrollTop - (y - startY);
         });
 
-        // ========================================
-        // PRODUCTOS MANAGEMENT
-        // ========================================
         function renderProductos() {
             const tbody = document.getElementById('productosBody');
 
             if (productos.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999; padding: 20px;">No hay productos. Haz clic en "Agregar Producto"</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999; padding: 20px;">No hay productos</td></tr>';
                 document.getElementById('productosCount').textContent = '0';
                 return;
             }
@@ -616,15 +602,16 @@
 
             productos.forEach((prod, index) => {
                 const row = tbody.insertRow();
-
                 const codigo = prod.codigo || prod.codigo_ean || '';
                 const nombre = prod.nombre || '';
-                const precio = prod.precio || 0;
+
+                // ✅ CORRECCIÓN: precio ya viene en pesos enteros
+                const precio = Math.round(parseFloat(prod.precio || 0));
 
                 row.innerHTML = `
             <td><input type="text" value="${codigo}" onchange="actualizarProducto(${index}, 'codigo', this.value)"></td>
             <td><input type="text" value="${nombre}" onchange="actualizarProducto(${index}, 'nombre', this.value)"></td>
-            <td><input type="number" step="0.01" value="${precio}" onchange="actualizarProducto(${index}, 'precio', parseFloat(this.value) || 0)"></td>
+            <td><input type="number" step="1" value="${precio}" onchange="actualizarProducto(${index}, 'precio', parseInt(this.value) || 0)"></td>
             <td><button class="btn-delete" onclick="eliminarProducto(${index})">×</button></td>
         `;
             });
@@ -666,30 +653,21 @@
             if (!confirm('¿Eliminar este producto?')) return;
 
             const prod = productos[index];
-            console.log('🗑️ Intentando eliminar producto:', prod);
 
-            // Si el producto existe en el servidor, eliminarlo primero
             if (!prod.nuevo && prod.id) {
                 try {
                     showLoading();
-                    console.log(`📡 DELETE ${API_URL}/admin/items/${prod.id}`);
-
                     const response = await fetch(`${API_URL}/admin/items/${prod.id}`, {
                         method: 'DELETE'
                     });
-
-                    console.log('📥 Response status:', response.status);
 
                     if (!response.ok) {
                         throw new Error('Error eliminando del servidor');
                     }
 
-                    const data = await response.json();
-                    console.log('✅ Eliminado del servidor:', data);
-
                 } catch (error) {
                     console.error('❌ Error:', error);
-                    alert('Error eliminando del servidor: ' + error.message);
+                    alert('Error eliminando: ' + error.message);
                     hideLoading();
                     return;
                 } finally {
@@ -697,32 +675,21 @@
                 }
             }
 
-            // Eliminar del array local
             productos.splice(index, 1);
             renderProductos();
             showToast('Producto eliminado');
-            console.log('✅ Producto eliminado localmente');
         }
 
-        // ========================================
-        // CARGAR FACTURA
-        // ========================================
         async function cargarFactura() {
             showLoading();
 
             try {
                 console.log('🔄 Cargando factura ID:', facturaId);
 
-                const url = `${API_URL}/admin/facturas/${facturaId}`;
-                console.log('📡 GET', url);
-
-                const response = await fetch(url);
-                console.log('📥 Response status:', response.status);
+                const response = await fetch(`${API_URL}/admin/facturas/${facturaId}`);
 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('❌ Error response:', errorText);
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
 
                 const factura = await response.json();
@@ -730,20 +697,19 @@
 
                 facturaOriginal = JSON.parse(JSON.stringify(factura));
 
-                // Debug info
                 document.getElementById('debugInfo').textContent = JSON.stringify(factura, null, 2);
 
-                // Datos generales
                 document.getElementById('facturaIdDisplay').textContent = factura.id || facturaId;
                 document.getElementById('establecimiento').value = factura.establecimiento || '';
-                // Los precios YA están correctos en pesos (sin decimales)
-                const totalPesos = factura.total || factura.total_factura || 0;
+
+                // ✅ CORRECCIÓN: Los precios YA vienen en pesos enteros
+                const totalPesos = Math.round(parseFloat(factura.total || factura.total_factura || 0));
                 document.getElementById('total').value = totalPesos;
-                console.log(`💵 Total: ${totalPesos} pesos`);
+                console.log(`💵 Total: $${totalPesos} pesos`);
+
                 document.getElementById('puntaje').textContent = factura.puntaje || 0;
                 document.getElementById('estadoBadge').textContent = factura.estado || factura.estado_validacion || 'Pendiente';
 
-                // Fecha
                 if (factura.fecha || factura.fecha_factura || factura.fecha_compra) {
                     const fechaStr = factura.fecha || factura.fecha_factura || factura.fecha_compra;
                     const fecha = new Date(fechaStr);
@@ -752,35 +718,31 @@
                     }
                 }
 
-                // Productos
                 if (Array.isArray(factura.productos) && factura.productos.length > 0) {
                     console.log('📦 Productos encontrados:', factura.productos.length);
 
                     productos = factura.productos.map(p => {
-                        // Los precios YA están correctos en pesos (sin decimales)
-                        let precioPesos = parseFloat(p.precio) || 0;
+                        // ✅ CORRECCIÓN: Los precios YA vienen en pesos enteros
+                        const precioPesos = Math.round(parseFloat(p.precio || 0));
 
-                        console.log(`  💰 ${p.nombre}: ${precioPesos} pesos`);
+                        console.log(`  💰 ${p.nombre}: $${precioPesos} pesos`);
 
                         return {
                             id: p.id,
                             codigo: p.codigo || p.codigo_ean || p.codigo_leido || '',
                             nombre: p.nombre || p.nombre_producto || p.nombre_leido || 'Sin nombre',
-                            precio: precioPesos,  // En pesos enteros
+                            precio: precioPesos,
                             nuevo: false
                         };
                     });
 
-                    console.log('✅ Productos mapeados con precios en PESOS:', productos);
+                    console.log('✅ Productos mapeados:', productos);
                 } else {
-                    console.log('⚠️ No hay productos en la factura');
                     productos = [];
                 }
 
                 renderProductos();
                 await cargarImagen();
-
-                console.log('✅ Factura cargada completamente');
 
             } catch (error) {
                 console.error('❌ ERROR:', error);
@@ -790,40 +752,29 @@
             }
         }
 
-        // ========================================
-        // CARGAR IMAGEN - VERSIÓN CORREGIDA
-        // ========================================
         async function cargarImagen() {
             const img = document.getElementById('facturaImage');
             const container = document.getElementById('imageContainer');
 
             try {
-                console.log('📷 Intentando cargar imagen de factura', facturaId);
-
-                // 🔧 INTENTAR MÚLTIPLES ENDPOINTS POSIBLES
                 const imageUrls = [
-                    `${API_URL}/admin/facturas/${facturaId}/imagen`,      // ✅ Endpoint correcto
-                    `${API_URL}/images/${facturaId}`,                     // Alternativo
-                    `${API_URL}/api/facturas/${facturaId}/imagen`,        // Variante con /api
+                    `${API_URL}/admin/facturas/${facturaId}/imagen`,
+                    `${API_URL}/images/${facturaId}`,
+                    `${API_URL}/api/facturas/${facturaId}/imagen`,
                 ];
 
                 let imagenCargada = false;
 
-                // ✅ CORRECCIÓN: Cargar directamente sin HEAD request
                 for (const imageUrl of imageUrls) {
                     if (imagenCargada) break;
-
-                    console.log(`🔍 Intentando cargar desde: ${imageUrl}`);
 
                     const timestamp = Date.now();
                     const urlWithCache = `${imageUrl}?t=${timestamp}`;
 
-                    // Crear promesa para manejar la carga
                     const loadPromise = new Promise((resolve, reject) => {
                         const tempImg = new Image();
 
                         tempImg.onload = () => {
-                            console.log(`✅ Imagen cargada desde: ${imageUrl}`);
                             img.src = tempImg.src;
                             img.style.display = 'block';
                             resetZoom();
@@ -832,7 +783,6 @@
                         };
 
                         tempImg.onerror = () => {
-                            console.log(`⚠️ No disponible: ${imageUrl}`);
                             reject();
                         };
 
@@ -841,20 +791,17 @@
 
                     try {
                         await loadPromise;
-                        return; // Salir si se cargó exitosamente
+                        return;
                     } catch (e) {
-                        continue; // Probar siguiente endpoint
+                        continue;
                     }
                 }
 
-                // Si no se pudo cargar de ningún endpoint
                 if (!imagenCargada) {
-                    console.error('❌ No se encontró imagen en ningún endpoint');
                     mostrarMensajeSinImagen();
                 }
 
             } catch (error) {
-                console.error('❌ Error en cargarImagen:', error);
                 mostrarMensajeSinImagen();
             }
         }
@@ -868,39 +815,29 @@
                 <div class="no-image-message">
                     <div class="icon">📸</div>
                     <h3>Esta factura no tiene imagen</h3>
-                    <p>La imagen no se guardó durante el procesamiento o no está disponible en el servidor</p>
-                    <p style="margin-top: 20px; font-size: 12px; color: #666;">
-                        Factura ID: ${facturaId}
-                    </p>
+                    <p>La imagen no está disponible</p>
                 </div>
             `;
         }
 
-        // ========================================
-        // GUARDAR CAMBIOS
-        // ========================================
         async function guardarCambios() {
-            console.log('💾 ============================================');
-            console.log('💾 INICIANDO GUARDADO DE CAMBIOS');
-            console.log('💾 ============================================');
+            console.log('💾 INICIANDO GUARDADO');
             showLoading();
 
             try {
-                // 1. GUARDAR DATOS GENERALES
                 const fechaValue = document.getElementById('fecha').value || null;
 
+                // ✅ CORRECCIÓN: El total ya está en pesos enteros, solo parsearlo
                 const datosGenerales = {
                     establecimiento: document.getElementById('establecimiento').value.trim(),
-                    // 🔧 CORRECCIÓN: Convertir total a centavos antes de guardar
-                    total: Math.round((parseFloat(document.getElementById('total').value) || 0) * 100)
+                    total: Math.round(parseFloat(document.getElementById('total').value) || 0)
                 };
 
                 if (fechaValue) {
                     datosGenerales.fecha = fechaValue;
                 }
 
-                console.log('📝 Datos generales a guardar:', datosGenerales);
-                console.log(`📡 PUT ${API_URL}/admin/facturas/${facturaId}`);
+                console.log('📝 Guardando datos generales:', datosGenerales);
 
                 const respGeneral = await fetch(`${API_URL}/admin/facturas/${facturaId}`, {
                     method: 'PUT',
@@ -908,40 +845,30 @@
                     body: JSON.stringify(datosGenerales)
                 });
 
-                console.log('📥 Response status (datos generales):', respGeneral.status);
-
                 if (!respGeneral.ok) {
                     const errorText = await respGeneral.text();
-                    console.error('❌ Error en datos generales:', errorText);
                     throw new Error(`Error datos generales: ${errorText}`);
                 }
 
                 console.log('✅ Datos generales guardados');
 
-                // 2. ACTUALIZAR PRODUCTOS EXISTENTES
-                console.log('\n🔄 Actualizando productos existentes...');
                 let productosActualizados = 0;
 
                 for (const prod of productos) {
                     if (!prod.nuevo && prod.id) {
-                        console.log(`\n  📦 Producto #${prod.id}:`, prod);
-
-                        // 🔧 CORRECCIÓN: Convertir pesos a centavos antes de guardar
-                        const precioPesos = parseFloat(prod.precio) || 0;
-                        const precioCentavos = Math.round(precioPesos * 100);
-
-                        console.log(`     💰 Convirtiendo: ${precioPesos} pesos → ${precioCentavos} centavos`);
+                        // ✅ CORRECCIÓN: El precio ya está en pesos enteros
+                        const precioPesos = Math.round(parseFloat(prod.precio) || 0);
 
                         const itemData = {
                             nombre: prod.nombre.trim(),
-                            precio: precioCentavos  // ✅ Guardamos en centavos
+                            precio: precioPesos
                         };
 
                         if (prod.codigo && prod.codigo.trim() !== '') {
                             itemData.codigo_ean = prod.codigo.trim();
                         }
 
-                        console.log(`     📡 PUT ${API_URL}/admin/items/${prod.id}`);
+                        console.log(`💰 Guardando producto: ${prod.nombre} = $${precioPesos} pesos`);
 
                         const respProd = await fetch(`${API_URL}/admin/items/${prod.id}`, {
                             method: 'PUT',
@@ -951,41 +878,32 @@
 
                         if (!respProd.ok) {
                             const respText = await respProd.text();
-                            console.error(`     ❌ Error actualizando item ${prod.id}:`, respText);
-                            throw new Error(`Error actualizando producto ${prod.nombre}: ${respText}`);
+                            throw new Error(`Error actualizando ${prod.nombre}: ${respText}`);
                         }
 
                         productosActualizados++;
-                        console.log('     ✅ Item actualizado');
                     }
                 }
 
-                console.log(`\n✅ ${productosActualizados} productos actualizados`);
+                console.log(`✅ ${productosActualizados} productos actualizados`);
 
-                // 3. CREAR PRODUCTOS NUEVOS
-                console.log('\n➕ Creando productos nuevos...');
                 let productosCreados = 0;
 
                 for (const prod of productos) {
                     if (prod.nuevo && prod.nombre && prod.nombre.trim() !== '') {
-                        console.log(`\n  🆕 Nuevo producto:`, prod);
-
-                        // 🔧 CORRECCIÓN: Convertir pesos a centavos antes de guardar
-                        const precioPesos = parseFloat(prod.precio) || 0;
-                        const precioCentavos = Math.round(precioPesos * 100);
-
-                        console.log(`     💰 Convirtiendo: ${precioPesos} pesos → ${precioCentavos} centavos`);
+                        // ✅ CORRECCIÓN: El precio ya está en pesos enteros
+                        const precioPesos = Math.round(parseFloat(prod.precio) || 0);
 
                         const nuevoItemData = {
                             nombre: prod.nombre.trim(),
-                            precio: precioCentavos  // ✅ Guardamos en centavos
+                            precio: precioPesos
                         };
 
                         if (prod.codigo && prod.codigo.trim() !== '') {
                             nuevoItemData.codigo_ean = prod.codigo.trim();
                         }
 
-                        console.log(`     📡 POST ${API_URL}/admin/facturas/${facturaId}/items`);
+                        console.log(`💰 Creando producto: ${prod.nombre} = $${precioPesos} pesos`);
 
                         const respNuevo = await fetch(`${API_URL}/admin/facturas/${facturaId}/items`, {
                             method: 'POST',
@@ -995,75 +913,48 @@
 
                         if (!respNuevo.ok) {
                             const respText = await respNuevo.text();
-                            console.error('     ❌ Error creando item:', respText);
-                            throw new Error(`Error creando producto ${prod.nombre}: ${respText}`);
+                            throw new Error(`Error creando ${prod.nombre}: ${respText}`);
                         }
 
                         productosCreados++;
-                        console.log('     ✅ Item creado');
                     }
                 }
 
-                console.log(`\n✅ ${productosCreados} productos nuevos creados`);
-
-                // 4. FINALIZAR
-                console.log('\n💾 ============================================');
-                console.log('💾 GUARDADO COMPLETADO EXITOSAMENTE');
-                console.log(`💾 - Datos generales: ✅`);
-                console.log(`💾 - Productos actualizados: ${productosActualizados}`);
-                console.log(`💾 - Productos nuevos: ${productosCreados}`);
-                console.log('💾 ============================================\n');
+                console.log(`✅ ${productosCreados} productos nuevos creados`);
+                console.log('💾 GUARDADO COMPLETADO');
 
                 showToast('✅ Cambios guardados exitosamente');
 
-                // Recargar factura después de 1.5 segundos
                 setTimeout(() => {
-                    console.log('🔄 Recargando factura...');
                     cargarFactura();
                 }, 1500);
 
             } catch (error) {
-                console.error('\n❌ ============================================');
-                console.error('❌ ERROR AL GUARDAR');
-                console.error('❌ ============================================');
-                console.error('❌ Error:', error);
-                console.error('❌ Stack:', error.stack);
-                console.error('❌ ============================================\n');
-
+                console.error('❌ ERROR AL GUARDAR:', error);
                 showToast('❌ Error al guardar: ' + error.message, 'error');
-                alert(`Error al guardar:\n\n${error.message}\n\nRevisa la consola para más detalles.`);
+                alert(`Error al guardar:\n\n${error.message}`);
             } finally {
                 hideLoading();
             }
         }
 
-        // ========================================
-        // KEYBOARD SHORTCUTS
-        // ========================================
         document.addEventListener('keydown', (e) => {
-            // Ctrl+S para guardar
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
                 guardarCambios();
             }
 
-            // Ctrl+N para agregar producto
             if (e.ctrlKey && e.key === 'n') {
                 e.preventDefault();
                 agregarProducto();
             }
         });
 
-        // ========================================
-        // INICIALIZAR
-        // ========================================
         window.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 ============================================');
             console.log('🚀 LECFAC EDITOR INICIADO');
-            console.log('🚀 ============================================');
             console.log('🚀 Factura ID:', facturaId);
             console.log('🚀 API URL:', API_URL);
-            console.log('🚀 ============================================\n');
+            console.log('💵 MODO: PRECIOS EN PESOS ENTEROS');
             cargarFactura();
         });
     </script>
