@@ -4476,7 +4476,7 @@ async def get_usuario_inventario(usuario_id: int):
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
                 COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
-                COALESCE(SUM(if_.cantidad * if_.precio_pagado), 0) as total_gastado_real
+                COALESCE(SUM(if_.precio_pagado), 0) as total_gastado_real
             FROM facturas f
             LEFT JOIN items_factura if_ ON f.id = if_.factura_id
             WHERE f.usuario_id = %s
