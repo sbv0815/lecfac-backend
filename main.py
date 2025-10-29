@@ -77,6 +77,7 @@ from api_auditoria_ia import router as auditoria_router
 # Al inicio del archivo, con los otros imports
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
+from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 
 
 # ==========================================
@@ -145,12 +146,6 @@ async def require_admin(user=Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Requiere permisos de admin")
     return user
-
-
-# ==========================================
-# AGREGAR ESTA FUNCIÓN DESPUÉS DE require_admin
-# (Después de la línea 109 en tu main.py)
-# ==========================================
 
 
 def get_user_id_from_token(authorization: str) -> int:
@@ -495,9 +490,7 @@ async def get_anthropic_key():
     return {"apiKey": api_key if api_key else "", "configured": bool(api_key)}
 
 
-# ==========================================
-# 🔧 ENDPOINT 1: /invoices/parse - COMPLETO ✅
-# ==========================================
+
 # ==========================================
 # 🔧 ENDPOINT 1: /invoices/parse - ✅ CORRECTO
 # ==========================================
@@ -592,14 +585,11 @@ async def parse_invoice(file: UploadFile = File(...)):
                 codigo_ean = str(prod.get("codigo", "")).strip()
                 nombre = str(prod.get("nombre", "")).strip()
 
-                # ✅ CORRECTO: Obtener valor del OCR
                 valor_ocr = prod.get("valor") or prod.get("precio") or 0
                 cantidad = int(prod.get("cantidad", 1))
 
-                # ✅ CORRECTO: Normalizar precio unitario
                 precio_unitario = normalizar_precio_unitario(valor_ocr, cantidad)
 
-                # ✅ CORRECTO: Validar con precio_unitario
                 if not nombre or precio_unitario <= 0:
                     continue
 
@@ -607,14 +597,13 @@ async def parse_invoice(file: UploadFile = File(...)):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
-                # ⭐ CREAR PRODUCTO MAESTRO ✅ CORRECTO
                 producto_maestro_id = None
                 if codigo_ean_valido:
                     try:
                         producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
                             codigo=codigo_ean_valido or "",
                             nombre=nombre,
-                            precio=precio_unitario,  # ✅ Usa precio_unitario
+                            precio=precio_unitario,
                             establecimiento=establecimiento_raw,
                             cursor=cursor,
                             conn=conn
@@ -623,7 +612,6 @@ async def parse_invoice(file: UploadFile = File(...)):
                     except Exception as e:
                         print(f"   ⚠️ Error creando producto maestro: {e}")
 
-                # ✅ CORRECTO: INSERT con producto_maestro_id y precio_unitario
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -638,7 +626,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                             producto_maestro_id,
                             codigo_ean_valido,
                             nombre,
-                            precio_unitario,  # ✅ Usa precio_unitario
+                            precio_unitario,
                             cantidad,
                         ),
                     )
@@ -656,7 +644,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                             producto_maestro_id,
                             codigo_ean_valido,
                             nombre,
-                            precio_unitario,  # ✅ Usa precio_unitario
+                            precio_unitario,
                             cantidad,
                         ),
                     )
@@ -679,6 +667,77 @@ async def parse_invoice(file: UploadFile = File(...)):
             )
 
         conn.commit()
+
+        # 🔧 AJUSTAR PRECIOS POR DESCUENTOS/DUPLICADOS
+        print(f"🔧 Ajustando precios por descuentos...")
+        try:
+            # Limpiar duplicados del OCR
+            duplicados_eliminados = limpiar_items_duplicados(factura_id, conn)
+            if duplicados_eliminados > 0:
+                print(f"   ✅ {duplicados_eliminados} items duplicados eliminados")
+
+            # Ajustar precios proporcionalmente
+            ajuste_exitoso = ajustar_precios_items_por_total(factura_id, conn)
+
+            if ajuste_exitoso:
+                print(f"   ✅ Precios ajustados correctamente")
+            else:
+                print(f"   ⚠️ No se requirió ajuste de precios")
+
+        except Exception as e:
+            print(f"   ⚠️ Error en ajuste automático: {e}")
+            traceback.print_exc()
+
+        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
+        print(f"📦 Actualizando inventario del usuario...")
+        try:
+            actualizar_inventario_desde_factura(factura_id, usuario_id)
+            print(f"✅ Inventario actualizado correctamente")
+        except Exception as e:
+            print(f"⚠️ Error actualizando inventario: {e}")
+            traceback.print_exc()
+
+        cursor.close()
+        conn.close()
+        conn = None
+
+        imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
+
+        try:
+            os.unlink(temp_file.name)
+        except:
+            pass
+
+        print(f"✅ PROCESAMIENTO COMPLETO")
+
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "data": data,
+            "productos_guardados": productos_guardados,
+            "imagen_guardada": imagen_guardada,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ ERROR: {str(e)}")
+        print(traceback.format_exc())
+
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
+
+        if temp_file:
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
+
+        raise HTTPException(500, str(e))
 
         # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐ ✅ CORRECTO
         print(f"📦 Actualizando inventario del usuario...")
@@ -879,7 +938,25 @@ async def save_invoice_with_image(
 
         conn.commit()
 
-        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐ ✅ CORRECTO
+        # 🔧 AJUSTAR PRECIOS POR DESCUENTOS/DUPLICADOS
+        print(f"🔧 Ajustando precios por descuentos...")
+        try:
+            # Limpiar duplicados
+            duplicados_eliminados = limpiar_items_duplicados(factura_id, conn)
+
+            # Ajustar precios proporcionalmente
+            ajuste_exitoso = ajustar_precios_items_por_total(factura_id, conn)
+
+            if ajuste_exitoso:
+                print(f"✅ Precios ajustados correctamente")
+            else:
+                print(f"⚠️ No se pudo ajustar precios automáticamente")
+
+        except Exception as e:
+            print(f"⚠️ Error en ajuste: {e}")
+            traceback.print_exc()
+
+        # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
         print(f"📦 Actualizando inventario del usuario...")
         try:
             actualizar_inventario_desde_factura(factura_id, usuario_id)
@@ -930,133 +1007,6 @@ async def save_invoice_with_image(
                 pass
 
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
-
-
-# ==========================================
-# ENDPOINT: PROCESAR VIDEO DE FACTURA (ASÍNCRONO)
-# ==========================================
-
-
-@app.post("/invoices/parse-video")
-async def parse_invoice_video(
-    request: Request,
-    background_tasks: BackgroundTasks,  # ✅ AGREGADO
-    video: UploadFile = File(...),
-):
-    """Procesar video de factura - ASÍNCRONO"""
-    print("=" * 80)
-    print("📹 NUEVO VIDEO (PROCESAMIENTO ASÍNCRONO)")
-    print("=" * 80)
-
-    try:
-        job_id = str(uuid.uuid4())
-        print(f"🆔 Job ID: {job_id}")
-
-        content = await video.read()
-
-        video_size_mb = len(content) / (1024 * 1024)
-        MAX_VIDEO_SIZE_MB = 30.0
-
-        print(f"💾 Video: {video_size_mb:.2f} MB")
-
-        if video_size_mb > MAX_VIDEO_SIZE_MB:
-            print(
-                f"❌ Video rechazado: {video_size_mb:.1f} MB > {MAX_VIDEO_SIZE_MB} MB"
-            )
-            return JSONResponse(
-                status_code=413,
-                content={
-                    "success": False,
-                    "error": f"Video muy grande ({video_size_mb:.1f} MB). Máximo permitido: {MAX_VIDEO_SIZE_MB} MB",
-                },
-            )
-
-        video_path = f"/tmp/lecfac_video_{job_id}.webm"
-        with open(video_path, "wb") as f:
-            f.write(content)
-
-        print(f"✅ Video guardado: {video_path}")
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Obtener usuario desde el token
-        authorization = request.headers.get("Authorization")
-        usuario_id = get_user_id_from_token(authorization)
-        print(f"🆔 Usuario autenticado: {usuario_id}")
-
-        try:
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute(
-                    "SELECT id FROM processing_jobs WHERE id = %s", (job_id,)
-                )
-            else:
-                cursor.execute("SELECT id FROM processing_jobs WHERE id = ?", (job_id,))
-
-            if cursor.fetchone():
-                print(f"⚠️ Job {job_id} ya existe, generando nuevo ID")
-                job_id = str(uuid.uuid4())
-        except Exception as e:
-            print(f"⚠️ Error verificando job existente: {e}")
-
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute(
-                """
-                INSERT INTO processing_jobs
-                (id, usuario_id, video_path, status, created_at)
-                VALUES (%s, %s, %s, 'pending', CURRENT_TIMESTAMP)
-            """,
-                (job_id, usuario_id, video_path),
-            )
-        else:
-            cursor.execute(
-                """
-                INSERT INTO processing_jobs
-                (id, usuario_id, video_path, status, created_at)
-                VALUES (?, ?, ?, 'pending', ?)
-            """,
-                (job_id, usuario_id, video_path, datetime.now()),
-            )
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        print(f"✅ Job creado en BD")
-
-        # ✅ Ahora background_tasks SÍ está definido
-        background_tasks.add_task(
-            process_video_background_task, job_id, video_path, usuario_id
-        )
-
-        print("✅ Tarea en background programada")
-        print("📤 RESPUESTA INMEDIATA AL CLIENTE")
-
-        return JSONResponse(
-            status_code=202,
-            content={
-                "success": True,
-                "job_id": job_id,
-                "status": "pending",
-                "video_size_mb": round(video_size_mb, 2),
-                "message": "Video recibido. Procesando en background.",
-                "estimated_time_minutes": "1-3",
-                "poll_endpoint": f"/invoices/job-status/{job_id}",
-            },
-        )
-
-    except Exception as e:
-        print(f"❌ ERROR: {str(e)}")
-        traceback.print_exc()
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e),
-                "message": "Error procesando el video",
-            },
-        )
 
 
 # ==========================================
@@ -1195,6 +1145,452 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"🤖 Procesando con Claude...")
 
         start_time = time.time()
+
+        def procesar_frame_individual(args):
+            i, frame_path = args
+            try:
+                resultado = parse_invoice_with_claude(frame_path)
+                if resultado.get("success") and resultado.get("data"):
+                    return (i, resultado["data"])
+                return (i, None)
+            except Exception as e:
+                print(f"⚠️ Error procesando frame {i+1}: {e}")
+                return (i, None)
+
+        todos_productos = []
+        establecimiento = None
+        fecha = None
+        frames_exitosos = 0
+
+        frame_args = list(enumerate(frames_paths))
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            resultados = list(executor.map(procesar_frame_individual, frame_args))
+
+        totales_detectados = []
+
+        for i, data in resultados:
+            if data:
+                frames_exitosos += 1
+
+                if not establecimiento:
+                    establecimiento = data.get("establecimiento", "Desconocido")
+                    fecha = data.get("fecha")
+
+                total_frame = data.get("total", 0)
+                if total_frame > 0:
+                    totales_detectados.append(total_frame)
+
+                productos = data.get("productos", [])
+                todos_productos.extend(productos)
+
+        elapsed_time = time.time() - start_time
+
+        print(f"✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
+        print(f"📦 Productos detectados: {len(todos_productos)}")
+        print(f"⏱️ Tiempo: {elapsed_time:.1f}s")
+
+        if totales_detectados:
+            total = max(totales_detectados)
+            print(f"💰 Total seleccionado: ${total:,}")
+        else:
+            total = 0
+
+        if not todos_productos:
+            raise Exception("No se detectaron productos")
+
+        print(f"🔍 Deduplicando productos...")
+        productos_unicos = deduplicar_productos(todos_productos)
+        print(f"✅ Productos únicos: {len(productos_unicos)}")
+
+        print(f"💾 Guardando en base de datos...")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            establecimiento, cadena = procesar_establecimiento(
+                establecimiento_raw=establecimiento,
+                productos=productos_unicos,
+                total=total,
+            )
+
+            establecimiento_id = obtener_o_crear_establecimiento_id(
+                conn=conn, establecimiento=establecimiento, cadena=cadena
+            )
+
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                fecha_final = (
+                    validar_fecha(fecha) if fecha else datetime.now().date().isoformat()
+                )
+
+                cursor.execute(
+                    """
+                INSERT INTO facturas (
+                    usuario_id, establecimiento_id, establecimiento, cadena,
+                    total_factura, fecha_factura, fecha_cargue,
+                    productos_detectados, estado_validacion
+                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
+                RETURNING id
+                """,
+                    (
+                        usuario_id,
+                        establecimiento_id,
+                        establecimiento,
+                        cadena,
+                        total,
+                        fecha_final,
+                        len(productos_unicos),
+                    ),
+                )
+                factura_id = cursor.fetchone()[0]
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO facturas (
+                        usuario_id, establecimiento_id, establecimiento, cadena,
+                        total_factura, fecha_factura, fecha_cargue,
+                        productos_detectados, estado_validacion
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'procesado')
+                """,
+                    (
+                        usuario_id,
+                        establecimiento_id,
+                        establecimiento,
+                        cadena,
+                        total,
+                        fecha,
+                        datetime.now(),
+                        len(productos_unicos),
+                    ),
+                )
+                factura_id = cursor.lastrowid
+
+            conn.commit()
+            print(f"✅ Factura creada: ID {factura_id}")
+
+            imagen_guardada = False
+            if frames_paths and len(frames_paths) > 0:
+                try:
+                    print(f"🖼️ Creando imagen completa...")
+
+                    imagen_completa_path = combinar_frames_vertical(
+                        frames_paths,
+                        output_path=f"/tmp/factura_completa_{factura_id}.jpg",
+                    )
+
+                    if os.path.exists(imagen_completa_path):
+                        from storage import save_image_to_db
+
+                        imagen_guardada = save_image_to_db(
+                            factura_id, imagen_completa_path, "image/jpeg"
+                        )
+
+                        if imagen_guardada:
+                            print(f"✅ Imagen completa guardada")
+
+                        try:
+                            os.remove(imagen_completa_path)
+                        except:
+                            pass
+
+                except Exception as e:
+                    print(f"⚠️ Error guardando imagen: {e}")
+
+            # ⭐⭐⭐ GUARDAR PRODUCTOS CON producto_maestro_id ⭐⭐⭐
+            productos_guardados = 0
+            productos_fallidos = 0
+
+            for producto in productos_unicos:
+                try:
+                    codigo = producto.get("codigo", "")
+                    nombre = producto.get("nombre", "Sin nombre")
+                    precio = producto.get("precio") or producto.get("valor", 0)
+                    cantidad = producto.get("cantidad", 1)
+
+                    if not nombre or nombre.strip() == "":
+                        print(f"⚠️ Producto sin nombre, omitiendo")
+                        productos_fallidos += 1
+                        continue
+
+                    try:
+                        cantidad = int(cantidad)
+                        if cantidad <= 0:
+                            cantidad = 1
+                    except (ValueError, TypeError):
+                        cantidad = 1
+
+                    try:
+                        precio = float(precio)
+                        if precio < 0:
+                            print(f"⚠️ Precio negativo para '{nombre}', omitiendo")
+                            productos_fallidos += 1
+                            continue
+                    except (ValueError, TypeError):
+                        precio = 0
+
+                    if precio == 0:
+                        print(f"⚠️ Precio cero para '{nombre}', omitiendo")
+                        productos_fallidos += 1
+                        continue
+
+                    # ⭐⭐⭐ CREAR PRODUCTO MAESTRO ⭐⭐⭐
+                    producto_maestro_id = None
+                    if codigo and len(codigo) >= 3:
+                        try:
+                            producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
+                                codigo=codigo,
+                                nombre=nombre,
+                                precio=int(precio),
+                                establecimiento=establecimiento,
+                                cursor=cursor,
+                                conn=conn
+                            )
+                            print(
+                                f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})"
+                            )
+                        except Exception as e:
+                            print(f"   ⚠️ Error producto maestro '{nombre}': {e}")
+
+                    if os.environ.get("DATABASE_TYPE") == "postgresql":
+                        cursor.execute(
+                            """
+                            INSERT INTO items_factura (
+                                factura_id, usuario_id, producto_maestro_id,
+                                codigo_leido, nombre_leido, cantidad, precio_pagado
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                producto_maestro_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO items_factura (
+                                factura_id, usuario_id, producto_maestro_id,
+                                codigo_leido, nombre_leido, cantidad, precio_pagado
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                producto_maestro_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
+
+                    productos_guardados += 1
+
+                except Exception as e:
+                    print(f"❌ Error guardando '{nombre}': {str(e)}")
+                    productos_fallidos += 1
+
+                    if "constraint" in str(e).lower():
+                        conn.rollback()
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+
+                    continue
+
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute(
+                    """
+                    UPDATE facturas
+                    SET productos_guardados = %s
+                    WHERE id = %s
+                """,
+                    (productos_guardados, factura_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE facturas
+                    SET productos_guardados = ?
+                    WHERE id = ?
+                """,
+                    (productos_guardados, factura_id),
+                )
+
+            conn.commit()
+            print(f"✅ Productos guardados: {productos_guardados}")
+
+            if productos_fallidos > 0:
+                print(f"⚠️ Productos no guardados: {productos_fallidos}")
+
+            # 🔧 AJUSTAR PRECIOS POR DESCUENTOS/DUPLICADOS
+            print(f"🔧 Ajustando precios por descuentos...")
+            try:
+                # Limpiar duplicados
+                duplicados_eliminados = limpiar_items_duplicados(factura_id, conn)
+                if duplicados_eliminados > 0:
+                    print(f"   ✅ {duplicados_eliminados} items duplicados eliminados")
+
+                # Ajustar precios proporcionalmente
+                ajuste_exitoso = ajustar_precios_items_por_total(factura_id, conn)
+
+                if ajuste_exitoso:
+                    print(f"   ✅ Precios ajustados correctamente")
+                else:
+                    print(f"   ⚠️ No se requirió ajuste de precios")
+
+            except Exception as e:
+                print(f"   ⚠️ Error en ajuste automático: {e}")
+                traceback.print_exc()
+
+            # ⭐⭐⭐ ACTUALIZAR INVENTARIO ⭐⭐⭐
+            print(f"📦 Actualizando inventario del usuario...")
+            try:
+                actualizar_inventario_desde_factura(factura_id, usuario_id)
+                print(f"✅ Inventario actualizado correctamente")
+            except Exception as e:
+                print(f"⚠️ Error actualizando inventario: {e}")
+                traceback.print_exc()
+
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'completed',
+                        factura_id = %s,
+                        completed_at = CURRENT_TIMESTAMP,
+                        productos_detectados = %s,
+                        frames_procesados = %s,
+                        frames_exitosos = %s
+                    WHERE id = %s AND status = 'processing'
+                """,
+                    (
+                        factura_id,
+                        productos_guardados,
+                        len(frames_paths),
+                        frames_exitosos,
+                        job_id,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'completed',
+                        factura_id = ?,
+                        completed_at = ?,
+                        productos_detectados = ?,
+                        frames_procesados = ?,
+                        frames_exitosos = ?
+                    WHERE id = ? AND status = 'processing'
+                """,
+                    (
+                        factura_id,
+                        datetime.now(),
+                        productos_guardados,
+                        len(frames_paths),
+                        frames_exitosos,
+                        job_id,
+                    ),
+                )
+
+            affected_rows = cursor.rowcount
+            conn.commit()
+
+            if affected_rows > 0:
+                print(f"✅ JOB COMPLETADO EXITOSAMENTE")
+            else:
+                print(f"⚠️ Job ya fue marcado como completado")
+
+        except Exception as e:
+            print(f"❌ Error en operación de BD: {e}")
+            if conn:
+                conn.rollback()
+            raise e
+
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+        print(f"🧹 Limpiando archivos temporales...")
+        try:
+            if os.path.exists(video_path):
+                os.remove(video_path)
+                print(f"   ✓ Video eliminado")
+
+            if frames_paths:
+                limpiar_frames_temporales(frames_paths)
+                print(f"   ✓ Frames eliminados")
+        except Exception as e:
+            print(f"⚠️ Error limpiando temporales: {e}")
+
+        print(f"{'='*80}")
+        print(f"✅ PROCESAMIENTO COMPLETADO")
+        print(f"{'='*80}\n")
+
+    except Exception as e:
+        print(f"\n{'='*80}")
+        print(f"❌ ERROR EN PROCESAMIENTO BACKGROUND")
+        print(f"Error: {str(e)}")
+        print(f"{'='*80}")
+        traceback.print_exc()
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'failed',
+                        error_message = %s,
+                        completed_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND status IN ('pending', 'processing')
+                """,
+                    (str(e)[:500], job_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE processing_jobs
+                    SET status = 'failed',
+                        error_message = ?,
+                        completed_at = ?
+                    WHERE id = ? AND status IN ('pending', 'processing')
+                """,
+                    (str(e)[:500], datetime.now(), job_id),
+                )
+
+            conn.commit()
+
+        except Exception as db_error:
+            print(f"⚠️ Error actualizando job status: {db_error}")
+            if conn:
+                conn.rollback()
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+        try:
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
+            if frames_paths:
+                from video_processor import limpiar_frames_temporales
+
+                limpiar_frames_temporales(frames_paths)
+        except Exception as cleanup_error:
+            print(f"⚠️ Error limpiando archivos: {cleanup_error}")
 
         def procesar_frame_individual(args):
             i, frame_path = args
