@@ -301,6 +301,174 @@ print("=" * 60 + "\n")
 # ==========================================
 # ENDPOINTS ADMIN (TEMPORALES - MOVER A ROUTER)
 # ==========================================
+# ==========================================
+# ENDPOINTS ADMIN FALTANTES
+# Agregar este código en main.py después de la línea 280
+# ==========================================
+
+@app.get("/api/admin/usuarios/{usuario_id}/inventario")
+async def get_inventario_usuario(usuario_id: int):
+    """Obtener inventario de un usuario específico"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"📦 Obteniendo inventario del usuario {usuario_id}...")
+
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT
+                    iu.producto_maestro_id,
+                    pm.nombre_normalizado,
+                    pm.codigo_ean,
+                    iu.cantidad_actual,
+                    iu.precio_ultima_compra,
+                    iu.fecha_ultima_actualizacion,
+                    iu.establecimiento_nombre,
+                    pm.categoria
+                FROM inventario_usuario iu
+                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = %s
+                ORDER BY iu.fecha_ultima_actualizacion DESC
+                LIMIT 100
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    iu.producto_maestro_id,
+                    pm.nombre_normalizado,
+                    pm.codigo_ean,
+                    iu.cantidad_actual,
+                    iu.precio_ultima_compra,
+                    iu.fecha_ultima_actualizacion,
+                    iu.establecimiento_nombre,
+                    pm.categoria
+                FROM inventario_usuario iu
+                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = ?
+                ORDER BY iu.fecha_ultima_actualizacion DESC
+                LIMIT 100
+            """, (usuario_id,))
+
+        inventario = []
+        for row in cursor.fetchall():
+            inventario.append({
+                "producto_id": row[0],
+                "nombre": row[1] or "Producto sin nombre",
+                "codigo_ean": row[2] or "",
+                "cantidad": float(row[3]) if row[3] else 0,
+                "precio_ultima_compra": float(row[4]) if row[4] else 0,
+                "ultima_actualizacion": str(row[5]) if row[5] else None,
+                "establecimiento": row[6] or "-",
+                "categoria": row[7] or "-"
+            })
+
+        conn.close()
+
+        print(f"✅ {len(inventario)} productos en inventario")
+
+        return {
+            "success": True,
+            "usuario_id": usuario_id,
+            "inventario": inventario,
+            "total_productos": len(inventario)
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo inventario del usuario {usuario_id}: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/inventarios")
+async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
+    """Obtener todos los inventarios con paginación"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        offset = (pagina - 1) * limite
+
+        print(f"📦 Obteniendo inventarios (página {pagina})...")
+
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT
+                    iu.usuario_id,
+                    u.email,
+                    pm.nombre_normalizado,
+                    iu.cantidad_actual,
+                    iu.precio_ultima_compra,
+                    iu.fecha_ultima_actualizacion,
+                    pm.categoria
+                FROM inventario_usuario iu
+                LEFT JOIN usuarios u ON iu.usuario_id = u.id
+                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                ORDER BY iu.fecha_ultima_actualizacion DESC
+                LIMIT %s OFFSET %s
+            """, (limite, offset))
+        else:
+            cursor.execute("""
+                SELECT
+                    iu.usuario_id,
+                    u.email,
+                    pm.nombre_normalizado,
+                    iu.cantidad_actual,
+                    iu.precio_ultima_compra,
+                    iu.fecha_ultima_actualizacion,
+                    pm.categoria
+                FROM inventario_usuario iu
+                LEFT JOIN usuarios u ON iu.usuario_id = u.id
+                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                ORDER BY iu.fecha_ultima_actualizacion DESC
+                LIMIT ? OFFSET ?
+            """, (limite, offset))
+
+        inventarios = []
+        for row in cursor.fetchall():
+            inventarios.append({
+                "usuario_id": row[0],
+                "email": row[1] or f"Usuario {row[0]}",
+                "producto": row[2] or "Sin nombre",
+                "cantidad": float(row[3]) if row[3] else 0,
+                "precio": float(row[4]) if row[4] else 0,
+                "ultima_actualizacion": str(row[5]) if row[5] else None,
+                "categoria": row[6] or "-"
+            })
+
+        # Contar total
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("SELECT COUNT(*) FROM inventario_usuario")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM inventario_usuario")
+
+        total = cursor.fetchone()[0] or 0
+
+        conn.close()
+
+        print(f"✅ {len(inventarios)} inventarios obtenidos")
+
+        return {
+            "success": True,
+            "inventarios": inventarios,
+            "total": total,
+            "pagina": pagina,
+            "limite": limite,
+            "total_paginas": (total + limite - 1) // limite
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo inventarios: {e}")
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints admin de inventario agregados")
+
 
 @app.get("/api/admin/estadisticas")
 async def get_admin_stats():
