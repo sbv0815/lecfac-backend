@@ -5305,6 +5305,129 @@ async def debug_inventario_raw(usuario_id: int):
 
 
 print("✅ Endpoint diagnóstico /api/debug/inventario-raw/{usuario_id} registrado")
+
+# ==========================================
+# 🔍 DIAGNÓSTICO PROFUNDO - items_factura
+# ==========================================
+# Ejecutar este endpoint para ver qué está mal
+
+@app.get("/api/debug/facturas-detalladas/{usuario_id}")
+async def debug_facturas_detalladas(usuario_id: int):
+    """
+    Muestra TODO el detalle de las facturas de un usuario
+    para identificar exactamente dónde está el problema
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1️⃣ Ver facturas con sus totales declarados
+        cursor.execute(
+            """
+            SELECT
+                f.id,
+                f.establecimiento,
+                f.fecha_factura,
+                f.total_factura,
+                f.productos_guardados
+            FROM facturas f
+            WHERE f.usuario_id = %s
+            ORDER BY f.id
+        """,
+            (usuario_id,),
+        )
+
+        facturas = []
+        for row in cursor.fetchall():
+            factura_id = row[0]
+            total_declarado = float(row[3]) if row[3] else 0
+
+            # 2️⃣ Para cada factura, ver TODOS sus items
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    nombre_leido,
+                    cantidad,
+                    precio_pagado,
+                    producto_maestro_id
+                FROM items_factura
+                WHERE factura_id = %s
+                ORDER BY id
+            """,
+                (factura_id,),
+            )
+
+            items = []
+            suma_precio_pagado = 0
+            suma_cantidad_x_precio = 0
+
+            for item_row in cursor.fetchall():
+                item_id = item_row[0]
+                nombre = item_row[1]
+                cantidad = float(item_row[2]) if item_row[2] else 0
+                precio_pagado = float(item_row[3]) if item_row[3] else 0
+                producto_maestro_id = item_row[4]
+
+                # Calcular ambas formas
+                suma_precio_pagado += precio_pagado
+                suma_cantidad_x_precio += (cantidad * precio_pagado)
+
+                items.append({
+                    "item_id": item_id,
+                    "nombre": nombre,
+                    "cantidad": cantidad,
+                    "precio_pagado": precio_pagado,
+                    "precio_unitario_inferido": precio_pagado / cantidad if cantidad > 0 else 0,
+                    "subtotal_si_multiplico": cantidad * precio_pagado,
+                    "producto_maestro_id": producto_maestro_id
+                })
+
+            facturas.append({
+                "factura_id": factura_id,
+                "establecimiento": row[1],
+                "fecha": str(row[2]) if row[2] else None,
+                "total_declarado_en_factura": total_declarado,
+                "productos_guardados": row[4],
+                "total_items": len(items),
+                "suma_precio_pagado": suma_precio_pagado,
+                "suma_cantidad_x_precio": suma_cantidad_x_precio,
+                "diferencia_vs_declarado_suma": abs(suma_precio_pagado - total_declarado),
+                "diferencia_vs_declarado_multiplicado": abs(suma_cantidad_x_precio - total_declarado),
+                "metodo_correcto": "suma" if abs(suma_precio_pagado - total_declarado) < abs(suma_cantidad_x_precio - total_declarado) else "multiplicado",
+                "items": items[:10]  # Primeros 10 items para no saturar
+            })
+
+        # 3️⃣ Resumen global
+        total_sistema_suma = sum(f["suma_precio_pagado"] for f in facturas)
+        total_sistema_multiplicado = sum(f["suma_cantidad_x_precio"] for f in facturas)
+        total_declarado_suma = sum(f["total_declarado_en_factura"] for f in facturas)
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "usuario_id": usuario_id,
+            "facturas": facturas,
+            "resumen": {
+                "total_facturas": len(facturas),
+                "total_declarado_en_facturas": total_declarado_suma,
+                "total_si_sumo_precio_pagado": total_sistema_suma,
+                "total_si_multiplico_cantidad_x_precio": total_sistema_multiplicado,
+                "diferencia_suma_vs_declarado": abs(total_sistema_suma - total_declarado_suma),
+                "diferencia_multiplicado_vs_declarado": abs(total_sistema_multiplicado - total_declarado_suma),
+                "recomendacion": "suma" if abs(total_sistema_suma - total_declarado_suma) < abs(total_sistema_multiplicado - total_declarado_suma) else "multiplicado"
+            }
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoint de diagnóstico profundo registrado")
 # ========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ========================================
