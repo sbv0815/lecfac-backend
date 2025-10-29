@@ -588,11 +588,11 @@ async def parse_invoice(file: UploadFile = File(...)):
             try:
                 codigo_ean = str(prod.get("codigo", "")).strip()
                 nombre = str(prod.get("nombre", "")).strip()
-                valor_ocr = prod.get("valor") or prod.get("precio") or 0
-                cantidad = int(prod.get("cantidad", 1))
+                valor_ocr = prod.get("valor") or prod.get("precio") or 0  # ✅ 'valor', no 'precio, 0'
+                cantidad = int(prod.get("cantidad", 1))  # ✅ Agregar int()
                 precio_unitario = normalizar_precio_unitario(valor_ocr, cantidad)
 
-                if not nombre or precio <= 0:
+                if not nombre or precio_unitario <= 0:
                     continue
 
                 codigo_ean_valido = None
@@ -605,7 +605,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                     try:
                         producto_maestro_id = buscar_o_crear_producto_inteligente_inline(codigo=codigo_ean_valido or "",
                             nombre=nombre,
-                            precio=precio,
+                            precio=precio_unitario,
                             establecimiento=establecimiento_raw,
                             cursor=cursor, conn=conn)
                         print(
@@ -628,7 +628,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                             producto_maestro_id,
                             codigo_ean_valido,
                             nombre,
-                            precio,
+                            precio_unitario,
                             cantidad,
                         ),
                     )
@@ -646,7 +646,7 @@ async def parse_invoice(file: UploadFile = File(...)):
                             producto_maestro_id,
                             codigo_ean_valido,
                             nombre,
-                            precio,
+                            precio_unitario,
                             cantidad,
                         ),
                     )
