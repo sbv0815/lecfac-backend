@@ -4423,23 +4423,28 @@ async def get_producto_detalle(producto_id: int):
 # ✅ 8. INVENTARIO DE USUARIO
 @app.get("/api/admin/usuarios/{usuario_id}/inventario")
 async def get_usuario_inventario(usuario_id: int):
-    """Obtiene estadísticas del inventario de un usuario"""
+    """
+    Obtiene estadísticas del inventario de un usuario
+    CORREGIDO: Usa inventario_usuario en lugar de sumar facturas
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
         print(f"📊 Obteniendo inventario del usuario {usuario_id}...")
 
-        # Estadísticas agregadas - ✅ CORRECCIÓN: SIN DIVISIÓN
+        # ✅ QUERY CORRECTA: Desde inventario_usuario
         cursor.execute(
             """
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
-                COUNT(DISTINCT if_.nombre_leido) as productos_unicos,
-                COALESCE(SUM(f.total_factura), 0) as total_gastado
-            FROM facturas f
-            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
-            WHERE f.usuario_id = %s
+                COUNT(DISTINCT iu.producto_maestro_id) as productos_unicos,
+                COALESCE(SUM(iu.total_gastado), 0) as total_gastado_real
+            FROM usuarios u
+            LEFT JOIN facturas f ON u.id = f.usuario_id
+            LEFT JOIN inventario_usuario iu ON u.id = iu.usuario_id
+            WHERE u.id = %s
+            GROUP BY u.id
         """,
             (usuario_id,),
         )
@@ -4454,15 +4459,19 @@ async def get_usuario_inventario(usuario_id: int):
                 "total_gastado": 0,
             }
 
-        # ✅ CORRECCIÓN: Ya NO necesita multiplicar porque ya NO se divide
+        print(f"   Facturas: {result[0]}")
+        print(f"   Productos únicos: {result[1]}")
+        print(f"   Total gastado: ${result[2]:,.0f}")
+
         return {
             "total_facturas": result[0] or 0,
             "productos_unicos": result[1] or 0,
-            "total_gastado": float(result[2] or 0),  # ← Valor directo, sin conversión
+            "total_gastado": float(result[2] or 0),  # Ya en pesos, sin conversión
         }
 
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
