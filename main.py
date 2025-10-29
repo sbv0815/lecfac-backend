@@ -4494,12 +4494,14 @@ async def debug_inventario_raw(usuario_id: int):
             "calculos": {}
         }
 
-        # 1️⃣ Desde FACTURAS (suma de totales)
+        # 1️⃣ Desde FACTURAS
         cursor.execute(
             """
             SELECT
                 COUNT(*) as num_facturas,
-                SUM(total_factura) as suma_total_factura
+                SUM(total_factura) as suma_total_factura,
+                array_agg(id) as factura_ids,
+                array_agg(total_factura) as factura_totales
             FROM facturas
             WHERE usuario_id = %s
         """,
@@ -4510,18 +4512,22 @@ async def debug_inventario_raw(usuario_id: int):
         resultado["calculos"]["desde_facturas"] = {
             "num_facturas": facturas_data[0],
             "suma_total_factura": float(facturas_data[1] or 0),
-            "descripcion": "Suma de facturas.total_factura"
+            "factura_ids": facturas_data[2],
+            "factura_totales": [float(x) for x in facturas_data[3]] if facturas_data[3] else []
         }
 
-        # 2️⃣ Desde ITEMS_FACTURA (cantidad × precio)
+        # 2️⃣ Desde ITEMS_FACTURA
         cursor.execute(
             """
             SELECT
                 COUNT(*) as num_items,
                 COUNT(DISTINCT producto_maestro_id) as productos_unicos,
                 SUM(cantidad) as cantidad_total,
-                SUM(precio_pagado) as suma_precios,
-                SUM(cantidad * precio_pagado) as suma_cantidad_x_precio
+                SUM(precio_pagado) as suma_precios_sin_cantidad,
+                SUM(cantidad * precio_pagado) as suma_cantidad_x_precio,
+                MIN(precio_pagado) as precio_minimo,
+                MAX(precio_pagado) as precio_maximo,
+                AVG(precio_pagado) as precio_promedio
             FROM items_factura if_
             JOIN facturas f ON if_.factura_id = f.id
             WHERE f.usuario_id = %s
@@ -4534,39 +4540,14 @@ async def debug_inventario_raw(usuario_id: int):
             "num_items": items_data[0],
             "productos_unicos": items_data[1],
             "cantidad_total": float(items_data[2] or 0),
-            "suma_precios": float(items_data[3] or 0),
+            "suma_precios_sin_cantidad": float(items_data[3] or 0),
             "suma_cantidad_x_precio": float(items_data[4] or 0),
-            "descripcion": "SUM(cantidad × precio_pagado)"
+            "precio_minimo": float(items_data[5] or 0),
+            "precio_maximo": float(items_data[6] or 0),
+            "precio_promedio": float(items_data[7] or 0)
         }
 
-        # 3️⃣ Desde INVENTARIO_USUARIO (tabla acumulada)
-        cursor.execute(
-            """
-            SELECT
-                COUNT(*) as num_productos,
-                SUM(cantidad_actual) as cantidad_actual_total,
-                SUM(total_gastado) as suma_total_gastado,
-                SUM(numero_compras) as suma_compras,
-                SUM(cantidad_total_comprada) as suma_cantidad_comprada,
-                SUM(precio_promedio * cantidad_total_comprada) as calculado_desde_promedio
-            FROM inventario_usuario
-            WHERE usuario_id = %s
-        """,
-            (usuario_id,),
-        )
-
-        inv_data = cursor.fetchone()
-        resultado["calculos"]["desde_inventario_usuario"] = {
-            "num_productos": inv_data[0],
-            "cantidad_actual_total": float(inv_data[1] or 0),
-            "suma_total_gastado": float(inv_data[2] or 0),
-            "suma_compras": inv_data[3],
-            "suma_cantidad_comprada": float(inv_data[4] or 0),
-            "calculado_desde_promedio": float(inv_data[5] or 0),
-            "descripcion": "SUM(total_gastado) de la tabla"
-        }
-
-        # 4️⃣ Muestra de items individuales
+        # 3️⃣ Muestra de 5 items con mayor precio
         cursor.execute(
             """
             SELECT
@@ -4576,99 +4557,96 @@ async def debug_inventario_raw(usuario_id: int):
                 if_.precio_pagado,
                 (if_.cantidad * if_.precio_pagado) as subtotal,
                 f.id as factura_id,
-                f.total_factura
+                f.total_factura,
+                f.establecimiento
             FROM items_factura if_
             JOIN facturas f ON if_.factura_id = f.id
             WHERE f.usuario_id = %s
-            ORDER BY f.id, if_.id
-            LIMIT 10
+            ORDER BY if_.precio_pagado DESC
+            LIMIT 5
         """,
             (usuario_id,),
         )
 
-        items_muestra = []
+        items_top = []
         for row in cursor.fetchall():
-            items_muestra.append({
+            items_top.append({
                 "item_id": row[0],
                 "nombre": row[1],
                 "cantidad": float(row[2]),
                 "precio_unitario": float(row[3]),
-                "subtotal_calculado": float(row[4]),
+                "subtotal": float(row[4]),
                 "factura_id": row[5],
-                "factura_total": float(row[6])
+                "factura_total": float(row[6]),
+                "establecimiento": row[7]
             })
 
-        resultado["muestra_items"] = items_muestra
+        resultado["items_top_precio"] = items_top
 
-        # 5️⃣ Muestra de inventario
+        # 4️⃣ Primeros 10 items de cada factura
         cursor.execute(
             """
             SELECT
-                iu.id,
-                pm.nombre_normalizado,
-                iu.cantidad_actual,
-                iu.precio_promedio,
-                iu.numero_compras,
-                iu.cantidad_total_comprada,
-                iu.total_gastado,
-                (iu.precio_promedio * iu.cantidad_total_comprada) as esperado
-            FROM inventario_usuario iu
-            JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
-            WHERE iu.usuario_id = %s
-            ORDER BY iu.total_gastado DESC
-            LIMIT 10
+                f.id as factura_id,
+                f.total_factura,
+                array_agg(if_.nombre_leido ORDER BY if_.id) as nombres,
+                array_agg(if_.cantidad ORDER BY if_.id) as cantidades,
+                array_agg(if_.precio_pagado ORDER BY if_.id) as precios
+            FROM facturas f
+            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
+            WHERE f.usuario_id = %s
+            GROUP BY f.id, f.total_factura
+            ORDER BY f.id
         """,
             (usuario_id,),
         )
 
-        inv_muestra = []
+        facturas_con_items = []
         for row in cursor.fetchall():
-            total_gastado = float(row[6] or 0)
-            esperado = float(row[7] or 0)
+            items = []
+            if row[2]:  # Si hay items
+                for i in range(min(5, len(row[2]))):  # Primeros 5
+                    items.append({
+                        "nombre": row[2][i],
+                        "cantidad": float(row[3][i]) if row[3][i] else 0,
+                        "precio": float(row[4][i]) if row[4][i] else 0,
+                        "subtotal": (float(row[3][i]) * float(row[4][i])) if row[3][i] and row[4][i] else 0
+                    })
 
-            inv_muestra.append({
-                "inv_id": row[0],
-                "producto": row[1],
-                "cantidad_actual": float(row[2] or 0),
-                "precio_promedio": float(row[3] or 0),
-                "numero_compras": row[4],
-                "cantidad_total_comprada": float(row[5] or 0),
-                "total_gastado_bd": total_gastado,
-                "total_esperado": esperado,
-                "diferencia": total_gastado - esperado,
-                "ratio": round(total_gastado / esperado, 2) if esperado > 0 else 0
+            facturas_con_items.append({
+                "factura_id": row[0],
+                "total_declarado": float(row[1]),
+                "items_muestra": items,
+                "suma_muestra": sum(item["subtotal"] for item in items)
             })
 
-        resultado["muestra_inventario"] = inv_muestra
+        resultado["facturas_detalle"] = facturas_con_items
 
-        # 6️⃣ Comparación y diagnóstico
+        # 5️⃣ Diagnóstico
         suma_facturas = resultado["calculos"]["desde_facturas"]["suma_total_factura"]
         suma_items = resultado["calculos"]["desde_items_factura"]["suma_cantidad_x_precio"]
-        suma_inventario = resultado["calculos"]["desde_inventario_usuario"]["suma_total_gastado"]
 
         resultado["diagnostico"] = {
             "suma_facturas": suma_facturas,
             "suma_items": suma_items,
-            "suma_inventario": suma_inventario,
-            "diferencia_facturas_items": suma_facturas - suma_items,
-            "diferencia_inventario_facturas": suma_inventario - suma_facturas,
-            "ratio_inventario_facturas": round(suma_inventario / suma_facturas, 2) if suma_facturas > 0 else 0,
-            "ratio_inventario_items": round(suma_inventario / suma_items, 2) if suma_items > 0 else 0,
-            "problema_detectado": suma_inventario > suma_facturas * 1.1,
+            "diferencia": suma_items - suma_facturas,
+            "ratio": round(suma_items / suma_facturas, 2) if suma_facturas > 0 else 0,
+            "problema": "",
             "recomendacion": ""
         }
 
-        if suma_inventario > suma_facturas * 1.1:
-            resultado["diagnostico"]["recomendacion"] = (
-                f"⚠️ inventario_usuario.total_gastado está inflado. "
-                f"Ratio: {resultado['diagnostico']['ratio_inventario_facturas']}x. "
-                f"Usar items_factura como fuente de verdad."
-            )
+        if abs(suma_items - suma_facturas) < 100:
+            resultado["diagnostico"]["problema"] = "✅ Datos consistentes"
+            resultado["diagnostico"]["recomendacion"] = "Valores correctos. No hay problema."
+        elif suma_items > suma_facturas * 2:
+            ratio = suma_items / suma_facturas
+            resultado["diagnostico"]["problema"] = f"🔴 items_factura.precio_pagado está multiplicado ~{ratio:.1f}x"
+            resultado["diagnostico"]["recomendacion"] = f"Dividir precio_pagado por {ratio:.0f} en items_factura"
         else:
-            resultado["diagnostico"]["recomendacion"] = "✅ Datos consistentes"
+            resultado["diagnostico"]["problema"] = "⚠️ Diferencia menor pero significativa"
+            resultado["diagnostico"]["recomendacion"] = "Revisar cálculos individuales"
 
         conn.close()
-
         return resultado
 
     except Exception as e:
@@ -4676,6 +4654,8 @@ async def debug_inventario_raw(usuario_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+print("✅ Endpoint de diagnóstico /api/debug/inventario-raw/{usuario_id} registrado")
 
 
 # ✅ 9. SERVIR IMÁGENES DE FACTURAS
