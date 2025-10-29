@@ -4425,7 +4425,7 @@ async def get_producto_detalle(producto_id: int):
 async def get_usuario_inventario(usuario_id: int):
     """
     Obtiene estadísticas del inventario de un usuario
-    CORREGIDO: Usa inventario_usuario en lugar de sumar facturas
+    ✅ SOLUCIÓN: Calcula desde items_factura, IGNORA inventario_usuario.total_gastado
     """
     try:
         conn = get_db_connection()
@@ -4433,18 +4433,17 @@ async def get_usuario_inventario(usuario_id: int):
 
         print(f"📊 Obteniendo inventario del usuario {usuario_id}...")
 
-        # ✅ QUERY CORRECTA: Desde inventario_usuario
+        # ✅ CÁLCULO CORRECTO: Directamente desde items_factura
         cursor.execute(
             """
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
-                COUNT(DISTINCT iu.producto_maestro_id) as productos_unicos,
-                COALESCE(SUM(iu.total_gastado), 0) as total_gastado_real
-            FROM usuarios u
-            LEFT JOIN facturas f ON u.id = f.usuario_id
-            LEFT JOIN inventario_usuario iu ON u.id = iu.usuario_id
-            WHERE u.id = %s
-            GROUP BY u.id
+                COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
+                COALESCE(SUM(if_.cantidad * if_.precio_pagado), 0) as total_gastado_real
+            FROM facturas f
+            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
+            WHERE f.usuario_id = %s
+            GROUP BY f.usuario_id
         """,
             (usuario_id,),
         )
@@ -4459,14 +4458,17 @@ async def get_usuario_inventario(usuario_id: int):
                 "total_gastado": 0,
             }
 
+        total_gastado = float(result[2] or 0)
+
+        print(f"   Usuario ID: {usuario_id}")
         print(f"   Facturas: {result[0]}")
         print(f"   Productos únicos: {result[1]}")
-        print(f"   Total gastado: ${result[2]:,.0f}")
+        print(f"   Total gastado: ${total_gastado:,.0f}")
 
         return {
             "total_facturas": result[0] or 0,
             "productos_unicos": result[1] or 0,
-            "total_gastado": float(result[2] or 0),  # Ya en pesos, sin conversión
+            "total_gastado": total_gastado,
         }
 
     except Exception as e:
