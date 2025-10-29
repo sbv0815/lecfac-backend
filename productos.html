@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Productos - LecFac</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #2563eb;
+            border-bottom-color: #2563eb;
+        }
+
+        .tab:hover {
+            color: #2563eb;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Sección de lista de productos */
+        .filters {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"],
+        select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: #64748b;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #475569;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .productos-table {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-error {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            font-size: 20px;
+            color: #333;
+        }
+
+        .close {
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .close:hover {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        /* Sección de carga masiva */
+        .upload-area {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .upload-box {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 40px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-box:hover {
+            border-color: #2563eb;
+            background: #f8faff;
+        }
+
+        .upload-box.dragover {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .suggestions {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f9ff;
+            border-radius: 6px;
+            border-left: 4px solid #2563eb;
+        }
+
+        .suggestions-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .suggestion-item {
+            padding: 10px;
+            background: white;
+            margin: 5px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .similarity-score {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .score-high {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .score-medium {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .score-low {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #2563eb;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #059669;
+            border-left: 4px solid #059669;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #dc2626;
+            border-left: 4px solid #dc2626;
+        }
+
+        .alert-info {
+            background: #e0e7ff;
+            color: #4338ca;
+            border-left: 4px solid #4338ca;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #2563eb;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #64748b;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📦 Gestión de Productos</h1>
+            <p>Administra, edita y enriquece el catálogo de productos</p>
+
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('lista')">📋 Lista de Productos</button>
+                <button class="tab" onclick="switchTab('enriquecer')">✨ Enriquecimiento</button>
+                <button class="tab" onclick="switchTab('cargar')">➕ Carga Masiva</button>
+            </div>
+        </div>
+
+        <!-- TAB 1: LISTA DE PRODUCTOS -->
+        <div id="tab-lista" class="tab-content active">
+            <div class="stats" id="stats">
+                <!-- Stats se cargan dinámicamente -->
+            </div>
+
+            <div class="filters">
+                <div class="filter-row">
+                    <input type="text" id="busqueda" placeholder="🔍 Buscar por nombre o código EAN...">
+                    <select id="filtro">
+                        <option value="todos">Todos los productos</option>
+                        <option value="sin_ean">Sin código EAN</option>
+                        <option value="sin_marca">Sin marca</option>
+                        <option value="sin_categoria">Sin categoría</option>
+                        <option value="con_errores">Con errores</option>
+                    </select>
+                    <button class="btn-primary" onclick="cargarProductos()">Buscar</button>
+                    <button class="btn-secondary" onclick="limpiarFiltros()">Limpiar</button>
+                </div>
+            </div>
+
+            <div class="productos-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Código EAN</th>
+                            <th>Nombre</th>
+                            <th>Marca</th>
+                            <th>Categoría</th>
+                            <th>Precio Promedio</th>
+                            <th>Reportes</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productos-body">
+                        <tr>
+                            <td colspan="9" style="text-align: center; padding: 40px;">
+                                <div class="loading"></div>
+                                <p style="margin-top: 10px;">Cargando productos...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination"></div>
+        </div>
+
+        <!-- TAB 2: ENRIQUECIMIENTO -->
+        <div id="tab-enriquecer" class="tab-content">
+            <div class="alert alert-info">
+                <strong>💡 Enriquecimiento Automático</strong><br>
+                Esta sección te permite buscar productos en la base de referencia (6,679 productos) y completar
+                automáticamente los datos faltantes.
+            </div>
+
+            <div class="upload-area">
+                <h2>🔍 Buscar y Enriquecer Producto</h2>
+                <p style="color: #64748b; margin: 10px 0 20px;">Ingresa el ID del producto que deseas enriquecer</p>
+
+                <div class="form-group">
+                    <input type="number" id="producto-id-enriquecer" placeholder="ID del producto"
+                        style="max-width: 300px; margin: 0 auto;">
+                </div>
+
+                <button class="btn-primary" onclick="buscarEnReferencia()">Buscar en Referencia</button>
+
+                <div id="resultados-enriquecimiento" class="suggestions" style="display: none;">
+                    <!-- Resultados se cargan aquí -->
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: CARGA MASIVA -->
+        <div id="tab-cargar" class="tab-content">
+            <div class="alert alert-info">
+                <strong>📥 Carga Masiva de Productos</strong><br>
+                Sube un archivo Excel o CSV con productos nuevos. Solo necesitas <strong>código EAN</strong> y
+                <strong>nombre</strong>.
+                Los productos se agregan a <code>productos_referencia</code> y estarán disponibles para matching
+                automático.
+            </div>
+
+            <div class="upload-area">
+                <h2>➕ Agregar Productos Nuevos</h2>
+                <p style="color: #64748b; margin-bottom: 20px;">Los productos NO necesitan precio - se completará
+                    automáticamente cuando alguien los compre</p>
+
+                <div class="upload-box" id="upload-box" onclick="document.getElementById('file-input').click()">
+                    <div class="upload-icon">📄</div>
+                    <h3>Arrastra un archivo o haz clic para seleccionar</h3>
+                    <p style="color: #64748b; margin-top: 10px;">Excel (.xlsx) o CSV (.csv)</p>
+                    <input type="file" id="file-input" class="file-input" accept=".xlsx,.xls,.csv"
+                        onchange="handleFileSelect(event)">
+                </div>
+
+                <div style="text-align: left; max-width: 600px; margin: 20px auto;">
+                    <h3 style="margin-bottom: 10px;">📋 Formato Requerido:</h3>
+                    <ul style="color: #64748b; line-height: 1.8;">
+                        <li><strong>codigo_ean</strong> (requerido) - Código de barras del producto</li>
+                        <li><strong>nombre</strong> (requerido) - Nombre completo del producto</li>
+                        <li><strong>marca</strong> (opcional) - Marca del producto</li>
+                        <li><strong>categoria</strong> (opcional) - Categoría (ej: Lácteos, Aseo)</li>
+                        <li><strong>subcategoria</strong> (opcional) - Subcategoría específica</li>
+                    </ul>
+
+                    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                        <strong>💡 Ejemplo:</strong><br>
+                        <code
+                            style="background: white; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-top: 5px;">
+                            codigo_ean,nombre,marca,categoria<br>
+                            7702001092345,GALLETAS FESTIVAL CHOCOLATE 432G,NOEL,Alimentos
+                        </code>
+                    </div>
+                </div>
+
+                <div id="upload-result" style="margin-top: 20px;"></div>
+            </div>
+
+            <div class="upload-area" style="margin-top: 20px;">
+                <h2>➕ Agregar Producto Individual</h2>
+                <form id="form-producto-nuevo" onsubmit="agregarProductoIndividual(event)"
+                    style="max-width: 600px; margin: 20px auto; text-align: left;">
+                    <div class="form-group">
+                        <label>Código EAN *</label>
+                        <input type="text" id="nuevo-ean" required placeholder="7702001092345">
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre Completo *</label>
+                        <input type="text" id="nuevo-nombre" required placeholder="GALLETAS FESTIVAL CHOCOLATE 432G">
+                    </div>
+                    <div class="form-group">
+                        <label>Marca</label>
+                        <input type="text" id="nuevo-marca" placeholder="NOEL">
+                    </div>
+                    <div class="form-group">
+                        <label>Categoría</label>
+                        <input type="text" id="nuevo-categoria" placeholder="Alimentos">
+                    </div>
+                    <div class="form-group">
+                        <label>Subcategoría</label>
+                        <input type="text" id="nuevo-subcategoria" placeholder="Galletas">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-success">Agregar a Referencia</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE EDICIÓN -->
+    <div id="modal-editar" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Editar Producto</h2>
+                <span class="close" onclick="cerrarModal()">&times;</span>
+            </div>
+            <form id="form-editar" onsubmit="guardarEdicion(event)">
+                <input type="hidden" id="edit-id">
+
+                <div class="form-group">
+                    <label>Código EAN</label>
+                    <input type="text" id="edit-ean">
+                </div>
+                <div class="form-group">
+                    <label>Nombre Normalizado *</label>
+                    <input type="text" id="edit-nombre-norm" required>
+                </div>
+                <div class="form-group">
+                    <label>Nombre Comercial</label>
+                    <input type="text" id="edit-nombre-com">
+                </div>
+                <div class="form-group">
+                    <label>Marca</label>
+                    <input type="text" id="edit-marca">
+                </div>
+                <div class="form-group">
+                    <label>Categoría</label>
+                    <input type="text" id="edit-categoria">
+                </div>
+                <div class="form-group">
+                    <label>Subcategoría</label>
+                    <input type="text" id="edit-subcategoria">
+                </div>
+                <div class="form-group">
+                    <label>Presentación</label>
+                    <input type="text" id="edit-presentacion">
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+                    <button type="submit" class="btn-success">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let paginaActual = 1;
+        const limite = 50;
+
+        // Cambio de tabs
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            if (tabName === 'lista') {
+                cargarProductos();
+            }
+        }
+
+        // Cargar productos
+        async function cargarProductos(pagina = 1) {
+            paginaActual = pagina;
+            const busqueda = document.getElementById('busqueda').value;
+            const filtro = document.getElementById('filtro').value;
+
+            const params = new URLSearchParams({
+                pagina: pagina,
+                limite: limite,
+                ...(busqueda && { busqueda }),
+                ...(filtro !== 'todos' && { filtro })
+            });
+
+            try {
+                const response = await fetch(`/api/productos?${params}`);
+                const data = await response.json();
+
+                renderProductos(data.productos);
+                renderPaginacion(data.paginacion);
+                cargarStats();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error cargando productos');
+            }
+        }
+
+        function renderProductos(productos) {
+            const tbody = document.getElementById('productos-body');
+
+            if (productos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No se encontraron productos</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = productos.map(p => `
+                <tr>
+                    <td>${p.id}</td>
+                    <td>${p.codigo_ean || '<span style="color: #999;">Sin EAN</span>'}</td>
+                    <td><strong>${p.nombre_comercial || p.nombre_normalizado}</strong></td>
+                    <td>${p.marca || '<span style="color: #999;">-</span>'}</td>
+                    <td>${p.categoria || '<span style="color: #999;">-</span>'}</td>
+                    <td>$${(p.precio_promedio || 0).toLocaleString()}</td>
+                    <td>${p.total_reportes}</td>
+                    <td>
+                        ${p.problemas.map(prob => {
+                const labels = {
+                    'sin_ean': '⚠️ Sin EAN',
+                    'ean_incompleto': '⚠️ EAN incompleto',
+                    'sin_marca': 'Sin marca',
+                    'sin_categoria': 'Sin categoría',
+                    'codigo_en_subcategoria': '⚠️ Código en subcategoría'
+                };
+                const cssClass = prob.includes('sin_') || prob.includes('incompleto') || prob.includes('codigo_') ? 'badge-error' : 'badge-warning';
+                return `<span class="badge ${cssClass}">${labels[prob]}</span>`;
+            }).join(' ')}
+                    </td>
+                    <td>
+                        <button class="btn-primary btn-small" onclick="editarProducto(${p.id})">✏️ Editar</button>
+                        <button class="btn-secondary btn-small" onclick="buscarEnReferenciaProducto(${p.id})">🔍 Buscar</button>
+                        <button class="btn-danger btn-small" onclick="eliminarProducto(${p.id})">🗑️</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderPaginacion(paginacion) {
+            const div = document.getElementById('pagination');
+            const { pagina, paginas } = paginacion;
+
+            let html = '';
+
+            if (pagina > 1) {
+                html += `<button class="btn-secondary" onclick="cargarProductos(${pagina - 1})">← Anterior</button>`;
+            }
+
+            html += `<span style="padding: 8px 16px;">Página ${pagina} de ${paginas}</span>`;
+
+            if (pagina < paginas) {
+                html += `<button class="btn-secondary" onclick="cargarProductos(${pagina + 1})">Siguiente →</button>`;
+            }
+
+            div.innerHTML = html;
+        }
+
+        async function cargarStats() {
+            // Placeholder - implementar endpoint de estadísticas
+            document.getElementById('stats').innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">-</div>
+                    <div class="stat-label">Total Productos</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">-</div>
+                    <div class="stat-label">Con EAN</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">-</div>
+                    <div class="stat-label">Con Marca</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">-</div>
+                    <div class="stat-label">En Referencia</div>
+                </div>
+            `;
+        }
+
+        // Editar producto
+        async function editarProducto(id) {
+            try {
+                const response = await fetch(`/api/productos/${id}`);
+                const producto = await response.json();
+
+                document.getElementById('edit-id').value = producto.id;
+                document.getElementById('edit-ean').value = producto.codigo_ean || '';
+                document.getElementById('edit-nombre-norm').value = producto.nombre_normalizado;
+                document.getElementById('edit-nombre-com').value = producto.nombre_comercial || '';
+                document.getElementById('edit-marca').value = producto.marca || '';
+                document.getElementById('edit-categoria').value = producto.categoria || '';
+                document.getElementById('edit-subcategoria').value = producto.subcategoria || '';
+                document.getElementById('edit-presentacion').value = producto.presentacion || '';
+
+                document.getElementById('modal-editar').classList.add('active');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error cargando producto');
+            }
+        }
+
+        async function guardarEdicion(event) {
+            event.preventDefault();
+
+            const id = document.getElementById('edit-id').value;
+            const data = {
+                codigo_ean: document.getElementById('edit-ean').value || null,
+                nombre_normalizado: document.getElementById('edit-nombre-norm').value,
+                nombre_comercial: document.getElementById('edit-nombre-com').value || null,
+                marca: document.getElementById('edit-marca').value || null,
+                categoria: document.getElementById('edit-categoria').value || null,
+                subcategoria: document.getElementById('edit-subcategoria').value || null,
+                presentacion: document.getElementById('edit-presentacion').value || null
+            };
+
+            try {
+                const response = await fetch(`/api/productos/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    alert('✅ Producto actualizado');
+                    cerrarModal();
+                    cargarProductos(paginaActual);
+                } else {
+                    alert('Error actualizando producto');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error actualizando producto');
+            }
+        }
+
+        function cerrarModal() {
+            document.getElementById('modal-editar').classList.remove('active');
+        }
+
+        // Eliminar producto
+        async function eliminarProducto(id) {
+            if (!confirm('¿Estás seguro de eliminar este producto? Esta acción no se puede deshacer.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/productos/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('✅ Producto eliminado');
+                    cargarProductos(paginaActual);
+                } else {
+                    alert('Error eliminando producto');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error eliminando producto');
+            }
+        }
+
+        // Buscar en referencia
+        async function buscarEnReferenciaProducto(id) {
+            await buscarEnReferencia(id);
+            switchTab('enriquecer');
+            document.getElementById('producto-id-enriquecer').value = id;
+        }
+
+        async function buscarEnReferencia(productoId = null) {
+            const id = productoId || document.getElementById('producto-id-enriquecer').value;
+
+            if (!id) {
+                alert('Ingresa el ID del producto');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/productos/${id}/buscar-referencia`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                const div = document.getElementById('resultados-enriquecimiento');
+
+                if (data.resultados.length === 0) {
+                    div.innerHTML = '<p style="color: #64748b;">No se encontraron coincidencias en la base de referencia</p>';
+                } else {
+                    div.innerHTML = `
+                        <h3>Resultados encontrados:</h3>
+                        <div class="suggestions-list">
+                            ${data.resultados.map(r => `
+                                <div class="suggestion-item">
+                                    <div>
+                                        <strong>${r.nombre_completo}</strong><br>
+                                        <small style="color: #64748b;">EAN: ${r.codigo_ean} | Marca: ${r.marca || 'N/A'}</small>
+                                    </div>
+                                    <div>
+                                        <span class="similarity-score ${getSimilarityClass(r.similitud)}">
+                                            ${Math.round(r.similitud * 100)}%
+                                        </span>
+                                        <button class="btn-success btn-small" onclick="aplicarReferencia(${id}, '${r.codigo_ean}')">
+                                            ✓ Aplicar
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                div.style.display = 'block';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error buscando en referencia');
+            }
+        }
+
+        function getSimilarityClass(score) {
+            if (score >= 0.9) return 'score-high';
+            if (score >= 0.7) return 'score-medium';
+            return 'score-low';
+        }
+
+        async function aplicarReferencia(productoId, eanReferencia) {
+            try {
+                const response = await fetch(`/api/productos/${productoId}/aplicar-referencia?codigo_ean=${eanReferencia}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    alert('✅ Datos aplicados desde referencia');
+                    cargarProductos(paginaActual);
+                } else {
+                    alert('Error aplicando datos');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error aplicando datos');
+            }
+        }
+
+        // Carga masiva
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            document.getElementById('upload-result').innerHTML = `
+                <div class="loading"></div>
+                <p>Procesando archivo...</p>
+            `;
+
+            try {
+                const response = await fetch('/api/productos-referencia/importar', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                document.getElementById('upload-result').innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>✅ Importación completada</strong><br>
+                        Importados: ${data.importados}<br>
+                        Duplicados: ${data.duplicados}<br>
+                        Errores: ${data.errores}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('upload-result').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>❌ Error en la importación</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Agregar producto individual
+        async function agregarProductoIndividual(event) {
+            event.preventDefault();
+
+            const data = {
+                codigo_ean: document.getElementById('nuevo-ean').value,
+                nombre_completo: document.getElementById('nuevo-nombre').value,
+                marca: document.getElementById('nuevo-marca').value || null,
+                categoria: document.getElementById('nuevo-categoria').value || null,
+                subcategoria: document.getElementById('nuevo-subcategoria').value || null
+            };
+
+            try {
+                const response = await fetch('/api/productos-referencia/agregar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    alert('✅ Producto agregado a referencia');
+                    document.getElementById('form-producto-nuevo').reset();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error agregando producto');
+            }
+        }
+
+        // Drag and drop
+        const uploadBox = document.getElementById('upload-box');
+
+        uploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadBox.classList.add('dragover');
+        });
+
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.classList.remove('dragover');
+        });
+
+        uploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadBox.classList.remove('dragover');
+
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        });
+
+        function limpiarFiltros() {
+            document.getElementById('busqueda').value = '';
+            document.getElementById('filtro').value = 'todos';
+            cargarProductos(1);
+        }
+
+        // Cargar productos al inicio
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarProductos();
+        });
+    </script>
+</body>
+
+</html>
