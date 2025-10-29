@@ -298,6 +298,141 @@ print("=" * 60)
 print("✅ ROUTERS CONFIGURADOS")
 print("=" * 60 + "\n")
 
+# ==========================================
+# ENDPOINTS ADMIN (TEMPORALES - MOVER A ROUTER)
+# ==========================================
+
+@app.get("/api/admin/estadisticas")
+async def get_admin_stats():
+    """Estadísticas del dashboard admin"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        total_usuarios = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        total_facturas = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(DISTINCT producto_maestro_id) FROM items_factura WHERE producto_maestro_id IS NOT NULL")
+        total_productos = cursor.fetchone()[0] or 0
+
+        conn.close()
+
+        return {
+            "total_usuarios": total_usuarios,
+            "total_facturas": total_facturas,
+            "total_productos": total_productos
+        }
+    except Exception as e:
+        print(f"❌ Error en estadísticas: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/admin/usuarios")
+async def get_admin_usuarios():
+    """Lista de usuarios"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT u.id, u.email, u.nombre, u.fecha_registro,
+                   COUNT(f.id) as total_facturas
+            FROM usuarios u
+            LEFT JOIN facturas f ON u.id = f.usuario_id
+            GROUP BY u.id, u.email, u.nombre, u.fecha_registro
+            ORDER BY total_facturas DESC
+        """)
+
+        usuarios = []
+        for row in cursor.fetchall():
+            usuarios.append({
+                "id": row[0],
+                "email": row[1],
+                "nombre": row[2] or row[1],
+                "fecha_registro": str(row[3]) if row[3] else None,
+                "total_facturas": row[4] or 0
+            })
+
+        conn.close()
+        return usuarios
+
+    except Exception as e:
+        print(f"❌ Error obteniendo usuarios: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/admin/productos")
+async def get_admin_productos():
+    """Catálogo de productos"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT pm.id, pm.nombre_normalizado, pm.codigo_ean,
+                   pm.precio_promedio_global, pm.categoria, pm.total_reportes
+            FROM productos_maestros pm
+            ORDER BY pm.total_reportes DESC
+            LIMIT 100
+        """)
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append({
+                "id": row[0],
+                "nombre": row[1],
+                "codigo_ean": row[2],
+                "precio_promedio": float(row[3]) if row[3] else 0,
+                "categoria": row[4],
+                "veces_comprado": row[5] or 0
+            })
+
+        conn.close()
+        return productos
+
+    except Exception as e:
+        print(f"❌ Error obteniendo productos: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/admin/duplicados")
+async def get_admin_duplicados():
+    """Buscar duplicados"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT f1.id, f2.id, f1.establecimiento, f1.total_factura, f1.fecha_factura
+            FROM facturas f1
+            INNER JOIN facturas f2 ON
+                f1.establecimiento = f2.establecimiento AND
+                ABS(f1.total_factura - f2.total_factura) < 100 AND
+                f1.fecha_factura = f2.fecha_factura AND
+                f1.id < f2.id
+            LIMIT 50
+        """)
+
+        duplicados = []
+        for row in cursor.fetchall():
+            duplicados.append({
+                "ids": [row[0], row[1]],
+                "establecimiento": row[2],
+                "total": float(row[3]) if row[3] else 0,
+                "fecha": str(row[4]) if row[4] else None
+            })
+
+        conn.close()
+        return {"duplicados": duplicados, "total": len(duplicados)}
+
+    except Exception as e:
+        print(f"❌ Error buscando duplicados: {e}")
+        raise HTTPException(500, str(e))
+
+print("✅ Endpoints admin registrados directamente en main.py")
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
