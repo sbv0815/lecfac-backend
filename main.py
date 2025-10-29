@@ -5501,6 +5501,93 @@ async def corregir_todas_facturas():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/debug/factura-raw/{factura_id}")
+async def debug_factura_raw(factura_id: int):
+    """
+    Ver datos RAW de una factura específica
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Datos de la factura
+        cursor.execute("""
+            SELECT
+                id, establecimiento, total_factura,
+                fecha_cargue, productos_guardados
+            FROM facturas
+            WHERE id = %s
+        """, (factura_id,))
+
+        factura = cursor.fetchone()
+        if not factura:
+            raise HTTPException(404, "Factura no encontrada")
+
+        # Items con TODOS los detalles
+        cursor.execute("""
+            SELECT
+                id,
+                nombre_leido,
+                codigo_leido,
+                cantidad,
+                precio_pagado,
+                producto_maestro_id,
+                (cantidad * precio_pagado) as subtotal
+            FROM items_factura
+            WHERE factura_id = %s
+            ORDER BY precio_pagado DESC
+        """, (factura_id,))
+
+        items = []
+        suma_calculada = 0
+        for row in cursor.fetchall():
+            cantidad = float(row[3] or 0)
+            precio = float(row[4] or 0)
+            subtotal = cantidad * precio
+            suma_calculada += subtotal
+
+            items.append({
+                "item_id": row[0],
+                "nombre": row[1],
+                "codigo": row[2],
+                "cantidad": cantidad,
+                "precio_pagado": precio,
+                "producto_maestro_id": row[5],
+                "subtotal_calculado": subtotal,
+                "precio_parece_total": (precio > 50000),  # Detectar si parece precio total
+                "precio_parece_unitario": (1000 <= precio <= 50000)
+            })
+
+        conn.close()
+
+        total_declarado = float(factura[2])
+        diferencia = suma_calculada - total_declarado
+        ratio = suma_calculada / total_declarado if total_declarado > 0 else 0
+
+        return {
+            "factura": {
+                "id": factura[0],
+                "establecimiento": factura[1],
+                "total_declarado": total_declarado,
+                "fecha": str(factura[3]),
+                "productos_guardados": factura[4]
+            },
+            "items": items,
+            "analisis": {
+                "suma_calculada": suma_calculada,
+                "total_declarado": total_declarado,
+                "diferencia": diferencia,
+                "ratio": round(ratio, 2),
+                "items_sospechosos": sum(1 for i in items if i["precio_parece_total"]),
+                "problema": "INFLADO" if ratio > 1.2 else "OK"
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
 # ========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ========================================
