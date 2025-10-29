@@ -4430,13 +4430,13 @@ async def get_usuario_inventario(usuario_id: int):
 
         print(f"📊 Obteniendo inventario del usuario {usuario_id}...")
 
-        # Estadísticas agregadas
+        # Estadísticas agregadas - ✅ CORRECCIÓN: SIN DIVISIÓN
         cursor.execute(
             """
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
                 COUNT(DISTINCT if_.nombre_leido) as productos_unicos,
-                COALESCE(SUM(f.total_factura) / 100.0, 0) as total_gastado
+                COALESCE(SUM(f.total_factura), 0) as total_gastado
             FROM facturas f
             LEFT JOIN items_factura if_ ON f.id = if_.factura_id
             WHERE f.usuario_id = %s
@@ -4454,10 +4454,11 @@ async def get_usuario_inventario(usuario_id: int):
                 "total_gastado": 0,
             }
 
+        # ✅ CORRECCIÓN: Ya NO necesita multiplicar porque ya NO se divide
         return {
             "total_facturas": result[0] or 0,
             "productos_unicos": result[1] or 0,
-            "total_gastado": float(result[2] or 0),
+            "total_gastado": float(result[2] or 0),  # ← Valor directo, sin conversión
         }
 
     except Exception as e:
