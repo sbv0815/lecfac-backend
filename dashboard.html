@@ -2,7 +2,7 @@
 <html lang="es">
 
 <head>
-    <!-- Version: 2025-10-29-v1 - PRECIOS EN PESOS SIN CONVERSIÓN -->
+    <!-- Version: 2025-10-29-CORREGIDO - PRECIOS DIRECTOS DE BD SIN CONVERSIONES -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Admin Completo - LecFac</title>
@@ -692,7 +692,7 @@
         const API_URL = window.location.origin;
 
         console.log('🔧 API_URL configurada:', API_URL);
-        console.log('💵 MODO: PRECIOS EN PESOS ENTEROS (sin conversiones)');
+        console.log('💵 MODO: VALORES DIRECTOS DE BD (sin conversiones ni redondeos)');
 
         // ==========================================
         // GESTIÓN DE TABS
@@ -854,8 +854,8 @@
 
                         const inventario = await inventarioResp.json();
 
-                        // ✅ CORRECCIÓN: Precios en pesos enteros
-                        const totalGastado = Math.round(parseFloat(inventario.total_gastado || 0));
+                        // ✅ CORRECCIÓN: Mostrar valor DIRECTO sin conversiones
+                        const totalGastado = inventario.total_gastado || 0;
 
                         html += `
                             <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
@@ -944,8 +944,8 @@
             html += '</tr></thead><tbody>';
 
             productos.forEach(p => {
-                // ✅ CORRECCIÓN: Precios en pesos enteros
-                const precioPromedio = Math.round(parseFloat(p.precio_promedio || 0));
+                // ✅ CORRECCIÓN: Mostrar precio DIRECTO sin conversiones
+                const precioPromedio = p.precio_promedio || 0;
 
                 html += `
                     <tr>
@@ -1045,14 +1045,14 @@
                     f.estado === 'revisada' ? 'info' :
                         f.estado === 'necesita_revision' ? 'warning' : '';
 
-                // ✅ CORRECCIÓN: Total en pesos enteros
-                const totalPesos = Math.round(parseFloat(f.total || 0));
+                // ✅ CORRECCIÓN: Mostrar total DIRECTO sin conversiones
+                const totalFactura = f.total || 0;
 
                 html += `
                     <tr style="border-bottom: 1px solid #eee;">
                         <td style="padding: 12px;">#${f.id}</td>
                         <td style="padding: 12px;">${f.establecimiento || 'Sin datos'}</td>
-                        <td style="padding: 12px;">$${formatearNumero(totalPesos)}</td>
+                        <td style="padding: 12px;">$${formatearNumero(totalFactura)}</td>
                         <td style="padding: 12px;">${f.fecha || '-'}</td>
                         <td style="padding: 12px;">
                             <span class="badge badge-${estadoClass}">${f.estado || 'pendiente'}</span>
@@ -1189,14 +1189,14 @@
                 data.duplicados.forEach(grupo => {
                     const idsDisplay = Array.isArray(grupo.ids) ? grupo.ids.join(', ') : (grupo.ids || 'N/A');
 
-                    // ✅ CORRECCIÓN: Total en pesos enteros
-                    const totalPesos = Math.round(parseFloat(grupo.total || 0));
+                    // ✅ CORRECCIÓN: Mostrar total DIRECTO
+                    const totalGrupo = grupo.total || 0;
 
                     html += `
                         <tr>
                             <td><strong>${idsDisplay}</strong></td>
                             <td>${grupo.establecimiento || 'Desconocido'}</td>
-                            <td>$${formatearNumero(totalPesos)}</td>
+                            <td>$${formatearNumero(totalGrupo)}</td>
                             <td>${formatearFecha(grupo.fecha)}</td>
                             <td>${grupo.usuario_id || 'N/A'}</td>
                         </tr>
@@ -1249,14 +1249,14 @@
                 html += '</tr></thead><tbody>';
 
                 data.similares.forEach(grupo => {
-                    // ✅ CORRECCIÓN: Precio en pesos enteros
-                    const precioPesos = Math.round(parseFloat(grupo.precio_promedio || 0));
+                    // ✅ CORRECCIÓN: Precio DIRECTO
+                    const precioProm = grupo.precio_promedio || 0;
 
                     html += `
                         <tr>
                             <td>${grupo.nombres.join(' / ')}</td>
                             <td>${grupo.ids.join(', ')}</td>
-                            <td>$${formatearNumero(precioPesos)}</td>
+                            <td>$${formatearNumero(precioProm)}</td>
                         </tr>
                     `;
                 });
@@ -1350,14 +1350,14 @@
                 html += '</tr></thead><tbody>';
 
                 data.facturas.forEach(f => {
-                    // ✅ CORRECCIÓN: Total en pesos enteros
-                    const totalPesos = Math.round(parseFloat(f.total_factura || 0));
+                    // ✅ CORRECCIÓN: Total DIRECTO
+                    const totalFact = f.total_factura || 0;
 
                     html += `
                         <tr>
                             <td><strong>#${f.id}</strong></td>
                             <td>${f.establecimiento}</td>
-                            <td>$${formatearNumero(totalPesos)}</td>
+                            <td>$${formatearNumero(totalFact)}</td>
                             <td><span class="badge badge-warning">${f.puntaje_calidad}%</span></td>
                             <td style="max-width: 300px;"><small>${f.problemas}</small></td>
                             <td>
@@ -1489,7 +1489,8 @@
 
         function formatearNumero(num) {
             if (!num || num === 0) return '0';
-            const numero = Math.round(Number(num));
+            // ✅ CORRECCIÓN CRÍTICA: NO redondear, mostrar valor exacto
+            const numero = Number(num);
             return numero.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         }
 
@@ -1513,14 +1514,14 @@
 
                 const data = await response.json();
 
-                // ✅ CORRECCIÓN: Total en pesos enteros
-                const totalPesos = Math.round(parseFloat(data.total_factura || data.total || 0));
+                // ✅ CORRECCIÓN: Total DIRECTO
+                const totalFact = data.total_factura || data.total || 0;
 
                 let html = `
                     <div style="line-height: 1.8;">
                         <p><strong>ID:</strong> #${data.id}</p>
                         <p><strong>Establecimiento:</strong> ${data.establecimiento}</p>
-                        <p><strong>Total:</strong> $${formatearNumero(totalPesos)}</p>
+                        <p><strong>Total:</strong> $${formatearNumero(totalFact)}</p>
                         <p><strong>Fecha:</strong> ${formatearFecha(data.fecha_compra)}</p>
                         <p><strong>Estado:</strong>
                             <span class="badge badge-${data.estado_validacion === 'validada' ? 'success' : 'warning'}">
@@ -1535,8 +1536,8 @@
                     html += '<table style="width: 100%; font-size: 0.9em;"><tbody>';
 
                     data.items.forEach(item => {
-                        // ✅ CORRECCIÓN: Precio en pesos enteros
-                        const precioItem = Math.round(parseFloat(item.precio_unitario || item.precio || item.precio_pagado || 0));
+                        // ✅ CORRECCIÓN: Precio DIRECTO
+                        const precioItem = item.precio_unitario || item.precio || item.precio_pagado || 0;
 
                         html += `
                             <tr style="border-bottom: 1px solid #e9ecef;">
@@ -1577,9 +1578,9 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             console.log('=================================');
-            console.log('Dashboard Admin LecFac v3.0');
+            console.log('Dashboard Admin LecFac CORREGIDO');
             console.log('API URL:', API_URL);
-            console.log('💵 PRECIOS EN PESOS ENTEROS');
+            console.log('💵 VALORES DIRECTOS (sin conversiones)');
             console.log('=================================');
 
             const allModals = document.querySelectorAll('.modal');
@@ -1605,7 +1606,7 @@
     </script>
 
     <script>
-        console.log('🚀 Dashboard version: 2025-10-29-v1-PESOS-PUROS');
+        console.log('🚀 Dashboard version: 2025-10-29-CORREGIDO-VALORES-DIRECTOS');
     </script>
 </body>
 

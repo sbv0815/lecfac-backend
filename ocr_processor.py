@@ -26,48 +26,105 @@ error_log = []
 
 
 # ==============================================================================
-# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
+# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS - VERSIÓN MEJORADA
 # ==============================================================================
 
 def limpiar_precio_colombiano(precio_str):
     """
     Convierte precio colombiano a entero (sin decimales).
 
+    VERSIÓN MEJORADA: Maneja strings, integers y floats correctamente.
+
     En Colombia NO se usan decimales/centavos, solo pesos enteros.
     Las facturas muestran separadores de miles con comas o puntos.
 
-    Ejemplos:
-    - "15,540" → 15540 pesos
-    - "15.540" → 15540 pesos
-    - "1.234.567" → 1234567 pesos
-    - "1,234,567" → 1234567 pesos
-    - "$ 15,540" → 15540 pesos
-    - 15540 → 15540 pesos
-    - 15.54 → 1554 pesos (asume que era separador de miles mal leído)
+    Args:
+        precio_str: Precio en cualquier formato (string, int, float)
 
     Returns:
         int: Precio en pesos enteros
+
+    Examples:
+        >>> limpiar_precio_colombiano("15,540")
+        15540
+        >>> limpiar_precio_colombiano("15.540")
+        15540
+        >>> limpiar_precio_colombiano(39.45)  # Float de Claude API
+        3945
+        >>> limpiar_precio_colombiano(15540)
+        15540
+        >>> limpiar_precio_colombiano("$ 1.234.567")
+        1234567
     """
+    # Caso 1: None o vacío
     if precio_str is None or precio_str == "":
         return 0
 
-    # Si ya es número, convertir a string
-    precio_str = str(precio_str)
+    # Caso 2: Ya es un entero
+    if isinstance(precio_str, int):
+        return precio_str
+
+    # Caso 3: Es un float (puede venir de Claude API)
+    if isinstance(precio_str, float):
+        # Si tiene decimales pequeños (ej: 15540.0), es solo formateo
+        if precio_str == int(precio_str):
+            return int(precio_str)
+        # Si tiene decimales significativos, puede ser error de OCR
+        # Ej: 39.45 probablemente significa 3945 pesos (faltó un cero)
+        return int(precio_str * 100)
+
+    # Caso 4: Es string - procesar
+    precio_str = str(precio_str).strip()
 
     # Eliminar espacios
-    precio_str = precio_str.strip()
+    precio_str = precio_str.replace(" ", "")
 
     # Eliminar símbolos de moneda
-    precio_str = precio_str.replace("$", "").replace("COP", "").replace("cop", "").strip()
+    precio_str = precio_str.replace("$", "")
+    precio_str = precio_str.replace("COP", "")
+    precio_str = precio_str.replace("cop", "")
+    precio_str = precio_str.strip()
 
-    # CLAVE: Eliminar TODOS los separadores (comas y puntos)
-    # En Colombia, tanto 15,540 como 15.540 significan 15540 pesos
-    precio_str = precio_str.replace(",", "").replace(".", "")
+    # CRÍTICO: Determinar si usa punto o coma como separador
+    # En Colombia, ambos pueden usarse para separar miles
+
+    # Caso 4A: Tiene múltiples puntos o comas (separador de miles)
+    # Ej: "1.234.567" o "1,234,567"
+    if precio_str.count('.') > 1 or precio_str.count(',') > 1:
+        # Eliminar TODOS los separadores
+        precio_str = precio_str.replace(",", "").replace(".", "")
+
+    # Caso 4B: Tiene un solo punto o coma
+    # Ej: "15.540" o "15,540"
+    elif '.' in precio_str or ',' in precio_str:
+        # Verificar cantidad de dígitos después del separador
+        if '.' in precio_str:
+            partes = precio_str.split('.')
+        else:
+            partes = precio_str.split(',')
+
+        # Si hay 3 dígitos después, es separador de miles
+        if len(partes) == 2 and len(partes[1]) == 3:
+            precio_str = precio_str.replace(",", "").replace(".", "")
+        # Si hay 1-2 dígitos, puede ser decimal mal leído
+        elif len(partes) == 2 and len(partes[1]) <= 2:
+            # En Colombia NO hay decimales, así que eliminamos el separador
+            precio_str = precio_str.replace(",", "").replace(".", "")
+        else:
+            # Caso raro, eliminar todos
+            precio_str = precio_str.replace(",", "").replace(".", "")
 
     # Convertir a entero
     try:
-        precio = int(precio_str)
+        precio = int(float(precio_str))
+
+        # Validación de sanidad
+        if precio < 0:
+            print(f"   ⚠️ Precio negativo detectado: {precio}, retornando 0")
+            return 0
+
         return precio
+
     except (ValueError, TypeError) as e:
         print(f"   ⚠️ No se pudo convertir precio '{precio_str}': {e}")
         return 0
@@ -347,7 +404,7 @@ class OCRProcessor:
         self.is_running = True
         self.worker_thread = threading.Thread(target=self.process_queue, daemon=True)
         self.worker_thread.start()
-        print("🤖 Procesador OCR automático iniciado (STANDALONE VERSION)")
+        print("🤖 Procesador OCR automático iniciado (VERSIÓN MEJORADA)")
 
     def stop(self):
         """Detiene el procesador"""
@@ -483,7 +540,7 @@ class OCRProcessor:
             codigo = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
 
-            # ✅ CORRECCIÓN: Usar función de limpieza de precios colombianos
+            # ✅ CORRECCIÓN CRÍTICA: Usar función mejorada de limpieza
             precio_raw = product.get("precio", 0)
             precio = limpiar_precio_colombiano(precio_raw)
 
@@ -585,7 +642,7 @@ class OCRProcessor:
         }
 
 
-print("✅ OCR Processor cargado - VERSIÓN CORREGIDA CON PRECIOS COLOMBIANOS")
+print("✅ OCR Processor cargado - VERSIÓN MEJORADA CON PRECIOS COLOMBIANOS")
 
 # Crear instancia global del procesador
 processor = OCRProcessor()

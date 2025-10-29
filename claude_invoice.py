@@ -6,6 +6,114 @@ import re
 from typing import Dict
 
 
+# ==============================================================================
+# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
+# ==============================================================================
+
+def limpiar_precio_colombiano(precio_str):
+    """
+    Convierte precio colombiano a entero (sin decimales).
+
+    CRÍTICO: Maneja tanto strings como números que vienen de Claude API.
+
+    En Colombia NO se usan decimales/centavos, solo pesos enteros.
+    Las facturas muestran separadores de miles con comas o puntos.
+
+    Args:
+        precio_str: Precio en cualquier formato (string, int, float)
+
+    Returns:
+        int: Precio en pesos enteros
+
+    Examples:
+        >>> limpiar_precio_colombiano("15,540")
+        15540
+        >>> limpiar_precio_colombiano("15.540")
+        15540
+        >>> limpiar_precio_colombiano(39.45)  # Claude devuelve float
+        3945
+        >>> limpiar_precio_colombiano(15540)
+        15540
+    """
+    # Caso 1: None o vacío
+    if precio_str is None or precio_str == "":
+        return 0
+
+    # Caso 2: Ya es un entero
+    if isinstance(precio_str, int):
+        return precio_str
+
+    # Caso 3: Es un float (puede venir de Claude API)
+    if isinstance(precio_str, float):
+        # Si tiene decimales pequeños (ej: 15540.0), es solo formateo
+        if precio_str == int(precio_str):
+            return int(precio_str)
+        # Si tiene decimales significativos, puede ser error de OCR
+        # Ej: 39.45 probablemente significa 3945 pesos (faltó un cero)
+        # Multiplicamos por 100 para corregir
+        return int(precio_str * 100)
+
+    # Caso 4: Es string - procesar
+    precio_str = str(precio_str).strip()
+
+    # Eliminar espacios
+    precio_str = precio_str.replace(" ", "")
+
+    # Eliminar símbolos de moneda
+    precio_str = precio_str.replace("$", "")
+    precio_str = precio_str.replace("COP", "")
+    precio_str = precio_str.replace("cop", "")
+    precio_str = precio_str.strip()
+
+    # CRÍTICO: Determinar si usa punto o coma como separador
+    # En Colombia, ambos pueden usarse para separar miles
+
+    # Caso 4A: Tiene múltiples puntos o comas (separador de miles)
+    # Ej: "1.234.567" o "1,234,567"
+    if precio_str.count('.') > 1 or precio_str.count(',') > 1:
+        # Eliminar TODOS los separadores
+        precio_str = precio_str.replace(",", "").replace(".", "")
+
+    # Caso 4B: Tiene un solo punto o coma
+    # Ej: "15.540" o "15,540"
+    elif '.' in precio_str or ',' in precio_str:
+        # Verificar cantidad de dígitos después del separador
+        if '.' in precio_str:
+            partes = precio_str.split('.')
+        else:
+            partes = precio_str.split(',')
+
+        # Si hay 3 dígitos después, es separador de miles
+        if len(partes) == 2 and len(partes[1]) == 3:
+            precio_str = precio_str.replace(",", "").replace(".", "")
+        # Si hay 1-2 dígitos, puede ser decimal mal leído
+        elif len(partes) == 2 and len(partes[1]) <= 2:
+            # En Colombia NO hay decimales, así que eliminamos el separador
+            precio_str = precio_str.replace(",", "").replace(".", "")
+        else:
+            # Caso raro, eliminar todos
+            precio_str = precio_str.replace(",", "").replace(".", "")
+
+    # Convertir a entero
+    try:
+        precio = int(float(precio_str))
+
+        # Validación de sanidad
+        if precio < 0:
+            print(f"   ⚠️ Precio negativo detectado: {precio}, retornando 0")
+            return 0
+
+        return precio
+
+    except (ValueError, TypeError) as e:
+        print(f"   ⚠️ No se pudo convertir precio '{precio_str}': {e}")
+        return 0
+
+
+# ==============================================================================
+# FUNCIÓN PRINCIPAL DE PROCESAMIENTO
+# ==============================================================================
+
 def parse_invoice_with_claude(image_path: str) -> Dict:
     """
     Procesa factura con Claude Vision API
@@ -25,16 +133,12 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
             "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
         )
 
-        # Cliente Anthropic - VERSIÓN CORREGIDA
+        # Cliente Anthropic
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
 
-        # ✅ CORRECCIÓN: Inicialización simple sin parámetros problemáticos
-        client = anthropic.Anthropic(
-            api_key=api_key,
-            # No pasar ningún otro parámetro para evitar incompatibilidades
-        )
+        client = anthropic.Anthropic(api_key=api_key)
 
         # ========== PROMPT GENERALIZADO MULTI-ESTABLECIMIENTO ==========
         prompt = """Eres un experto en facturas de supermercados COLOMBIANOS.
@@ -183,7 +287,7 @@ Para identificar:
 
 ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
 
-        # ✅ Llamada con HAIKU 3.5
+        # Llamada con HAIKU 3.5
         message = client.messages.create(
             model="claude-3-5-haiku-20241022",
             max_tokens=8000,
@@ -257,7 +361,6 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                 "dian",
                 "nit",
                 "autoretenedor",
-                # Métodos de pago
                 "mastercard",
                 "visa",
                 "american express",
@@ -272,7 +375,6 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                 "datafono",
                 "pos",
                 "terminal",
-                # Mensajes adicionales
                 "precio final",
                 "gran total",
                 "valor total",
@@ -356,13 +458,13 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
 
                 # 🧹 Patrones a eliminar del FINAL del nombre
                 sufijos_error = [
-                    r"\s+V\.?\s*Ahorro.*$",  # "V.Ahorro 0", "V. Ahorro 1.500"
-                    r"\s+Ahorro.*$",  # "Ahorro 3.200"
-                    r"\s+Descuento.*$",  # "Descuento 1.500"
-                    r"\s+\d+\.?\d*/KG[MH]?.*$",  # "0.750/KGM x 8.800"
-                    r"\s+x\s+\d+\.?\d+.*$",  # "x 26.900"
-                    r"\s+Khorro.*$",  # "Khorro G" (error OCR)
-                    r"\s+y\s+Khorro.*$",  # "y Khorro G"
+                    r"\s+V\.?\s*Ahorro.*$",
+                    r"\s+Ahorro.*$",
+                    r"\s+Descuento.*$",
+                    r"\s+\d+\.?\d*/KG[MH]?.*$",
+                    r"\s+x\s+\d+\.?\d+.*$",
+                    r"\s+Khorro.*$",
+                    r"\s+y\s+Khorro.*$",
                 ]
 
                 for patron in sufijos_error:
@@ -397,13 +499,9 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
         for prod in data.get("productos", []):
             productos_procesados += 1
 
-            # Normalizar precio
+            # ✅ CORRECCIÓN CRÍTICA: Usar función mejorada de limpieza de precios
             if "precio" in prod:
-                try:
-                    precio_str = str(prod["precio"]).replace(",", "").replace(".", "")
-                    prod["precio"] = int(precio_str) if precio_str.isdigit() else 0
-                except:
-                    prod["precio"] = 0
+                prod["precio"] = limpiar_precio_colombiano(prod["precio"])
             else:
                 prod["precio"] = 0
 
@@ -430,7 +528,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
             else:
                 prod["codigo"] = ""
 
-            # Limpiar nombre (ya limpiado arriba, pero asegurar)
+            # Limpiar nombre
             nombre = str(prod.get("nombre", "")).strip()
             prod["nombre"] = nombre
 
@@ -540,3 +638,12 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 
     # Si no coincide, devolver capitalizado
     return nombre_raw.strip().upper()[:50]
+
+
+# ==============================================================================
+# INICIALIZACIÓN
+# ==============================================================================
+print("✅ claude_invoice.py cargado - VERSIÓN CORREGIDA CON PRECIOS COLOMBIANOS")
+print("   📌 Versión: 2025-10-29")
+print("   💰 Precios: Manejo correcto de strings, integers y floats")
+print("   🔧 Compatible con: Claude API Haiku 3.5")
