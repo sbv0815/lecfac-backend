@@ -5089,7 +5089,185 @@ async def test_count_productos():
             "traceback": traceback.format_exc()
         }
 
+@app.get("/api/debug/inventario-raw/{usuario_id}")
+async def debug_inventario_raw(usuario_id: int):
+    """
+    🔍 Diagnóstico completo de inventario
+    Muestra TODOS los valores para identificar el problema
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
+        resultado = {
+            "usuario_id": usuario_id,
+            "timestamp": datetime.now().isoformat(),
+            "calculos": {}
+        }
+
+        # 1️⃣ Desde FACTURAS
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as num_facturas,
+                SUM(total_factura) as suma_total_factura,
+                array_agg(id) as factura_ids,
+                array_agg(total_factura) as factura_totales
+            FROM facturas
+            WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+
+        facturas_data = cursor.fetchone()
+        resultado["calculos"]["desde_facturas"] = {
+            "num_facturas": facturas_data[0],
+            "suma_total_factura": float(facturas_data[1] or 0),
+            "factura_ids": facturas_data[2],
+            "factura_totales": [float(x) for x in facturas_data[3]] if facturas_data[3] else []
+        }
+
+        # 2️⃣ Desde ITEMS_FACTURA
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as num_items,
+                COUNT(DISTINCT producto_maestro_id) as productos_unicos,
+                SUM(cantidad) as cantidad_total,
+                SUM(precio_pagado) as suma_precios_sin_cantidad,
+                SUM(cantidad * precio_pagado) as suma_cantidad_x_precio,
+                MIN(precio_pagado) as precio_minimo,
+                MAX(precio_pagado) as precio_maximo,
+                AVG(precio_pagado) as precio_promedio
+            FROM items_factura if_
+            JOIN facturas f ON if_.factura_id = f.id
+            WHERE f.usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+
+        items_data = cursor.fetchone()
+        resultado["calculos"]["desde_items_factura"] = {
+            "num_items": items_data[0],
+            "productos_unicos": items_data[1],
+            "cantidad_total": float(items_data[2] or 0),
+            "suma_precios_sin_cantidad": float(items_data[3] or 0),
+            "suma_cantidad_x_precio": float(items_data[4] or 0),
+            "precio_minimo": float(items_data[5] or 0),
+            "precio_maximo": float(items_data[6] or 0),
+            "precio_promedio": float(items_data[7] or 0)
+        }
+
+        # 3️⃣ Muestra de 5 items con mayor precio
+        cursor.execute(
+            """
+            SELECT
+                if_.id,
+                if_.nombre_leido,
+                if_.cantidad,
+                if_.precio_pagado,
+                (if_.cantidad * if_.precio_pagado) as subtotal,
+                f.id as factura_id,
+                f.total_factura,
+                f.establecimiento
+            FROM items_factura if_
+            JOIN facturas f ON if_.factura_id = f.id
+            WHERE f.usuario_id = %s
+            ORDER BY if_.precio_pagado DESC
+            LIMIT 5
+        """,
+            (usuario_id,),
+        )
+
+        items_top = []
+        for row in cursor.fetchall():
+            items_top.append({
+                "item_id": row[0],
+                "nombre": row[1],
+                "cantidad": float(row[2]),
+                "precio_unitario": float(row[3]),
+                "subtotal": float(row[4]),
+                "factura_id": row[5],
+                "factura_total": float(row[6]),
+                "establecimiento": row[7]
+            })
+
+        resultado["items_top_precio"] = items_top
+
+        # 4️⃣ Primeros 5 items de cada factura
+        cursor.execute(
+            """
+            SELECT
+                f.id as factura_id,
+                f.total_factura,
+                array_agg(if_.nombre_leido ORDER BY if_.id) as nombres,
+                array_agg(if_.cantidad ORDER BY if_.id) as cantidades,
+                array_agg(if_.precio_pagado ORDER BY if_.id) as precios
+            FROM facturas f
+            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
+            WHERE f.usuario_id = %s
+            GROUP BY f.id, f.total_factura
+            ORDER BY f.id
+        """,
+            (usuario_id,),
+        )
+
+        facturas_con_items = []
+        for row in cursor.fetchall():
+            items = []
+            if row[2]:
+                for i in range(min(5, len(row[2]))):
+                    items.append({
+                        "nombre": row[2][i],
+                        "cantidad": float(row[3][i]) if row[3][i] else 0,
+                        "precio": float(row[4][i]) if row[4][i] else 0,
+                        "subtotal": (float(row[3][i]) * float(row[4][i])) if row[3][i] and row[4][i] else 0
+                    })
+
+            facturas_con_items.append({
+                "factura_id": row[0],
+                "total_declarado": float(row[1]),
+                "items_muestra": items,
+                "suma_muestra": sum(item["subtotal"] for item in items)
+            })
+
+        resultado["facturas_detalle"] = facturas_con_items
+
+        # 5️⃣ Diagnóstico
+        suma_facturas = resultado["calculos"]["desde_facturas"]["suma_total_factura"]
+        suma_items = resultado["calculos"]["desde_items_factura"]["suma_cantidad_x_precio"]
+
+        resultado["diagnostico"] = {
+            "suma_facturas": suma_facturas,
+            "suma_items": suma_items,
+            "diferencia": suma_items - suma_facturas,
+            "ratio": round(suma_items / suma_facturas, 2) if suma_facturas > 0 else 0,
+            "problema": "",
+            "recomendacion": ""
+        }
+
+        if abs(suma_items - suma_facturas) < 100:
+            resultado["diagnostico"]["problema"] = "✅ Datos consistentes"
+            resultado["diagnostico"]["recomendacion"] = "Valores correctos"
+        elif suma_items > suma_facturas * 2:
+            ratio = suma_items / suma_facturas
+            resultado["diagnostico"]["problema"] = f"🔴 items_factura.precio_pagado multiplicado ~{ratio:.1f}x"
+            resultado["diagnostico"]["recomendacion"] = f"Dividir precio_pagado por {ratio:.0f}"
+        else:
+            resultado["diagnostico"]["problema"] = "⚠️ Diferencia significativa"
+            resultado["diagnostico"]["recomendacion"] = "Revisar cálculos"
+
+        conn.close()
+        return resultado
+
+    except Exception as e:
+        print(f"❌ Error en debug: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoint diagnóstico /api/debug/inventario-raw/{usuario_id} registrado")
 # ========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ========================================
