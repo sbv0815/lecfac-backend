@@ -4462,7 +4462,7 @@ async def get_producto_detalle(producto_id: int):
 async def get_usuario_inventario(usuario_id: int):
     """
     Obtiene estadísticas del inventario de un usuario
-    ✅ SOLUCIÓN: Calcula desde items_factura, IGNORA inventario_usuario.total_gastado
+    ✅ CORRECCIÓN: INNER JOIN sin GROUP BY
     """
     try:
         conn = get_db_connection()
@@ -4470,17 +4470,16 @@ async def get_usuario_inventario(usuario_id: int):
 
         print(f"📊 Obteniendo inventario del usuario {usuario_id}...")
 
-        # ✅ CÁLCULO CORRECTO: Directamente desde items_factura
+        # ✅ INNER JOIN sin GROUP BY - esto evita duplicados
         cursor.execute(
             """
             SELECT
                 COUNT(DISTINCT f.id) as total_facturas,
                 COUNT(DISTINCT if_.producto_maestro_id) as productos_unicos,
-                COALESCE(SUM(if_.precio_pagado), 0) as total_gastado_real
+                COALESCE(SUM(if_.precio_pagado), 0) as total_gastado
             FROM facturas f
-            LEFT JOIN items_factura if_ ON f.id = if_.factura_id
+            INNER JOIN items_factura if_ ON f.id = if_.factura_id
             WHERE f.usuario_id = %s
-            GROUP BY f.usuario_id
         """,
             (usuario_id,),
         )
