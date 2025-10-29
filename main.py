@@ -5409,6 +5409,80 @@ async def debug_facturas_detalladas(usuario_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/admin/corregir-facturas-existentes")
+async def corregir_facturas_existentes():
+    """Corrige las 3 facturas para que suma items = total_factura"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        facturas_corregidas = []
+        facturas_ids = [1, 2, 3]
+
+        for factura_id in facturas_ids:
+            cursor.execute(
+                "SELECT total_factura, establecimiento FROM facturas WHERE id = %s",
+                (factura_id,),
+            )
+            factura_data = cursor.fetchone()
+            if not factura_data:
+                continue
+
+            total_declarado = float(factura_data[0])
+
+            cursor.execute(
+                "SELECT SUM(precio_pagado), COUNT(*) FROM items_factura WHERE factura_id = %s",
+                (factura_id,),
+            )
+            items_data = cursor.fetchone()
+            suma_actual = float(items_data[0] or 0)
+
+            if suma_actual == 0:
+                continue
+
+            factor = total_declarado / suma_actual
+
+            cursor.execute(
+                "SELECT id, precio_pagado FROM items_factura WHERE factura_id = %s",
+                (factura_id,),
+            )
+
+            for item in cursor.fetchall():
+                precio_corregido = int(item[1] * factor)
+                cursor.execute(
+                    "UPDATE items_factura SET precio_pagado = %s WHERE id = %s",
+                    (precio_corregido, item[0]),
+                )
+
+            conn.commit()
+
+            cursor.execute(
+                "SELECT SUM(precio_pagado) FROM items_factura WHERE factura_id = %s",
+                (factura_id,),
+            )
+            suma_nueva = float(cursor.fetchone()[0] or 0)
+
+            facturas_corregidas.append({
+                "factura_id": factura_id,
+                "total_declarado": total_declarado,
+                "suma_anterior": suma_actual,
+                "suma_nueva": suma_nueva,
+                "factor": round(factor, 4),
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "facturas_corregidas": facturas_corregidas,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 # ========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ========================================
