@@ -5409,35 +5409,38 @@ async def debug_facturas_detalladas(usuario_id: int):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/admin/corregir-facturas-existentes")
-async def corregir_facturas_existentes():
-    """Corrige las 3 facturas para que suma items = total_factura"""
+@app.post("/api/admin/corregir-todas-facturas")
+async def corregir_todas_facturas():
+    """Corrige TODAS las facturas con diferencias > 5%"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        cursor.execute(
+            "SELECT id, usuario_id, establecimiento, total_factura FROM facturas WHERE total_factura > 0 ORDER BY id"
+        )
+
+        todas_facturas = cursor.fetchall()
         facturas_corregidas = []
-        facturas_ids = [1, 2, 3]
 
-        for factura_id in facturas_ids:
-            cursor.execute(
-                "SELECT total_factura, establecimiento FROM facturas WHERE id = %s",
-                (factura_id,),
-            )
-            factura_data = cursor.fetchone()
-            if not factura_data:
-                continue
-
-            total_declarado = float(factura_data[0])
+        for factura_row in todas_facturas:
+            factura_id = factura_row[0]
+            total_declarado = float(factura_row[3])
 
             cursor.execute(
                 "SELECT SUM(precio_pagado), COUNT(*) FROM items_factura WHERE factura_id = %s",
                 (factura_id,),
             )
-            items_data = cursor.fetchone()
-            suma_actual = float(items_data[0] or 0)
 
-            if suma_actual == 0:
+            items_data = cursor.fetchone()
+            if not items_data or not items_data[0]:
+                continue
+
+            suma_actual = float(items_data[0])
+            diferencia = abs(suma_actual - total_declarado)
+            porcentaje_error = (diferencia / total_declarado * 100) if total_declarado > 0 else 0
+
+            if porcentaje_error < 5:
                 continue
 
             factor = total_declarado / suma_actual
@@ -5467,7 +5470,6 @@ async def corregir_facturas_existentes():
                 "total_declarado": total_declarado,
                 "suma_anterior": suma_actual,
                 "suma_nueva": suma_nueva,
-                "factor": round(factor, 4),
             })
 
         cursor.close()
@@ -5475,7 +5477,8 @@ async def corregir_facturas_existentes():
 
         return {
             "success": True,
-            "facturas_corregidas": facturas_corregidas,
+            "facturas_corregidas": len(facturas_corregidas),
+            "detalles": facturas_corregidas,
         }
 
     except Exception as e:
