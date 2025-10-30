@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 import traceback
 import unicodedata
 import re
-from integracion_ocr import procesar_producto_con_validacion
+
 
 
 # Importar solo funciones de base de datos
