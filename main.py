@@ -124,7 +124,7 @@ app.include_router(inventario_router)
 app.include_router(stats_router)
 
 # Routers de auditoría
-app.include_router(auditoria_ia_router, prefix="/api/admin/auditoria/ia", tags=["Auditoría IA"])
+#app.include_router(auditoria_ia_router, prefix="/api/admin/auditoria/ia", tags=["Auditoría IA"])
 app.include_router(auditoria_productos_router, prefix="/api/admin/auditoria", tags=["Auditoría Productos"])
 
 print("✅ Todos los routers incluidos correctamente")
