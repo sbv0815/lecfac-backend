@@ -2247,160 +2247,17 @@ def obtener_estadisticas_auditoria(usuario_id):
     if not conn:
         return {}
 
-    cursor = conn.cursor()
-    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+    # ... resto de la función ...
 
-    try:
-        if database_type == "postgresql":
-            # Contar por acción
-            cursor.execute("""
-                SELECT accion, COUNT(*) as total
-                FROM auditoria_productos
-                WHERE usuario_id = %s
-                GROUP BY accion
-            """, (usuario_id,))
-
-            stats = {}
-            for row in cursor.fetchall():
-                stats[row[0]] = row[1]
-
-            # Total auditados hoy
-            cursor.execute("""
-                SELECT COUNT(DISTINCT producto_maestro_id)
-                FROM auditoria_productos
-                WHERE usuario_id = %s
-                AND DATE(fecha) = CURRENT_DATE
-            """, (usuario_id,))
-
-            stats['auditados_hoy'] = cursor.fetchone()[0]
-
-            # Total pendientes
-            cursor.execute("""
-                SELECT COUNT(*)
-                FROM productos_maestros
-                WHERE auditado_manualmente = FALSE
-                AND (marca IS NULL OR categoria IS NULL OR LENGTH(nombre_normalizado) < 5)
-            """)
-
-            stats['pendientes'] = cursor.fetchone()[0]
-
-            cursor.close()
-            conn.close()
-
-            return {
-                'validados': stats.get('validar', 0),
-                'creados': stats.get('crear', 0),
-                'actualizados': stats.get('actualizar', 0),
-                'auditados_hoy': stats.get('auditados_hoy', 0),
-                'pendientes': stats.get('pendientes', 0),
-                'total': sum(v for k, v in stats.items() if k not in ['auditados_hoy', 'pendientes'])
-            }
-
-        else:
-            # SQLite version
-            cursor.execute("""
-                SELECT accion, COUNT(*) as total
-                FROM auditoria_productos
-                WHERE usuario_id = ?
-                GROUP BY accion
-            """, (usuario_id,))
-
-            stats = {}
-            for row in cursor.fetchall():
-                stats[row[0]] = row[1]
-
-            cursor.close()
-            conn.close()
-
-            return {
-                'validados': stats.get('validar', 0),
-                'creados': stats.get('crear', 0),
-                'actualizados': stats.get('actualizar', 0),
-                'total': sum(stats.values())
-            }
-
-    except Exception as e:
-        print(f"❌ Error obteniendo estadísticas: {e}")
-        if conn:
-            cursor.close()
-            conn.close()
-        return {}
+    return {
+        'validados': stats.get('validar', 0),
+        'creados': stats.get('crear', 0),
+        'actualizados': stats.get('actualizar', 0),
+        'total': sum(stats.values())
+    }
 
 
-# ==============================================================================
-# CÓDIGO PARA AGREGAR AL FINAL DE create_postgresql_tables()
-# Después de crear todos los índices
-# ==============================================================================
-
-# Crear vistas y funciones de PostgreSQL
-print("🔧 Creando vistas de auditoría...")
-
-try:
-    # Vista: productos que requieren auditoría
-    cursor.execute("""
-        CREATE OR REPLACE VIEW productos_requieren_auditoria AS
-        SELECT
-            pm.id,
-            pm.codigo_ean,
-            pm.nombre_normalizado,
-            pm.marca,
-            pm.categoria,
-            pm.subcategoria,
-            pm.total_reportes,
-            pm.auditado_manualmente,
-            pm.validaciones_manuales,
-            CASE
-                WHEN pm.marca IS NULL THEN 'Sin marca'
-                WHEN pm.categoria IS NULL THEN 'Sin categoría'
-                WHEN LENGTH(pm.nombre_normalizado) < 5 THEN 'Nombre muy corto'
-                WHEN pm.nombre_normalizado LIKE '%|%' OR pm.nombre_normalizado LIKE '%~%' THEN 'Caracteres sospechosos'
-                ELSE 'Requiere validación'
-            END as razon_auditoria,
-            pm.ultima_actualizacion
-        FROM productos_maestros pm
-        WHERE
-            pm.auditado_manualmente = FALSE
-            AND (
-                pm.marca IS NULL
-                OR pm.categoria IS NULL
-                OR LENGTH(pm.nombre_normalizado) < 5
-                OR pm.nombre_normalizado LIKE '%|%'
-                OR pm.nombre_normalizado LIKE '%~%'
-                OR pm.nombre_normalizado LIKE '%{%'
-                OR pm.nombre_normalizado LIKE '%}%'
-            )
-        ORDER BY pm.total_reportes DESC
-    """)
-    conn.commit()
-    print("✅ Vista 'productos_requieren_auditoria' creada")
-
-    # Vista: estadísticas de auditoría por usuario
-    cursor.execute("""
-        CREATE OR REPLACE VIEW estadisticas_auditoria_usuario AS
-        SELECT
-            u.id as usuario_id,
-            u.nombre as usuario_nombre,
-            COUNT(*) as total_auditorias,
-            COUNT(*) FILTER (WHERE a.accion = 'crear') as productos_creados,
-            COUNT(*) FILTER (WHERE a.accion = 'actualizar') as productos_actualizados,
-            COUNT(*) FILTER (WHERE a.accion = 'validar') as productos_validados,
-            COUNT(DISTINCT a.producto_maestro_id) as productos_unicos_auditados,
-            MAX(a.fecha) as ultima_auditoria,
-            COUNT(*) FILTER (WHERE DATE(a.fecha) = CURRENT_DATE) as auditorias_hoy
-        FROM usuarios u
-        LEFT JOIN auditoria_productos a ON u.id = a.usuario_id
-        GROUP BY u.id, u.nombre
-        ORDER BY total_auditorias DESC
-    """)
-    conn.commit()
-    print("✅ Vista 'estadisticas_auditoria_usuario' creada")
-
-except Exception as e:
-    print(f"⚠️ Error creando vistas de auditoría: {e}")
-    conn.rollback()
-
-print("✅ Sistema de auditoría integrado en database.py")
-
+# ← Aquí NO debe haber nada más excepto el if __name__
 
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
