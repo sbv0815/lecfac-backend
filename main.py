@@ -40,6 +40,7 @@ from api_inventario import router as inventario_router
 from api_stats import router as stats_router
 from audit_system import AuditSystem
 
+
 # ==========================================
 # IMPORTACIONES LOCALES
 # ==========================================
@@ -79,7 +80,11 @@ from fastapi.responses import HTMLResponse
 from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 from duplicate_detector import detectar_duplicados_automaticamente
 from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
+# Importar router de auditoría
+from api_auditoria_productos import router as auditoria_router
 
+# Agregar router (después de otros routers)
+app.include_router(auditoria_router)
 
 # ==========================================
 # MODELOS PYDANTIC
