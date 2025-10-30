@@ -2926,7 +2926,7 @@ class ProductoUpdateAuditoria(ProductoBaseAuditoria):
 
 
 # ==========================================
-# ENDPOINT 1: VERIFICAR PRODUCTO
+# ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
 @app.get("/api/admin/auditoria/verificar/{codigo_ean}")
 async def verificar_producto_auditoria(codigo_ean: str, current_user: dict = Depends(get_current_user)):
@@ -2975,7 +2975,7 @@ async def verificar_producto_auditoria(codigo_ean: str, current_user: dict = Dep
 
 
 # ==========================================
-# ENDPOINT 2: CREAR PRODUCTO
+# ENDPOINT 2: CREAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
 @app.post("/api/admin/auditoria/producto")
 async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_user: dict = Depends(get_current_user)):
@@ -3037,7 +3037,7 @@ async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_us
 
 
 # ==========================================
-# ENDPOINT 3: ACTUALIZAR PRODUCTO
+# ENDPOINT 3: ACTUALIZAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
 @app.put("/api/admin/auditoria/producto/{producto_id}")
 async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpdateAuditoria, current_user: dict = Depends(get_current_user)):
@@ -3202,6 +3202,5 @@ async def obtener_estadisticas_auditoria(current_user: dict = Depends(get_curren
 
 
 print("=" * 80)
-print("✅ ENDPOINTS DE AUDITORÍA CARGADOS DIRECTAMENTE EN MAIN.PY")
+print("✅ ENDPOINTS DE AUDITORÍA CORREGIDOS Y CARGADOS")
 print("=" * 80)
-
