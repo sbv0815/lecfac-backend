@@ -1867,6 +1867,495 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         conn.close()
         return False
 
+def agregar_tablas_auditoria_a_database_py():
+    """
+    Instrucciones: Copia este código y agrégalo en la función create_postgresql_tables()
+    justo después de crear la tabla productos_maestros
+    """
+
+    # ============================================
+    # TABLA: auditoria_productos
+    # ============================================
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS auditoria_productos (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+            producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestros(id),
+            accion VARCHAR(20) NOT NULL CHECK (accion IN ('crear', 'actualizar', 'validar', 'eliminar')),
+            datos_anteriores JSONB,
+            datos_nuevos JSONB,
+            razon TEXT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ip_address VARCHAR(50),
+            user_agent TEXT
+        )
+    """)
+    print("✓ Tabla 'auditoria_productos' creada")
+
+    # Índices de auditoria_productos
+    crear_indice_seguro(
+        "CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria_productos(usuario_id)",
+        "auditoria_productos.usuario"
+    )
+    crear_indice_seguro(
+        "CREATE INDEX IF NOT EXISTS idx_auditoria_producto ON auditoria_productos(producto_maestro_id)",
+        "auditoria_productos.producto"
+    )
+    crear_indice_seguro(
+        "CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON auditoria_productos(fecha DESC)",
+        "auditoria_productos.fecha"
+    )
+    crear_indice_seguro(
+        "CREATE INDEX IF NOT EXISTS idx_auditoria_accion ON auditoria_productos(accion)",
+        "auditoria_productos.accion"
+    )
+
+    # ============================================
+    # MODIFICAR productos_maestros - Agregar columnas de auditoría
+    # ============================================
+    print("🔧 Agregando columnas de auditoría a productos_maestros...")
+
+    columnas_auditoria = {
+        'auditado_manualmente': 'BOOLEAN DEFAULT FALSE',
+        'validaciones_manuales': 'INTEGER DEFAULT 0',
+        'ultima_validacion': 'TIMESTAMP',
+        'imagen_url': 'VARCHAR(500)',
+        'contenido': 'VARCHAR(100)'
+    }
+
+    cursor.execute("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'productos_maestros'
+    """)
+    columnas_existentes_pm = [row[0] for row in cursor.fetchall()]
+
+    for columna, tipo in columnas_auditoria.items():
+        if columna not in columnas_existentes_pm:
+            try:
+                cursor.execute(f"""
+                    ALTER TABLE productos_maestros
+                    ADD COLUMN {columna} {tipo}
+                """)
+                conn.commit()
+                print(f"   ✅ Columna '{columna}' agregada a productos_maestros")
+            except Exception as e:
+                print(f"   ⚠️ {columna}: {e}")
+                conn.rollback()
+
+    # Índices adicionales
+    crear_indice_seguro(
+        "CREATE INDEX IF NOT EXISTS idx_productos_auditados ON productos_maestros(auditado_manualmente)",
+        "productos_maestros.auditados"
+    )
+    crear_indice_seguro(
+        "CREATE INDEX IF NOT EXISTS idx_productos_validaciones ON productos_maestros(validaciones_manuales DESC)",
+        "productos_maestros.validaciones"
+    )
+
+
+# ==============================================================================
+# FUNCIONES DE AUDITORÍA - AGREGAR AL FINAL DE database.py
+# ==============================================================================
+
+def obtener_productos_requieren_auditoria(limite=20, usuario_id=None):
+    """
+    Obtiene productos que requieren auditoría manual
+
+    Args:
+        limite: Número máximo de productos a retornar
+        usuario_id: Si se especifica, excluye productos ya auditados por ese usuario
+
+    Returns:
+        Lista de diccionarios con datos de productos
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        if database_type == "postgresql":
+            query = """
+                SELECT
+                    pm.id,
+                    pm.codigo_ean,
+                    pm.nombre_normalizado,
+                    pm.marca,
+                    pm.categoria,
+                    pm.subcategoria,
+                    pm.total_reportes,
+                    pm.auditado_manualmente,
+                    pm.validaciones_manuales,
+                    CASE
+                        WHEN pm.marca IS NULL AND pm.categoria IS NULL THEN 10
+                        WHEN pm.marca IS NULL THEN 8
+                        WHEN pm.categoria IS NULL THEN 7
+                        WHEN LENGTH(pm.nombre_normalizado) < 5 THEN 6
+                        ELSE 5
+                    END as prioridad,
+                    CASE
+                        WHEN pm.marca IS NULL AND pm.categoria IS NULL THEN 'Sin marca ni categoría'
+                        WHEN pm.marca IS NULL THEN 'Sin marca'
+                        WHEN pm.categoria IS NULL THEN 'Sin categoría'
+                        WHEN LENGTH(pm.nombre_normalizado) < 5 THEN 'Nombre muy corto'
+                        ELSE 'Requiere validación'
+                    END as razon
+                FROM productos_maestros pm
+            """
+
+            if usuario_id:
+                query += """
+                    LEFT JOIN auditoria_productos a ON (
+                        pm.id = a.producto_maestro_id
+                        AND a.usuario_id = %s
+                    )
+                    WHERE pm.auditado_manualmente = FALSE
+                    AND a.id IS NULL
+                """
+                query += """
+                    AND (
+                        pm.marca IS NULL
+                        OR pm.categoria IS NULL
+                        OR LENGTH(pm.nombre_normalizado) < 5
+                    )
+                    ORDER BY prioridad DESC, pm.total_reportes DESC
+                    LIMIT %s
+                """
+                cursor.execute(query, (usuario_id, limite))
+            else:
+                query += """
+                    WHERE pm.auditado_manualmente = FALSE
+                    AND (
+                        pm.marca IS NULL
+                        OR pm.categoria IS NULL
+                        OR LENGTH(pm.nombre_normalizado) < 5
+                    )
+                    ORDER BY prioridad DESC, pm.total_reportes DESC
+                    LIMIT %s
+                """
+                cursor.execute(query, (limite,))
+
+            productos = []
+            for row in cursor.fetchall():
+                productos.append({
+                    'id': row[0],
+                    'codigo_ean': row[1],
+                    'nombre_normalizado': row[2],
+                    'marca': row[3],
+                    'categoria': row[4],
+                    'subcategoria': row[5],
+                    'total_reportes': row[6],
+                    'auditado_manualmente': row[7],
+                    'validaciones_manuales': row[8],
+                    'prioridad': row[9],
+                    'razon': row[10]
+                })
+
+            cursor.close()
+            conn.close()
+            return productos
+
+        else:
+            # SQLite version
+            query = """
+                SELECT
+                    pm.id,
+                    pm.codigo_ean,
+                    pm.nombre_normalizado,
+                    pm.marca,
+                    pm.categoria,
+                    pm.total_reportes
+                FROM productos_maestros pm
+                WHERE pm.auditado_manualmente = 0
+                AND (
+                    pm.marca IS NULL
+                    OR pm.categoria IS NULL
+                    OR LENGTH(pm.nombre_normalizado) < 5
+                )
+                ORDER BY pm.total_reportes DESC
+                LIMIT ?
+            """
+            cursor.execute(query, (limite,))
+
+            productos = []
+            for row in cursor.fetchall():
+                productos.append({
+                    'id': row[0],
+                    'codigo_ean': row[1],
+                    'nombre_normalizado': row[2],
+                    'marca': row[3],
+                    'categoria': row[4],
+                    'total_reportes': row[5]
+                })
+
+            cursor.close()
+            conn.close()
+            return productos
+
+    except Exception as e:
+        print(f"❌ Error obteniendo productos para auditar: {e}")
+        if conn:
+            cursor.close()
+            conn.close()
+        return []
+
+
+def registrar_auditoria(usuario_id, producto_maestro_id, accion,
+                        datos_anteriores=None, datos_nuevos=None, razon=None):
+    """
+    Registra una acción de auditoría en la base de datos
+
+    Args:
+        usuario_id: ID del usuario que realizó la auditoría
+        producto_maestro_id: ID del producto auditado
+        accion: Tipo de acción ('crear', 'actualizar', 'validar', 'eliminar')
+        datos_anteriores: Dict con datos antes del cambio
+        datos_nuevos: Dict con datos después del cambio
+        razon: Texto explicando el motivo del cambio
+
+    Returns:
+        ID del registro de auditoría o None si falla
+    """
+    conn = get_db_connection()
+    if not conn:
+        return None
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        import json
+
+        if database_type == "postgresql":
+            cursor.execute("""
+                INSERT INTO auditoria_productos (
+                    usuario_id,
+                    producto_maestro_id,
+                    accion,
+                    datos_anteriores,
+                    datos_nuevos,
+                    razon,
+                    fecha
+                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                RETURNING id
+            """, (
+                usuario_id,
+                producto_maestro_id,
+                accion,
+                json.dumps(datos_anteriores) if datos_anteriores else None,
+                json.dumps(datos_nuevos) if datos_nuevos else None,
+                razon
+            ))
+
+            auditoria_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return auditoria_id
+
+        else:
+            # SQLite version
+            cursor.execute("""
+                INSERT INTO auditoria_productos (
+                    usuario_id,
+                    producto_maestro_id,
+                    accion,
+                    datos_anteriores,
+                    datos_nuevos,
+                    razon
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                usuario_id,
+                producto_maestro_id,
+                accion,
+                json.dumps(datos_anteriores) if datos_anteriores else None,
+                json.dumps(datos_nuevos) if datos_nuevos else None,
+                razon
+            ))
+
+            auditoria_id = cursor.lastrowid
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return auditoria_id
+
+    except Exception as e:
+        print(f"❌ Error registrando auditoría: {e}")
+        if conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        return None
+
+
+def obtener_estadisticas_auditoria(usuario_id):
+    """
+    Obtiene estadísticas de auditoría para un usuario
+
+    Returns:
+        Dict con estadísticas
+    """
+    conn = get_db_connection()
+    if not conn:
+        return {}
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        if database_type == "postgresql":
+            # Contar por acción
+            cursor.execute("""
+                SELECT accion, COUNT(*) as total
+                FROM auditoria_productos
+                WHERE usuario_id = %s
+                GROUP BY accion
+            """, (usuario_id,))
+
+            stats = {}
+            for row in cursor.fetchall():
+                stats[row[0]] = row[1]
+
+            # Total auditados hoy
+            cursor.execute("""
+                SELECT COUNT(DISTINCT producto_maestro_id)
+                FROM auditoria_productos
+                WHERE usuario_id = %s
+                AND DATE(fecha) = CURRENT_DATE
+            """, (usuario_id,))
+
+            stats['auditados_hoy'] = cursor.fetchone()[0]
+
+            # Total pendientes
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM productos_maestros
+                WHERE auditado_manualmente = FALSE
+                AND (marca IS NULL OR categoria IS NULL OR LENGTH(nombre_normalizado) < 5)
+            """)
+
+            stats['pendientes'] = cursor.fetchone()[0]
+
+            cursor.close()
+            conn.close()
+
+            return {
+                'validados': stats.get('validar', 0),
+                'creados': stats.get('crear', 0),
+                'actualizados': stats.get('actualizar', 0),
+                'auditados_hoy': stats.get('auditados_hoy', 0),
+                'pendientes': stats.get('pendientes', 0),
+                'total': sum(v for k, v in stats.items() if k not in ['auditados_hoy', 'pendientes'])
+            }
+
+        else:
+            # SQLite version
+            cursor.execute("""
+                SELECT accion, COUNT(*) as total
+                FROM auditoria_productos
+                WHERE usuario_id = ?
+                GROUP BY accion
+            """, (usuario_id,))
+
+            stats = {}
+            for row in cursor.fetchall():
+                stats[row[0]] = row[1]
+
+            cursor.close()
+            conn.close()
+
+            return {
+                'validados': stats.get('validar', 0),
+                'creados': stats.get('crear', 0),
+                'actualizados': stats.get('actualizar', 0),
+                'total': sum(stats.values())
+            }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo estadísticas: {e}")
+        if conn:
+            cursor.close()
+            conn.close()
+        return {}
+
+
+# ==============================================================================
+# CÓDIGO PARA AGREGAR AL FINAL DE create_postgresql_tables()
+# Después de crear todos los índices
+# ==============================================================================
+
+# Crear vistas y funciones de PostgreSQL
+print("🔧 Creando vistas de auditoría...")
+
+try:
+    # Vista: productos que requieren auditoría
+    cursor.execute("""
+        CREATE OR REPLACE VIEW productos_requieren_auditoria AS
+        SELECT
+            pm.id,
+            pm.codigo_ean,
+            pm.nombre_normalizado,
+            pm.marca,
+            pm.categoria,
+            pm.subcategoria,
+            pm.total_reportes,
+            pm.auditado_manualmente,
+            pm.validaciones_manuales,
+            CASE
+                WHEN pm.marca IS NULL THEN 'Sin marca'
+                WHEN pm.categoria IS NULL THEN 'Sin categoría'
+                WHEN LENGTH(pm.nombre_normalizado) < 5 THEN 'Nombre muy corto'
+                WHEN pm.nombre_normalizado LIKE '%|%' OR pm.nombre_normalizado LIKE '%~%' THEN 'Caracteres sospechosos'
+                ELSE 'Requiere validación'
+            END as razon_auditoria,
+            pm.ultima_actualizacion
+        FROM productos_maestros pm
+        WHERE
+            pm.auditado_manualmente = FALSE
+            AND (
+                pm.marca IS NULL
+                OR pm.categoria IS NULL
+                OR LENGTH(pm.nombre_normalizado) < 5
+                OR pm.nombre_normalizado LIKE '%|%'
+                OR pm.nombre_normalizado LIKE '%~%'
+                OR pm.nombre_normalizado LIKE '%{%'
+                OR pm.nombre_normalizado LIKE '%}%'
+            )
+        ORDER BY pm.total_reportes DESC
+    """)
+    conn.commit()
+    print("✅ Vista 'productos_requieren_auditoria' creada")
+
+    # Vista: estadísticas de auditoría por usuario
+    cursor.execute("""
+        CREATE OR REPLACE VIEW estadisticas_auditoria_usuario AS
+        SELECT
+            u.id as usuario_id,
+            u.nombre as usuario_nombre,
+            COUNT(*) as total_auditorias,
+            COUNT(*) FILTER (WHERE a.accion = 'crear') as productos_creados,
+            COUNT(*) FILTER (WHERE a.accion = 'actualizar') as productos_actualizados,
+            COUNT(*) FILTER (WHERE a.accion = 'validar') as productos_validados,
+            COUNT(DISTINCT a.producto_maestro_id) as productos_unicos_auditados,
+            MAX(a.fecha) as ultima_auditoria,
+            COUNT(*) FILTER (WHERE DATE(a.fecha) = CURRENT_DATE) as auditorias_hoy
+        FROM usuarios u
+        LEFT JOIN auditoria_productos a ON u.id = a.usuario_id
+        GROUP BY u.id, u.nombre
+        ORDER BY total_auditorias DESC
+    """)
+    conn.commit()
+    print("✅ Vista 'estadisticas_auditoria_usuario' creada")
+
+except Exception as e:
+    print(f"⚠️ Error creando vistas de auditoría: {e}")
+    conn.rollback()
+
+print("✅ Sistema de auditoría integrado en database.py")
+
 
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
