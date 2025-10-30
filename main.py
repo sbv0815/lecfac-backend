@@ -238,6 +238,82 @@ app = FastAPI(
 app.include_router(stats_router)
 app.include_router(inventario_router)
 app.include_router(diagnostico_router)
+
+@app.post("/invoices/parse-video")
+async def parse_video(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
+    authorization: str = Header(None)
+):
+    """
+    Endpoint para procesar videos de facturas
+    Retorna job_id inmediatamente y procesa en background
+    """
+    print(f"\n{'='*60}")
+    print(f"🎬 VIDEO RECIBIDO: {video.filename}")
+    print(f"{'='*60}")
+
+    try:
+        usuario_id = get_user_id_from_token(authorization)
+        print(f"🆔 Usuario: {usuario_id}")
+
+        temp_video = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+        content = await video.read()
+        temp_video.write(content)
+        temp_video.close()
+
+        video_size_mb = len(content) / (1024 * 1024)
+        print(f"💾 Tamaño: {video_size_mb:.2f} MB")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        job_id = str(uuid.uuid4())
+
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO processing_jobs (
+                    id, usuario_id, status, created_at
+                ) VALUES (%s, %s, 'pending', CURRENT_TIMESTAMP)
+            """, (job_id, usuario_id))
+        else:
+            cursor.execute("""
+                INSERT INTO processing_jobs (
+                    id, usuario_id, status, created_at
+                ) VALUES (?, ?, 'pending', ?)
+            """, (job_id, usuario_id, datetime.now()))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Job creado: {job_id}")
+
+        background_tasks.add_task(
+            process_video_background_task,
+            job_id,
+            temp_video.name,
+            usuario_id
+        )
+
+        print(f"✅ Tarea en background agregada")
+        print(f"{'='*60}\n")
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": True,
+                "job_id": job_id,
+                "message": "Video recibido, procesando en background",
+                "status": "pending"
+            }
+        )
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 app.include_router(mobile_router, tags=["mobile"])
 
 app.add_middleware(
@@ -2069,84 +2145,6 @@ async def get_pending_jobs(usuario_id: int = 1):
         return JSONResponse(
             status_code=500, content={"success": False, "error": str(e)}
         )
-
-
-@app.post("/invoices/parse-video")
-async def parse_video(
-    background_tasks: BackgroundTasks,
-    video: UploadFile = File(...),
-    authorization: str = Header(None)
-):
-    """
-    Endpoint para procesar videos de facturas
-    Retorna job_id inmediatamente y procesa en background
-    """
-    print(f"\n{'='*60}")
-    print(f"🎬 VIDEO RECIBIDO: {video.filename}")
-    print(f"{'='*60}")
-
-    try:
-        usuario_id = get_user_id_from_token(authorization)
-        print(f"🆔 Usuario: {usuario_id}")
-
-        temp_video = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-        content = await video.read()
-        temp_video.write(content)
-        temp_video.close()
-
-        video_size_mb = len(content) / (1024 * 1024)
-        print(f"💾 Tamaño: {video_size_mb:.2f} MB")
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        job_id = str(uuid.uuid4())
-
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                INSERT INTO processing_jobs (
-                    id, usuario_id, status, created_at
-                ) VALUES (%s, %s, 'pending', CURRENT_TIMESTAMP)
-            """, (job_id, usuario_id))
-        else:
-            cursor.execute("""
-                INSERT INTO processing_jobs (
-                    id, usuario_id, status, created_at
-                ) VALUES (?, ?, 'pending', ?)
-            """, (job_id, usuario_id, datetime.now()))
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        print(f"✅ Job creado: {job_id}")
-
-        background_tasks.add_task(
-            process_video_background_task,
-            job_id,
-            temp_video.name,
-            usuario_id
-        )
-
-        print(f"✅ Tarea en background agregada")
-        print(f"{'='*60}\n")
-
-        return JSONResponse(
-            status_code=202,
-            content={
-                "success": True,
-                "job_id": job_id,
-                "message": "Video recibido, procesando en background",
-                "status": "pending"
-            }
-        )
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ==========================================
 # ENDPOINTS DE AUDITORÍA
 # ==========================================
