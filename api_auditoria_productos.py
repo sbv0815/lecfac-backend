@@ -23,14 +23,11 @@ class ProductoCreate(ProductoBase):
 class ProductoUpdate(ProductoBase):
     pass
 
-class ValidacionRequest(BaseModel):
-    razon: Optional[str] = None
-
 # ==========================================
-# ENDPOINTS
+# ENDPOINTS (sin prefijo /api/admin/auditoria)
 # ==========================================
 
-@router.get("/api/admin/auditoria/verificar/{codigo_ean}")
+@router.get("/verificar/{codigo_ean}")
 async def verificar_producto(
     codigo_ean: str,
     current_user: dict = Depends(get_current_user)
@@ -40,7 +37,6 @@ async def verificar_producto(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Buscar producto por EAN
         cursor.execute("""
             SELECT id, codigo_ean, nombre, marca, categoria,
                    auditado_manualmente, validaciones_manuales
@@ -54,7 +50,6 @@ async def verificar_producto(
         conn.close()
 
         if row:
-            # Producto existe
             producto = {
                 'id': row[0],
                 'codigo_ean': row[1],
@@ -64,27 +59,16 @@ async def verificar_producto(
                 'auditado_manualmente': row[5],
                 'validaciones_manuales': row[6]
             }
-            return {
-                'existe': True,
-                'producto': producto
-            }
+            return {'existe': True, 'producto': producto}
         else:
-            # Producto NO existe - retornar 200 OK con existe=False
-            return {
-                'existe': False,
-                'producto': None,
-                'mensaje': f'Producto con EAN {codigo_ean} no encontrado'
-            }
+            return {'existe': False, 'producto': None, 'mensaje': f'Producto con EAN {codigo_ean} no encontrado'}
 
     except Exception as e:
         print(f"Error en verificar_producto: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al verificar producto: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al verificar producto: {str(e)}")
 
 
-@router.post("/api/admin/auditoria/producto")
+@router.post("/producto")
 async def crear_producto(
     producto: ProductoCreate,
     current_user: dict = Depends(get_current_user)
@@ -94,47 +78,28 @@ async def crear_producto(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar que no exista
-        cursor.execute(
-            "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
-            (producto.codigo_ean,)
-        )
+        cursor.execute("SELECT id FROM productos_maestros WHERE codigo_ean = %s", (producto.codigo_ean,))
 
         if cursor.fetchone():
             cursor.close()
             conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail="El producto ya existe"
-            )
+            raise HTTPException(status_code=400, detail="El producto ya existe")
 
-        # Crear producto
         cursor.execute("""
             INSERT INTO productos_maestros
             (codigo_ean, nombre, marca, categoria, auditado_manualmente, validaciones_manuales)
             VALUES (%s, %s, %s, %s, TRUE, 1)
             RETURNING id, codigo_ean, nombre, marca, categoria, auditado_manualmente, validaciones_manuales
-        """, (
-            producto.codigo_ean,
-            producto.nombre,
-            producto.marca,
-            producto.categoria
-        ))
+        """, (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria))
 
         row = cursor.fetchone()
         producto_id = row[0]
 
-        # Registrar auditoria
         cursor.execute("""
             INSERT INTO auditoria_productos
             (usuario_id, producto_maestro_id, accion, datos_nuevos, fecha)
             VALUES (%s, %s, 'crear', %s, %s)
-        """, (
-            current_user['id'],
-            producto_id,
-            f'{{"nombre": "{producto.nombre}", "marca": "{producto.marca}", "categoria": "{producto.categoria}"}}',
-            datetime.now()
-        ))
+        """, (current_user['id'], producto_id, f'{{"nombre": "{producto.nombre}"}}', datetime.now()))
 
         conn.commit()
 
@@ -151,22 +116,16 @@ async def crear_producto(
         cursor.close()
         conn.close()
 
-        return {
-            'mensaje': 'Producto creado exitosamente',
-            'producto': producto_dict
-        }
+        return {'mensaje': 'Producto creado exitosamente', 'producto': producto_dict}
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error en crear_producto: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al crear producto: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al crear producto: {str(e)}")
 
 
-@router.put("/api/admin/auditoria/producto/{producto_id}")
+@router.put("/producto/{producto_id}")
 async def actualizar_producto(
     producto_id: int,
     producto: ProductoUpdate,
@@ -177,12 +136,7 @@ async def actualizar_producto(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Obtener datos anteriores
-        cursor.execute("""
-            SELECT nombre, marca, categoria
-            FROM productos_maestros
-            WHERE id = %s
-        """, (producto_id,))
+        cursor.execute("SELECT nombre, marca, categoria FROM productos_maestros WHERE id = %s", (producto_id,))
 
         row = cursor.fetchone()
         if not row:
@@ -190,39 +144,20 @@ async def actualizar_producto(
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        datos_anteriores = {
-            'nombre': row[0],
-            'marca': row[1],
-            'categoria': row[2]
-        }
-
-        # Actualizar producto
         cursor.execute("""
             UPDATE productos_maestros
             SET nombre = %s, marca = %s, categoria = %s
             WHERE id = %s
             RETURNING id, codigo_ean, nombre, marca, categoria, auditado_manualmente, validaciones_manuales
-        """, (
-            producto.nombre,
-            producto.marca,
-            producto.categoria,
-            producto_id
-        ))
+        """, (producto.nombre, producto.marca, producto.categoria, producto_id))
 
         row = cursor.fetchone()
 
-        # Registrar auditoria
         cursor.execute("""
             INSERT INTO auditoria_productos
-            (usuario_id, producto_maestro_id, accion, datos_anteriores, datos_nuevos, fecha)
-            VALUES (%s, %s, 'actualizar', %s, %s, %s)
-        """, (
-            current_user['id'],
-            producto_id,
-            str(datos_anteriores),
-            f'{{"nombre": "{producto.nombre}", "marca": "{producto.marca}", "categoria": "{producto.categoria}"}}',
-            datetime.now()
-        ))
+            (usuario_id, producto_maestro_id, accion, datos_nuevos, fecha)
+            VALUES (%s, %s, 'actualizar', %s, %s)
+        """, (current_user['id'], producto_id, f'{{"nombre": "{producto.nombre}"}}', datetime.now()))
 
         conn.commit()
 
@@ -239,22 +174,16 @@ async def actualizar_producto(
         cursor.close()
         conn.close()
 
-        return {
-            'mensaje': 'Producto actualizado exitosamente',
-            'producto': producto_dict
-        }
+        return {'mensaje': 'Producto actualizado exitosamente', 'producto': producto_dict}
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error en actualizar_producto: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al actualizar producto: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al actualizar producto: {str(e)}")
 
 
-@router.post("/api/admin/auditoria/validar/{producto_id}")
+@router.post("/validar/{producto_id}")
 async def validar_producto(
     producto_id: int,
     current_user: dict = Depends(get_current_user)
@@ -264,7 +193,6 @@ async def validar_producto(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Actualizar producto
         cursor.execute("""
             UPDATE productos_maestros
             SET auditado_manualmente = TRUE,
@@ -278,7 +206,6 @@ async def validar_producto(
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # Registrar auditoria
         cursor.execute("""
             INSERT INTO auditoria_productos
             (usuario_id, producto_maestro_id, accion, fecha)
@@ -295,13 +222,10 @@ async def validar_producto(
         raise
     except Exception as e:
         print(f"Error en validar_producto: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al validar producto: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al validar producto: {str(e)}")
 
 
-@router.get("/api/admin/auditoria/historial")
+@router.get("/historial")
 async def obtener_historial(
     current_user: dict = Depends(get_current_user),
     limit: int = 50
@@ -312,9 +236,7 @@ async def obtener_historial(
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT
-                a.id, a.accion, a.fecha,
-                p.id, p.codigo_ean, p.nombre
+            SELECT a.id, a.accion, a.fecha, p.id, p.codigo_ean, p.nombre
             FROM auditoria_productos a
             LEFT JOIN productos_maestros p ON a.producto_maestro_id = p.id
             WHERE a.usuario_id = %s
@@ -344,26 +266,18 @@ async def obtener_historial(
 
     except Exception as e:
         print(f"Error en obtener_historial: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al obtener historial: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al obtener historial: {str(e)}")
 
 
-@router.get("/api/admin/auditoria/estadisticas")
-async def obtener_estadisticas(
-    current_user: dict = Depends(get_current_user)
-):
+@router.get("/estadisticas")
+async def obtener_estadisticas(current_user: dict = Depends(get_current_user)):
     """Obtener estadisticas de auditoria del usuario"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Contar por tipo de accion
         cursor.execute("""
-            SELECT
-                accion,
-                COUNT(*) as total
+            SELECT accion, COUNT(*) as total
             FROM auditoria_productos
             WHERE usuario_id = %s
             GROUP BY accion
@@ -377,22 +291,17 @@ async def obtener_estadisticas(
         }
 
         for row in cursor.fetchall():
-            accion = row[0]
-            total = row[1]
-
+            accion, total = row[0], row[1]
             if accion == 'crear':
                 stats['productos_creados'] = total
             elif accion == 'actualizar':
                 stats['productos_actualizados'] = total
             elif accion == 'validar':
                 stats['productos_validados'] = total
-
             stats['total_acciones'] += total
 
-        # Ultimas acciones
         cursor.execute("""
-            SELECT
-                accion, producto_maestro_id, fecha
+            SELECT accion, producto_maestro_id, fecha
             FROM auditoria_productos
             WHERE usuario_id = %s
             ORDER BY fecha DESC
@@ -416,17 +325,7 @@ async def obtener_estadisticas(
 
     except Exception as e:
         print(f"Error en obtener_estadisticas: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al obtener estadisticas: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al obtener estadisticas: {str(e)}")
 
 
 print("API Auditoria Productos cargada")
-print("   Endpoints disponibles:")
-print("      GET  /api/admin/auditoria/verificar/{codigo_ean}")
-print("      POST /api/admin/auditoria/producto")
-print("      PUT  /api/admin/auditoria/producto/{producto_id}")
-print("      POST /api/admin/auditoria/validar/{producto_id}")
-print("      GET  /api/admin/auditoria/historial")
-print("      GET  /api/admin/auditoria/estadisticas")
