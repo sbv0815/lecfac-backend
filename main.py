@@ -1,21 +1,92 @@
+import os
+import tempfile
+import traceback
+import json
+import uuid
+
+# LIMPIEZA DE CACHÉ AL INICIO
+import shutil
+print("🧹 Limpiando caché de Python...")
+for root, dirs, files in os.walk('.'):
+    if '__pycache__' in dirs:
+        shutil.rmtree(os.path.join(root, '__pycache__'))
+        print(f"   ✓ Eliminado: {os.path.join(root, '__pycache__')}")
+print("✅ Caché limpiado - Iniciando servidor...")
+
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+from contextlib import asynccontextmanager
+
+# ==========================================
+# IMPORTS DE FASTAPI
+# ==========================================
+from fastapi import (
+    FastAPI,
+    File,
+    UploadFile,
+    HTTPException,
+    Form,
+    Depends,
+    Header,
+    Request,
+    BackgroundTasks,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+
+# ==========================================
+# IMPORTACIONES LOCALES
+# ==========================================
+from database import (
+    create_tables,
+    get_db_connection,
+    hash_password,
+    verify_password,
+    test_database_connection,
+    detectar_cadena,
+    obtener_o_crear_establecimiento,
+    actualizar_inventario_desde_factura,
+)
+
+# Importar routers
+from api_inventario import router as inventario_router
+from api_stats import router as stats_router
+from audit_system import AuditSystem
+from mobile_endpoints import router as mobile_router
+from storage import save_image_to_db, get_image_from_db
+from validator import FacturaValidator
+from claude_invoice import parse_invoice_with_claude
+from product_matcher import buscar_o_crear_producto_inteligente
+
+from admin_dashboard import router as admin_dashboard_router
+from auth import router as auth_router
+from image_handlers import router as image_handlers_router
+from duplicados_routes import router as duplicados_router
+from diagnostico_routes import router as diagnostico_router
+
+# Importar procesador OCR y auditoría
+from ocr_processor import processor, ocr_queue, processing, buscar_o_crear_producto_inteligente_inline
 from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
 
-# Importar AMBOS routers con nombres diferentes
+# Importar AMBOS routers de auditoría con nombres diferentes
 from api_auditoria_ia import router as auditoria_ia_router
 from api_auditoria_productos import router as auditoria_productos_router
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
 from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 from duplicate_detector import detectar_duplicados_automaticamente
 from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
 
 # ==========================================
-# CREAR APP (DEBE IR ANTES DE LOS ROUTERS)
+# CREAR APP
 # ==========================================
 app = FastAPI(
     title="LecFac API",
@@ -35,7 +106,7 @@ app.add_middleware(
 )
 
 # ==========================================
-# INCLUIR ROUTERS (DESPUÉS DE CREAR APP)
+# INCLUIR ROUTERS
 # ==========================================
 app.include_router(auth_router)
 app.include_router(admin_dashboard_router)
