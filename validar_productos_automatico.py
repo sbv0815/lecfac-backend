@@ -16,7 +16,7 @@ from datetime import datetime
 
 # Configuración
 DATABASE_URL = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@turntable.proxy.rlwy.net:52874/railway"
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")  # ✅ BIEN
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY") or "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"
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 
