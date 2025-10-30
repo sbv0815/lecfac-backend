@@ -35,7 +35,7 @@ async def verificar_producto(
     codigo_ean: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Verificar si un producto existe por código EAN"""
+    """Verificar si un producto existe por codigo EAN"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -77,7 +77,7 @@ async def verificar_producto(
             }
 
     except Exception as e:
-        print(f"❌ Error en verificar_producto: {str(e)}")
+        print(f"Error en verificar_producto: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error al verificar producto: {str(e)}"
@@ -124,7 +124,7 @@ async def crear_producto(
         row = cursor.fetchone()
         producto_id = row[0]
 
-        # Registrar auditoría
+        # Registrar auditoria
         cursor.execute("""
             INSERT INTO auditoria_productos
             (usuario_id, producto_maestro_id, accion, datos_nuevos, fecha)
@@ -159,7 +159,7 @@ async def crear_producto(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error en crear_producto: {str(e)}")
+        print(f"Error en crear_producto: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error al crear producto: {str(e)}"
@@ -211,7 +211,7 @@ async def actualizar_producto(
 
         row = cursor.fetchone()
 
-        # Registrar auditoría
+        # Registrar auditoria
         cursor.execute("""
             INSERT INTO auditoria_productos
             (usuario_id, producto_maestro_id, accion, datos_anteriores, datos_nuevos, fecha)
@@ -247,7 +247,7 @@ async def actualizar_producto(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error en actualizar_producto: {str(e)}")
+        print(f"Error en actualizar_producto: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error al actualizar producto: {str(e)}"
@@ -278,7 +278,7 @@ async def validar_producto(
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # Registrar auditoría
+        # Registrar auditoria
         cursor.execute("""
             INSERT INTO auditoria_productos
             (usuario_id, producto_maestro_id, accion, fecha)
@@ -294,7 +294,7 @@ async def validar_producto(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error en validar_producto: {str(e)}")
+        print(f"Error en validar_producto: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error al validar producto: {str(e)}"
@@ -306,7 +306,7 @@ async def obtener_historial(
     current_user: dict = Depends(get_current_user),
     limit: int = 50
 ):
-    """Obtener historial de auditorías del usuario"""
+    """Obtener historial de auditorias del usuario"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -343,7 +343,7 @@ async def obtener_historial(
         return {'historial': historial}
 
     except Exception as e:
-        print(f"❌ Error en obtener_historial: {str(e)}")
+        print(f"Error en obtener_historial: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error al obtener historial: {str(e)}"
@@ -354,12 +354,12 @@ async def obtener_historial(
 async def obtener_estadisticas(
     current_user: dict = Depends(get_current_user)
 ):
-    """Obtener estadísticas de auditoría del usuario"""
+    """Obtener estadisticas de auditoria del usuario"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Contar por tipo de acción
+        # Contar por tipo de accion
         cursor.execute("""
             SELECT
                 accion,
@@ -389,7 +389,7 @@ async def obtener_estadisticas(
 
             stats['total_acciones'] += total
 
-        # Últimas acciones
+        # Ultimas acciones
         cursor.execute("""
             SELECT
                 accion, producto_maestro_id, fecha
@@ -415,20 +415,18 @@ async def obtener_estadisticas(
         return stats
 
     except Exception as e:
-        print(f"❌ Error en obtener_estadisticas: {str(e)}")
+        print(f"Error en obtener_estadisticas: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error al obtener estadísticas: {str(e)}"
+            detail=f"Error al obtener estadisticas: {str(e)}"
         )
 
 
-print("✅ API Auditoría Productos cargada")
-print("   📌 Endpoints disponibles:")
+print("API Auditoria Productos cargada")
+print("   Endpoints disponibles:")
 print("      GET  /api/admin/auditoria/verificar/{codigo_ean}")
 print("      POST /api/admin/auditoria/producto")
 print("      PUT  /api/admin/auditoria/producto/{producto_id}")
 print("      POST /api/admin/auditoria/validar/{producto_id}")
 print("      GET  /api/admin/auditoria/historial")
 print("      GET  /api/admin/auditoria/estadisticas")
-#   F o r c e   r e d e p l o y  
- 
