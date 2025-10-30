@@ -2021,7 +2021,7 @@ async def get_anomalias(usuario: dict = Depends(get_current_user)):
     }
 
 
-app.include_router(auditoria_router)
+
 print("✅ Sistema de auditoría cargado")
 
 
