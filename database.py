@@ -1149,19 +1149,64 @@ def create_postgresql_tables():
             print(f"⚠️ Error verificando columnas: {e}")
             conn.rollback()
 
+        # ============================================
+        # TABLA DE AUDITORÍA
+        # ============================================
+        print("🏗️ Creando tabla auditoria_productos...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auditoria_productos (
+                id SERIAL PRIMARY KEY,
+                usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+                producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestros(id),
+                accion VARCHAR(20) NOT NULL CHECK (accion IN ('crear', 'actualizar', 'validar', 'eliminar')),
+                datos_anteriores JSONB,
+                datos_nuevos JSONB,
+                razon TEXT,
+                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        print("✓ Tabla 'auditoria_productos' creada")
+
+        # Índices
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria_productos(usuario_id)",
+            "auditoria_productos.usuario"
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_auditoria_producto ON auditoria_productos(producto_maestro_id)",
+            "auditoria_productos.producto"
+        )
+
+        # Columnas adicionales en productos_maestros
+        print("🔧 Agregando columnas de auditoría...")
+        cursor.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'productos_maestros'
+        """)
+        columnas_pm = [row[0] for row in cursor.fetchall()]
+
+        if 'auditado_manualmente' not in columnas_pm:
+            try:
+                cursor.execute("ALTER TABLE productos_maestros ADD COLUMN auditado_manualmente BOOLEAN DEFAULT FALSE")
+                cursor.execute("ALTER TABLE productos_maestros ADD COLUMN validaciones_manuales INTEGER DEFAULT 0")
+                cursor.execute("ALTER TABLE productos_maestros ADD COLUMN ultima_validacion TIMESTAMP")
+                conn.commit()
+                print("   ✅ Columnas de auditoría agregadas")
+            except Exception as e:
+                print(f"   ⚠️ {e}")
+                conn.rollback()
+
         conn.commit()
         print("✅ Base de datos PostgreSQL configurada correctamente")
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
         import traceback
-
         traceback.print_exc()
         if conn:
             conn.rollback()
     finally:
         if conn:
             conn.close()
-
 
 def create_sqlite_tables():
     """Crear tablas en SQLite con nueva arquitectura"""
