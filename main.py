@@ -238,6 +238,17 @@ app = FastAPI(
     description="Sistema de gestión de facturas con procesamiento asíncrono",
     lifespan=lifespan,
 )
+# ==========================================
+# CONFIGURAR CORS
+# ==========================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+print("✅ CORS configurado")
 
 app.include_router(stats_router)
 app.include_router(inventario_router)
@@ -2926,11 +2937,11 @@ async def verificar_producto_auditoria(codigo_ean: str, current_user: dict = Dep
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, codigo_ean, nombre, marca, categoria, auditado_manualmente, validaciones_manuales
+            SELECT id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
             FROM productos_maestros
             WHERE codigo_ean = %s
             LIMIT 1
-        """, (codigo_ean,))
+            """, (codigo_ean,))
 
         row = cursor.fetchone()
         cursor.close()
@@ -2985,11 +2996,11 @@ async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_us
         # Crear producto
         cursor.execute("""
             INSERT INTO productos_maestros (
-                codigo_ean, nombre, marca, categoria,
-                auditado_manualmente, validaciones_manuales
+            codigo_ean, nombre_normalizado, marca, categoria,
+            auditado_manualmente, validaciones_manuales
             ) VALUES (%s, %s, %s, %s, TRUE, 1)
-            RETURNING id, codigo_ean, nombre, marca, categoria, auditado_manualmente, validaciones_manuales
-        """, (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria))
+            RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
+            """, (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria))
 
         row = cursor.fetchone()
 
@@ -3038,10 +3049,10 @@ async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpda
 
         cursor.execute("""
             UPDATE productos_maestros
-            SET nombre = %s, marca = %s, categoria = %s
+            SET nombre_normalizado = %s, marca = %s, categoria = %s
             WHERE id = %s
-            RETURNING id, codigo_ean, nombre, marca, categoria, auditado_manualmente, validaciones_manuales
-        """, (producto.nombre, producto.marca, producto.categoria, producto_id))
+            RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
+            """, (producto.nombre, producto.marca, producto.categoria, producto_id))
 
         row = cursor.fetchone()
 
