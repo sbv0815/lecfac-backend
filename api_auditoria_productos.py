@@ -329,3 +329,5 @@ async def obtener_estadisticas(current_user: dict = Depends(get_current_user)):
 
 
 print("API Auditoria Productos cargada")
+#   U p d a t e d   a t   1 0 / 3 0 / 2 0 2 5   1 4 : 4 8 : 1 1  
+ 
