@@ -77,13 +77,12 @@ import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
 
 # Importar AMBOS routers de auditoría con nombres diferentes
-from api_auditoria_ia import router as auditoria_ia_router
-print("🔧 Intentando importar api_auditoria_productos...")
+print("🔧 Intentando importar auditoria_productos_api...")
 try:
-    from api_auditoria_productos import router as auditoria_productos_router
-    print("✅ api_auditoria_productos importado exitosamente")
+    from auditoria_productos_api import router as auditoria_productos_router
+    print("✅ auditoria_productos_api importado exitosamente")
 except Exception as e:
-    print(f"❌ ERROR al importar api_auditoria_productos: {e}")
+    print(f"❌ ERROR al importar: {e}")
     import traceback
     traceback.print_exc()
     raise
