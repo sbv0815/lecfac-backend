@@ -14,13 +14,11 @@ from typing import Dict, Any, Optional
 import traceback
 import unicodedata
 import re
-
-
-
+# Importar solo funciones de base de datos
 # Importar solo funciones de base de datos
 from database import get_db_connection, detectar_cadena, actualizar_inventario_desde_factura
 from claude_invoice import parse_invoice_with_claude
-
+from validacion_productos import procesar_producto_con_validacion
 # Colas y tracking globales
 ocr_queue = Queue()
 processing = {}
