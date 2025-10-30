@@ -594,36 +594,69 @@ async def get_admin_usuarios():
 
 @app.get("/api/admin/productos")
 async def get_admin_productos():
-    """Catálogo de productos"""
+    """Catálogo de productos maestros con información completa"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        print("🏷️ Obteniendo productos maestros con información completa...")
+
         cursor.execute("""
-            SELECT pm.id, pm.nombre_normalizado, pm.codigo_ean,
-                   pm.precio_promedio_global, pm.categoria, pm.total_reportes
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
+                pm.marca,
+                pm.categoria,
+                pm.subcategoria,
+                pm.precio_promedio_global,
+                pm.total_reportes,
+                pm.primera_vez_reportado,
+                pm.ultima_actualizacion,
+                -- Contar cuántos usuarios lo han comprado
+                COUNT(DISTINCT if.usuario_id) as usuarios_compraron,
+                -- Contar cuántas facturas lo incluyen
+                COUNT(DISTINCT if.factura_id) as facturas_incluyen
             FROM productos_maestros pm
-            ORDER BY pm.total_reportes DESC
-            LIMIT 100
+            LEFT JOIN items_factura if ON if.producto_maestro_id = pm.id
+            GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
+                     pm.marca, pm.categoria, pm.subcategoria, pm.precio_promedio_global,
+                     pm.total_reportes, pm.primera_vez_reportado, pm.ultima_actualizacion
+            ORDER BY pm.total_reportes DESC, pm.id DESC
+            LIMIT 500
         """)
 
         productos = []
         for row in cursor.fetchall():
             productos.append({
                 "id": row[0],
-                "nombre": row[1],
-                "codigo_ean": row[2],
-                "precio_promedio": float(row[3]) if row[3] else 0,
-                "categoria": row[4],
-                "veces_comprado": row[5] or 0
+                "codigo_ean": row[1] or "",
+                "nombre": row[2],
+                "marca": row[3] or "Sin marca",
+                "categoria": row[4] or "Sin categoría",
+                "subcategoria": row[5] or "",
+                "precio_promedio": float(row[6]) if row[6] else 0,
+                "veces_comprado": row[7] or 0,
+                "primera_vez": str(row[8]) if row[8] else None,
+                "ultima_actualizacion": str(row[9]) if row[9] else None,
+                "usuarios_compraron": row[10] or 0,
+                "facturas_incluyen": row[11] or 0
             })
 
         conn.close()
+
+        print(f"✅ {len(productos)} productos maestros obtenidos")
+        print(f"📊 Productos con marca: {sum(1 for p in productos if p['marca'] != 'Sin marca')}")
+        print(f"📊 Productos con categoría: {sum(1 for p in productos if p['categoria'] != 'Sin categoría')}")
+
         return productos
 
     except Exception as e:
         print(f"❌ Error obteniendo productos: {e}")
-        raise HTTPException(500, str(e))
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/admin/duplicados")

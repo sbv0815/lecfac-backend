@@ -15,6 +15,7 @@ import traceback
 import unicodedata
 import re
 
+
 # Importar solo funciones de base de datos
 from database import get_db_connection, detectar_cadena, actualizar_inventario_desde_factura
 from claude_invoice import parse_invoice_with_claude
@@ -568,11 +569,11 @@ class OCRProcessor:
             print(f"   💰 '{nombre}': {precio_raw} → ${precio:,} pesos")
 
             # ✅ USAR FUNCIÓN INLINE (NO IMPORT)
-            producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
-                codigo=codigo,
-                nombre=nombre,
+            producto_maestro_id = procesar_producto_con_validacion(
+                codigo_leido=codigo,
+                nombre_leido=nombre,
                 precio=precio,
-                establecimiento=establecimiento,
+                establecimiento_id=None,
                 cursor=cursor,
                 conn=conn
             )
