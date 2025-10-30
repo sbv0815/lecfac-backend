@@ -79,25 +79,11 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
 
-# Importar AMBOS routers de auditoría con nombres diferentes
-
+# Importar AMBOS routers de auditoría con nombres diferente
 from fastapi import APIRouter
 from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 from duplicate_detector import detectar_duplicados_automaticamente
 from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
-
-
-
-# ==========================================
-# CONFIGURAR CORS
-# ==========================================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # ==========================================
 # MODELOS PYDANTIC
