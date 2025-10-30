@@ -78,8 +78,15 @@ from establishments import procesar_establecimiento, obtener_o_crear_establecimi
 
 # Importar AMBOS routers de auditoría con nombres diferentes
 from api_auditoria_ia import router as auditoria_ia_router
-from api_auditoria_productos import router as auditoria_productos_router
-
+print("🔧 Intentando importar api_auditoria_productos...")
+try:
+    from api_auditoria_productos import router as auditoria_productos_router
+    print("✅ api_auditoria_productos importado exitosamente")
+except Exception as e:
+    print(f"❌ ERROR al importar api_auditoria_productos: {e}")
+    import traceback
+    traceback.print_exc()
+    raise
 from fastapi import APIRouter
 from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 from duplicate_detector import detectar_duplicados_automaticamente
@@ -117,8 +124,6 @@ app.include_router(diagnostico_router)
 app.include_router(inventario_router)
 app.include_router(stats_router)
 
-# Routers de auditoría
-# Routers de auditoría
 # Routers de auditoría
 app.include_router(auditoria_ia_router, prefix="/api/admin/auditoria/ia", tags=["Auditoría IA"])
 app.include_router(auditoria_productos_router, prefix="/api/admin/auditoria", tags=["Auditoría Productos"])
