@@ -1,4 +1,7 @@
 import os
+print("=" * 80)
+print("🚀 LECFAC BACKEND - VERSION 2025-10-30-21:00 - REBUILD FORZADO")
+print("=" * 80)
 import tempfile
 import traceback
 import json

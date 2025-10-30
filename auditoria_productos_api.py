@@ -1,4 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
+print("=" * 80)
+print("📦 CARGANDO AUDITORIA_PRODUCTOS_API.PY - VERSION 2025-10-30")
+print("=" * 80)
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
