@@ -430,3 +430,5 @@ print("      PUT  /api/admin/auditoria/producto/{producto_id}")
 print("      POST /api/admin/auditoria/validar/{producto_id}")
 print("      GET  /api/admin/auditoria/historial")
 print("      GET  /api/admin/auditoria/estadisticas")
+#   F o r c e   r e d e p l o y  
+ 
