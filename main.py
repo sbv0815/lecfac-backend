@@ -86,14 +86,7 @@ from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_du
 from duplicate_detector import detectar_duplicados_automaticamente
 from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
 
-# ==========================================
-# CREAR APP
-# ==========================================
-app = FastAPI(
-    title="LecFac API",
-    description="Sistema de digitalización de facturas y comparación de precios",
-    version="2.0.0"
-)
+
 
 # ==========================================
 # CONFIGURAR CORS
@@ -105,24 +98,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ==========================================
-# INCLUIR ROUTERS
-# ==========================================
-app.include_router(auth_router)
-app.include_router(admin_dashboard_router)
-app.include_router(mobile_router)
-app.include_router(image_handlers_router)
-app.include_router(duplicados_router)
-app.include_router(diagnostico_router)
-app.include_router(inventario_router)
-app.include_router(stats_router)
-
-# Routers de auditoría
-#app.include_router(auditoria_ia_router, prefix="/api/admin/auditoria/ia", tags=["Auditoría IA"])
-#app.include_router(auditoria_productos_router, prefix="/api/admin/auditoria", tags=["Auditoría Productos"])
-
-print("✅ Todos los routers incluidos correctamente")
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -178,7 +153,7 @@ async def get_current_user(authorization: str = Header(None)):
     """Obtener usuario actual desde token"""
     if not authorization:
         raise HTTPException(status_code=401, detail="No autorizado")
-    return {"user_id": "user123", "email": "user@example.com"}
+    return {"id": 1, "user_id": "user123", "email": "user@example.com"}
 
 
 async def require_admin(user=Depends(get_current_user)):
@@ -359,13 +334,7 @@ async def parse_video(
 
 app.include_router(mobile_router, tags=["mobile"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 
 current_dir = Path(__file__).parent
 static_path = current_dir / "static"
