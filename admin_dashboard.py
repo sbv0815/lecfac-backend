@@ -1336,10 +1336,8 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        STRING_AGG(DISTINCT e.nombre_normalizado, ', ') as establecimientos
+                        'Varios' as establecimientos
                     FROM productos_maestros pm
-                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.codigo_ean = %s
                     GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
                              pm.precio_promedio_global, pm.total_reportes
@@ -1347,6 +1345,7 @@ async def detectar_productos_duplicados_sospechosos(
                 """,
                     (ean,),
                 )
+            else:
                 cursor.execute(
                     """
                     SELECT
@@ -1356,10 +1355,8 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        GROUP_CONCAT(DISTINCT e.nombre_normalizado) as establecimientos
+                        'Varios' as establecimientos
                     FROM productos_maestros pm
-                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.codigo_ean = ?
                     GROUP BY pm.id
                     ORDER BY pm.total_reportes DESC
@@ -1413,10 +1410,8 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        STRING_AGG(DISTINCT e.nombre_normalizado, ', ') as establecimientos
+                        'Varios' as establecimientos
                     FROM productos_maestros pm
-                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE {condiciones}
                     GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
                              pm.precio_promedio_global, pm.total_reportes
@@ -1439,10 +1434,8 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        GROUP_CONCAT(DISTINCT e.nombre_normalizado) as establecimientos
+                        'Varios' as establecimientos
                     FROM productos_maestros pm
-                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE {condiciones}
                     GROUP BY pm.id
                     ORDER BY pm.total_reportes DESC
@@ -1550,10 +1543,8 @@ async def detectar_productos_duplicados_sospechosos(
                             pm.marca,
                             pm.precio_promedio_global,
                             pm.total_reportes,
-                            STRING_AGG(DISTINCT e.nombre_normalizado, ', ') as establecimientos
+                            'Varios' as establecimientos
                         FROM productos_maestros pm
-                        LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                        LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                         WHERE pm.codigo_ean = %s
                         GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
                                  pm.precio_promedio_global, pm.total_reportes
@@ -1571,10 +1562,8 @@ async def detectar_productos_duplicados_sospechosos(
                             pm.marca,
                             pm.precio_promedio_global,
                             pm.total_reportes,
-                            GROUP_CONCAT(DISTINCT e.nombre_normalizado) as establecimientos
+                            'Varios' as establecimientos
                         FROM productos_maestros pm
-                        LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                        LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                         WHERE pm.codigo_ean = ?
                         GROUP BY pm.id
                         ORDER BY pm.total_reportes DESC
