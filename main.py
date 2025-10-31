@@ -53,6 +53,7 @@ from database import (
     detectar_cadena,
     obtener_o_crear_establecimiento,
     actualizar_inventario_desde_factura,
+    procesar_items_factura_y_guardar_precios,  # ← AGREGAR ESTA LÍNEA
 )
 
 # Importar routers
@@ -1077,6 +1078,16 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
         except Exception as e:
             print(f"⚠️ Error actualizando inventario: {e}")
             traceback.print_exc()
+        print(f"💰 Guardando precios para comparación...")
+        try:
+            stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
+            if stats.get('error'):
+                print(f"⚠️ Error guardando precios: {stats['error']}")
+            else:
+                print(f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos")
+        except Exception as e:
+            print(f"⚠️ Error guardando precios: {e}")
+            traceback.print_exc()
 
         cursor.close()
         conn.close()
@@ -1304,6 +1315,16 @@ async def save_invoice_with_image(
             print(f"✅ Inventario actualizado correctamente")
         except Exception as e:
             print(f"⚠️ Error actualizando inventario: {e}")
+            traceback.print_exc()
+            print(f"💰 Guardando precios para comparación...")
+        try:
+            stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
+            if stats.get('error'):
+                print(f"⚠️ Error guardando precios: {stats['error']}")
+            else:
+                print(f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos")
+        except Exception as e:
+            print(f"⚠️ Error guardando precios: {e}")
             traceback.print_exc()
 
         imagen_guardada = save_image_to_db(factura_id, temp_file.name, "image/jpeg")
@@ -1823,6 +1844,16 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 print(f"✅ Inventario actualizado correctamente")
             except Exception as e:
                 print(f"⚠️ Error actualizando inventario: {e}")
+                traceback.print_exc()
+                print(f"💰 Guardando precios para comparación...")
+            try:
+                stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
+                if stats.get('error'):
+                    print(f"⚠️ Error guardando precios: {stats['error']}")
+                else:
+                    print(f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos")
+            except Exception as e:
+                print(f"⚠️ Error guardando precios: {e}")
                 traceback.print_exc()
 
             # Actualizar job como completado
