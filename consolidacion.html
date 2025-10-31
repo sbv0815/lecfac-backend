@@ -147,6 +147,24 @@
             color: white;
         }
 
+        .btn-editar-producto {
+            background: #ff9800;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .btn-editar-producto:hover {
+            background: #f57c00;
+            transform: translateY(-2px);
+        }
+
         .stats-bar {
             background: #e7f3ff;
             border-left: 4px solid #1a73e8;
@@ -271,6 +289,7 @@
             gap: 20px;
             font-size: 0.9em;
             color: #666;
+            flex-wrap: wrap;
         }
 
         .badge {
@@ -381,6 +400,9 @@
             margin-bottom: 10px;
         }
 
+        /* ============================================ */
+        /* MODAL BASE */
+        /* ============================================ */
         .modal {
             display: none;
             position: fixed;
@@ -392,6 +414,8 @@
             z-index: 9999;
             justify-content: center;
             align-items: center;
+            overflow-y: auto;
+            padding: 20px;
         }
 
         .modal.active {
@@ -402,19 +426,45 @@
             background: white;
             padding: 30px;
             border-radius: 15px;
-            max-width: 600px;
+            max-width: 800px;
             width: 90%;
-            max-height: 80vh;
+            max-height: 90vh;
             overflow-y: auto;
         }
 
         .modal-header {
             margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
         }
 
         .modal-header h2 {
             color: #333;
-            margin-bottom: 10px;
+            margin: 0;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 32px;
+            cursor: pointer;
+            color: #7f8c8d;
+            padding: 0;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+
+        .close-btn:hover {
+            background: #ecf0f1;
+            color: #e74c3c;
         }
 
         .modal-body {
@@ -432,6 +482,8 @@
             display: flex;
             gap: 10px;
             justify-content: flex-end;
+            padding-top: 15px;
+            border-top: 2px solid #eee;
         }
 
         .btn-cancel {
@@ -441,6 +493,189 @@
 
         .btn-cancel:hover {
             background: #5a6268;
+        }
+
+        /* ============================================ */
+        /* MODAL DE EDICIÓN */
+        /* ============================================ */
+        .seccion-info,
+        .seccion-sugerencia,
+        .seccion-edicion {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .seccion-info h3,
+        .seccion-sugerencia h3,
+        .seccion-edicion h3 {
+            margin-top: 0;
+            color: #34495e;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-item label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .info-item span {
+            font-size: 16px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .establecimientos-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .establecimientos-info h4 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+
+        #edit_establecimientos_lista {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .establecimiento-tag {
+            background: #3498db;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .establecimiento-precio {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .sugerencia-card {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #27ae60;
+        }
+
+        .sugerencia-datos {
+            flex: 1;
+        }
+
+        .sugerencia-datos p {
+            margin: 8px 0;
+        }
+
+        .btn-usar-sugerencia {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-usar-sugerencia:hover {
+            background: #229954;
+            transform: translateY(-2px);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .input-edicion {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #dce1e6;
+            border-radius: 6px;
+            font-size: 15px;
+            transition: all 0.3s;
+        }
+
+        .input-edicion:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .input-with-button {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-with-button input {
+            flex: 1;
+        }
+
+        .btn-consultar-api {
+            background: #9b59b6;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+
+        .btn-consultar-api:hover {
+            background: #8e44ad;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #7f8c8d;
+            font-size: 13px;
         }
 
         @media (max-width: 768px) {
@@ -461,6 +696,22 @@
             .producto-detalles {
                 flex-direction: column;
                 gap: 5px;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .sugerencia-card {
+                flex-direction: column;
+            }
+
+            .input-with-button {
+                flex-direction: column;
+            }
+
+            .btn-consultar-api {
+                width: 100%;
             }
         }
     </style>
@@ -524,7 +775,7 @@
         </div>
     </div>
 
-    <!-- MODAL DE CONFIRMACIÓN -->
+    <!-- MODAL DE CONFIRMACIÓN CONSOLIDACIÓN -->
     <div id="modal-confirmacion" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -540,10 +791,134 @@
         </div>
     </div>
 
+    <!-- MODAL DE EDICIÓN DE PRODUCTO -->
+    <div id="modalEdicionProducto" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>✏️ Editar Producto</h2>
+                <button class="close-btn" onclick="cerrarModalEdicion()">&times;</button>
+            </div>
+
+            <div class="modal-body" id="modalEdicionBody">
+                <!-- Información actual -->
+                <div class="seccion-info">
+                    <h3>📋 Información Actual</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>ID:</label>
+                            <span id="edit_producto_id">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Nombre leído (OCR):</label>
+                            <span id="edit_nombre_actual" style="color: #e74c3c;">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Código EAN:</label>
+                            <span id="edit_ean_actual">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Precio Promedio:</label>
+                            <span id="edit_precio_actual">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Veces Reportado:</label>
+                            <span id="edit_reportes">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Establecimientos donde se vio -->
+                    <div class="establecimientos-info" id="edit_establecimientos_info">
+                        <h4>🏪 Visto en:</h4>
+                        <div id="edit_establecimientos_lista"></div>
+                    </div>
+                </div>
+
+                <!-- Sugerencia de API (si está disponible) -->
+                <div class="seccion-sugerencia" id="seccion_sugerencia_api" style="display: none;">
+                    <h3>🌐 Sugerencia de OpenFoodFacts</h3>
+                    <div class="sugerencia-card">
+                        <img id="sugerencia_imagen" src="" alt="Imagen producto"
+                            style="max-width: 150px; display: none;">
+                        <div class="sugerencia-datos">
+                            <p><strong>Nombre:</strong> <span id="sugerencia_nombre">-</span></p>
+                            <p><strong>Marca:</strong> <span id="sugerencia_marca">-</span></p>
+                            <p><strong>Categorías:</strong> <span id="sugerencia_categorias">-</span></p>
+                        </div>
+                        <button class="btn-usar-sugerencia" onclick="usarSugerenciaAPI()">
+                            ✅ Usar esta información
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Formulario de edición -->
+                <div class="seccion-edicion">
+                    <h3>✏️ Corrección Manual</h3>
+
+                    <div class="form-group">
+                        <label for="edit_nombre_completo">Nombre Completo: *</label>
+                        <input type="text" id="edit_nombre_completo" placeholder="Ej: Carne Molida de Res Premium 500g"
+                            class="input-edicion">
+                        <small>Escribe el nombre completo del producto</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit_codigo_ean">Código EAN/Barras:</label>
+                        <div class="input-with-button">
+                            <input type="text" id="edit_codigo_ean" placeholder="7702461120013" class="input-edicion">
+                            <button class="btn-consultar-api" onclick="consultarAPI()">
+                                🌐 Consultar API
+                            </button>
+                        </div>
+                        <small>Si el OCR lo leyó mal, corrígelo aquí</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit_marca">Marca:</label>
+                            <input type="text" id="edit_marca" placeholder="Ej: Zenú, Alpina, etc"
+                                class="input-edicion">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="edit_categoria">Categoría:</label>
+                            <select id="edit_categoria" class="input-edicion">
+                                <option value="">Seleccionar...</option>
+                                <option value="carnes">Carnes</option>
+                                <option value="lacteos">Lácteos</option>
+                                <option value="frutas_verduras">Frutas y Verduras</option>
+                                <option value="panaderia">Panadería</option>
+                                <option value="bebidas">Bebidas</option>
+                                <option value="aseo">Aseo</option>
+                                <option value="despensa">Despensa</option>
+                                <option value="snacks">Snacks</option>
+                                <option value="congelados">Congelados</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit_razon">Razón de la corrección:</label>
+                        <textarea id="edit_razon"
+                            placeholder="Ej: OCR truncó el nombre, solo leyó 'Molida de re' en lugar de 'Carne Molida de Res'"
+                            class="input-edicion" rows="3"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="cerrarModalEdicion()">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarCorreccion()">💾 Guardar Corrección</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_URL = window.location.origin;
         let gruposActuales = [];
         let consolidacionPendiente = null;
+        let productoActualEdicion = null;
+        let sugerenciaAPIActual = null;
 
         console.log('🔧 Consolidación de Productos - Inicializado');
         console.log('API URL:', API_URL);
@@ -668,6 +1043,9 @@
                                     <span class="badge badge-info">${producto.veces_reportado || 0}x reportado</span>
                                 </div>
                             </div>
+                            <button class="btn-editar-producto" onclick="event.stopPropagation(); abrirModalEdicion(${producto.id})">
+                                ✏️ Editar
+                            </button>
                         </div>
                     `;
                 });
@@ -859,6 +1237,203 @@
         }
 
         // ==========================================
+        // MODAL DE EDICIÓN DE PRODUCTO
+        // ==========================================
+        async function abrirModalEdicion(productoId) {
+            try {
+                console.log(`📝 Abriendo editor para producto #${productoId}`);
+
+                // Mostrar modal
+                document.getElementById('modalEdicionProducto').classList.add('active');
+
+                // Obtener detalles del producto
+                const response = await fetch(`${API_URL}/admin/productos/${productoId}/detalle`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    alert('Error al cargar producto');
+                    cerrarModalEdicion();
+                    return;
+                }
+
+                productoActualEdicion = data.producto;
+
+                // Llenar información actual
+                document.getElementById('edit_producto_id').textContent = `#${data.producto.id}`;
+                document.getElementById('edit_nombre_actual').textContent = data.producto.nombre || 'Sin nombre';
+                document.getElementById('edit_ean_actual').textContent = data.producto.codigo_ean || 'Sin EAN';
+                document.getElementById('edit_precio_actual').textContent = `$${formatearNumero(data.producto.precio_promedio)}`;
+                document.getElementById('edit_reportes').textContent = `${data.producto.total_reportes}x`;
+
+                // Mostrar establecimientos
+                const establecimientosDiv = document.getElementById('edit_establecimientos_lista');
+                establecimientosDiv.innerHTML = '';
+
+                for (const [est, precios] of Object.entries(data.producto.precios_por_establecimiento)) {
+                    const tag = document.createElement('div');
+                    tag.className = 'establecimiento-tag';
+                    tag.innerHTML = `
+                        <span>🏪 ${est}</span>
+                        <span class="establecimiento-precio">$${formatearNumero(precios[0].precio)}</span>
+                    `;
+                    establecimientosDiv.appendChild(tag);
+                }
+
+                // Prellenar formulario
+                document.getElementById('edit_nombre_completo').value = data.producto.nombre || '';
+                document.getElementById('edit_codigo_ean').value = data.producto.codigo_ean || '';
+                document.getElementById('edit_marca').value = data.producto.marca || '';
+                document.getElementById('edit_categoria').value = data.producto.categoria || '';
+                document.getElementById('edit_razon').value = '';
+
+                // Ocultar sugerencia API inicialmente
+                document.getElementById('seccion_sugerencia_api').style.display = 'none';
+
+                // Si tiene EAN, consultar API automáticamente
+                if (data.producto.codigo_ean) {
+                    consultarAPI();
+                }
+
+            } catch (error) {
+                console.error('Error abriendo modal:', error);
+                alert('Error al abrir editor');
+                cerrarModalEdicion();
+            }
+        }
+
+        function cerrarModalEdicion() {
+            document.getElementById('modalEdicionProducto').classList.remove('active');
+            productoActualEdicion = null;
+            sugerenciaAPIActual = null;
+        }
+
+        async function consultarAPI() {
+            const ean = document.getElementById('edit_codigo_ean').value.trim();
+
+            if (!ean) {
+                alert('Ingresa un código EAN primero');
+                return;
+            }
+
+            try {
+                console.log(`🌐 Consultando API para EAN: ${ean}`);
+
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = '⏳ Consultando...';
+
+                const response = await fetch(`${API_URL}/admin/productos/consultar-api?codigo_ean=${ean}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                btn.disabled = false;
+                btn.textContent = '🌐 Consultar API';
+
+                if (data.success && data.sugerencia) {
+                    sugerenciaAPIActual = data.sugerencia;
+
+                    // Mostrar sección de sugerencia
+                    document.getElementById('seccion_sugerencia_api').style.display = 'block';
+                    document.getElementById('sugerencia_nombre').textContent = data.sugerencia.nombre_completo;
+                    document.getElementById('sugerencia_marca').textContent = data.sugerencia.marca;
+                    document.getElementById('sugerencia_categorias').textContent = data.sugerencia.categorias.join(', ') || 'N/A';
+
+                    // Mostrar imagen si existe
+                    if (data.sugerencia.imagen_url) {
+                        document.getElementById('sugerencia_imagen').src = data.sugerencia.imagen_url;
+                        document.getElementById('sugerencia_imagen').style.display = 'block';
+                    }
+
+                    console.log('✅ Sugerencia obtenida:', data.sugerencia);
+                } else {
+                    alert('❌ Producto no encontrado en OpenFoodFacts');
+                    document.getElementById('seccion_sugerencia_api').style.display = 'none';
+                }
+
+            } catch (error) {
+                console.error('Error consultando API:', error);
+                alert('Error al consultar API');
+
+                const btn = event.target;
+                btn.disabled = false;
+                btn.textContent = '🌐 Consultar API';
+            }
+        }
+
+        function usarSugerenciaAPI() {
+            if (!sugerenciaAPIActual) return;
+
+            document.getElementById('edit_nombre_completo').value = sugerenciaAPIActual.nombre_completo;
+            document.getElementById('edit_marca').value = sugerenciaAPIActual.marca;
+
+            // Intentar mapear categoría
+            const categoria = sugerenciaAPIActual.categorias[0] || '';
+            if (categoria.includes('carne') || categoria.includes('meat')) {
+                document.getElementById('edit_categoria').value = 'carnes';
+            } else if (categoria.includes('dairy') || categoria.includes('lacteo')) {
+                document.getElementById('edit_categoria').value = 'lacteos';
+            }
+
+            alert('✅ Información de la API aplicada. Revisa y guarda.');
+        }
+
+        async function guardarCorreccion() {
+            if (!productoActualEdicion) return;
+
+            const nombre = document.getElementById('edit_nombre_completo').value.trim();
+            const ean = document.getElementById('edit_codigo_ean').value.trim();
+            const marca = document.getElementById('edit_marca').value.trim();
+            const categoria = document.getElementById('edit_categoria').value;
+            const razon = document.getElementById('edit_razon').value.trim();
+
+            if (!nombre) {
+                alert('El nombre es obligatorio');
+                return;
+            }
+
+            try {
+                console.log(`💾 Guardando corrección para producto #${productoActualEdicion.id}`);
+
+                const response = await fetch(`${API_URL}/admin/productos/${productoActualEdicion.id}/corregir`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        nombre_completo: nombre,
+                        codigo_ean: ean || null,
+                        marca: marca || null,
+                        categoria: categoria || null,
+                        razon_correccion: razon
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ Producto actualizado correctamente');
+                    cerrarModalEdicion();
+
+                    // Recargar búsqueda si hay una activa
+                    const nombreBusqueda = document.getElementById('search-nombre').value;
+                    const eanBusqueda = document.getElementById('search-ean').value;
+
+                    if (nombreBusqueda || eanBusqueda) {
+                        buscarDuplicados();
+                    }
+                } else {
+                    alert(`❌ Error: ${data.message}`);
+                }
+
+            } catch (error) {
+                console.error('Error guardando corrección:', error);
+                alert('Error al guardar corrección');
+            }
+        }
+
+        // ==========================================
         // FUNCIONES AUXILIARES
         // ==========================================
         function mostrarAlerta(mensaje, tipo) {
@@ -907,10 +1482,24 @@
             }
         });
 
-        // Cerrar modal al hacer clic fuera
+        // Cerrar modales al hacer clic fuera
         document.getElementById('modal-confirmacion').addEventListener('click', (e) => {
             if (e.target.id === 'modal-confirmacion') {
                 cerrarModal();
+            }
+        });
+
+        document.getElementById('modalEdicionProducto').addEventListener('click', (e) => {
+            if (e.target.id === 'modalEdicionProducto') {
+                cerrarModalEdicion();
+            }
+        });
+
+        // Cerrar modales con ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                cerrarModal();
+                cerrarModalEdicion();
             }
         });
 
