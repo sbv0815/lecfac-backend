@@ -1817,6 +1817,352 @@ async def detectar_productos_duplicados_sospechosos(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+# ==========================================
+# 🆕 ENDPOINTS PARA CORRECCIÓN MANUAL
+# ==========================================
+
+from pydantic import BaseModel
+
+class ProductoCorreccion(BaseModel):
+    """Modelo para corrección manual de producto"""
+    nombre_completo: Optional[str] = None
+    codigo_ean: Optional[str] = None
+    marca: Optional[str] = None
+    categoria: Optional[str] = None
+    subcategoria: Optional[str] = None
+    es_ean_valido: Optional[bool] = None
+    razon_correccion: Optional[str] = None
+
+
+@router.get("/productos/{producto_id}/detalle")
+async def obtener_detalle_producto(producto_id: int):
+    """
+    Obtiene información detallada de un producto para revisión/corrección
+
+    Incluye:
+    - Datos del producto
+    - Establecimientos donde se ha visto
+    - Precios históricos
+    - Facturas asociadas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+        # Obtener datos del producto
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT
+                    id,
+                    codigo_ean,
+                    nombre_normalizado,
+                    marca,
+                    categoria,
+                    subcategoria,
+                    precio_promedio_global,
+                    precio_minimo_historico,
+                    precio_maximo_historico,
+                    total_reportes
+                FROM productos_maestros
+                WHERE id = %s
+            """, (producto_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    id,
+                    codigo_ean,
+                    nombre_normalizado,
+                    marca,
+                    categoria,
+                    subcategoria,
+                    precio_promedio_global,
+                    precio_minimo_historico,
+                    precio_maximo_historico,
+                    total_reportes
+                FROM productos_maestros
+                WHERE id = ?
+            """, (producto_id,))
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Obtener establecimientos y precios
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT DISTINCT
+                    COALESCE(e.nombre_normalizado, f.establecimiento, 'Desconocido') as establecimiento,
+                    pp.precio,
+                    pp.fecha_registro
+                FROM precios_productos pp
+                LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+                LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pp.producto_maestro_id
+                LEFT JOIN facturas f ON f.id = if2.factura_id
+                WHERE pp.producto_maestro_id = %s
+                ORDER BY pp.fecha_registro DESC
+                LIMIT 10
+            """, (producto_id,))
+        else:
+            cursor.execute("""
+                SELECT DISTINCT
+                    COALESCE(e.nombre_normalizado, f.establecimiento, 'Desconocido') as establecimiento,
+                    pp.precio,
+                    pp.fecha_registro
+                FROM precios_productos pp
+                LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+                LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pp.producto_maestro_id
+                LEFT JOIN facturas f ON f.id = if2.factura_id
+                WHERE pp.producto_maestro_id = ?
+                ORDER BY pp.fecha_registro DESC
+                LIMIT 10
+            """, (producto_id,))
+
+        precios_por_establecimiento = {}
+        for row in cursor.fetchall():
+            est = row[0]
+            precio = int(row[1]) if row[1] else 0
+            fecha = str(row[2]) if row[2] else ""
+
+            if est not in precios_por_establecimiento:
+                precios_por_establecimiento[est] = []
+
+            precios_por_establecimiento[est].append({
+                "precio": precio,
+                "fecha": fecha
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "producto": {
+                "id": producto[0],
+                "codigo_ean": producto[1],
+                "nombre": producto[2],
+                "marca": producto[3],
+                "categoria": producto[4],
+                "subcategoria": producto[5],
+                "precio_promedio": int(producto[6]) if producto[6] else 0,
+                "precio_minimo": int(producto[7]) if producto[7] else 0,
+                "precio_maximo": int(producto[8]) if producto[8] else 0,
+                "total_reportes": producto[9] or 0,
+                "precios_por_establecimiento": precios_por_establecimiento
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/productos/{producto_id}/corregir")
+async def corregir_producto(producto_id: int, data: ProductoCorreccion):
+    """
+    Corrige/actualiza información de un producto
+
+    Casos de uso:
+    - Completar nombre truncado por OCR
+    - Corregir código EAN mal leído
+    - Agregar marca/categoría faltante
+    - Marcar EAN como inválido
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+        print(f"📝 Corrigiendo producto {producto_id}...")
+        print(f"   Datos recibidos: {data.dict()}")
+
+        # Obtener datos actuales para auditoría
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT nombre_normalizado, codigo_ean, marca, categoria, subcategoria
+                FROM productos_maestros
+                WHERE id = %s
+            """, (producto_id,))
+        else:
+            cursor.execute("""
+                SELECT nombre_normalizado, codigo_ean, marca, categoria, subcategoria
+                FROM productos_maestros
+                WHERE id = ?
+            """, (producto_id,))
+
+        datos_anteriores = cursor.fetchone()
+
+        if not datos_anteriores:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Construir UPDATE dinámico
+        updates = []
+        values = []
+
+        if data.nombre_completo is not None:
+            updates.append("nombre_normalizado = " + ("%s" if database_type == "postgresql" else "?"))
+            values.append(data.nombre_completo)
+
+        if data.codigo_ean is not None:
+            updates.append("codigo_ean = " + ("%s" if database_type == "postgresql" else "?"))
+            values.append(data.codigo_ean)
+
+        if data.marca is not None:
+            updates.append("marca = " + ("%s" if database_type == "postgresql" else "?"))
+            values.append(data.marca)
+
+        if data.categoria is not None:
+            updates.append("categoria = " + ("%s" if database_type == "postgresql" else "?"))
+            values.append(data.categoria)
+
+        if data.subcategoria is not None:
+            updates.append("subcategoria = " + ("%s" if database_type == "postgresql" else "?"))
+            values.append(data.subcategoria)
+
+        if not updates:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+
+        # Agregar timestamp
+        updates.append("ultima_actualizacion = " + ("CURRENT_TIMESTAMP" if database_type == "postgresql" else "CURRENT_TIMESTAMP"))
+
+        # Agregar producto_id al final
+        values.append(producto_id)
+
+        query = f"""
+            UPDATE productos_maestros
+            SET {', '.join(updates)}
+            WHERE id = {'%s' if database_type == 'postgresql' else '?'}
+        """
+
+        cursor.execute(query, values)
+        conn.commit()
+
+        print(f"✅ Producto {producto_id} actualizado")
+        print(f"   Nombre: {datos_anteriores[0]} → {data.nombre_completo or datos_anteriores[0]}")
+        print(f"   EAN: {datos_anteriores[1]} → {data.codigo_ean or datos_anteriores[1]}")
+
+        # TODO: Registrar en auditoría
+        # registrar_auditoria(
+        #     usuario_id=1,  # Aquí debería venir del token JWT
+        #     producto_maestro_id=producto_id,
+        #     accion='actualizar',
+        #     datos_anteriores={...},
+        #     datos_nuevos={...},
+        #     razon=data.razon_correccion
+        # )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "message": "Producto actualizado correctamente",
+            "cambios_aplicados": {
+                "nombre": data.nombre_completo,
+                "ean": data.codigo_ean,
+                "marca": data.marca,
+                "categoria": data.categoria
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/productos/consultar-api")
+async def consultar_api_producto(codigo_ean: str):
+    """
+    Consulta información de un producto en OpenFoodFacts
+
+    Retorna:
+    - Nombre completo del producto
+    - Marca
+    - Categorías
+    - Imagen
+    - Información nutricional (si está disponible)
+    """
+    try:
+        import requests
+
+        print(f"🌐 Consultando OpenFoodFacts para EAN: {codigo_ean}")
+
+        # API de OpenFoodFacts
+        url = f"https://world.openfoodfacts.org/api/v2/product/{codigo_ean}.json"
+
+        response = requests.get(url, timeout=5)
+
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "message": "Producto no encontrado en OpenFoodFacts",
+                "sugerencia": None
+            }
+
+        data = response.json()
+
+        if data.get("status") != 1:
+            return {
+                "success": False,
+                "message": "Producto no encontrado en OpenFoodFacts",
+                "sugerencia": None
+            }
+
+        product = data.get("product", {})
+
+        # Extraer información relevante
+        nombre = product.get("product_name_es") or product.get("product_name") or "No disponible"
+        marca = product.get("brands") or "No disponible"
+        categorias = product.get("categories_tags", [])
+        imagen_url = product.get("image_url")
+
+        print(f"✅ Producto encontrado: {nombre}")
+
+        return {
+            "success": True,
+            "sugerencia": {
+                "nombre_completo": nombre,
+                "marca": marca,
+                "categorias": categorias,
+                "imagen_url": imagen_url,
+                "fuente": "OpenFoodFacts"
+            }
+        }
+
+    except requests.Timeout:
+        return {
+            "success": False,
+            "message": "Timeout al consultar API",
+            "sugerencia": None
+        }
+    except Exception as e:
+        print(f"❌ Error consultando API: {e}")
+        return {
+            "success": False,
+            "message": f"Error: {str(e)}",
+            "sugerencia": None
+        }
+
+
+# ==========================================
+# FIN DE ENDPOINTS DE CORRECCIÓN MANUAL
+# ==========================================
+
 @router.post("/productos/consolidar")
 async def consolidar_productos(data: ConsolidacionRequest):
     """
