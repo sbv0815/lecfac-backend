@@ -1294,3 +1294,622 @@ async def obtener_imagen_factura(factura_id: int):
 
 print("✅ Rutas de inventario para admin agregadas correctamente")
 print("✅ Rutas del editor de facturas agregadas correctamente")
+
+class ConsolidacionRequest(BaseModel):
+    """Modelo para solicitud de consolidación"""
+    producto_maestro_id: int
+    productos_duplicados_ids: List[int]
+
+
+@router.get("/productos/duplicados-sospechosos")
+async def detectar_productos_duplicados_sospechosos(
+    ean: Optional[str] = None,
+    nombre: Optional[str] = None
+):
+    """
+    Detectar grupos de productos potencialmente duplicados
+    - Por código EAN repetido
+    - Por similitud de nombre (>75%)
+
+    Usado por consolidacion.html para mostrar productos que necesitan revisión
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+        grupos_duplicados = []
+
+        # =====================================
+        # 1. BUSCAR POR EAN DUPLICADO
+        # =====================================
+        if ean:
+            print(f"🔍 Buscando productos con EAN: {ean}")
+
+            if database_type == "postgresql":
+                cursor.execute(
+                    """
+                    SELECT
+                        pm.id,
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pm.marca,
+                        pm.precio_promedio_global,
+                        pm.total_reportes,
+                        STRING_AGG(DISTINCT pp.establecimiento, ', ') as establecimientos
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE pm.codigo_ean = %s
+                    GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
+                             pm.precio_promedio_global, pm.total_reportes
+                    ORDER BY pm.total_reportes DESC
+                """,
+                    (ean,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        pm.id,
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pm.marca,
+                        pm.precio_promedio_global,
+                        pm.total_reportes,
+                        GROUP_CONCAT(DISTINCT pp.establecimiento) as establecimientos
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE pm.codigo_ean = ?
+                    GROUP BY pm.id
+                    ORDER BY pm.total_reportes DESC
+                """,
+                    (ean,),
+                )
+
+            productos = cursor.fetchall()
+
+            if len(productos) > 1:
+                grupo = {
+                    "nombre_grupo": f"Productos con EAN {ean}",
+                    "tipo": "ean_duplicado",
+                    "similitud": 100,
+                    "productos": []
+                }
+
+                for prod in productos:
+                    grupo["productos"].append({
+                        "id": prod[0],
+                        "nombre": prod[1] or "Sin nombre",
+                        "codigo_ean": prod[2],
+                        "marca": prod[3],
+                        "precio_promedio": int(prod[4]) if prod[4] else 0,
+                        "veces_reportado": prod[5] or 0,
+                        "establecimiento": prod[6] or "Varios"
+                    })
+
+                grupos_duplicados.append(grupo)
+
+        # =====================================
+        # 2. BUSCAR POR NOMBRE SIMILAR
+        # =====================================
+        elif nombre:
+            print(f"🔍 Buscando productos similares a: {nombre}")
+
+            # Obtener todos los productos que contengan palabras clave del nombre
+            palabras = nombre.lower().split()
+
+            if database_type == "postgresql":
+                # PostgreSQL: usar ILIKE con OR para cada palabra
+                condiciones = " OR ".join([f"LOWER(pm.nombre_normalizado) LIKE %s" for _ in palabras])
+                params = [f"%{p}%" for p in palabras]
+
+                cursor.execute(
+                    f"""
+                    SELECT
+                        pm.id,
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pm.marca,
+                        pm.precio_promedio_global,
+                        pm.total_reportes,
+                        STRING_AGG(DISTINCT pp.establecimiento, ', ') as establecimientos
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE {condiciones}
+                    GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
+                             pm.precio_promedio_global, pm.total_reportes
+                    ORDER BY pm.total_reportes DESC
+                    LIMIT 50
+                """,
+                    params,
+                )
+            else:
+                # SQLite: usar LIKE con OR
+                condiciones = " OR ".join([f"LOWER(pm.nombre_normalizado) LIKE ?" for _ in palabras])
+                params = [f"%{p}%" for p in palabras]
+
+                cursor.execute(
+                    f"""
+                    SELECT
+                        pm.id,
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pm.marca,
+                        pm.precio_promedio_global,
+                        pm.total_reportes,
+                        GROUP_CONCAT(DISTINCT pp.establecimiento) as establecimientos
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE {condiciones}
+                    GROUP BY pm.id
+                    ORDER BY pm.total_reportes DESC
+                    LIMIT 50
+                """,
+                    params,
+                )
+
+            productos = cursor.fetchall()
+
+            # Agrupar por similitud
+            productos_procesados = set()
+
+            for i, prod1 in enumerate(productos):
+                if prod1[0] in productos_procesados:
+                    continue
+
+                grupo = {
+                    "nombre_grupo": prod1[1],
+                    "tipo": "similitud",
+                    "productos": [{
+                        "id": prod1[0],
+                        "nombre": prod1[1] or "Sin nombre",
+                        "codigo_ean": prod1[2],
+                        "marca": prod1[3],
+                        "precio_promedio": int(prod1[4]) if prod1[4] else 0,
+                        "veces_reportado": prod1[5] or 0,
+                        "establecimiento": prod1[6] or "Varios"
+                    }]
+                }
+
+                productos_procesados.add(prod1[0])
+
+                # Buscar productos similares
+                for prod2 in productos[i + 1:]:
+                    if prod2[0] in productos_procesados:
+                        continue
+
+                    similitud = SequenceMatcher(
+                        None,
+                        prod1[1].lower() if prod1[1] else "",
+                        prod2[1].lower() if prod2[1] else ""
+                    ).ratio()
+
+                    if similitud > 0.75:  # 75% de similitud
+                        grupo["productos"].append({
+                            "id": prod2[0],
+                            "nombre": prod2[1] or "Sin nombre",
+                            "codigo_ean": prod2[2],
+                            "marca": prod2[3],
+                            "precio_promedio": int(prod2[4]) if prod2[4] else 0,
+                            "veces_reportado": prod2[5] or 0,
+                            "establecimiento": prod2[6] or "Varios"
+                        })
+                        productos_procesados.add(prod2[0])
+
+                if len(grupo["productos"]) > 1:
+                    grupo["similitud"] = int(similitud * 100)
+                    grupos_duplicados.append(grupo)
+
+        # =====================================
+        # 3. BUSCAR TODOS LOS DUPLICADOS (sin filtros)
+        # =====================================
+        else:
+            print("🔍 Buscando todos los duplicados sospechosos...")
+
+            # A. Productos con mismo EAN
+            if database_type == "postgresql":
+                cursor.execute(
+                    """
+                    SELECT codigo_ean, COUNT(*) as cantidad
+                    FROM productos_maestros
+                    WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+                    GROUP BY codigo_ean
+                    HAVING COUNT(*) > 1
+                    ORDER BY cantidad DESC
+                    LIMIT 20
+                """
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT codigo_ean, COUNT(*) as cantidad
+                    FROM productos_maestros
+                    WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+                    GROUP BY codigo_ean
+                    HAVING COUNT(*) > 1
+                    ORDER BY cantidad DESC
+                    LIMIT 20
+                """
+                )
+
+            eans_duplicados = cursor.fetchall()
+
+            for ean_row in eans_duplicados:
+                ean_dup = ean_row[0]
+
+                if database_type == "postgresql":
+                    cursor.execute(
+                        """
+                        SELECT
+                            pm.id,
+                            pm.nombre_normalizado,
+                            pm.codigo_ean,
+                            pm.marca,
+                            pm.precio_promedio_global,
+                            pm.total_reportes,
+                            STRING_AGG(DISTINCT pp.establecimiento, ', ') as establecimientos
+                        FROM productos_maestros pm
+                        LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                        WHERE pm.codigo_ean = %s
+                        GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
+                                 pm.precio_promedio_global, pm.total_reportes
+                        ORDER BY pm.total_reportes DESC
+                    """,
+                        (ean_dup,),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT
+                            pm.id,
+                            pm.nombre_normalizado,
+                            pm.codigo_ean,
+                            pm.marca,
+                            pm.precio_promedio_global,
+                            pm.total_reportes,
+                            GROUP_CONCAT(DISTINCT pp.establecimiento) as establecimientos
+                        FROM productos_maestros pm
+                        LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                        WHERE pm.codigo_ean = ?
+                        GROUP BY pm.id
+                        ORDER BY pm.total_reportes DESC
+                    """,
+                        (ean_dup,),
+                    )
+
+                productos_ean = cursor.fetchall()
+
+                if len(productos_ean) > 1:
+                    grupo = {
+                        "nombre_grupo": f"Productos con EAN {ean_dup}",
+                        "tipo": "ean_duplicado",
+                        "similitud": 100,
+                        "productos": []
+                    }
+
+                    for prod in productos_ean:
+                        grupo["productos"].append({
+                            "id": prod[0],
+                            "nombre": prod[1] or "Sin nombre",
+                            "codigo_ean": prod[2],
+                            "marca": prod[3],
+                            "precio_promedio": int(prod[4]) if prod[4] else 0,
+                            "veces_reportado": prod[5] or 0,
+                            "establecimiento": prod[6] or "Varios"
+                        })
+
+                    grupos_duplicados.append(grupo)
+
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Encontrados {len(grupos_duplicados)} grupos de duplicados")
+
+        return {
+            "success": True,
+            "grupos": grupos_duplicados,
+            "total_grupos": len(grupos_duplicados)
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/productos/consolidar")
+async def consolidar_productos(data: ConsolidacionRequest):
+    """
+    Consolidar productos duplicados en el sistema canónico
+
+    Proceso:
+    1. Crea/actualiza producto_canonico con datos del producto maestro
+    2. Crea productos_variantes para cada producto (maestro + duplicados)
+    3. Migra precios_productos manteniendo establecimiento/fecha/precio
+    4. Actualiza items_factura para apuntar al canónico
+    5. NO elimina productos_maestros originales (para historial)
+
+    Usado por consolidacion.html
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+        producto_maestro_id = data.producto_maestro_id
+        productos_duplicados_ids = data.productos_duplicados_ids
+
+        print(f"🔧 Consolidando productos...")
+        print(f"   Maestro: {producto_maestro_id}")
+        print(f"   Duplicados: {productos_duplicados_ids}")
+
+        # =====================================
+        # 1. OBTENER INFO DEL PRODUCTO MAESTRO
+        # =====================================
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT nombre_normalizado, codigo_ean, marca, categoria
+                FROM productos_maestros
+                WHERE id = %s
+            """,
+                (producto_maestro_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT nombre_normalizado, codigo_ean, marca, categoria
+                FROM productos_maestros
+                WHERE id = ?
+            """,
+                (producto_maestro_id,),
+            )
+
+        maestro = cursor.fetchone()
+
+        if not maestro:
+            raise HTTPException(status_code=404, detail="Producto maestro no encontrado")
+
+        nombre_oficial = maestro[0]
+        ean_principal = maestro[1]
+        marca = maestro[2]
+        categoria = maestro[3]
+
+        # =====================================
+        # 2. CREAR/ACTUALIZAR PRODUCTO CANÓNICO
+        # =====================================
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                INSERT INTO productos_canonicos
+                    (nombre_oficial, ean_principal, marca, categoria, nombre_normalizado)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+            """,
+                (nombre_oficial, ean_principal, marca, categoria, nombre_oficial),
+            )
+            producto_canonico_id = cursor.fetchone()[0]
+        else:
+            cursor.execute(
+                """
+                INSERT INTO productos_canonicos
+                    (nombre_oficial, ean_principal, marca, categoria, nombre_normalizado)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+                (nombre_oficial, ean_principal, marca, categoria, nombre_oficial),
+            )
+            producto_canonico_id = cursor.lastrowid
+
+        print(f"✅ Producto canónico creado: ID {producto_canonico_id}")
+
+        # =====================================
+        # 3. CREAR VARIANTES PARA TODOS LOS PRODUCTOS
+        # =====================================
+        todos_los_productos = [producto_maestro_id] + productos_duplicados_ids
+        variantes_creadas = 0
+
+        for prod_id in todos_los_productos:
+            # Obtener info del producto y sus precios por establecimiento
+            if database_type == "postgresql":
+                cursor.execute(
+                    """
+                    SELECT DISTINCT
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pp.establecimiento,
+                        pp.precio,
+                        pp.fecha
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE pm.id = %s
+                """,
+                    (prod_id,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT DISTINCT
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pp.establecimiento,
+                        pp.precio,
+                        pp.fecha
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE pm.id = ?
+                """,
+                    (prod_id,),
+                )
+
+            registros = cursor.fetchall()
+
+            if not registros or len(registros) == 0:
+                # Producto sin precios registrados, crear variante genérica
+                if database_type == "postgresql":
+                    cursor.execute(
+                        """
+                        SELECT nombre_normalizado, codigo_ean
+                        FROM productos_maestros
+                        WHERE id = %s
+                    """,
+                        (prod_id,),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT nombre_normalizado, codigo_ean
+                        FROM productos_maestros
+                        WHERE id = ?
+                    """,
+                        (prod_id,),
+                    )
+
+                prod_info = cursor.fetchone()
+
+                if prod_info:
+                    if database_type == "postgresql":
+                        cursor.execute(
+                            """
+                            INSERT INTO productos_variantes
+                                (producto_canonico_id, codigo, tipo_codigo, nombre_en_recibo,
+                                 establecimiento, veces_reportado)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (codigo, establecimiento) DO NOTHING
+                        """,
+                            (producto_canonico_id, prod_info[1], "EAN" if prod_info[1] else "PLU",
+                             prod_info[0], "Varios", 1),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT OR IGNORE INTO productos_variantes
+                                (producto_canonico_id, codigo, tipo_codigo, nombre_en_recibo,
+                                 establecimiento, veces_reportado)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                            (producto_canonico_id, prod_info[1], "EAN" if prod_info[1] else "PLU",
+                             prod_info[0], "Varios", 1),
+                        )
+
+                    variantes_creadas += 1
+            else:
+                # Crear variante por cada establecimiento
+                for registro in registros:
+                    nombre_variante = registro[0]
+                    codigo = registro[1]
+                    establecimiento = registro[2] or "Varios"
+                    precio = registro[3]
+                    fecha = registro[4]
+
+                    # Crear variante
+                    if database_type == "postgresql":
+                        cursor.execute(
+                            """
+                            INSERT INTO productos_variantes
+                                (producto_canonico_id, codigo, tipo_codigo, nombre_en_recibo,
+                                 establecimiento, veces_reportado)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (codigo, establecimiento) DO UPDATE
+                            SET veces_reportado = productos_variantes.veces_reportado + 1
+                            RETURNING id
+                        """,
+                            (producto_canonico_id, codigo, "EAN" if codigo else "PLU",
+                             nombre_variante, establecimiento, 1),
+                        )
+                        variante_id = cursor.fetchone()[0]
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT OR IGNORE INTO productos_variantes
+                                (producto_canonico_id, codigo, tipo_codigo, nombre_en_recibo,
+                                 establecimiento, veces_reportado)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                            (producto_canonico_id, codigo, "EAN" if codigo else "PLU",
+                             nombre_variante, establecimiento, 1),
+                        )
+                        variante_id = cursor.lastrowid
+
+                    variantes_creadas += 1
+
+                    # Migrar precio (manteniendo fecha/establecimiento/precio originales)
+                    if precio and fecha:
+                        if database_type == "postgresql":
+                            cursor.execute(
+                                """
+                                INSERT INTO precios_productos
+                                    (producto_canonico_id, variante_id, establecimiento,
+                                     precio, fecha, usuario_id)
+                                VALUES (%s, %s, %s, %s, %s,
+                                    (SELECT usuario_id FROM precios_productos
+                                     WHERE producto_maestro_id = %s LIMIT 1))
+                                ON CONFLICT (producto_canonico_id, establecimiento, fecha)
+                                DO NOTHING
+                            """,
+                                (producto_canonico_id, variante_id, establecimiento,
+                                 precio, fecha, prod_id),
+                            )
+                        else:
+                            cursor.execute(
+                                """
+                                INSERT OR IGNORE INTO precios_productos
+                                    (producto_canonico_id, variante_id, establecimiento,
+                                     precio, fecha, usuario_id)
+                                VALUES (?, ?, ?, ?, ?,
+                                    (SELECT usuario_id FROM precios_productos
+                                     WHERE producto_maestro_id = ? LIMIT 1))
+                            """,
+                                (producto_canonico_id, variante_id, establecimiento,
+                                 precio, fecha, prod_id),
+                            )
+
+        print(f"✅ {variantes_creadas} variantes creadas")
+
+        # =====================================
+        # 4. ACTUALIZAR ITEMS_FACTURA
+        # =====================================
+        for prod_id in todos_los_productos:
+            if database_type == "postgresql":
+                cursor.execute(
+                    """
+                    UPDATE items_factura
+                    SET producto_canonico_id = %s
+                    WHERE producto_maestro_id = %s
+                """,
+                    (producto_canonico_id, prod_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE items_factura
+                    SET producto_canonico_id = ?
+                    WHERE producto_maestro_id = ?
+                """,
+                    (producto_canonico_id, prod_id),
+                )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Consolidación completada")
+
+        return {
+            "success": True,
+            "message": "Productos consolidados exitosamente",
+            "producto_canonico_id": producto_canonico_id,
+            "variantes_creadas": variantes_creadas,
+            "productos_procesados": len(todos_los_productos)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# FIN DE ENDPOINTS DE CONSOLIDACIÓN
+# ==========================================

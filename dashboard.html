@@ -497,6 +497,36 @@
             <button class="tab" onclick="cambiarTab('productos')">🛒 Productos</button>
             <button class="tab" onclick="cambiarTab('duplicados')">🔍 Duplicados</button>
             <button class="tab" onclick="cambiarTab('auditoria')">🛡️ Auditoría</button>
+            <!-- En el TAB: DUPLICADOS de dashboard.html -->
+            <div id="tab-duplicados" class="tab-content">
+                <div class="section">
+                    <h2>🔍 Detección de Duplicados</h2>
+
+                    <!-- 🆕 NUEVO BOTÓN DESTACADO -->
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 20px; border-radius: 15px; margin-bottom: 20px; color: white;">
+                        <h3 style="margin-bottom: 10px;">🔧 Herramienta de Consolidación</h3>
+                        <p style="margin-bottom: 15px; opacity: 0.9;">
+                            Gestiona productos duplicados de forma visual e inteligente
+                        </p>
+                        <button class="btn btn-success" onclick="window.location.href='/consolidacion.html'"
+                            style="font-size: 1.1em;">
+                            🚀 Ir a Consolidación de Productos
+                        </button>
+                    </div>
+
+                    <!-- Botones anteriores -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <button class="btn btn-primary" onclick="buscarDuplicados()">
+                            🔎 Buscar Facturas Duplicadas
+                        </button>
+                        <button class="btn btn-warning" onclick="buscarProductosDuplicados()">
+                            🛒 Buscar Productos Duplicados
+                        </button>
+                    </div>
+                    <div id="duplicados-resultados"></div>
+                </div>
+            </div>
             <button class="tab" onclick="cambiarTab('usuarios')">👥 Usuarios</button>
         </div>
 
