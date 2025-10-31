@@ -2,8 +2,48 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from database import get_db_connection
-import Levenshtein  # pip install python-Levenshtein
 import re
+import unicodedata
+
+# Intentar importar Levenshtein, pero funcionar sin él
+try:
+    import Levenshtein
+    LEVENSHTEIN_AVAILABLE = True
+    print("✅ Levenshtein disponible - usando algoritmo avanzado")
+except ImportError:
+    LEVENSHTEIN_AVAILABLE = False
+    print("⚠️ Levenshtein no disponible - usando similitud básica")
+
+
+def calcular_similitud(texto1: str, texto2: str) -> float:
+    """
+    Calcula similitud entre dos textos
+    Usa Levenshtein si está disponible, sino usa Jaccard básico
+    """
+    if not texto1 or not texto2:
+        return 0.0
+
+    texto1 = texto1.lower().strip()
+    texto2 = texto2.lower().strip()
+
+    if texto1 == texto2:
+        return 1.0
+
+    if LEVENSHTEIN_AVAILABLE:
+        return Levenshtein.ratio(texto1, texto2)
+    else:
+        # Similitud Jaccard básica (palabras en común)
+        palabras1 = set(texto1.split())
+        palabras2 = set(texto2.split())
+
+        if not palabras1 or not palabras2:
+            return 0.0
+
+        interseccion = len(palabras1.intersection(palabras2))
+        union = len(palabras1.union(palabras2))
+
+        return interseccion / union if union > 0 else 0.0
+
 
 class ProductResolver:
     """
@@ -22,6 +62,10 @@ class ProductResolver:
             return ""
 
         nombre = nombre.lower().strip()
+
+        # Remover acentos
+        nombre = ''.join(c for c in unicodedata.normalize('NFD', nombre)
+                        if unicodedata.category(c) != 'Mn')
 
         # Remover caracteres especiales
         nombre = re.sub(r'[^\w\s]', ' ', nombre)
@@ -64,11 +108,11 @@ class ProductResolver:
         self,
         nombre: str,
         establecimiento: str,
-        threshold: float = 0.85
+        threshold: float = 0.80
     ) -> Optional[Tuple[int, float]]:
         """
         Estrategia 2: Match por similitud de nombre
-        Usa Levenshtein distance
+        Usa Levenshtein si está disponible, sino usa similitud básica
         """
         nombre_norm = self.normalizar_nombre(nombre)
 
@@ -111,7 +155,7 @@ class ProductResolver:
             canonico_id, nombre_oficial, nombre_normalizado = candidato
 
             # Calcular similitud
-            score = Levenshtein.ratio(nombre_norm, nombre_normalizado)
+            score = calcular_similitud(nombre_norm, nombre_normalizado)
 
             if score > mejor_score and score >= threshold:
                 mejor_score = score
@@ -157,7 +201,7 @@ class ProductResolver:
         canonico_id = self.cursor.fetchone()[0]
         self.conn.commit()
 
-        print(f"✅ Producto canónico creado: ID {canonico_id} - {nombre}")
+        print(f"   ✅ Producto canónico creado: ID {canonico_id} - {nombre}")
 
         return canonico_id
 
@@ -207,7 +251,7 @@ class ProductResolver:
 
         except Exception as e:
             self.conn.rollback()
-            print(f"⚠️ Error registrando variante: {e}")
+            print(f"   ⚠️ Error registrando variante: {e}")
             return None
 
     def resolver_producto(
@@ -227,14 +271,14 @@ class ProductResolver:
             accion: 'found_ean', 'found_similar', 'created_new'
         """
 
-        print(f"\n🔍 Resolviendo: {nombre} ({codigo}) en {establecimiento}")
+        print(f"\n   🔍 Resolviendo: {nombre} ({codigo}) en {establecimiento}")
 
         # ESTRATEGIA 1: Match por EAN
         if codigo and len(codigo) >= 8:
             canonico_id = self.buscar_por_ean(codigo)
 
             if canonico_id:
-                print(f"   ✅ Match por EAN → Canónico #{canonico_id}")
+                print(f"      ✅ Match por EAN → Canónico #{canonico_id}")
 
                 variante_id = self.registrar_variante(
                     canonico_id,
@@ -252,7 +296,7 @@ class ProductResolver:
 
         if resultado:
             canonico_id, score = resultado
-            print(f"   ✅ Match por nombre (score: {score:.2%}) → Canónico #{canonico_id}")
+            print(f"      ✅ Match por nombre (score: {score:.2%}) → Canónico #{canonico_id}")
 
             tipo_codigo = 'EAN' if codigo and len(codigo) >= 8 else 'PLU'
 
@@ -268,7 +312,7 @@ class ProductResolver:
             return (canonico_id, variante_id, 'found_similar')
 
         # ESTRATEGIA 3: Crear nuevo producto canónico
-        print(f"   ➕ Creando nuevo producto canónico")
+        print(f"      ➕ Creando nuevo producto canónico")
 
         canonico_id = self.crear_producto_canonico(
             nombre,
@@ -298,57 +342,5 @@ class ProductResolver:
             self.conn.close()
 
 
-# ========================================
-# FUNCIÓN DE AYUDA PARA INTEGRACIÓN
-# ========================================
-def procesar_item_con_resolucion(
-    codigo: str,
-    nombre: str,
-    precio: int,
-    establecimiento: str,
-    usuario_id: int,
-    factura_id: int
-) -> Dict:
-    """
-    Procesa un item de factura con resolución de identidad
-    """
-    resolver = ProductResolver()
-
-    try:
-        canonico_id, variante_id, accion = resolver.resolver_producto(
-            codigo=codigo,
-            nombre=nombre,
-            establecimiento=establecimiento,
-            precio=precio
-        )
-
-        # Guardar precio
-        cursor = resolver.cursor
-        cursor.execute("""
-            INSERT INTO precios_productos (
-                producto_canonico_id,
-                variante_id,
-                establecimiento,
-                precio,
-                fecha,
-                usuario_id,
-                factura_id
-            ) VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s)
-        """, (canonico_id, variante_id, establecimiento, precio, usuario_id, factura_id))
-
-        resolver.conn.commit()
-
-        return {
-            'success': True,
-            'canonico_id': canonico_id,
-            'variante_id': variante_id,
-            'accion': accion
-        }
-
-    except Exception as e:
-        print(f"❌ Error procesando item: {e}")
-        resolver.conn.rollback()
-        return {'success': False, 'error': str(e)}
-
-    finally:
-        resolver.close()
+print("✅ ProductResolver cargado - Sistema de productos canónicos")
+print(f"   Algoritmo: {'Levenshtein avanzado' if LEVENSHTEIN_AVAILABLE else 'Similitud básica (Jaccard)'}")
