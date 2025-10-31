@@ -73,7 +73,7 @@ from duplicados_routes import router as duplicados_router
 from diagnostico_routes import router as diagnostico_router
 
 # Importar procesador OCR y auditoría
-from ocr_processor import processor, ocr_queue, processing, buscar_o_crear_producto_inteligente_inline
+from ocr_processor import processor, ocr_queue, processing
 from audit_system import audit_scheduler, AuditSystem
 from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
@@ -999,33 +999,52 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
+                # ========================================
+                # ✅ NUEVO: Usar ProductResolver
+                # ========================================
                 producto_maestro_id = None
+                canonico_id = None
+                variante_id = None
+
                 if codigo_ean_valido:
                     try:
-                        producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
-                            codigo=codigo_ean_valido or "",
-                            nombre=nombre,
-                            precio=precio_unitario,
-                            establecimiento=establecimiento_raw,
-                            cursor=cursor,
-                            conn=conn
-                        )
-                        print(f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})")
-                    except Exception as e:
-                        print(f"   ⚠️ Error creando producto maestro: {e}")
+                        resolver = ProductResolver()
+                        try:
+                            canonico_id, variante_id, accion = resolver.resolver_producto(
+                                codigo=codigo_ean_valido or "",
+                                nombre=nombre,
+                                establecimiento=establecimiento_raw,
+                                precio=precio_unitario,
+                                marca=None,
+                                categoria=None
+                            )
 
+                            # Para compatibilidad con código que espera producto_maestro_id
+                            producto_maestro_id = canonico_id
+
+                            print(f"   ✅ Producto canónico: {nombre} (ID: {canonico_id}, Variante: {variante_id}, Acción: {accion})")
+
+                        finally:
+                            resolver.close()
+
+                    except Exception as e:
+                        print(f"   ⚠️ Error en ProductResolver: {e}")
+                        traceback.print_exc()
+
+                # Guardar en items_factura
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id,
+                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                         (
                             factura_id,
                             usuario_id,
                             producto_maestro_id,
+                            canonico_id,
                             codigo_ean_valido,
                             nombre,
                             precio_unitario,
@@ -1036,14 +1055,15 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id,
+                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             factura_id,
                             usuario_id,
                             producto_maestro_id,
+                            canonico_id,
                             codigo_ean_valido,
                             nombre,
                             precio_unitario,
@@ -1078,6 +1098,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
         except Exception as e:
             print(f"⚠️ Error actualizando inventario: {e}")
             traceback.print_exc()
+
         print(f"💰 Guardando precios para comparación...")
         try:
             stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
@@ -1233,40 +1254,67 @@ async def save_invoice_with_image(
                 if not nombre or precio <= 0:
                     continue
 
-                producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
-                    codigo=codigo,
-                    nombre=nombre,
-                    precio=int(precio),
-                    establecimiento=establecimiento,
-                    cursor=cursor,
-                    conn=conn
-                )
+                # ========================================
+                # ✅ NUEVO: Usar ProductResolver
+                # ========================================
+                producto_maestro_id = None
+                canonico_id = None
+                variante_id = None
 
+                try:
+                    resolver = ProductResolver()
+                    try:
+                        canonico_id, variante_id, accion = resolver.resolver_producto(
+                            codigo=codigo,
+                            nombre=nombre,
+                            establecimiento=establecimiento,
+                            precio=int(precio),
+                            marca=None,
+                            categoria=None
+                        )
+
+                        # Para compatibilidad
+                        producto_maestro_id = canonico_id
+
+                        print(f"   ✅ Producto canónico: {nombre} (ID: {canonico_id}, Variante: {variante_id}, Acción: {accion})")
+
+                    finally:
+                        resolver.close()
+
+                except Exception as e:
+                    print(f"   ⚠️ Error en ProductResolver: {e}")
+                    traceback.print_exc()
+                    continue
+
+                # Guardar en items_factura
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id,
+                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (%s, %s, %s, %s, %s, %s, 1)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
                     """,
-                        (factura_id, usuario_id, producto_maestro_id, codigo, nombre, precio),
+                        (factura_id, usuario_id, producto_maestro_id, canonico_id,
+                         codigo, nombre, precio),
                     )
                 else:
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id,
+                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                     """,
-                        (factura_id, usuario_id, producto_maestro_id, codigo, nombre, precio),
+                        (factura_id, usuario_id, producto_maestro_id, canonico_id,
+                         codigo, nombre, precio),
                     )
 
                 productos_guardados += 1
 
             except Exception as e:
                 print(f"⚠️ Error guardando producto: {e}")
+                traceback.print_exc()
                 continue
 
         print(f"✅ {productos_guardados} productos guardados")
@@ -1316,7 +1364,8 @@ async def save_invoice_with_image(
         except Exception as e:
             print(f"⚠️ Error actualizando inventario: {e}")
             traceback.print_exc()
-            print(f"💰 Guardando precios para comparación...")
+
+        print(f"💰 Guardando precios para comparación...")
         try:
             stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
             if stats.get('error'):
@@ -1369,7 +1418,6 @@ async def save_invoice_with_image(
                 pass
 
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
-
 
 # ==========================================
 # FUNCIÓN DE BACKGROUND - COMPLETA
@@ -1736,34 +1784,50 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         productos_fallidos += 1
                         continue
 
-                    # Crear producto maestro
+                    # ========================================
+                    # ✅ NUEVO: Usar ProductResolver
+                    # ========================================
                     producto_maestro_id = None
+                    canonico_id = None
+                    variante_id = None
+
                     if codigo and len(codigo) >= 3:
                         try:
-                            producto_maestro_id = buscar_o_crear_producto_inteligente_inline(
-                                codigo=codigo,
-                                nombre=nombre,
-                                precio=int(precio),
-                                establecimiento=establecimiento,
-                                cursor=cursor,
-                                conn=conn
-                            )
-                            print(f"   ✅ Producto maestro: {nombre} (ID: {producto_maestro_id})")
-                        except Exception as e:
-                            print(f"   ⚠️ Error producto maestro '{nombre}': {e}")
+                            resolver = ProductResolver()
+                            try:
+                                canonico_id, variante_id, accion = resolver.resolver_producto(
+                                    codigo=codigo,
+                                    nombre=nombre,
+                                    establecimiento=establecimiento,
+                                    precio=int(precio),
+                                    marca=None,
+                                    categoria=None
+                                )
 
+                                producto_maestro_id = canonico_id
+
+                                print(f"   ✅ Producto canónico: {nombre} (ID: {canonico_id}, Variante: {variante_id}, Acción: {accion})")
+
+                            finally:
+                                resolver.close()
+
+                        except Exception as e:
+                            print(f"   ⚠️ Error en ProductResolver para '{nombre}': {e}")
+
+                    # Guardar en items_factura
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
                         cursor.execute(
                             """
                             INSERT INTO items_factura (
-                                factura_id, usuario_id, producto_maestro_id,
+                                factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 factura_id,
                                 usuario_id,
                                 producto_maestro_id,
+                                canonico_id,
                                 codigo or None,
                                 nombre,
                                 cantidad,
@@ -1774,14 +1838,15 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         cursor.execute(
                             """
                             INSERT INTO items_factura (
-                                factura_id, usuario_id, producto_maestro_id,
+                                factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 factura_id,
                                 usuario_id,
                                 producto_maestro_id,
+                                canonico_id,
                                 codigo or None,
                                 nombre,
                                 cantidad,
@@ -1845,7 +1910,8 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             except Exception as e:
                 print(f"⚠️ Error actualizando inventario: {e}")
                 traceback.print_exc()
-                print(f"💰 Guardando precios para comparación...")
+
+            print(f"💰 Guardando precios para comparación...")
             try:
                 stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
                 if stats.get('error'):
