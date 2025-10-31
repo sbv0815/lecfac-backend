@@ -985,13 +985,14 @@ def create_postgresql_tables():
         print("✓ Tabla 'processing_jobs' creada")
 
         # 3.5. AUDITORIA_PRODUCTOS (ACTUALIZADA)
-        print("🔧 Creando tabla auditoria_productos...")
+        print("🔧 Configurando tabla auditoria_productos...")
+
+        # Crear tabla base sin producto_canonico_id primero
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS auditoria_productos (
                 id SERIAL PRIMARY KEY,
                 usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
                 producto_maestro_id INTEGER REFERENCES productos_maestros(id),
-                producto_canonico_id INTEGER REFERENCES productos_canonicos(id),
                 accion VARCHAR(20) NOT NULL CHECK (accion IN ('crear', 'actualizar', 'validar', 'eliminar', 'unificar')),
                 datos_anteriores JSONB,
                 datos_nuevos JSONB,
@@ -999,7 +1000,30 @@ def create_postgresql_tables():
                 fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("✓ Tabla 'auditoria_productos' creada")
+        print("✓ Tabla 'auditoria_productos' creada/verificada")
+
+        # Verificar y agregar columna producto_canonico_id si no existe
+        cursor.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'auditoria_productos'
+        """)
+        columnas_auditoria = [row[0] for row in cursor.fetchall()]
+
+        if 'producto_canonico_id' not in columnas_auditoria:
+            try:
+                print("   ➕ Agregando columna producto_canonico_id...")
+                cursor.execute("""
+                    ALTER TABLE auditoria_productos
+                    ADD COLUMN producto_canonico_id INTEGER REFERENCES productos_canonicos(id)
+                """)
+                conn.commit()
+                print("   ✅ Columna 'producto_canonico_id' agregada a auditoria_productos")
+            except Exception as e:
+                print(f"   ⚠️ producto_canonico_id: {e}")
+                conn.rollback()
+        else:
+            print("   ✓ Columna 'producto_canonico_id' ya existe")
 
         # ============================================
         # TABLAS LEGACY (mantener para migración)
