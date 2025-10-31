@@ -3,6 +3,7 @@ import sqlite3
 import bcrypt
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
 
 
 # Intentar importar psycopg3 primero, luego psycopg2
@@ -2255,9 +2256,769 @@ def obtener_estadisticas_auditoria(usuario_id):
         'actualizados': stats.get('actualizar', 0),
         'total': sum(stats.values())
     }
+def guardar_precio_producto(
+    producto_maestro_id: int,
+    establecimiento_id: int,
+    precio: int,
+    fecha_registro: date,
+    usuario_id: int,
+    factura_id: int,
+    verificado: bool = False
+) -> Optional[int]:
+    """
+    Guarda un precio de producto en la tabla precios_productos
+
+    Esta función se debe llamar cada vez que se procesa un item de factura
+
+    Args:
+        producto_maestro_id: ID del producto en productos_maestros
+        establecimiento_id: ID del establecimiento
+        precio: Precio pagado (en pesos enteros)
+        fecha_registro: Fecha de la compra
+        usuario_id: ID del usuario que reporta
+        factura_id: ID de la factura origen
+        verificado: Si el precio fue verificado manualmente
+
+    Returns:
+        ID del registro de precio o None si falla
+
+    Ejemplo:
+        >>> guardar_precio_producto(
+        ...     producto_maestro_id=123,
+        ...     establecimiento_id=5,
+        ...     precio=15000,
+        ...     fecha_registro=date.today(),
+        ...     usuario_id=1,
+        ...     factura_id=456
+        ... )
+        789
+    """
+    from database import get_db_connection  # Importar desde tu database.py
+
+    conn = get_db_connection()
+    if not conn:
+        print("❌ No se pudo conectar a la base de datos")
+        return None
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        # Validar que el precio sea razonable (> 0 y < 100 millones)
+        if precio <= 0 or precio > 100_000_000:
+            print(f"⚠️ Precio fuera de rango: {precio}")
+            return None
+
+        if database_type == "postgresql":
+            # Verificar si ya existe un registro IDÉNTICO
+            cursor.execute("""
+                SELECT id FROM precios_productos
+                WHERE producto_maestro_id = %s
+                  AND establecimiento_id = %s
+                  AND fecha_registro = %s
+                  AND usuario_id = %s
+                  AND factura_id = %s
+            """, (producto_maestro_id, establecimiento_id, fecha_registro, usuario_id, factura_id))
+
+            existe = cursor.fetchone()
+
+            if existe:
+                print(f"⚠️ Precio ya registrado (ID: {existe[0]})")
+                return existe[0]
+
+            # Insertar nuevo registro
+            cursor.execute("""
+                INSERT INTO precios_productos (
+                    producto_maestro_id,
+                    establecimiento_id,
+                    precio,
+                    fecha_registro,
+                    usuario_id,
+                    factura_id,
+                    verificado,
+                    es_outlier,
+                    fecha_creacion,
+                    fecha_actualizacion
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, FALSE,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                RETURNING id
+            """, (
+                producto_maestro_id,
+                establecimiento_id,
+                precio,
+                fecha_registro,
+                usuario_id,
+                factura_id,
+                verificado
+            ))
+
+            precio_id = cursor.fetchone()[0]
+            conn.commit()
+
+            # Actualizar estadísticas del producto maestro
+            actualizar_estadisticas_producto(producto_maestro_id)
+
+            print(f"✅ Precio guardado: Producto {producto_maestro_id} = ${precio:,} en establecimiento {establecimiento_id}")
+
+            cursor.close()
+            conn.close()
+            return precio_id
+
+        else:
+            # SQLite version
+            cursor.execute("""
+                SELECT id FROM precios_productos
+                WHERE producto_maestro_id = ?
+                  AND establecimiento_id = ?
+                  AND fecha_registro = ?
+                  AND usuario_id = ?
+                  AND factura_id = ?
+            """, (producto_maestro_id, establecimiento_id, fecha_registro, usuario_id, factura_id))
+
+            existe = cursor.fetchone()
+
+            if existe:
+                print(f"⚠️ Precio ya registrado (ID: {existe[0]})")
+                return existe[0]
+
+            cursor.execute("""
+                INSERT INTO precios_productos (
+                    producto_maestro_id,
+                    establecimiento_id,
+                    precio,
+                    fecha_registro,
+                    usuario_id,
+                    factura_id,
+                    verificado,
+                    es_outlier
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            """, (
+                producto_maestro_id,
+                establecimiento_id,
+                precio,
+                fecha_registro,
+                usuario_id,
+                factura_id,
+                verificado
+            ))
+
+            precio_id = cursor.lastrowid
+            conn.commit()
+
+            cursor.close()
+            conn.close()
+            return precio_id
+
+    except Exception as e:
+        print(f"❌ Error guardando precio: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        return None
 
 
-# ← Aquí NO debe haber nada más excepto el if __name__
+# ============================================================================
+# FUNCIÓN 2: ACTUALIZAR ESTADÍSTICAS DE PRODUCTO
+# ============================================================================
+
+def actualizar_estadisticas_producto(producto_maestro_id: int) -> bool:
+    """
+    Actualiza las estadísticas globales de un producto basándose en precios_productos
+
+    Calcula:
+    - precio_promedio_global
+    - precio_minimo_historico
+    - precio_maximo_historico
+    - total_reportes
+
+    Args:
+        producto_maestro_id: ID del producto a actualizar
+
+    Returns:
+        True si se actualizó correctamente
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        return False
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        if database_type == "postgresql":
+            cursor.execute("""
+                UPDATE productos_maestros
+                SET precio_promedio_global = (
+                        SELECT CAST(AVG(precio) AS INTEGER)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = %s
+                          AND es_outlier = FALSE
+                    ),
+                    precio_minimo_historico = (
+                        SELECT MIN(precio)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = %s
+                          AND es_outlier = FALSE
+                    ),
+                    precio_maximo_historico = (
+                        SELECT MAX(precio)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = %s
+                          AND es_outlier = FALSE
+                    ),
+                    total_reportes = (
+                        SELECT COUNT(*)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = %s
+                    ),
+                    ultima_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (producto_maestro_id, producto_maestro_id, producto_maestro_id,
+                  producto_maestro_id, producto_maestro_id))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+
+        else:
+            # SQLite version
+            cursor.execute("""
+                UPDATE productos_maestros
+                SET precio_promedio_global = (
+                        SELECT CAST(AVG(precio) AS INTEGER)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = ?
+                    ),
+                    precio_minimo_historico = (
+                        SELECT MIN(precio)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = ?
+                    ),
+                    precio_maximo_historico = (
+                        SELECT MAX(precio)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = ?
+                    ),
+                    total_reportes = (
+                        SELECT COUNT(*)
+                        FROM precios_productos
+                        WHERE producto_maestro_id = ?
+                    ),
+                    ultima_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (producto_maestro_id, producto_maestro_id, producto_maestro_id,
+                  producto_maestro_id, producto_maestro_id))
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+
+    except Exception as e:
+        print(f"❌ Error actualizando estadísticas: {e}")
+        if conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        return False
+
+
+# ============================================================================
+# FUNCIÓN 3: CONSULTAR DÓNDE ESTÁ MÁS BARATO UN PRODUCTO
+# ============================================================================
+
+def consultar_precios_producto(
+    producto_maestro_id: int,
+    limite: int = 10,
+    dias_antiguedad_maxima: int = 30
+) -> List[Dict[str, Any]]:
+    """
+    Consulta los precios más recientes de un producto en diferentes establecimientos
+
+    Args:
+        producto_maestro_id: ID del producto a consultar
+        limite: Número máximo de resultados
+        dias_antiguedad_maxima: Solo incluir precios de los últimos N días
+
+    Returns:
+        Lista de diccionarios con información de precios, ordenados de menor a mayor
+
+    Ejemplo de resultado:
+        [
+            {
+                'establecimiento_id': 5,
+                'establecimiento_nombre': 'Éxito Unicentro',
+                'precio': 15000,
+                'fecha_registro': '2025-10-30',
+                'dias_antiguedad': 1,
+                'ahorro_vs_mas_caro': 3000
+            },
+            ...
+        ]
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        return []
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        if database_type == "postgresql":
+            cursor.execute("""
+                WITH ultimos_precios AS (
+                    SELECT DISTINCT ON (establecimiento_id)
+                        pp.establecimiento_id,
+                        e.nombre_normalizado as establecimiento_nombre,
+                        e.cadena,
+                        e.ciudad,
+                        pp.precio,
+                        pp.fecha_registro,
+                        CURRENT_DATE - pp.fecha_registro as dias_antiguedad
+                    FROM precios_productos pp
+                    INNER JOIN establecimientos e ON pp.establecimiento_id = e.id
+                    WHERE pp.producto_maestro_id = %s
+                      AND pp.es_outlier = FALSE
+                      AND CURRENT_DATE - pp.fecha_registro <= %s
+                    ORDER BY pp.establecimiento_id, pp.fecha_registro DESC
+                )
+                SELECT
+                    establecimiento_id,
+                    establecimiento_nombre,
+                    cadena,
+                    ciudad,
+                    precio,
+                    fecha_registro,
+                    dias_antiguedad,
+                    MAX(precio) OVER() - precio as ahorro_vs_mas_caro,
+                    precio - MIN(precio) OVER() as diferencia_vs_mas_barato,
+                    ROUND(((precio - MIN(precio) OVER())::NUMERIC / MIN(precio) OVER() * 100), 1) as porcentaje_mas_caro
+                FROM ultimos_precios
+                ORDER BY precio ASC, dias_antiguedad ASC
+                LIMIT %s
+            """, (producto_maestro_id, dias_antiguedad_maxima, limite))
+
+            resultados = []
+            for row in cursor.fetchall():
+                resultados.append({
+                    'establecimiento_id': row[0],
+                    'establecimiento_nombre': row[1],
+                    'cadena': row[2],
+                    'ciudad': row[3],
+                    'precio': row[4],
+                    'fecha_registro': row[5],
+                    'dias_antiguedad': row[6],
+                    'ahorro_vs_mas_caro': row[7],
+                    'diferencia_vs_mas_barato': row[8],
+                    'porcentaje_mas_caro': float(row[9]) if row[9] else 0.0
+                })
+
+            cursor.close()
+            conn.close()
+            return resultados
+
+        else:
+            # SQLite version (simplificada)
+            cursor.execute("""
+                SELECT
+                    pp.establecimiento_id,
+                    e.nombre_normalizado,
+                    e.cadena,
+                    pp.precio,
+                    pp.fecha_registro,
+                    julianday('now') - julianday(pp.fecha_registro) as dias_antiguedad
+                FROM precios_productos pp
+                INNER JOIN establecimientos e ON pp.establecimiento_id = e.id
+                WHERE pp.producto_maestro_id = ?
+                  AND julianday('now') - julianday(pp.fecha_registro) <= ?
+                ORDER BY pp.fecha_registro DESC
+                LIMIT ?
+            """, (producto_maestro_id, dias_antiguedad_maxima, limite))
+
+            resultados = []
+            for row in cursor.fetchall():
+                resultados.append({
+                    'establecimiento_id': row[0],
+                    'establecimiento_nombre': row[1],
+                    'cadena': row[2],
+                    'precio': row[3],
+                    'fecha_registro': row[4],
+                    'dias_antiguedad': int(row[5])
+                })
+
+            # Ordenar por precio
+            resultados.sort(key=lambda x: x['precio'])
+
+            cursor.close()
+            conn.close()
+            return resultados
+
+    except Exception as e:
+        print(f"❌ Error consultando precios: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            cursor.close()
+            conn.close()
+        return []
+
+
+# ============================================================================
+# FUNCIÓN 4: BUSCAR PRODUCTO POR CÓDIGO EAN Y CONSULTAR PRECIOS
+# ============================================================================
+
+def buscar_producto_y_precios(codigo_ean: str) -> Optional[Dict[str, Any]]:
+    """
+    Busca un producto por código EAN y retorna sus datos + precios actuales
+
+    Args:
+        codigo_ean: Código de barras del producto
+
+    Returns:
+        Diccionario con información del producto y precios, o None si no existe
+
+    Ejemplo:
+        >>> resultado = buscar_producto_y_precios("7702189311234")
+        >>> print(resultado['nombre'])
+        'Coca Cola 2L'
+        >>> print(resultado['precios'][0]['precio'])
+        15000
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        return None
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT
+                    id,
+                    codigo_ean,
+                    nombre_normalizado,
+                    marca,
+                    categoria,
+                    subcategoria,
+                    precio_promedio_global,
+                    precio_minimo_historico,
+                    precio_maximo_historico,
+                    total_reportes
+                FROM productos_maestros
+                WHERE codigo_ean = %s
+            """, (codigo_ean,))
+        else:
+            cursor.execute("""
+                SELECT
+                    id,
+                    codigo_ean,
+                    nombre_normalizado,
+                    marca,
+                    categoria,
+                    subcategoria,
+                    precio_promedio_global,
+                    precio_minimo_historico,
+                    precio_maximo_historico,
+                    total_reportes
+                FROM productos_maestros
+                WHERE codigo_ean = ?
+            """, (codigo_ean,))
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            cursor.close()
+            conn.close()
+            return None
+
+        # Obtener precios actuales
+        precios = consultar_precios_producto(producto[0])
+
+        resultado = {
+            'id': producto[0],
+            'codigo_ean': producto[1],
+            'nombre': producto[2],
+            'marca': producto[3],
+            'categoria': producto[4],
+            'subcategoria': producto[5],
+            'precio_promedio': producto[6],
+            'precio_minimo': producto[7],
+            'precio_maximo': producto[8],
+            'total_reportes': producto[9],
+            'precios': precios,
+            'donde_mas_barato': precios[0] if precios else None
+        }
+
+        cursor.close()
+        conn.close()
+        return resultado
+
+    except Exception as e:
+        print(f"❌ Error buscando producto: {e}")
+        if conn:
+            cursor.close()
+            conn.close()
+        return None
+
+
+# ============================================================================
+# FUNCIÓN 5: PROCESAR FACTURA Y GUARDAR PRECIOS AUTOMÁTICAMENTE
+# ============================================================================
+
+def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -> Dict[str, int]:
+    """
+    Procesa todos los items de una factura y guarda sus precios en precios_productos
+
+    Esta función debe llamarse DESPUÉS de que se hayan guardado los items_factura
+
+    Args:
+        factura_id: ID de la factura procesada
+        usuario_id: ID del usuario que subió la factura
+
+    Returns:
+        Diccionario con estadísticas del proceso
+
+    Ejemplo:
+        >>> stats = procesar_items_factura_y_guardar_precios(456, 1)
+        >>> print(f"Guardados: {stats['precios_guardados']}")
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        return {'error': 'No se pudo conectar a la base de datos'}
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        # Obtener datos de la factura
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT establecimiento_id, fecha_factura
+                FROM facturas
+                WHERE id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT establecimiento_id, fecha_factura
+                FROM facturas
+                WHERE id = ?
+            """, (factura_id,))
+
+        factura = cursor.fetchone()
+
+        if not factura:
+            cursor.close()
+            conn.close()
+            return {'error': 'Factura no encontrada'}
+
+        establecimiento_id = factura[0]
+        fecha_factura = factura[1]
+
+        # Convertir fecha_factura a date
+        if isinstance(fecha_factura, str):
+            fecha_registro = datetime.strptime(fecha_factura, '%Y-%m-%d').date()
+        elif hasattr(fecha_factura, 'date'):
+            fecha_registro = fecha_factura.date() if callable(fecha_factura.date) else fecha_factura
+        else:
+            fecha_registro = fecha_factura or date.today()
+
+        # Obtener items de la factura que tienen producto_maestro_id
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT
+                    producto_maestro_id,
+                    precio_pagado,
+                    cantidad
+                FROM items_factura
+                WHERE factura_id = %s
+                  AND producto_maestro_id IS NOT NULL
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    producto_maestro_id,
+                    precio_pagado,
+                    cantidad
+                FROM items_factura
+                WHERE factura_id = ?
+                  AND producto_maestro_id IS NOT NULL
+            """, (factura_id,))
+
+        items = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        if not items:
+            return {
+                'precios_guardados': 0,
+                'errores': 0,
+                'mensaje': 'No hay items con producto_maestro_id'
+            }
+
+        # Guardar cada precio
+        precios_guardados = 0
+        errores = 0
+
+        for item in items:
+            producto_maestro_id = item[0]
+            precio = int(item[1]) if item[1] else 0
+            cantidad = int(item[2]) if item[2] else 1
+
+            # Calcular precio unitario si es necesario
+            if cantidad > 1:
+                precio_unitario = precio // cantidad
+            else:
+                precio_unitario = precio
+
+            # Guardar precio
+            precio_id = guardar_precio_producto(
+                producto_maestro_id=producto_maestro_id,
+                establecimiento_id=establecimiento_id,
+                precio=precio_unitario,
+                fecha_registro=fecha_registro,
+                usuario_id=usuario_id,
+                factura_id=factura_id,
+                verificado=False
+            )
+
+            if precio_id:
+                precios_guardados += 1
+            else:
+                errores += 1
+
+        return {
+            'precios_guardados': precios_guardados,
+            'errores': errores,
+            'total_items': len(items)
+        }
+
+    except Exception as e:
+        print(f"❌ Error procesando items de factura: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            cursor.close()
+            conn.close()
+        return {'error': str(e)}
+
+
+# ============================================================================
+# FUNCIÓN 6: COMPARAR PRECIOS ENTRE ESTABLECIMIENTOS (API READY)
+# ============================================================================
+
+def comparar_precios_establecimientos(
+    producto_maestro_id: int,
+    establecimiento_actual_id: int,
+    radio_km: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Compara el precio de un producto en diferentes establecimientos
+    y calcula cuánto se podría ahorrar
+
+    Args:
+        producto_maestro_id: ID del producto
+        establecimiento_actual_id: Establecimiento de referencia
+        radio_km: Si se especifica, solo incluye establecimientos cercanos
+
+    Returns:
+        Diccionario con comparación de precios
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        return {'error': 'No se pudo conectar a la base de datos'}
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        # Obtener precio actual en el establecimiento de referencia
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT precio, fecha_registro
+                FROM precios_productos
+                WHERE producto_maestro_id = %s
+                  AND establecimiento_id = %s
+                  AND es_outlier = FALSE
+                ORDER BY fecha_registro DESC
+                LIMIT 1
+            """, (producto_maestro_id, establecimiento_actual_id))
+        else:
+            cursor.execute("""
+                SELECT precio, fecha_registro
+                FROM precios_productos
+                WHERE producto_maestro_id = ?
+                  AND establecimiento_id = ?
+                ORDER BY fecha_registro DESC
+                LIMIT 1
+            """, (producto_maestro_id, establecimiento_actual_id))
+
+        precio_actual = cursor.fetchone()
+
+        if not precio_actual:
+            cursor.close()
+            conn.close()
+            return {'error': 'No hay precio registrado para este producto en el establecimiento'}
+
+        # Obtener precios en otros establecimientos
+        precios = consultar_precios_producto(producto_maestro_id, limite=20)
+
+        if not precios:
+            cursor.close()
+            conn.close()
+            return {
+                'precio_actual': precio_actual[0],
+                'establecimiento_actual_id': establecimiento_actual_id,
+                'comparaciones': [],
+                'ahorro_maximo': 0,
+                'mensaje': 'No hay otros precios para comparar'
+            }
+
+        # Filtrar el establecimiento actual de las comparaciones
+        otros_precios = [p for p in precios if p['establecimiento_id'] != establecimiento_actual_id]
+
+        # Calcular ahorro máximo
+        precio_mas_barato = min(p['precio'] for p in precios)
+        ahorro_maximo = precio_actual[0] - precio_mas_barato
+
+        cursor.close()
+        conn.close()
+
+        return {
+            'precio_actual': precio_actual[0],
+            'establecimiento_actual_id': establecimiento_actual_id,
+            'fecha_precio_actual': str(precio_actual[1]),
+            'precio_mas_barato': precio_mas_barato,
+            'ahorro_maximo': ahorro_maximo if ahorro_maximo > 0 else 0,
+            'porcentaje_ahorro': round((ahorro_maximo / precio_actual[0] * 100), 1) if precio_actual[0] > 0 else 0,
+            'comparaciones': otros_precios[:10],
+            'total_establecimientos_comparados': len(otros_precios)
+        }
+
+    except Exception as e:
+        print(f"❌ Error comparando precios: {e}")
+        if conn:
+            cursor.close()
+            conn.close()
+        return {'error': str(e)}
+
 
 if __name__ == "__main__":
     print("🔧 Inicializando sistema de base de datos...")
@@ -2265,3 +3026,30 @@ if __name__ == "__main__":
     create_tables()
     print("✅ Sistema inicializado correctamente")
     print("✅ Tablas creadas/actualizadas incluyendo password_resets")
+    print("=" * 80)
+    print("EJEMPLO DE USO - SISTEMA DE COMPARACIÓN DE PRECIOS")
+    print("=" * 80)
+
+    # Ejemplo 1: Buscar producto y ver precios
+    print("\n📋 EJEMPLO 1: Buscar Coca Cola 2L")
+    resultado = buscar_producto_y_precios("7702189311234")
+
+    if resultado:
+        print(f"Producto: {resultado['nombre']}")
+        print(f"Precio promedio: ${resultado['precio_promedio']:,}")
+        print(f"\nDónde está más barato:")
+        if resultado['donde_mas_barato']:
+            mas_barato = resultado['donde_mas_barato']
+            print(f"  {mas_barato['establecimiento_nombre']}: ${mas_barato['precio']:,}")
+
+    # Ejemplo 2: Comparar precios
+    print("\n💰 EJEMPLO 2: Comparar precios entre establecimientos")
+    comparacion = comparar_precios_establecimientos(
+        producto_maestro_id=123,
+        establecimiento_actual_id=5
+    )
+
+    if 'ahorro_maximo' in comparacion:
+        print(f"Precio actual: ${comparacion['precio_actual']:,}")
+        print(f"Precio más barato: ${comparacion['precio_mas_barato']:,}")
+        print(f"Ahorro posible: ${comparacion['ahorro_maximo']:,} ({comparacion['porcentaje_ahorro']}%)")
