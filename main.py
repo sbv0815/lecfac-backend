@@ -384,19 +384,7 @@ print("=" * 60)
 print("✅ ROUTERS CONFIGURADOS")
 print("=" * 60 + "\n")
 
-# ==========================================
-# ENDPOINTS ADMIN (TEMPORALES - MOVER A ROUTER)
-# ==========================================
-# ==========================================
-# ENDPOINTS ADMIN FALTANTES
-# Agregar este código en main.py después de la línea 280
-# ==========================================
-
-# ==========================================
-# CORRECCIÓN PARA main.py
-# Reemplazar el endpoint /api/admin/usuarios/{usuario_id}/inventario
-# (aproximadamente líneas 286-350)
-# ==========================================
+#========================================
 
 @app.get("/api/admin/usuarios/{usuario_id}/inventario")
 async def get_inventario_usuario(usuario_id: int):
@@ -677,6 +665,15 @@ async def get_admin_usuarios():
         print(f"❌ Error obteniendo usuarios: {e}")
         raise HTTPException(500, str(e))
 
+@app.get("/consolidacion.html", response_class=HTMLResponse)
+async def serve_consolidacion():
+    """Servir página de consolidación de productos"""
+    try:
+        print("✅ Sirviendo página de consolidación: consolidacion.html")
+        return FileResponse("consolidacion.html")
+    except Exception as e:
+        print(f"❌ Error sirviendo consolidacion.html: {e}")
+        raise HTTPException(status_code=404, detail="Página no encontrada")
 
 @app.get("/api/admin/productos")
 async def get_admin_productos():
@@ -2056,17 +2053,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 limpiar_frames_temporales(frames_paths)
         except Exception as cleanup_error:
             print(f"⚠️ Error limpiando archivos: {cleanup_error}")
-
-@app.get("/consolidacion.html", response_class=HTMLResponse)
-async def serve_consolidacion():
-    """Servir página de consolidación de productos"""
-    try:
-        print("✅ Sirviendo página de consolidación: consolidacion.html")
-        return FileResponse("consolidacion.html")
-    except Exception as e:
-        print(f"❌ Error sirviendo consolidacion.html: {e}")
-        raise HTTPException(status_code=404, detail="Página no encontrada")
-
 
 # ==========================================
 # RESTO DE ENDPOINTS (simplificados por espacio)
