@@ -1336,9 +1336,10 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        STRING_AGG(DISTINCT pp.establecimiento, ', ') as establecimientos
+                        STRING_AGG(DISTINCT e.nombre, ', ') as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.codigo_ean = %s
                     GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
                              pm.precio_promedio_global, pm.total_reportes
@@ -1356,9 +1357,10 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        GROUP_CONCAT(DISTINCT pp.establecimiento) as establecimientos
+                        GROUP_CONCAT(DISTINCT e.nombre) as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.codigo_ean = ?
                     GROUP BY pm.id
                     ORDER BY pm.total_reportes DESC
@@ -1412,9 +1414,10 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        STRING_AGG(DISTINCT pp.establecimiento, ', ') as establecimientos
+                        STRING_AGG(DISTINCT e.nombre, ', ') as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE {condiciones}
                     GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
                              pm.precio_promedio_global, pm.total_reportes
@@ -1437,9 +1440,10 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        GROUP_CONCAT(DISTINCT pp.establecimiento) as establecimientos
+                        GROUP_CONCAT(DISTINCT e.nombre) as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE {condiciones}
                     GROUP BY pm.id
                     ORDER BY pm.total_reportes DESC
@@ -1547,9 +1551,10 @@ async def detectar_productos_duplicados_sospechosos(
                             pm.marca,
                             pm.precio_promedio_global,
                             pm.total_reportes,
-                            STRING_AGG(DISTINCT pp.establecimiento, ', ') as establecimientos
+                            STRING_AGG(DISTINCT e.nombre, ', ') as establecimientos
                         FROM productos_maestros pm
                         LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                        LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                         WHERE pm.codigo_ean = %s
                         GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca,
                                  pm.precio_promedio_global, pm.total_reportes
@@ -1567,9 +1572,10 @@ async def detectar_productos_duplicados_sospechosos(
                             pm.marca,
                             pm.precio_promedio_global,
                             pm.total_reportes,
-                            GROUP_CONCAT(DISTINCT pp.establecimiento) as establecimientos
+                            GROUP_CONCAT(DISTINCT e.nombre) as establecimientos
                         FROM productos_maestros pm
                         LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                        LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                         WHERE pm.codigo_ean = ?
                         GROUP BY pm.id
                         ORDER BY pm.total_reportes DESC
@@ -1716,11 +1722,12 @@ async def consolidar_productos(data: ConsolidacionRequest):
                     SELECT DISTINCT
                         pm.nombre_normalizado,
                         pm.codigo_ean,
-                        pp.establecimiento,
+                        e.nombre as establecimiento,
                         pp.precio,
                         pp.fecha
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.id = %s
                 """,
                     (prod_id,),
@@ -1731,11 +1738,12 @@ async def consolidar_productos(data: ConsolidacionRequest):
                     SELECT DISTINCT
                         pm.nombre_normalizado,
                         pm.codigo_ean,
-                        pp.establecimiento,
+                        e.nombre as establecimiento,
                         pp.precio,
                         pp.fecha
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.id = ?
                 """,
                     (prod_id,),
@@ -1834,34 +1842,54 @@ async def consolidar_productos(data: ConsolidacionRequest):
 
                     # Migrar precio (manteniendo fecha/establecimiento/precio originales)
                     if precio and fecha:
+                        # Obtener establecimiento_id
                         if database_type == "postgresql":
                             cursor.execute(
                                 """
-                                INSERT INTO precios_productos
-                                    (producto_canonico_id, variante_id, establecimiento,
-                                     precio, fecha, usuario_id)
-                                VALUES (%s, %s, %s, %s, %s,
-                                    (SELECT usuario_id FROM precios_productos
-                                     WHERE producto_maestro_id = %s LIMIT 1))
-                                ON CONFLICT (producto_canonico_id, establecimiento, fecha)
-                                DO NOTHING
+                                SELECT id FROM establecimientos WHERE nombre = %s
                             """,
-                                (producto_canonico_id, variante_id, establecimiento,
-                                 precio, fecha, prod_id),
+                                (establecimiento,),
                             )
                         else:
                             cursor.execute(
                                 """
-                                INSERT OR IGNORE INTO precios_productos
-                                    (producto_canonico_id, variante_id, establecimiento,
-                                     precio, fecha, usuario_id)
-                                VALUES (?, ?, ?, ?, ?,
-                                    (SELECT usuario_id FROM precios_productos
-                                     WHERE producto_maestro_id = ? LIMIT 1))
+                                SELECT id FROM establecimientos WHERE nombre = ?
                             """,
-                                (producto_canonico_id, variante_id, establecimiento,
-                                 precio, fecha, prod_id),
+                                (establecimiento,),
                             )
+
+                        est_row = cursor.fetchone()
+                        establecimiento_id = est_row[0] if est_row else None
+
+                        if establecimiento_id:
+                            if database_type == "postgresql":
+                                cursor.execute(
+                                    """
+                                    INSERT INTO precios_productos
+                                        (producto_canonico_id, variante_id, establecimiento_id,
+                                         precio, fecha, usuario_id)
+                                    VALUES (%s, %s, %s, %s, %s,
+                                        (SELECT usuario_id FROM precios_productos
+                                         WHERE producto_maestro_id = %s LIMIT 1))
+                                    ON CONFLICT (producto_canonico_id, establecimiento_id, fecha)
+                                    DO NOTHING
+                                """,
+                                    (producto_canonico_id, variante_id, establecimiento_id,
+                                     precio, fecha, prod_id),
+                                )
+                            else:
+                                cursor.execute(
+                                    """
+                                    INSERT OR IGNORE INTO precios_productos
+                                        (producto_canonico_id, variante_id, establecimiento_id,
+                                         precio, fecha, usuario_id)
+                                    VALUES (?, ?, ?, ?, ?,
+                                        (SELECT usuario_id FROM precios_productos
+                                         WHERE producto_maestro_id = ? LIMIT 1))
+                                """,
+                                    (producto_canonico_id, variante_id, establecimiento_id,
+                                     precio, fecha, prod_id),
+                                )
 
         print(f"✅ {variantes_creadas} variantes creadas")
 
