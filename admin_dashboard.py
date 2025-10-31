@@ -1594,6 +1594,99 @@ async def detectar_productos_duplicados_sospechosos(
 
                     grupos_duplicados.append(grupo)
 
+        # =====================================
+        # B. Productos con nombres muy similares (>85% similitud)
+        # =====================================
+        if len(grupos_duplicados) < 50:  # Solo si hay espacio
+            print("🔍 Buscando duplicados por similitud de nombre...")
+
+            if database_type == "postgresql":
+                cursor.execute("""
+                    SELECT
+                        id,
+                        nombre_normalizado,
+                        codigo_ean,
+                        marca,
+                        precio_promedio_global,
+                        total_reportes
+                    FROM productos_maestros
+                    WHERE nombre_normalizado IS NOT NULL
+                    ORDER BY total_reportes DESC
+                    LIMIT 100
+                """)
+            else:
+                cursor.execute("""
+                    SELECT
+                        id,
+                        nombre_normalizado,
+                        codigo_ean,
+                        marca,
+                        precio_promedio_global,
+                        total_reportes
+                    FROM productos_maestros
+                    WHERE nombre_normalizado IS NOT NULL
+                    ORDER BY total_reportes DESC
+                    LIMIT 100
+                """)
+
+            productos_para_comparar = cursor.fetchall()
+            productos_ya_agrupados = set()
+
+            for i, prod1 in enumerate(productos_para_comparar):
+                if prod1[0] in productos_ya_agrupados:
+                    continue
+
+                grupo_nombre = {
+                    "nombre_grupo": prod1[1],
+                    "tipo": "similitud_nombre",
+                    "similitud": 0,
+                    "productos": [{
+                        "id": prod1[0],
+                        "nombre": prod1[1],
+                        "codigo_ean": prod1[2],
+                        "marca": prod1[3],
+                        "precio_promedio": int(prod1[4]) if prod1[4] else 0,
+                        "veces_reportado": prod1[5] or 0,
+                        "establecimiento": "Varios"
+                    }]
+                }
+
+                productos_ya_agrupados.add(prod1[0])
+
+                # Comparar con otros productos
+                for prod2 in productos_para_comparar[i+1:]:
+                    if prod2[0] in productos_ya_agrupados:
+                        continue
+
+                    similitud = SequenceMatcher(
+                        None,
+                        prod1[1].lower() if prod1[1] else "",
+                        prod2[1].lower() if prod2[1] else ""
+                    ).ratio()
+
+                    if similitud > 0.85:  # 85% de similitud
+                        grupo_nombre["productos"].append({
+                            "id": prod2[0],
+                            "nombre": prod2[1],
+                            "codigo_ean": prod2[2],
+                            "marca": prod2[3],
+                            "precio_promedio": int(prod2[4]) if prod2[4] else 0,
+                            "veces_reportado": prod2[5] or 0,
+                            "establecimiento": "Varios"
+                        })
+                        productos_ya_agrupados.add(prod2[0])
+                        grupo_nombre["similitud"] = max(grupo_nombre["similitud"], int(similitud * 100))
+
+                # Solo agregar si hay duplicados
+                if len(grupo_nombre["productos"]) > 1:
+                    grupos_duplicados.append(grupo_nombre)
+
+                    # Limitar a 50 grupos totales
+                    if len(grupos_duplicados) >= 50:
+                        break
+
+            print(f"   ✅ Encontrados {len([g for g in grupos_duplicados if g['tipo'] == 'similitud_nombre'])} grupos por similitud de nombre")
+
         cursor.close()
         conn.close()
 
