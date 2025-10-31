@@ -1595,97 +1595,179 @@ async def detectar_productos_duplicados_sospechosos(
                     grupos_duplicados.append(grupo)
 
         # =====================================
-        # B. Productos con nombres muy similares (>85% similitud)
+        # B. Productos con nombres muy similares Y son duplicados reales
         # =====================================
+        # LÓGICA DE NEGOCIO:
+        # - Duplicado real = mismo nombre + mismo establecimiento + mismo precio + fecha cercana
+        # - Variante legítima = mismo producto en diferentes tiendas o con precios diferentes
+        #
+        # Solo mostramos DUPLICADOS REALES para consolidar
+        # Las variantes legítimas se mantienen porque son útiles para comparar precios
+
         if len(grupos_duplicados) < 50:  # Solo si hay espacio
-            print("🔍 Buscando duplicados por similitud de nombre...")
+            print("🔍 Buscando duplicados reales (no variantes de precio)...")
 
             if database_type == "postgresql":
                 cursor.execute("""
                     SELECT
-                        id,
-                        nombre_normalizado,
-                        codigo_ean,
-                        marca,
-                        precio_promedio_global,
-                        total_reportes
-                    FROM productos_maestros
-                    WHERE nombre_normalizado IS NOT NULL
-                    ORDER BY total_reportes DESC
-                    LIMIT 100
+                        pm.id,
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pm.marca,
+                        pm.precio_promedio_global,
+                        pm.total_reportes,
+                        pp.establecimiento_id,
+                        pp.precio,
+                        pp.fecha_registro
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE pm.nombre_normalizado IS NOT NULL
+                    ORDER BY pm.total_reportes DESC
+                    LIMIT 200
                 """)
             else:
                 cursor.execute("""
                     SELECT
-                        id,
-                        nombre_normalizado,
-                        codigo_ean,
-                        marca,
-                        precio_promedio_global,
-                        total_reportes
-                    FROM productos_maestros
-                    WHERE nombre_normalizado IS NOT NULL
-                    ORDER BY total_reportes DESC
-                    LIMIT 100
+                        pm.id,
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        pm.marca,
+                        pm.precio_promedio_global,
+                        pm.total_reportes,
+                        pp.establecimiento_id,
+                        pp.precio,
+                        pp.fecha_registro
+                    FROM productos_maestros pm
+                    LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    WHERE pm.nombre_normalizado IS NOT NULL
+                    ORDER BY pm.total_reportes DESC
+                    LIMIT 200
                 """)
 
-            productos_para_comparar = cursor.fetchall()
+            productos_con_precios = cursor.fetchall()
+
+            # Agrupar por producto para facilitar comparación
+            productos_dict = {}
+            for row in productos_con_precios:
+                prod_id = row[0]
+                if prod_id not in productos_dict:
+                    productos_dict[prod_id] = {
+                        'id': row[0],
+                        'nombre': row[1],
+                        'ean': row[2],
+                        'marca': row[3],
+                        'precio_promedio': row[4],
+                        'reportes': row[5],
+                        'precios': []
+                    }
+
+                # Agregar info de precio/establecimiento/fecha
+                if row[6] and row[7] and row[8]:  # establecimiento_id, precio, fecha
+                    productos_dict[prod_id]['precios'].append({
+                        'establecimiento_id': row[6],
+                        'precio': row[7],
+                        'fecha': row[8]
+                    })
+
+            productos_para_comparar = list(productos_dict.values())
             productos_ya_agrupados = set()
 
             for i, prod1 in enumerate(productos_para_comparar):
-                if prod1[0] in productos_ya_agrupados:
+                if prod1['id'] in productos_ya_agrupados:
                     continue
 
-                grupo_nombre = {
-                    "nombre_grupo": prod1[1],
-                    "tipo": "similitud_nombre",
-                    "similitud": 0,
-                    "productos": [{
-                        "id": prod1[0],
-                        "nombre": prod1[1],
-                        "codigo_ean": prod1[2],
-                        "marca": prod1[3],
-                        "precio_promedio": int(prod1[4]) if prod1[4] else 0,
-                        "veces_reportado": prod1[5] or 0,
-                        "establecimiento": "Varios"
-                    }]
-                }
-
-                productos_ya_agrupados.add(prod1[0])
+                duplicados_reales = []
 
                 # Comparar con otros productos
                 for prod2 in productos_para_comparar[i+1:]:
-                    if prod2[0] in productos_ya_agrupados:
+                    if prod2['id'] in productos_ya_agrupados:
                         continue
 
+                    # 1. Verificar similitud de nombre (>95% para duplicados reales)
                     similitud = SequenceMatcher(
                         None,
-                        prod1[1].lower() if prod1[1] else "",
-                        prod2[1].lower() if prod2[1] else ""
+                        prod1['nombre'].lower() if prod1['nombre'] else "",
+                        prod2['nombre'].lower() if prod2['nombre'] else ""
                     ).ratio()
 
-                    if similitud > 0.85:  # 85% de similitud
-                        grupo_nombre["productos"].append({
-                            "id": prod2[0],
-                            "nombre": prod2[1],
-                            "codigo_ean": prod2[2],
-                            "marca": prod2[3],
-                            "precio_promedio": int(prod2[4]) if prod2[4] else 0,
-                            "veces_reportado": prod2[5] or 0,
+                    if similitud < 0.95:  # Muy estricto para duplicados reales
+                        continue
+
+                    # 2. Verificar si tienen el MISMO establecimiento
+                    establecimientos_prod1 = {p['establecimiento_id'] for p in prod1['precios'] if p['establecimiento_id']}
+                    establecimientos_prod2 = {p['establecimiento_id'] for p in prod2['precios'] if p['establecimiento_id']}
+
+                    establecimientos_comunes = establecimientos_prod1 & establecimientos_prod2
+
+                    if not establecimientos_comunes:
+                        # Diferentes establecimientos = VARIANTE LEGÍTIMA, no duplicado
+                        continue
+
+                    # 3. Verificar si tienen precios similares en el mismo establecimiento
+                    es_duplicado_real = False
+
+                    for est_id in establecimientos_comunes:
+                        precios1 = [p['precio'] for p in prod1['precios'] if p['establecimiento_id'] == est_id]
+                        precios2 = [p['precio'] for p in prod2['precios'] if p['establecimiento_id'] == est_id]
+
+                        if not precios1 or not precios2:
+                            continue
+
+                        # Comparar precios (tolerancia de ±5%)
+                        for p1 in precios1:
+                            for p2 in precios2:
+                                diferencia_porcentual = abs(p1 - p2) / max(p1, p2) * 100
+
+                                if diferencia_porcentual <= 5:  # Precios muy similares
+                                    # 4. Verificar fechas cercanas (opcional, si tenemos fechas)
+                                    # Por ahora asumimos que si nombre+establecimiento+precio coinciden = duplicado
+                                    es_duplicado_real = True
+                                    break
+                            if es_duplicado_real:
+                                break
+                        if es_duplicado_real:
+                            break
+
+                    if es_duplicado_real:
+                        if not duplicados_reales:  # Primer duplicado encontrado
+                            duplicados_reales.append({
+                                "id": prod1['id'],
+                                "nombre": prod1['nombre'],
+                                "codigo_ean": prod1['ean'],
+                                "marca": prod1['marca'],
+                                "precio_promedio": int(prod1['precio_promedio']) if prod1['precio_promedio'] else 0,
+                                "veces_reportado": prod1['reportes'] or 0,
+                                "establecimiento": "Varios"
+                            })
+                            productos_ya_agrupados.add(prod1['id'])
+
+                        duplicados_reales.append({
+                            "id": prod2['id'],
+                            "nombre": prod2['nombre'],
+                            "codigo_ean": prod2['ean'],
+                            "marca": prod2['marca'],
+                            "precio_promedio": int(prod2['precio_promedio']) if prod2['precio_promedio'] else 0,
+                            "veces_reportado": prod2['reportes'] or 0,
                             "establecimiento": "Varios"
                         })
-                        productos_ya_agrupados.add(prod2[0])
-                        grupo_nombre["similitud"] = max(grupo_nombre["similitud"], int(similitud * 100))
+                        productos_ya_agrupados.add(prod2['id'])
 
-                # Solo agregar si hay duplicados
-                if len(grupo_nombre["productos"]) > 1:
-                    grupos_duplicados.append(grupo_nombre)
+                # Solo agregar si encontramos duplicados reales
+                if len(duplicados_reales) > 1:
+                    grupo_duplicado = {
+                        "nombre_grupo": f"{prod1['nombre']} (Duplicado Real)",
+                        "tipo": "duplicado_real",
+                        "similitud": 100,
+                        "productos": duplicados_reales
+                    }
+                    grupos_duplicados.append(grupo_duplicado)
 
                     # Limitar a 50 grupos totales
                     if len(grupos_duplicados) >= 50:
                         break
 
-            print(f"   ✅ Encontrados {len([g for g in grupos_duplicados if g['tipo'] == 'similitud_nombre'])} grupos por similitud de nombre")
+            print(f"   ✅ Encontrados {len([g for g in grupos_duplicados if g.get('tipo') == 'duplicado_real'])} grupos de duplicados reales")
+            print(f"   ℹ️  Variantes de precio legítimas NO se muestran (diferentes tiendas/precios)")
 
         cursor.close()
         conn.close()
