@@ -1336,7 +1336,7 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        STRING_AGG(DISTINCT e.nombre, ', ') as establecimientos
+                        STRING_AGG(DISTINCT e.nombre_normalizado, ', ') as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
@@ -1347,7 +1347,6 @@ async def detectar_productos_duplicados_sospechosos(
                 """,
                     (ean,),
                 )
-            else:
                 cursor.execute(
                     """
                     SELECT
@@ -1357,7 +1356,7 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        GROUP_CONCAT(DISTINCT e.nombre) as establecimientos
+                        GROUP_CONCAT(DISTINCT e.nombre_normalizado) as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
@@ -1414,7 +1413,7 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        STRING_AGG(DISTINCT e.nombre, ', ') as establecimientos
+                        STRING_AGG(DISTINCT e.nombre_normalizado, ', ') as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
@@ -1440,7 +1439,7 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.marca,
                         pm.precio_promedio_global,
                         pm.total_reportes,
-                        GROUP_CONCAT(DISTINCT e.nombre) as establecimientos
+                        GROUP_CONCAT(DISTINCT e.nombre_normalizado) as establecimientos
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
@@ -1551,7 +1550,7 @@ async def detectar_productos_duplicados_sospechosos(
                             pm.marca,
                             pm.precio_promedio_global,
                             pm.total_reportes,
-                            STRING_AGG(DISTINCT e.nombre, ', ') as establecimientos
+                            STRING_AGG(DISTINCT e.nombre_normalizado, ', ') as establecimientos
                         FROM productos_maestros pm
                         LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                         LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
@@ -1572,7 +1571,7 @@ async def detectar_productos_duplicados_sospechosos(
                             pm.marca,
                             pm.precio_promedio_global,
                             pm.total_reportes,
-                            GROUP_CONCAT(DISTINCT e.nombre) as establecimientos
+                            GROUP_CONCAT(DISTINCT e.nombre_normalizado) as establecimientos
                         FROM productos_maestros pm
                         LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                         LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
