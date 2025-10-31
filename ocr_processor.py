@@ -1,7 +1,7 @@
 """
 Sistema de Procesamiento Automático de OCR para Facturas
-VERSIÓN STANDALONE - TODO EL CÓDIGO INTEGRADO
-NO REQUIERE IMPORTS EXTERNOS DE MATCHING
+VERSIÓN 2.0 - INTEGRADO CON PRODUCTOS CANÓNICOS
+Usa ProductResolver para evitar duplicados y comparar precios
 """
 
 import threading
@@ -14,11 +14,14 @@ from typing import Dict, Any, Optional
 import traceback
 import unicodedata
 import re
-# Importar solo funciones de base de datos
-# Importar solo funciones de base de datos
+
+# Importar funciones de base de datos
 from database import get_db_connection, detectar_cadena, actualizar_inventario_desde_factura
 from claude_invoice import parse_invoice_with_claude
-from validacion_productos import procesar_producto_con_validacion
+
+# ✅ NUEVO: Importar ProductResolver para sistema canónico
+from product_resolver import ProductResolver
+
 # Colas y tracking globales
 ocr_queue = Queue()
 processing = {}
@@ -26,35 +29,13 @@ error_log = []
 
 
 # ==============================================================================
-# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS - VERSIÓN MEJORADA
+# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
 # ==============================================================================
 
 def limpiar_precio_colombiano(precio_str):
     """
     Convierte precio colombiano a entero (sin decimales).
-
-    VERSIÓN MEJORADA: Maneja strings, integers y floats correctamente.
-
     En Colombia NO se usan decimales/centavos, solo pesos enteros.
-    Las facturas muestran separadores de miles con comas o puntos.
-
-    Args:
-        precio_str: Precio en cualquier formato (string, int, float)
-
-    Returns:
-        int: Precio en pesos enteros
-
-    Examples:
-        >>> limpiar_precio_colombiano("15,540")
-        15540
-        >>> limpiar_precio_colombiano("15.540")
-        15540
-        >>> limpiar_precio_colombiano(39.45)  # Float de Claude API
-        3945
-        >>> limpiar_precio_colombiano(15540)
-        15540
-        >>> limpiar_precio_colombiano("$ 1.234.567")
-        1234567
     """
     # Caso 1: None o vacío
     if precio_str is None or precio_str == "":
@@ -64,40 +45,28 @@ def limpiar_precio_colombiano(precio_str):
     if isinstance(precio_str, int):
         return precio_str
 
-    # Caso 3: Es un float (puede venir de Claude API)
+    # Caso 3: Es un float
     if isinstance(precio_str, float):
-        # Si tiene decimales pequeños (ej: 15540.0), es solo formateo
         if precio_str == int(precio_str):
             return int(precio_str)
-        # Si tiene decimales significativos, puede ser error de OCR
-        # Ej: 39.45 probablemente significa 3945 pesos (faltó un cero)
         return int(precio_str * 100)
 
     # Caso 4: Es string - procesar
     precio_str = str(precio_str).strip()
 
-    # Eliminar espacios
+    # Eliminar espacios y símbolos de moneda
     precio_str = precio_str.replace(" ", "")
-
-    # Eliminar símbolos de moneda
     precio_str = precio_str.replace("$", "")
     precio_str = precio_str.replace("COP", "")
     precio_str = precio_str.replace("cop", "")
     precio_str = precio_str.strip()
 
-    # CRÍTICO: Determinar si usa punto o coma como separador
-    # En Colombia, ambos pueden usarse para separar miles
-
     # Caso 4A: Tiene múltiples puntos o comas (separador de miles)
-    # Ej: "1.234.567" o "1,234,567"
     if precio_str.count('.') > 1 or precio_str.count(',') > 1:
-        # Eliminar TODOS los separadores
         precio_str = precio_str.replace(",", "").replace(".", "")
 
     # Caso 4B: Tiene un solo punto o coma
-    # Ej: "15.540" o "15,540"
     elif '.' in precio_str or ',' in precio_str:
-        # Verificar cantidad de dígitos después del separador
         if '.' in precio_str:
             partes = precio_str.split('.')
         else:
@@ -106,19 +75,16 @@ def limpiar_precio_colombiano(precio_str):
         # Si hay 3 dígitos después, es separador de miles
         if len(partes) == 2 and len(partes[1]) == 3:
             precio_str = precio_str.replace(",", "").replace(".", "")
-        # Si hay 1-2 dígitos, puede ser decimal mal leído
+        # Si hay 1-2 dígitos, eliminar igual (no hay decimales en Colombia)
         elif len(partes) == 2 and len(partes[1]) <= 2:
-            # En Colombia NO hay decimales, así que eliminamos el separador
             precio_str = precio_str.replace(",", "").replace(".", "")
         else:
-            # Caso raro, eliminar todos
             precio_str = precio_str.replace(",", "").replace(".", "")
 
     # Convertir a entero
     try:
         precio = int(float(precio_str))
 
-        # Validación de sanidad
         if precio < 0:
             print(f"   ⚠️ Precio negativo detectado: {precio}, retornando 0")
             return 0
@@ -131,261 +97,11 @@ def limpiar_precio_colombiano(precio_str):
 
 
 # ==============================================================================
-# FUNCIONES DE MATCHING INTEGRADAS (NO REQUIEREN IMPORT)
-# ==============================================================================
-
-def normalizar_nombre_producto(nombre: str) -> str:
-    """Normaliza nombre de producto para comparación"""
-    if not nombre:
-        return ""
-
-    texto = nombre.upper()
-    texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
-    texto = re.sub(r'[^A-Z0-9\s]', ' ', texto)
-    texto = ' '.join(texto.split())
-
-    return texto
-
-
-def clasificar_codigo_producto(codigo: str, establecimiento: str = None) -> dict:
-    """Clasifica un código según su tipo"""
-
-    if not codigo or not isinstance(codigo, str):
-        return {"tipo": "INVALIDO", "codigo_normalizado": None}
-
-    codigo = codigo.strip()
-
-    # EAN-13 completo
-    if len(codigo) == 13 and codigo.isdigit():
-        return {
-            "tipo": "EAN13",
-            "codigo_normalizado": codigo,
-            "es_unico_global": True
-        }
-
-    # EAN-13 incompleto (10 dígitos)
-    if len(codigo) == 10 and codigo.isdigit():
-        return {
-            "tipo": "EAN13_INCOMPLETO",
-            "codigo_normalizado": f"770{codigo}",
-            "es_unico_global": True
-        }
-
-    # PLU o código interno
-    if codigo.isdigit():
-        return {
-            "tipo": "INTERNO",
-            "codigo_normalizado": codigo,
-            "es_unico_global": False,
-            "requiere_establecimiento": True
-        }
-
-    # Código alfanumérico
-    return {
-        "tipo": "ALFANUMERICO",
-        "codigo_normalizado": codigo,
-        "es_unico_global": False,
-        "requiere_establecimiento": True
-    }
-
-
-def buscar_o_crear_por_ean_inline(codigo_ean: str, nombre: str, precio: int, cursor, conn) -> Optional[int]:
-    """Buscar o crear producto por EAN"""
-    nombre_norm = normalizar_nombre_producto(nombre)
-
-    try:
-        print(f"      🔎 Buscando EAN: {codigo_ean}")
-
-        cursor.execute("""
-            SELECT id, precio_promedio_global, total_reportes
-            FROM productos_maestros
-            WHERE codigo_ean = %s
-            LIMIT 1
-        """, (codigo_ean,))
-
-        resultado = cursor.fetchone()
-
-        if resultado:
-            producto_id = resultado[0]
-            print(f"      ✅ Producto encontrado por EAN: ID={producto_id}")
-
-            # Actualizar precio promedio
-            precio_actual = resultado[1] or 0
-            reportes_actuales = resultado[2] or 0
-            nuevo_total_reportes = reportes_actuales + 1
-            nuevo_precio_promedio = ((precio_actual * reportes_actuales) + precio) / nuevo_total_reportes
-
-            cursor.execute("""
-                UPDATE productos_maestros
-                SET precio_promedio_global = %s,
-                    total_reportes = %s,
-                    ultima_actualizacion = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """, (nuevo_precio_promedio, nuevo_total_reportes, producto_id))
-            conn.commit()
-
-            return producto_id
-
-        # Crear nuevo producto
-        print(f"      ➕ Creando nuevo producto con EAN")
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-                codigo_ean,
-                nombre_normalizado,
-                nombre_comercial,
-                precio_promedio_global,
-                total_reportes,
-                primera_vez_reportado,
-                ultima_actualizacion
-            ) VALUES (%s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-        """, (codigo_ean, nombre_norm, nombre, precio))
-
-        nuevo_id = cursor.fetchone()[0]
-        conn.commit()
-        print(f"      ✅ Producto creado con EAN: ID={nuevo_id}")
-        return nuevo_id
-
-    except Exception as e:
-        print(f"      ❌ Error en buscar_o_crear_por_ean: {e}")
-        conn.rollback()
-        return None
-
-
-def buscar_o_crear_por_codigo_interno_inline(codigo: str, nombre: str, precio: int, establecimiento: str, cursor, conn) -> Optional[int]:
-    """Buscar o crear producto por código interno"""
-    nombre_norm = normalizar_nombre_producto(nombre)
-    codigo_interno_compuesto = f"{codigo}|{establecimiento}"
-
-    try:
-        print(f"      🔎 Buscando código interno: {codigo_interno_compuesto}")
-
-        cursor.execute("""
-            SELECT id, precio_promedio_global, total_reportes
-            FROM productos_maestros
-            WHERE subcategoria = %s
-            AND nombre_normalizado = %s
-            AND codigo_ean IS NULL
-            LIMIT 1
-        """, (codigo_interno_compuesto, nombre_norm))
-
-        resultado = cursor.fetchone()
-
-        if resultado:
-            producto_id = resultado[0]
-            print(f"      ✅ Producto encontrado por código interno: ID={producto_id}")
-
-            # Actualizar precio promedio
-            precio_actual = resultado[1] or 0
-            reportes_actuales = resultado[2] or 0
-            nuevo_total_reportes = reportes_actuales + 1
-            nuevo_precio_promedio = ((precio_actual * reportes_actuales) + precio) / nuevo_total_reportes
-
-            cursor.execute("""
-                UPDATE productos_maestros
-                SET precio_promedio_global = %s,
-                    total_reportes = %s,
-                    ultima_actualizacion = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """, (nuevo_precio_promedio, nuevo_total_reportes, producto_id))
-            conn.commit()
-
-            return producto_id
-
-        # Crear nuevo producto
-        print(f"      ➕ Creando nuevo producto con código interno")
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-                codigo_ean,
-                nombre_normalizado,
-                nombre_comercial,
-                precio_promedio_global,
-                subcategoria,
-                total_reportes,
-                primera_vez_reportado,
-                ultima_actualizacion
-            ) VALUES (NULL, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-        """, (nombre_norm, nombre, precio, codigo_interno_compuesto))
-
-        nuevo_id = cursor.fetchone()[0]
-        conn.commit()
-        print(f"      ✅ Producto creado con código interno: ID={nuevo_id}")
-        return nuevo_id
-
-    except Exception as e:
-        print(f"      ❌ Error en buscar_o_crear_por_codigo_interno: {e}")
-        conn.rollback()
-        return None
-
-
-def buscar_o_crear_producto_inteligente_inline(codigo: str, nombre: str, precio: int, establecimiento: str, cursor, conn) -> Optional[int]:
-    """
-    FUNCIÓN INTEGRADA - NO REQUIERE IMPORT
-    Busca o crea producto maestro usando clasificación inteligente
-    """
-
-    print(f"\n🔍 [INLINE] buscar_o_crear_producto_inteligente:")
-    print(f"   - codigo: {codigo}")
-    print(f"   - nombre: {nombre}")
-    print(f"   - precio: ${precio:,} pesos")
-    print(f"   - establecimiento: {establecimiento}")
-
-    if not nombre or not nombre.strip():
-        print(f"   ❌ Nombre vacío")
-        return None
-
-    if precio <= 0:
-        print(f"   ❌ Precio inválido ({precio})")
-        return None
-
-    # Clasificar código
-    clasificacion = clasificar_codigo_producto(codigo, establecimiento)
-    print(f"   📊 Clasificación: {clasificacion['tipo']}")
-
-    try:
-        if clasificacion["tipo"] in ["EAN13", "EAN13_INCOMPLETO"]:
-            print(f"   ➡️ Usando estrategia EAN")
-            resultado = buscar_o_crear_por_ean_inline(
-                codigo_ean=clasificacion["codigo_normalizado"],
-                nombre=nombre,
-                precio=precio,
-                cursor=cursor,
-                conn=conn
-            )
-            print(f"   ✅ Resultado EAN: {resultado}")
-            return resultado
-
-        elif clasificacion.get("requiere_establecimiento"):
-            print(f"   ➡️ Usando estrategia código interno")
-            resultado = buscar_o_crear_por_codigo_interno_inline(
-                codigo=clasificacion["codigo_normalizado"],
-                nombre=nombre,
-                precio=precio,
-                establecimiento=establecimiento,
-                cursor=cursor,
-                conn=conn
-            )
-            print(f"   ✅ Resultado interno: {resultado}")
-            return resultado
-
-        else:
-            print(f"   ⚠️ Tipo no manejado: {clasificacion['tipo']}")
-            return None
-
-    except Exception as e:
-        print(f"   ❌ EXCEPCIÓN: {e}")
-        traceback.print_exc()
-        conn.rollback()
-        return None
-
-
-# ==============================================================================
-# CLASE OCPROCESSOR
+# CLASE OCPROCESSOR - VERSIÓN 2.0 CON PRODUCTOS CANÓNICOS
 # ==============================================================================
 
 class OCRProcessor:
-    """Procesador automático de facturas con OCR"""
+    """Procesador automático de facturas con OCR - Versión 2.0"""
 
     def __init__(self):
         self.is_running = False
@@ -404,7 +120,7 @@ class OCRProcessor:
         self.is_running = True
         self.worker_thread = threading.Thread(target=self.process_queue, daemon=True)
         self.worker_thread.start()
-        print("🤖 Procesador OCR automático iniciado (VERSIÓN MEJORADA)")
+        print("🤖 Procesador OCR automático iniciado (VERSIÓN 2.0 - PRODUCTOS CANÓNICOS)")
 
     def stop(self):
         """Detiene el procesador"""
@@ -533,14 +249,18 @@ class OCRProcessor:
     def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id: int,
                                        user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
         """
-        Guarda un producto en items_factura usando matching INLINE
-        VERSIÓN CORREGIDA: Maneja correctamente precios colombianos (sin decimales)
+        ✅ VERSIÓN 2.0 - USA PRODUCTRESOLVER PARA SISTEMA CANÓNICO
+
+        Guarda un producto usando el sistema de productos canónicos:
+        1. Resuelve identidad del producto (canónico + variante)
+        2. Guarda en items_factura con referencias canónicas
+        3. Guarda precio en precios_productos para comparación
         """
         try:
             codigo = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
 
-            # ✅ CORRECCIÓN CRÍTICA: Usar función mejorada de limpieza
+            # Limpiar precio colombiano
             precio_raw = product.get("precio", 0)
             precio = limpiar_precio_colombiano(precio_raw)
 
@@ -563,30 +283,46 @@ class OCRProcessor:
 
             if precio > 10_000_000:
                 print(f"   ⚠️ Precio sospechoso para '{nombre}': ${precio:,}, verificar")
-                # No rechazar, solo advertir
 
             print(f"   💰 '{nombre}': {precio_raw} → ${precio:,} pesos")
 
-            # ✅ USAR FUNCIÓN INLINE (NO IMPORT)
-            producto_maestro_id = procesar_producto_con_validacion(
-                codigo_leido=codigo,
-                nombre_leido=nombre,
-                precio=precio,
-                establecimiento_id=None,
-                cursor=cursor,
-                conn=conn
-            )
+            # ========================================
+            # ✅ NUEVO: USAR PRODUCTRESOLVER
+            # ========================================
+            print(f"   🧠 Resolviendo identidad del producto...")
 
-            if not producto_maestro_id:
-                print(f"   ❌ No se pudo obtener producto_maestro_id para: {nombre}")
+            resolver = ProductResolver()
+
+            try:
+                # Resolver producto: busca o crea canónico + variante
+                canonico_id, variante_id, accion = resolver.resolver_producto(
+                    codigo=codigo,
+                    nombre=nombre,
+                    establecimiento=establecimiento,
+                    precio=precio,
+                    marca=None,
+                    categoria=None
+                )
+
+                print(f"   ✅ Resuelto: Canónico={canonico_id}, Variante={variante_id}, Acción={accion}")
+
+            except Exception as e:
+                print(f"   ❌ Error en ProductResolver: {e}")
+                traceback.print_exc()
+                resolver.close()
                 return None
 
-            # Guardar en items_factura
+            finally:
+                resolver.close()
+
+            # ========================================
+            # GUARDAR EN ITEMS_FACTURA (con referencias canónicas)
+            # ========================================
             cursor.execute("""
                 INSERT INTO items_factura (
                     factura_id,
-                    producto_maestro_id,
                     usuario_id,
+                    producto_canonico_id,
                     codigo_leido,
                     nombre_leido,
                     precio_pagado,
@@ -597,20 +333,54 @@ class OCRProcessor:
                 RETURNING id
             """, (
                 factura_id,
-                producto_maestro_id,
                 user_id,
+                canonico_id,
                 codigo if codigo else None,
                 nombre,
                 precio,
                 cantidad,
-                90,
+                95 if accion == 'found_ean' else 85 if accion == 'found_similar' else 70,
                 datetime.now()
             ))
 
             item_id = cursor.fetchone()[0]
             conn.commit()
 
-            print(f"   ✅ Item guardado: ID={item_id}, Producto={producto_maestro_id}, Precio=${precio:,}")
+            print(f"   ✅ Item guardado: ID={item_id}, Canónico={canonico_id}, Precio=${precio:,}")
+
+            # ========================================
+            # GUARDAR PRECIO EN precios_productos (para comparación)
+            # ========================================
+            try:
+                cursor.execute("""
+                    INSERT INTO precios_productos (
+                        producto_canonico_id,
+                        variante_id,
+                        establecimiento,
+                        precio,
+                        fecha,
+                        usuario_id,
+                        factura_id
+                    ) VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s)
+                    ON CONFLICT (producto_canonico_id, establecimiento, fecha)
+                    DO UPDATE SET
+                        precio = EXCLUDED.precio,
+                        usuario_id = EXCLUDED.usuario_id,
+                        factura_id = EXCLUDED.factura_id
+                """, (
+                    canonico_id,
+                    variante_id,
+                    establecimiento,
+                    precio,
+                    user_id,
+                    factura_id
+                ))
+                conn.commit()
+                print(f"   💰 Precio guardado en precios_productos para comparación")
+            except Exception as e:
+                print(f"   ⚠️ Error guardando precio: {e}")
+                conn.rollback()
+
             return item_id
 
         except Exception as e:
@@ -642,7 +412,7 @@ class OCRProcessor:
         }
 
 
-print("✅ OCR Processor cargado - VERSIÓN MEJORADA CON PRECIOS COLOMBIANOS")
+print("✅ OCR Processor V2.0 cargado - INTEGRADO CON PRODUCTOS CANÓNICOS")
 
 # Crear instancia global del procesador
 processor = OCRProcessor()
