@@ -1671,6 +1671,10 @@ async def detectar_productos_duplicados_sospechosos(
 
             productos_para_comparar = list(productos_dict.values())
             productos_ya_agrupados = set()
+            comparaciones_realizadas = 0
+            duplicados_por_nombre = 0
+            duplicados_por_establecimiento = 0
+            duplicados_por_precio = 0
 
             for i, prod1 in enumerate(productos_para_comparar):
                 if prod1['id'] in productos_ya_agrupados:
@@ -1693,6 +1697,8 @@ async def detectar_productos_duplicados_sospechosos(
                     if similitud < 0.95:  # Muy estricto para duplicados reales
                         continue
 
+                    duplicados_por_nombre += 1
+
                     # 2. Verificar si tienen el MISMO establecimiento
                     establecimientos_prod1 = {p['establecimiento_id'] for p in prod1['precios'] if p['establecimiento_id']}
                     establecimientos_prod2 = {p['establecimiento_id'] for p in prod2['precios'] if p['establecimiento_id']}
@@ -1702,6 +1708,8 @@ async def detectar_productos_duplicados_sospechosos(
                     if not establecimientos_comunes:
                         # Diferentes establecimientos = VARIANTE LEGÍTIMA, no duplicado
                         continue
+
+                    duplicados_por_establecimiento += 1
 
                     # 3. Verificar si tienen precios similares en el mismo establecimiento
                     es_duplicado_real = False
@@ -1722,6 +1730,7 @@ async def detectar_productos_duplicados_sospechosos(
                                     # 4. Verificar fechas cercanas (opcional, si tenemos fechas)
                                     # Por ahora asumimos que si nombre+establecimiento+precio coinciden = duplicado
                                     es_duplicado_real = True
+                                    duplicados_por_precio += 1
                                     break
                             if es_duplicado_real:
                                 break
@@ -1766,6 +1775,11 @@ async def detectar_productos_duplicados_sospechosos(
                     if len(grupos_duplicados) >= 50:
                         break
 
+            print(f"   📊 ESTADÍSTICAS DE BÚSQUEDA:")
+            print(f"      - Comparaciones realizadas: {comparaciones_realizadas}")
+            print(f"      - Productos con nombre similar (>95%): {duplicados_por_nombre}")
+            print(f"      - Con mismo establecimiento: {duplicados_por_establecimiento}")
+            print(f"      - Con precio similar (±5%): {duplicados_por_precio}")
             print(f"   ✅ Encontrados {len([g for g in grupos_duplicados if g.get('tipo') == 'duplicado_real'])} grupos de duplicados reales")
             print(f"   ℹ️  Variantes de precio legítimas NO se muestran (diferentes tiendas/precios)")
 
