@@ -1995,6 +1995,306 @@ print("✅ Sistema de auditoría cargado")
 # ==========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ==========================================
+from pydantic import BaseModel
+from typing import Optional
+
+print("=" * 80)
+print("📦 CARGANDO ENDPOINTS DE AUDITORÍA DIRECTAMENTE EN MAIN.PY")
+print("=" * 80)
+
+# Modelos Pydantic para Auditoría
+class ProductoBaseAuditoria(BaseModel):
+    codigo_ean: str
+    nombre: str
+    marca: Optional[str] = None
+    categoria: Optional[str] = None
+
+class ProductoCreateAuditoria(ProductoBaseAuditoria):
+    pass
+
+class ProductoUpdateAuditoria(ProductoBaseAuditoria):
+    pass
+
+
+# ==========================================
+# ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
+# ==========================================
+@app.get("/api/admin/auditoria/verificar/{codigo_ean}")
+async def verificar_producto_auditoria(codigo_ean: str, current_user: dict = Depends(get_current_user)):
+    """Verificar si un producto existe en la base de datos"""
+    print(f"🔍 [AUDITORÍA] Verificando producto: {codigo_ean}")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
+            FROM productos_maestros
+            WHERE codigo_ean = %s
+            LIMIT 1
+            """, (codigo_ean,))
+
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if row:
+            print(f"✅ [AUDITORÍA] Producto encontrado: {row[2]}")
+            return {
+                'existe': True,
+                'producto': {
+                    'id': row[0],
+                    'codigo_ean': row[1],
+                    'nombre': row[2],
+                    'marca': row[3],
+                    'categoria': row[4],
+                    'auditado_manualmente': row[5],
+                    'validaciones_manuales': row[6]
+                }
+            }
+        else:
+            print(f"⚠️ [AUDITORÍA] Producto NO encontrado: {codigo_ean}")
+            return {
+                'existe': False,
+                'producto': None,
+                'mensaje': 'Producto no encontrado'
+            }
+
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en verificar_producto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ENDPOINT 2: CREAR PRODUCTO - ✅ CORREGIDO
+# ==========================================
+@app.post("/api/admin/auditoria/producto")
+async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_user: dict = Depends(get_current_user)):
+    """Crear un nuevo producto en la base de datos"""
+    print(f"➕ [AUDITORÍA] Creando producto: {producto.codigo_ean} - {producto.nombre}")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar si ya existe
+        cursor.execute("SELECT id FROM productos_maestros WHERE codigo_ean = %s", (producto.codigo_ean,))
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            print(f"⚠️ [AUDITORÍA] Producto ya existe: {producto.codigo_ean}")
+            raise HTTPException(status_code=400, detail="Producto ya existe")
+
+        # Crear producto
+        cursor.execute("""
+            INSERT INTO productos_maestros (
+            codigo_ean, nombre_normalizado, marca, categoria,
+            auditado_manualmente, validaciones_manuales
+            ) VALUES (%s, %s, %s, %s, TRUE, 1)
+            RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
+            """, (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria))
+
+        row = cursor.fetchone()
+
+        # Registrar auditoría
+        cursor.execute("""
+            INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
+            VALUES (%s, %s, 'crear', %s)
+        """, (current_user['id'], row[0], datetime.now()))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ [AUDITORÍA] Producto creado exitosamente: ID {row[0]}")
+
+        return {
+            'mensaje': 'Producto creado',
+            'producto': {
+                'id': row[0],
+                'codigo_ean': row[1],
+                'nombre': row[2],
+                'marca': row[3],
+                'categoria': row[4],
+                'auditado_manualmente': row[5],
+                'validaciones_manuales': row[6]
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en crear_producto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ENDPOINT 3: ACTUALIZAR PRODUCTO - ✅ CORREGIDO
+# ==========================================
+@app.put("/api/admin/auditoria/producto/{producto_id}")
+async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpdateAuditoria, current_user: dict = Depends(get_current_user)):
+    """Actualizar un producto existente"""
+    print(f"✏️ [AUDITORÍA] Actualizando producto ID: {producto_id}")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE productos_maestros
+            SET nombre_normalizado = %s, marca = %s, categoria = %s
+            WHERE id = %s
+            RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
+            """, (producto.nombre, producto.marca, producto.categoria, producto_id))
+
+        row = cursor.fetchone()
+
+        if not row:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="No encontrado")
+
+        # Registrar auditoría
+        cursor.execute("""
+            INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
+            VALUES (%s, %s, 'actualizar', %s)
+        """, (current_user['id'], producto_id, datetime.now()))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ [AUDITORÍA] Producto actualizado: {row[2]}")
+
+        return {
+            'mensaje': 'Actualizado',
+            'producto': {
+                'id': row[0],
+                'codigo_ean': row[1],
+                'nombre': row[2],
+                'marca': row[3],
+                'categoria': row[4],
+                'auditado_manualmente': row[5],
+                'validaciones_manuales': row[6]
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en actualizar_producto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ENDPOINT 4: VALIDAR PRODUCTO
+# ==========================================
+@app.post("/api/admin/auditoria/validar/{producto_id}")
+async def validar_producto_auditoria(producto_id: int, current_user: dict = Depends(get_current_user)):
+    """Validar manualmente un producto"""
+    print(f"✅ [AUDITORÍA] Validando producto ID: {producto_id}")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE productos_maestros
+            SET auditado_manualmente = TRUE,
+                validaciones_manuales = validaciones_manuales + 1,
+                ultima_validacion = %s
+            WHERE id = %s
+        """, (datetime.now(), producto_id))
+
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="No encontrado")
+
+        # Registrar auditoría
+        cursor.execute("""
+            INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
+            VALUES (%s, %s, 'validar', %s)
+        """, (current_user['id'], producto_id, datetime.now()))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ [AUDITORÍA] Producto validado exitosamente")
+
+        return {'mensaje': 'Validado'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en validar_producto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ENDPOINT 5: ESTADÍSTICAS
+# ==========================================
+@app.get("/api/admin/auditoria/estadisticas")
+async def obtener_estadisticas_auditoria(current_user: dict = Depends(get_current_user)):
+    """Obtener estadísticas de auditoría del usuario"""
+    print(f"📊 [AUDITORÍA] Obteniendo estadísticas para usuario {current_user['id']}")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT accion, COUNT(*)
+            FROM auditoria_productos
+            WHERE usuario_id = %s
+            GROUP BY accion
+        """, (current_user['id'],))
+
+        stats = {
+            'productos_creados': 0,
+            'productos_actualizados': 0,
+            'productos_validados': 0,
+            'total_acciones': 0
+        }
+
+        for row in cursor.fetchall():
+            if row[0] == 'crear':
+                stats['productos_creados'] = row[1]
+            elif row[0] == 'actualizar':
+                stats['productos_actualizados'] = row[1]
+            elif row[0] == 'validar':
+                stats['productos_validados'] = row[1]
+            stats['total_acciones'] += row[1]
+
+        cursor.execute("""
+            SELECT accion, producto_maestro_id, fecha
+            FROM auditoria_productos
+            WHERE usuario_id = %s
+            ORDER BY fecha DESC
+            LIMIT 10
+        """, (current_user['id'],))
+
+        stats['ultimas_acciones'] = [
+            {
+                'accion': r[0],
+                'producto_maestro_id': r[1],
+                'fecha': r[2].isoformat() if r[2] else None
+            }
+            for r in cursor.fetchall()
+        ]
+
+        cursor.close()
+        conn.close()
+
+        print(f"✅ [AUDITORÍA] Estadísticas obtenidas")
+
+        return stats
+
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en obtener_estadisticas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("=" * 80)
+print("✅ ENDPOINTS DE AUDITORÍA CORREGIDOS Y CARGADOS")
+print("=" * 80)
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
@@ -2905,302 +3205,3 @@ print("✅ Todos los endpoints administrativos y de debug cargados")
 # ==========================================
 
 from pydantic import BaseModel
-from typing import Optional
-
-print("=" * 80)
-print("📦 CARGANDO ENDPOINTS DE AUDITORÍA DIRECTAMENTE EN MAIN.PY")
-print("=" * 80)
-
-# Modelos Pydantic para Auditoría
-class ProductoBaseAuditoria(BaseModel):
-    codigo_ean: str
-    nombre: str
-    marca: Optional[str] = None
-    categoria: Optional[str] = None
-
-class ProductoCreateAuditoria(ProductoBaseAuditoria):
-    pass
-
-class ProductoUpdateAuditoria(ProductoBaseAuditoria):
-    pass
-
-
-# ==========================================
-# ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
-# ==========================================
-@app.get("/api/admin/auditoria/verificar/{codigo_ean}")
-async def verificar_producto_auditoria(codigo_ean: str, current_user: dict = Depends(get_current_user)):
-    """Verificar si un producto existe en la base de datos"""
-    print(f"🔍 [AUDITORÍA] Verificando producto: {codigo_ean}")
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
-            FROM productos_maestros
-            WHERE codigo_ean = %s
-            LIMIT 1
-            """, (codigo_ean,))
-
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-
-        if row:
-            print(f"✅ [AUDITORÍA] Producto encontrado: {row[2]}")
-            return {
-                'existe': True,
-                'producto': {
-                    'id': row[0],
-                    'codigo_ean': row[1],
-                    'nombre': row[2],
-                    'marca': row[3],
-                    'categoria': row[4],
-                    'auditado_manualmente': row[5],
-                    'validaciones_manuales': row[6]
-                }
-            }
-        else:
-            print(f"⚠️ [AUDITORÍA] Producto NO encontrado: {codigo_ean}")
-            return {
-                'existe': False,
-                'producto': None,
-                'mensaje': 'Producto no encontrado'
-            }
-
-    except Exception as e:
-        print(f"❌ [AUDITORÍA] Error en verificar_producto: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# ENDPOINT 2: CREAR PRODUCTO - ✅ CORREGIDO
-# ==========================================
-@app.post("/api/admin/auditoria/producto")
-async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_user: dict = Depends(get_current_user)):
-    """Crear un nuevo producto en la base de datos"""
-    print(f"➕ [AUDITORÍA] Creando producto: {producto.codigo_ean} - {producto.nombre}")
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Verificar si ya existe
-        cursor.execute("SELECT id FROM productos_maestros WHERE codigo_ean = %s", (producto.codigo_ean,))
-        if cursor.fetchone():
-            cursor.close()
-            conn.close()
-            print(f"⚠️ [AUDITORÍA] Producto ya existe: {producto.codigo_ean}")
-            raise HTTPException(status_code=400, detail="Producto ya existe")
-
-        # Crear producto
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-            codigo_ean, nombre_normalizado, marca, categoria,
-            auditado_manualmente, validaciones_manuales
-            ) VALUES (%s, %s, %s, %s, TRUE, 1)
-            RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
-            """, (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria))
-
-        row = cursor.fetchone()
-
-        # Registrar auditoría
-        cursor.execute("""
-            INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
-            VALUES (%s, %s, 'crear', %s)
-        """, (current_user['id'], row[0], datetime.now()))
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        print(f"✅ [AUDITORÍA] Producto creado exitosamente: ID {row[0]}")
-
-        return {
-            'mensaje': 'Producto creado',
-            'producto': {
-                'id': row[0],
-                'codigo_ean': row[1],
-                'nombre': row[2],
-                'marca': row[3],
-                'categoria': row[4],
-                'auditado_manualmente': row[5],
-                'validaciones_manuales': row[6]
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ [AUDITORÍA] Error en crear_producto: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# ENDPOINT 3: ACTUALIZAR PRODUCTO - ✅ CORREGIDO
-# ==========================================
-@app.put("/api/admin/auditoria/producto/{producto_id}")
-async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpdateAuditoria, current_user: dict = Depends(get_current_user)):
-    """Actualizar un producto existente"""
-    print(f"✏️ [AUDITORÍA] Actualizando producto ID: {producto_id}")
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            UPDATE productos_maestros
-            SET nombre_normalizado = %s, marca = %s, categoria = %s
-            WHERE id = %s
-            RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
-            """, (producto.nombre, producto.marca, producto.categoria, producto_id))
-
-        row = cursor.fetchone()
-
-        if not row:
-            cursor.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="No encontrado")
-
-        # Registrar auditoría
-        cursor.execute("""
-            INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
-            VALUES (%s, %s, 'actualizar', %s)
-        """, (current_user['id'], producto_id, datetime.now()))
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        print(f"✅ [AUDITORÍA] Producto actualizado: {row[2]}")
-
-        return {
-            'mensaje': 'Actualizado',
-            'producto': {
-                'id': row[0],
-                'codigo_ean': row[1],
-                'nombre': row[2],
-                'marca': row[3],
-                'categoria': row[4],
-                'auditado_manualmente': row[5],
-                'validaciones_manuales': row[6]
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ [AUDITORÍA] Error en actualizar_producto: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# ENDPOINT 4: VALIDAR PRODUCTO
-# ==========================================
-@app.post("/api/admin/auditoria/validar/{producto_id}")
-async def validar_producto_auditoria(producto_id: int, current_user: dict = Depends(get_current_user)):
-    """Validar manualmente un producto"""
-    print(f"✅ [AUDITORÍA] Validando producto ID: {producto_id}")
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            UPDATE productos_maestros
-            SET auditado_manualmente = TRUE,
-                validaciones_manuales = validaciones_manuales + 1,
-                ultima_validacion = %s
-            WHERE id = %s
-        """, (datetime.now(), producto_id))
-
-        if cursor.rowcount == 0:
-            cursor.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="No encontrado")
-
-        # Registrar auditoría
-        cursor.execute("""
-            INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
-            VALUES (%s, %s, 'validar', %s)
-        """, (current_user['id'], producto_id, datetime.now()))
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        print(f"✅ [AUDITORÍA] Producto validado exitosamente")
-
-        return {'mensaje': 'Validado'}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ [AUDITORÍA] Error en validar_producto: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# ENDPOINT 5: ESTADÍSTICAS
-# ==========================================
-@app.get("/api/admin/auditoria/estadisticas")
-async def obtener_estadisticas_auditoria(current_user: dict = Depends(get_current_user)):
-    """Obtener estadísticas de auditoría del usuario"""
-    print(f"📊 [AUDITORÍA] Obteniendo estadísticas para usuario {current_user['id']}")
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT accion, COUNT(*)
-            FROM auditoria_productos
-            WHERE usuario_id = %s
-            GROUP BY accion
-        """, (current_user['id'],))
-
-        stats = {
-            'productos_creados': 0,
-            'productos_actualizados': 0,
-            'productos_validados': 0,
-            'total_acciones': 0
-        }
-
-        for row in cursor.fetchall():
-            if row[0] == 'crear':
-                stats['productos_creados'] = row[1]
-            elif row[0] == 'actualizar':
-                stats['productos_actualizados'] = row[1]
-            elif row[0] == 'validar':
-                stats['productos_validados'] = row[1]
-            stats['total_acciones'] += row[1]
-
-        cursor.execute("""
-            SELECT accion, producto_maestro_id, fecha
-            FROM auditoria_productos
-            WHERE usuario_id = %s
-            ORDER BY fecha DESC
-            LIMIT 10
-        """, (current_user['id'],))
-
-        stats['ultimas_acciones'] = [
-            {
-                'accion': r[0],
-                'producto_maestro_id': r[1],
-                'fecha': r[2].isoformat() if r[2] else None
-            }
-            for r in cursor.fetchall()
-        ]
-
-        cursor.close()
-        conn.close()
-
-        print(f"✅ [AUDITORÍA] Estadísticas obtenidas")
-
-        return stats
-
-    except Exception as e:
-        print(f"❌ [AUDITORÍA] Error en obtener_estadisticas: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-print("=" * 80)
-print("✅ ENDPOINTS DE AUDITORÍA CORREGIDOS Y CARGADOS")
-print("=" * 80)
