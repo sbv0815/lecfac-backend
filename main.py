@@ -2057,6 +2057,16 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         except Exception as cleanup_error:
             print(f"⚠️ Error limpiando archivos: {cleanup_error}")
 
+@app.get("/consolidacion.html", response_class=HTMLResponse)
+async def serve_consolidacion():
+    """Servir página de consolidación de productos"""
+    try:
+        print("✅ Sirviendo página de consolidación: consolidacion.html")
+        return FileResponse("consolidacion.html")
+    except Exception as e:
+        print(f"❌ Error sirviendo consolidacion.html: {e}")
+        raise HTTPException(status_code=404, detail="Página no encontrada")
+
 
 # ==========================================
 # RESTO DE ENDPOINTS (simplificados por espacio)
