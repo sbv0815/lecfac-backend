@@ -1618,9 +1618,14 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.total_reportes,
                         pp.establecimiento_id,
                         pp.precio,
-                        pp.fecha_registro
+                        pp.fecha_registro,
+                        e.nombre_normalizado as establecimiento_nombre,
+                        f.establecimiento as establecimiento_texto
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+                    LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                    LEFT JOIN facturas f ON f.id = if2.factura_id
                     WHERE pm.nombre_normalizado IS NOT NULL
                     ORDER BY pm.total_reportes DESC
                     LIMIT 200
@@ -1636,9 +1641,14 @@ async def detectar_productos_duplicados_sospechosos(
                         pm.total_reportes,
                         pp.establecimiento_id,
                         pp.precio,
-                        pp.fecha_registro
+                        pp.fecha_registro,
+                        e.nombre_normalizado as establecimiento_nombre,
+                        f.establecimiento as establecimiento_texto
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+                    LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                    LEFT JOIN facturas f ON f.id = if2.factura_id
                     WHERE pm.nombre_normalizado IS NOT NULL
                     ORDER BY pm.total_reportes DESC
                     LIMIT 200
@@ -1658,16 +1668,21 @@ async def detectar_productos_duplicados_sospechosos(
                         'marca': row[3],
                         'precio_promedio': row[4],
                         'reportes': row[5],
-                        'precios': []
+                        'precios': [],
+                        'establecimientos': set()
                     }
 
                 # Agregar info de precio/establecimiento/fecha
                 if row[6] and row[7] and row[8]:  # establecimiento_id, precio, fecha
+                    establecimiento_nombre = row[9] or row[10] or "Desconocido"
+
                     productos_dict[prod_id]['precios'].append({
                         'establecimiento_id': row[6],
+                        'establecimiento_nombre': establecimiento_nombre,
                         'precio': row[7],
                         'fecha': row[8]
                     })
+                    productos_dict[prod_id]['establecimientos'].add(establecimiento_nombre)
 
             productos_para_comparar = list(productos_dict.values())
             productos_ya_agrupados = set()
@@ -1739,6 +1754,7 @@ async def detectar_productos_duplicados_sospechosos(
 
                     if es_duplicado_real:
                         if not duplicados_reales:  # Primer duplicado encontrado
+                            est_texto = ', '.join(prod1.get('establecimientos', [])) or "Desconocido"
                             duplicados_reales.append({
                                 "id": prod1['id'],
                                 "nombre": prod1['nombre'],
@@ -1746,10 +1762,11 @@ async def detectar_productos_duplicados_sospechosos(
                                 "marca": prod1['marca'],
                                 "precio_promedio": int(prod1['precio_promedio']) if prod1['precio_promedio'] else 0,
                                 "veces_reportado": prod1['reportes'] or 0,
-                                "establecimiento": "Varios"
+                                "establecimiento": est_texto
                             })
                             productos_ya_agrupados.add(prod1['id'])
 
+                        est_texto = ', '.join(prod2.get('establecimientos', [])) or "Desconocido"
                         duplicados_reales.append({
                             "id": prod2['id'],
                             "nombre": prod2['nombre'],
@@ -1757,7 +1774,7 @@ async def detectar_productos_duplicados_sospechosos(
                             "marca": prod2['marca'],
                             "precio_promedio": int(prod2['precio_promedio']) if prod2['precio_promedio'] else 0,
                             "veces_reportado": prod2['reportes'] or 0,
-                            "establecimiento": "Varios"
+                            "establecimiento": est_texto
                         })
                         productos_ya_agrupados.add(prod2['id'])
 
