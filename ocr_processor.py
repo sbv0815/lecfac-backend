@@ -1,26 +1,26 @@
 """
 Sistema de Procesamiento Automático de OCR para Facturas
-VERSIÓN 2.0 - INTEGRADO CON PRODUCTOS CANÓNICOS
-Usa ProductResolver para evitar duplicados y comparar precios
+VERSIÓN 2.1 - CON NORMALIZACIÓN INTELIGENTE DE CÓDIGOS
+Maneja múltiples establecimientos y tipos de códigos (EAN, PLU, internos)
 """
 
 import threading
 from queue import Queue
 import time
 import os
-import tempfile
 from datetime import datetime
 from typing import Dict, Any, Optional
 import traceback
-import unicodedata
-import re
 
 # Importar funciones de base de datos
 from database import get_db_connection, detectar_cadena, actualizar_inventario_desde_factura
 from claude_invoice import parse_invoice_with_claude
 
-# ✅ NUEVO: Importar ProductResolver para sistema canónico
-from product_resolver import ProductResolver
+# ✅ Importar normalizador de códigos
+from normalizador_codigos import (
+    normalizar_codigo_por_establecimiento,
+    buscar_o_crear_producto_inteligente
+)
 
 # Colas y tracking globales
 ocr_queue = Queue()
@@ -97,11 +97,11 @@ def limpiar_precio_colombiano(precio_str):
 
 
 # ==============================================================================
-# CLASE OCPROCESSOR - VERSIÓN 2.0 CON PRODUCTOS CANÓNICOS
+# CLASE OCPROCESSOR - VERSIÓN 2.1 CON NORMALIZACIÓN DE CÓDIGOS
 # ==============================================================================
 
 class OCRProcessor:
-    """Procesador automático de facturas con OCR - Versión 2.0"""
+    """Procesador automático de facturas con OCR - Versión 2.1"""
 
     def __init__(self):
         self.is_running = False
@@ -120,7 +120,8 @@ class OCRProcessor:
         self.is_running = True
         self.worker_thread = threading.Thread(target=self.process_queue, daemon=True)
         self.worker_thread.start()
-        print("🤖 Procesador OCR automático iniciado (VERSIÓN 2.0 - PRODUCTOS CANÓNICOS)")
+        print("🤖 Procesador OCR automático iniciado")
+        print("   ✅ VERSIÓN 2.1 - Normalización inteligente de códigos")
 
     def stop(self):
         """Detiene el procesador"""
@@ -249,34 +250,32 @@ class OCRProcessor:
     def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id: int,
                                        user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
         """
-        ✅ VERSIÓN 2.0 - USA PRODUCTRESOLVER PARA SISTEMA CANÓNICO
+        ✅ VERSIÓN 2.1 - CON NORMALIZACIÓN INTELIGENTE DE CÓDIGOS
 
-        Guarda un producto usando el sistema de productos canónicos:
-        1. Resuelve identidad del producto (canónico + variante)
-        2. Guarda en items_factura con referencias canónicas
-        3. Guarda precio en precios_productos para comparación
+        Guarda un producto con:
+        1. Normalización de códigos según establecimiento (ARA, D1, etc.)
+        2. Detección de tipo de código (EAN, PLU, INTERNO)
+        3. Búsqueda inteligente (por código o nombre)
+        4. Creación automática si no existe
         """
         try:
-            codigo = str(product.get("codigo", "")).strip()
+            codigo_raw = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
-
-            # Limpiar precio colombiano
             precio_raw = product.get("precio", 0)
             precio = limpiar_precio_colombiano(precio_raw)
-
             cantidad = int(product.get("cantidad", 1))
 
-            # Validación 1: Producto debe tener nombre
+            # ========================================
+            # VALIDACIONES BÁSICAS
+            # ========================================
             if not nombre:
                 print(f"   ⚠️ Producto sin nombre, omitiendo")
                 return None
 
-            # Validación 2: Precio debe ser positivo
             if precio <= 0:
                 print(f"   ⚠️ Precio inválido para '{nombre}': {precio_raw} → {precio}")
                 return None
 
-            # Validación 3: Precio razonable (entre $10 y $10 millones)
             if precio < 10:
                 print(f"   ⚠️ Precio muy bajo para '{nombre}': ${precio:,}, omitiendo")
                 return None
@@ -284,107 +283,63 @@ class OCRProcessor:
             if precio > 10_000_000:
                 print(f"   ⚠️ Precio sospechoso para '{nombre}': ${precio:,}, verificar")
 
-            print(f"   💰 '{nombre}': {precio_raw} → ${precio:,} pesos")
+            # ========================================
+            # ✅ NORMALIZAR CÓDIGO SEGÚN ESTABLECIMIENTO
+            # ========================================
+            codigo, tipo_codigo, confianza = normalizar_codigo_por_establecimiento(
+                codigo_raw, establecimiento
+            )
+
+            print(f"   💰 '{nombre}': ${precio:,}")
+            print(f"      📟 Código: {codigo_raw} → {codigo} ({tipo_codigo}, {confianza}%)")
 
             # ========================================
-            # ✅ NUEVO: USAR PRODUCTRESOLVER
+            # ✅ BUSCAR O CREAR PRODUCTO INTELIGENTE
             # ========================================
-            print(f"   🧠 Resolviendo identidad del producto...")
+            producto_maestro_id, accion = buscar_o_crear_producto_inteligente(
+                cursor, conn, codigo, tipo_codigo, nombre, establecimiento, precio
+            )
 
-            resolver = ProductResolver()
-
-            try:
-                # Resolver producto: busca o crea canónico + variante
-                canonico_id, variante_id, accion = resolver.resolver_producto(
-                    codigo=codigo,
-                    nombre=nombre,
-                    establecimiento=establecimiento,
-                    precio=precio,
-                    marca=None,
-                    categoria=None
-                )
-
-                print(f"   ✅ Resuelto: Canónico={canonico_id}, Variante={variante_id}, Acción={accion}")
-
-            except Exception as e:
-                print(f"   ❌ Error en ProductResolver: {e}")
-                traceback.print_exc()
-                resolver.close()
+            if not producto_maestro_id:
+                print(f"   ❌ No se pudo obtener producto_maestro_id")
                 return None
 
-            finally:
-                resolver.close()
-
             # ========================================
-            # GUARDAR EN ITEMS_FACTURA (con referencias canónicas)
+            # GUARDAR EN ITEMS_FACTURA
             # ========================================
             cursor.execute("""
                 INSERT INTO items_factura (
                     factura_id,
                     usuario_id,
-                    producto_canonico_id,
+                    producto_maestro_id,
                     codigo_leido,
                     nombre_leido,
                     precio_pagado,
                     cantidad,
                     matching_confianza,
                     fecha_creacion
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 RETURNING id
             """, (
                 factura_id,
                 user_id,
-                canonico_id,
+                producto_maestro_id,
                 codigo if codigo else None,
                 nombre,
                 precio,
                 cantidad,
-                95 if accion == 'found_ean' else 85 if accion == 'found_similar' else 70,
-                datetime.now()
+                confianza
             ))
 
             item_id = cursor.fetchone()[0]
             conn.commit()
 
-            print(f"   ✅ Item guardado: ID={item_id}, Canónico={canonico_id}, Precio=${precio:,}")
-
-            # ========================================
-            # GUARDAR PRECIO EN precios_productos (para comparación)
-            # ========================================
-            try:
-                cursor.execute("""
-                    INSERT INTO precios_productos (
-                        producto_canonico_id,
-                        variante_id,
-                        establecimiento,
-                        precio,
-                        fecha,
-                        usuario_id,
-                        factura_id
-                    ) VALUES (%s, %s, %s, %s, CURRENT_DATE, %s, %s)
-                    ON CONFLICT (producto_canonico_id, establecimiento, fecha)
-                    DO UPDATE SET
-                        precio = EXCLUDED.precio,
-                        usuario_id = EXCLUDED.usuario_id,
-                        factura_id = EXCLUDED.factura_id
-                """, (
-                    canonico_id,
-                    variante_id,
-                    establecimiento,
-                    precio,
-                    user_id,
-                    factura_id
-                ))
-                conn.commit()
-                print(f"   💰 Precio guardado en precios_productos para comparación")
-            except Exception as e:
-                print(f"   ⚠️ Error guardando precio: {e}")
-                conn.rollback()
+            print(f"   ✅ Item guardado: ID={item_id}, Producto={producto_maestro_id}, Acción={accion}")
 
             return item_id
 
         except Exception as e:
-            print(f"   ⚠️ Error guardando producto '{nombre}': {e}")
+            print(f"   ❌ Error guardando producto '{nombre}': {e}")
             traceback.print_exc()
             conn.rollback()
             return None
@@ -412,7 +367,9 @@ class OCRProcessor:
         }
 
 
-print("✅ OCR Processor V2.0 cargado - INTEGRADO CON PRODUCTOS CANÓNICOS")
+print("✅ OCR Processor V2.1 cargado")
+print("   📟 Normalización inteligente de códigos habilitada")
+print("   🏪 Soporta: ARA, D1, Éxito, Jumbo, y cualquier establecimiento")
 
 # Crear instancia global del procesador
 processor = OCRProcessor()
