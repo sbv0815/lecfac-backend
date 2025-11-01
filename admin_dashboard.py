@@ -1350,7 +1350,7 @@ async def detectar_productos_duplicados_sospechosos(
                 pm.precio_promedio_global,
                 pm.total_reportes,
                 f.establecimiento,
-                if2.precio_unitario,
+                if2.precio_pagado,
                 f.fecha_cargue
             FROM productos_maestros pm
             INNER JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
