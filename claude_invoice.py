@@ -630,6 +630,7 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         "cruz verde": "CRUZ VERDE",
         "cafam": "CAFAM",
         "colsubsidio": "COLSUBSIDIO",
+        "Jeronimo Martins Colombias SAS": "ARA",
     }
 
     for clave, normalizado in establecimientos.items():
