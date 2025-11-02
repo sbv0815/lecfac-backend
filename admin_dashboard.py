@@ -2373,16 +2373,19 @@ async def consolidar_productos(data: ConsolidacionRequest):
 async def obtener_productos_detalle_completo():
     """
     Retorna información COMPLETA de productos con precios
-    VERSIÓN FUNCIONAL - Usa items_factura como fuente de precios
+    VERSIÓN CON DEBUGGING
     """
     try:
+        print("🔍 Iniciando endpoint productos/detalle-completo...")
+
         conn = get_db_connection()
         cursor = conn.cursor()
         database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
-        print("📊 Obteniendo productos con precios desde items_factura...")
+        print(f"📊 Database type: {database_type}")
+        print("📊 Ejecutando query...")
 
-        # Query que obtiene precios de items_factura directamente
+        # Query simplificado para debugging
         if database_type == "postgresql":
             query = """
                 SELECT
@@ -2391,27 +2394,6 @@ async def obtener_productos_detalle_completo():
                     pm.codigo_ean,
                     pm.marca,
                     pm.categoria,
-                    -- Nombres asociados al EAN
-                    string_agg(DISTINCT
-                        CASE WHEN items.codigo_leido = pm.codigo_ean
-                        THEN items.nombre_leido END, ' | ') as nombres_por_ean,
-                    -- Código PLU
-                    MIN(CASE
-                        WHEN items.codigo_leido IS NOT NULL
-                        AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                        AND items.codigo_leido NOT LIKE '77%'
-                        AND (pm.codigo_ean IS NULL OR items.codigo_leido != pm.codigo_ean)
-                        THEN items.codigo_leido
-                    END) as codigo_plu,
-                    -- Nombres asociados al PLU
-                    string_agg(DISTINCT
-                        CASE
-                            WHEN items.codigo_leido IS NOT NULL
-                            AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                            AND items.codigo_leido NOT LIKE '77%'
-                            AND (pm.codigo_ean IS NULL OR items.codigo_leido != pm.codigo_ean)
-                            THEN items.nombre_leido
-                        END, ' | ') as nombres_por_plu,
                     f.establecimiento,
                     AVG(items.precio_pagado) as precio_promedio,
                     MAX(f.fecha_cargue) as ultima_fecha
@@ -2424,7 +2406,7 @@ async def obtener_productos_detalle_completo():
                 AND items.precio_pagado > 0
                 GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca, pm.categoria, f.establecimiento
                 ORDER BY pm.nombre_normalizado, f.establecimiento
-                LIMIT 1000
+                LIMIT 100
             """
         else:
             query = """
@@ -2434,9 +2416,6 @@ async def obtener_productos_detalle_completo():
                     pm.codigo_ean,
                     pm.marca,
                     pm.categoria,
-                    NULL as nombres_por_ean,
-                    NULL as codigo_plu,
-                    NULL as nombres_por_plu,
                     f.establecimiento,
                     AVG(items.precio_pagado) as precio_promedio,
                     MAX(f.fecha_cargue) as ultima_fecha
@@ -2449,15 +2428,16 @@ async def obtener_productos_detalle_completo():
                 AND items.precio_pagado > 0
                 GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca, pm.categoria, f.establecimiento
                 ORDER BY pm.nombre_normalizado, f.establecimiento
-                LIMIT 1000
+                LIMIT 100
             """
 
         cursor.execute(query)
+        print("✅ Query ejecutado")
+
         rows = cursor.fetchall()
+        print(f"✅ {len(rows)} registros obtenidos")
 
-        print(f"   ✅ {len(rows)} registros obtenidos")
-
-        # Agrupar por producto
+        # Procesar datos de forma simple
         productos_map = {}
 
         for row in rows:
@@ -2466,26 +2446,26 @@ async def obtener_productos_detalle_completo():
             if producto_id not in productos_map:
                 productos_map[producto_id] = {
                     "producto_id": producto_id,
-                    "nombre_maestro": row[1] or "Sin nombre",
-                    "codigo_ean": row[2] or "Sin EAN",
-                    "marca": row[3] or "Sin marca",
-                    "categoria": row[4] or "Sin categoría",
-                    "nombres_por_ean": row[5] or "N/A",
-                    "codigo_plu": row[6] or "Sin PLU",
-                    "nombres_por_plu": row[7] or "N/A",
+                    "nombre_maestro": str(row[1]) if row[1] else "Sin nombre",
+                    "codigo_ean": str(row[2]) if row[2] else "Sin EAN",
+                    "marca": str(row[3]) if row[3] else "Sin marca",
+                    "categoria": str(row[4]) if row[4] else "Sin categoría",
+                    "nombres_por_ean": "N/A",
+                    "codigo_plu": "Sin PLU",
+                    "nombres_por_plu": "N/A",
                     "total_supermercados": 0,
                     "precios_por_super": []
                 }
 
-            # Agregar precio del establecimiento
-            establecimiento = row[8]
-            precio = row[9]
-            fecha = row[10]
+            # Agregar precio
+            establecimiento = str(row[5]) if row[5] else None
+            precio = float(row[6]) if row[6] else 0
+            fecha = row[7]
 
             if establecimiento and precio:
                 from datetime import datetime
 
-                # Calcular días desde última actualización
+                # Calcular días
                 dias = None
                 if fecha:
                     try:
@@ -2494,12 +2474,13 @@ async def obtener_productos_detalle_completo():
                         else:
                             fecha_dt = fecha
                         dias = (datetime.now() - fecha_dt).days
-                    except:
+                    except Exception as e:
+                        print(f"⚠️ Error calculando días: {e}")
                         dias = None
 
                 productos_map[producto_id]["precios_por_super"].append({
                     "establecimiento": establecimiento,
-                    "precio": float(precio) if precio else 0,
+                    "precio": precio,
                     "ultima_actualizacion": str(fecha) if fecha else None,
                     "dias_desde_actualizacion": dias
                 })
@@ -2511,18 +2492,22 @@ async def obtener_productos_detalle_completo():
         cursor.close()
         conn.close()
 
-        print(f"✅ {len(productos_map)} productos únicos procesados")
-        print(f"✅ Total productos con precios: {sum(1 for p in productos_map.values() if p['total_supermercados'] > 0)}")
+        print(f"✅ Procesados {len(productos_map)} productos")
 
-        return {
+        resultado = {
             "total_productos": len(productos_map),
             "productos": list(productos_map.values())
         }
 
+        print(f"✅ Retornando {resultado['total_productos']} productos")
+
+        return resultado
+
     except Exception as e:
+        print(f"❌ ERROR en endpoint: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 
