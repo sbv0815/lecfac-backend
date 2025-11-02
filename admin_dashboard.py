@@ -184,9 +184,9 @@ async def obtener_catalogo_productos():
                     "nombre": row[2] or "Sin nombre",
                     "marca": row[3],
                     "veces_visto": row[4] or 0,
-                    "precio_promedio": int(row[5]) if row[5] else 0,  # ✅ Pesos enteros
-                    "precio_min": int(row[6]) if row[6] else 0,        # ✅ Pesos enteros
-                    "precio_max": int(row[7]) if row[7] else 0,        # ✅ Pesos enteros
+                    "precio_promedio": int(row[5]) if row[5] else 0,
+                    "precio_min": int(row[6]) if row[6] else 0,
+                    "precio_max": int(row[7]) if row[7] else 0,
                     "verificado": False,
                     "necesita_revision": False,
                 }
@@ -234,7 +234,7 @@ async def obtener_facturas():
                 {
                     "id": row[0],
                     "establecimiento": row[1] or "Sin datos",
-                    "total": int(row[2]) if row[2] else 0,  # ✅ Pesos enteros
+                    "total": int(row[2]) if row[2] else 0,
                     "fecha": str(row[3]) if row[3] else "",
                     "estado": row[4] or "pendiente",
                     "tiene_imagen": row[5] or False,
@@ -291,7 +291,7 @@ async def obtener_facturas_verificacion():
                 {
                     "id": row[0],
                     "establecimiento": row[1] or "Sin datos",
-                    "total": int(row[2]) if row[2] else 0,  # ✅ Pesos enteros
+                    "total": int(row[2]) if row[2] else 0,
                     "fecha": str(row[3]) if row[3] else "",
                     "estado": row[4] or "pendiente",
                     "puntaje": row[5] or 0,
@@ -747,7 +747,7 @@ async def obtener_inventarios():
                 productos_criticos.append(
                     {
                         "nombre": prod_row[0],
-                        "cantidad": int(prod_row[1]) if prod_row[1] else 0,  # ✅ Entero para cantidades
+                        "cantidad": int(prod_row[1]) if prod_row[1] else 0,
                         "unidad": prod_row[2] or "unidades",
                     }
                 )
@@ -894,8 +894,8 @@ async def get_alertas_globales():
                     "usuario_email": row[1],
                     "producto_nombre": row[2],
                     "producto_codigo": row[3],
-                    "cantidad_actual": int(row[4]) if row[4] else 0,  # ✅ Entero para cantidades
-                    "nivel_alerta": int(row[5]) if row[5] else 0,      # ✅ Entero para cantidades
+                    "cantidad_actual": int(row[4]) if row[4] else 0,
+                    "nivel_alerta": int(row[5]) if row[5] else 0,
                     "unidad": row[6] or "unidades",
                     "fecha_creacion": str(row[7]),
                 }
@@ -985,7 +985,7 @@ async def obtener_factura_detalle(factura_id: int):
         factura = {
             "id": factura_row[0],
             "establecimiento": factura_row[1] or "",
-            "total": total_pesos,  # ✅ Pesos enteros
+            "total": total_pesos,
             "fecha": str(factura_row[3]) if factura_row[3] else "",
             "estado": factura_row[4] or "pendiente",
             "tiene_imagen": factura_row[5] or False,
@@ -1030,7 +1030,7 @@ async def obtener_factura_detalle(factura_id: int):
                 {
                     "id": item_row[0],
                     "nombre": item_row[1] or "",
-                    "precio": precio_pesos,  # ✅ Pesos enteros
+                    "precio": precio_pesos,
                     "codigo": item_row[3] or "",
                 }
             )
@@ -1112,8 +1112,6 @@ async def actualizar_factura(factura_id: int, data: FacturaUpdate):
 
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 
 @router.put("/items/{item_id}")
@@ -1301,9 +1299,6 @@ class ConsolidacionRequest(BaseModel):
     productos_duplicados_ids: List[int]
 
 
-# REEMPLAZO COMPLETO DEL ENDPOINT /productos/duplicados-sospechosos
-# Reemplaza desde la línea 1304 hasta la línea 1818
-
 @router.get("/productos/duplicados-sospechosos")
 async def detectar_productos_duplicados_sospechosos(
     ean: Optional[str] = None,
@@ -1405,7 +1400,7 @@ async def detectar_productos_duplicados_sospechosos(
                     'categoria': row[4],
                     'precio_promedio': row[5],
                     'reportes': row[6],
-                    'establecimientos': {}  # {nombre_establecimiento: [precios]}
+                    'establecimientos': {}
                 }
 
             # Agregar precio de este establecimiento
@@ -1475,7 +1470,7 @@ async def detectar_productos_duplicados_sospechosos(
                         "marca": prod['marca'],
                         "precio_promedio": int(precio_repr),
                         "veces_reportado": prod['reportes'] or 0,
-                        "establecimiento": todos_est  # ✅ Ahora muestra establecimientos reales
+                        "establecimiento": todos_est
                     })
 
                 grupos_duplicados.append({
@@ -1558,11 +1553,10 @@ async def detectar_productos_duplicados_sospechosos(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==========================================
 # 🆕 ENDPOINTS PARA CORRECCIÓN MANUAL
 # ==========================================
-
-from pydantic import BaseModel
 
 class ProductoCorreccion(BaseModel):
     """Modelo para corrección manual de producto"""
@@ -1579,12 +1573,6 @@ class ProductoCorreccion(BaseModel):
 async def obtener_detalle_producto(producto_id: int):
     """
     Obtiene información detallada de un producto para revisión/corrección
-
-    Incluye:
-    - Datos del producto
-    - Establecimientos donde se ha visto
-    - Precios históricos
-    - Facturas asociadas
     """
     try:
         conn = get_db_connection()
@@ -1708,12 +1696,6 @@ async def obtener_detalle_producto(producto_id: int):
 async def corregir_producto(producto_id: int, data: ProductoCorreccion):
     """
     Corrige/actualiza información de un producto
-
-    Casos de uso:
-    - Completar nombre truncado por OCR
-    - Corregir código EAN mal leído
-    - Agregar marca/categoría faltante
-    - Marcar EAN como inválido
     """
     try:
         conn = get_db_connection()
@@ -1792,16 +1774,6 @@ async def corregir_producto(producto_id: int, data: ProductoCorreccion):
         print(f"   Nombre: {datos_anteriores[0]} → {data.nombre_completo or datos_anteriores[0]}")
         print(f"   EAN: {datos_anteriores[1]} → {data.codigo_ean or datos_anteriores[1]}")
 
-        # TODO: Registrar en auditoría
-        # registrar_auditoria(
-        #     usuario_id=1,  # Aquí debería venir del token JWT
-        #     producto_maestro_id=producto_id,
-        #     accion='actualizar',
-        #     datos_anteriores={...},
-        #     datos_nuevos={...},
-        #     razon=data.razon_correccion
-        # )
-
         cursor.close()
         conn.close()
 
@@ -1828,20 +1800,12 @@ async def corregir_producto(producto_id: int, data: ProductoCorreccion):
 async def consultar_api_producto(codigo_ean: str):
     """
     Consulta información de un producto en OpenFoodFacts
-
-    Retorna:
-    - Nombre completo del producto
-    - Marca
-    - Categorías
-    - Imagen
-    - Información nutricional (si está disponible)
     """
     try:
         import requests
 
         print(f"🌐 Consultando OpenFoodFacts para EAN: {codigo_ean}")
 
-        # API de OpenFoodFacts
         url = f"https://world.openfoodfacts.org/api/v2/product/{codigo_ean}.json"
 
         response = requests.get(url, timeout=5)
@@ -1864,7 +1828,6 @@ async def consultar_api_producto(codigo_ean: str):
 
         product = data.get("product", {})
 
-        # Extraer información relevante
         nombre = product.get("product_name_es") or product.get("product_name") or "No disponible"
         marca = product.get("brands") or "No disponible"
         categorias = product.get("categories_tags", [])
@@ -1898,10 +1861,6 @@ async def consultar_api_producto(codigo_ean: str):
         }
 
 
-# ==========================================
-# FIN DE ENDPOINTS DE CORRECCIÓN MANUAL
-# ==========================================
-
 @router.post("/productos/consolidar")
 async def consolidar_productos(data: ConsolidacionRequest):
     """
@@ -1913,8 +1872,6 @@ async def consolidar_productos(data: ConsolidacionRequest):
     3. Migra precios_productos manteniendo establecimiento/fecha/precio
     4. Actualiza items_factura para apuntar al canónico
     5. NO elimina productos_maestros originales (para historial)
-
-    Usado por consolidacion.html
     """
     try:
         conn = get_db_connection()
@@ -1994,23 +1951,23 @@ async def consolidar_productos(data: ConsolidacionRequest):
         variantes_creadas = 0
 
         for prod_id in todos_los_productos:
-            # Obtener info del producto y sus precios por establecimiento
+            # 🔧 FIX: Query corregido aquí
             if database_type == "postgresql":
                 cursor.execute(
-                """
-                SELECT DISTINCT
-                    pm.nombre_normalizado,
-                    pm.codigo_ean,
-                    COALESCE(e.nombre_normalizado, 'Varios') as establecimiento,  # ← CORREGIDO
-                    pp.precio,
-                    pp.fecha_registro  # ← También corregido (fecha → fecha_registro)
+                    """
+                    SELECT DISTINCT
+                        pm.nombre_normalizado,
+                        pm.codigo_ean,
+                        COALESCE(e.nombre_normalizado, 'Varios') as establecimiento,
+                        pp.precio,
+                        pp.fecha_registro
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.id = %s
-                    """,
-                    (producto_maestro_id,)
-                    )
+                """,
+                    (prod_id,),
+                )
             else:
                 cursor.execute(
                     """
@@ -2125,7 +2082,7 @@ async def consolidar_productos(data: ConsolidacionRequest):
                         if database_type == "postgresql":
                             cursor.execute(
                                 """
-                                SELECT id FROM establecimientos WHERE nombre = %s
+                                SELECT id FROM establecimientos WHERE nombre_normalizado = %s
                             """,
                                 (establecimiento,),
                             )
@@ -2146,11 +2103,11 @@ async def consolidar_productos(data: ConsolidacionRequest):
                                     """
                                     INSERT INTO precios_productos
                                         (producto_canonico_id, variante_id, establecimiento_id,
-                                         precio, fecha, usuario_id)
+                                         precio, fecha_registro, usuario_id)
                                     VALUES (%s, %s, %s, %s, %s,
                                         (SELECT usuario_id FROM precios_productos
                                          WHERE producto_maestro_id = %s LIMIT 1))
-                                    ON CONFLICT (producto_canonico_id, establecimiento_id, fecha)
+                                    ON CONFLICT (producto_canonico_id, establecimiento_id, fecha_registro)
                                     DO NOTHING
                                 """,
                                     (producto_canonico_id, variante_id, establecimiento_id,
@@ -2215,8 +2172,3 @@ async def consolidar_productos(data: ConsolidacionRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# FIN DE ENDPOINTS DE CONSOLIDACIÓN
-# ==========================================
