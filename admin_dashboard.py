@@ -1,16 +1,13 @@
-# admin_dashboard.py - VERSIÓN ACTUALIZADA CON NUEVA ARQUITECTURA
+#from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Optional
 from difflib import SequenceMatcher
 from database import get_db_connection
 import os
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import text
 from datetime import datetime
 from typing import List, Dict, Any
-from sqlalchemy.orm import Session
-from fastapi.staticfiles import StaticFiles
 
 
 router = APIRouter()
