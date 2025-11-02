@@ -2373,6 +2373,7 @@ async def consolidar_productos(data: ConsolidacionRequest):
 async def obtener_productos_detalle_completo():
     """
     Retorna información COMPLETA de productos con nombres asociados a códigos
+    VERSIÓN CORREGIDA - Obtiene correctamente todos los nombres asociados
     """
     try:
         print("📊 [INICIO] Obteniendo productos con información completa...")
@@ -2383,7 +2384,9 @@ async def obtener_productos_detalle_completo():
 
         print(f"   📊 Database type: {database_type}")
 
+        # =====================================
         # PASO 1: Obtener productos con precios
+        # =====================================
         query_base = """
             SELECT
                 pm.id as producto_id,
@@ -2410,7 +2413,9 @@ async def obtener_productos_detalle_completo():
         rows = cursor.fetchall()
         print(f"   ✅ {len(rows)} registros base obtenidos")
 
-        # PASO 2: Procesar productos
+        # =====================================
+        # PASO 2: Procesar productos y agrupar precios por supermercado
+        # =====================================
         productos_map = {}
         producto_ids = set()
 
@@ -2432,7 +2437,7 @@ async def obtener_productos_detalle_completo():
                     "precios_por_super": []
                 }
 
-            # Agregar precio
+            # Agregar precio por supermercado
             establecimiento = str(row[5]) if row[5] else None
             precio = float(row[6]) if row[6] else 0
             fecha = row[7]
@@ -2460,7 +2465,9 @@ async def obtener_productos_detalle_completo():
 
         print(f"   ✅ {len(productos_map)} productos base procesados")
 
-        # PASO 3: Obtener nombres asociados a EAN y PLU para cada producto
+        # =====================================
+        # PASO 3: Obtener nombres asociados a cada producto
+        # =====================================
         print(f"   📝 Obteniendo nombres asociados para {len(producto_ids)} productos...")
 
         contador_con_nombres = 0
@@ -2469,72 +2476,137 @@ async def obtener_productos_detalle_completo():
             producto = productos_map[producto_id]
             codigo_ean = producto["codigo_ean"]
 
-            # Obtener nombres asociados al EAN
-            if codigo_ean and codigo_ean != "Sin EAN":
+            # A) Obtener TODOS los nombres con los que aparece este producto
+            try:
+                if database_type == "postgresql":
+                    cursor.execute("""
+                        SELECT DISTINCT nombre_leido
+                        FROM items_factura
+                        WHERE producto_maestro_id = %s
+                        AND nombre_leido IS NOT NULL
+                        AND nombre_leido != ''
+                        ORDER BY nombre_leido
+                        LIMIT 10
+                    """, (producto_id,))
+                else:
+                    cursor.execute("""
+                        SELECT DISTINCT nombre_leido
+                        FROM items_factura
+                        WHERE producto_maestro_id = ?
+                        AND nombre_leido IS NOT NULL
+                        AND nombre_leido != ''
+                        ORDER BY nombre_leido
+                        LIMIT 10
+                    """, (producto_id,))
+
+                nombres_encontrados = [row[0] for row in cursor.fetchall() if row[0]]
+
+                if nombres_encontrados:
+                    # Separar por tipo de código
+                    nombres_con_ean = []
+                    nombres_con_plu = []
+                    codigos_plu_encontrados = set()
+
+                    for nombre in nombres_encontrados:
+                        # Verificar si tiene código asociado
+                        if database_type == "postgresql":
+                            cursor.execute("""
+                                SELECT DISTINCT codigo_leido
+                                FROM items_factura
+                                WHERE producto_maestro_id = %s
+                                AND nombre_leido = %s
+                                AND codigo_leido IS NOT NULL
+                                AND codigo_leido != ''
+                                LIMIT 3
+                            """, (producto_id, nombre))
+                        else:
+                            cursor.execute("""
+                                SELECT DISTINCT codigo_leido
+                                FROM items_factura
+                                WHERE producto_maestro_id = ?
+                                AND nombre_leido = ?
+                                AND codigo_leido IS NOT NULL
+                                AND codigo_leido != ''
+                                LIMIT 3
+                            """, (producto_id, nombre))
+
+                        codigos_rows = cursor.fetchall()
+
+                        # Clasificar según el código
+                        tiene_ean = False
+                        tiene_plu = False
+
+                        for codigo_row in codigos_rows:
+                            if codigo_row and codigo_row[0]:
+                                codigo = str(codigo_row[0]).strip()
+
+                                # Si es EAN (8+ dígitos)
+                                if len(codigo) >= 8:
+                                    tiene_ean = True
+                                # Si es PLU (3-7 dígitos y no empieza con 77)
+                                elif 3 <= len(codigo) <= 7 and not codigo.startswith('77'):
+                                    tiene_plu = True
+                                    codigos_plu_encontrados.add(codigo)
+
+                        # Agregar a la lista correspondiente
+                        if tiene_ean and nombre not in nombres_con_ean:
+                            nombres_con_ean.append(nombre)
+                        if tiene_plu and nombre not in nombres_con_plu:
+                            nombres_con_plu.append(nombre)
+
+                    # Actualizar nombres por EAN
+                    if nombres_con_ean:
+                        producto["nombres_por_ean"] = " | ".join(nombres_con_ean[:5])
+                        contador_con_nombres += 1
+
+                    # Actualizar nombres por PLU
+                    if nombres_con_plu:
+                        producto["nombres_por_plu"] = " | ".join(nombres_con_plu[:5])
+
+                    # Guardar el primer PLU encontrado
+                    if codigos_plu_encontrados:
+                        producto["codigo_plu"] = sorted(list(codigos_plu_encontrados))[0]
+
+            except Exception as e:
+                print(f"      ⚠️ Error obteniendo nombres para producto {producto_id}: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # B) Si no encontramos nombres clasificados, usar todos los nombres
+            if not producto["nombres_por_ean"] and not producto["nombres_por_plu"]:
                 try:
+                    # Intentar obtener al menos algunos nombres del producto
                     if database_type == "postgresql":
                         cursor.execute("""
                             SELECT DISTINCT nombre_leido
                             FROM items_factura
                             WHERE producto_maestro_id = %s
-                            AND codigo_leido = %s
                             AND nombre_leido IS NOT NULL
-                            LIMIT 5
-                        """, (producto_id, codigo_ean))
+                            AND nombre_leido != ''
+                            LIMIT 3
+                        """, (producto_id,))
                     else:
                         cursor.execute("""
                             SELECT DISTINCT nombre_leido
                             FROM items_factura
                             WHERE producto_maestro_id = ?
-                            AND codigo_leido = ?
                             AND nombre_leido IS NOT NULL
-                            LIMIT 5
-                        """, (producto_id, codigo_ean))
+                            AND nombre_leido != ''
+                            LIMIT 3
+                        """, (producto_id,))
 
-                    nombres_ean = [row[0] for row in cursor.fetchall() if row[0]]
-                    if nombres_ean:
-                        producto["nombres_por_ean"] = " | ".join(nombres_ean)
-                        contador_con_nombres += 1
+                    algunos_nombres = [row[0] for row in cursor.fetchall() if row[0]]
+
+                    if algunos_nombres:
+                        # Si el producto tiene EAN, asumimos que son nombres con EAN
+                        if codigo_ean and codigo_ean != "Sin EAN":
+                            producto["nombres_por_ean"] = " | ".join(algunos_nombres)
+                        else:
+                            # Si no tiene EAN, ponerlos en PLU
+                            producto["nombres_por_plu"] = " | ".join(algunos_nombres)
+
                 except Exception as e:
-                    print(f"      ⚠️ Error obteniendo nombres EAN para producto {producto_id}: {e}")
-                    pass
-
-            # Obtener código PLU y sus nombres
-            try:
-                if database_type == "postgresql":
-                    cursor.execute("""
-                        SELECT DISTINCT codigo_leido, nombre_leido
-                        FROM items_factura
-                        WHERE producto_maestro_id = %s
-                        AND codigo_leido IS NOT NULL
-                        AND LENGTH(codigo_leido) BETWEEN 3 AND 7
-                        AND codigo_leido NOT LIKE '77%%'
-                        AND (codigo_leido != %s OR %s = 'Sin EAN')
-                        LIMIT 5
-                    """, (producto_id, codigo_ean, codigo_ean))
-                else:
-                    cursor.execute("""
-                        SELECT DISTINCT codigo_leido, nombre_leido
-                        FROM items_factura
-                        WHERE producto_maestro_id = ?
-                        AND codigo_leido IS NOT NULL
-                        AND LENGTH(codigo_leido) BETWEEN 3 AND 7
-                        AND codigo_leido NOT LIKE '77%'
-                        AND (codigo_leido != ? OR ? = 'Sin EAN')
-                        LIMIT 5
-                    """, (producto_id, codigo_ean, codigo_ean))
-
-                plu_results = cursor.fetchall()
-                if plu_results:
-                    # Tomar el primer PLU encontrado
-                    producto["codigo_plu"] = plu_results[0][0]
-                    # Obtener todos los nombres asociados a ese PLU
-                    nombres_plu = [row[1] for row in plu_results if row[1]]
-                    if nombres_plu:
-                        producto["nombres_por_plu"] = " | ".join(nombres_plu)
-            except Exception as e:
-                print(f"      ⚠️ Error obteniendo PLU para producto {producto_id}: {e}")
-                pass
+                    print(f"      ⚠️ Error obteniendo nombres alternativos: {e}")
 
             # Establecer valores por defecto si no se encontró nada
             if not producto["nombres_por_ean"]:
@@ -2546,7 +2618,9 @@ async def obtener_productos_detalle_completo():
 
         print(f"   ✅ {contador_con_nombres} productos tienen nombres asociados a EAN")
 
+        # =====================================
         # PASO 4: Actualizar contadores
+        # =====================================
         for prod in productos_map.values():
             prod["total_supermercados"] = len(prod["precios_por_super"])
 
@@ -2576,8 +2650,6 @@ async def obtener_productos_detalle_completo():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
 
 
 @router.get("/productos-detalle-page", response_class=HTMLResponse)
