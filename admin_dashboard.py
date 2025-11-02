@@ -1953,19 +1953,22 @@ async def consolidar_productos(data: ConsolidacionRequest):
         variantes_creadas = 0
 
         for prod_id in todos_los_productos:
-            # 🔧 FIX: Query corregido aquí
+            # 🔧 FIX: Query corregido aquí + códigos internos
             if database_type == "postgresql":
                 cursor.execute(
                     """
                     SELECT DISTINCT
                         pm.nombre_normalizado,
                         pm.codigo_ean,
-                        COALESCE(e.nombre_normalizado, 'Varios') as establecimiento,
+                        COALESCE(e.nombre_normalizado, f.establecimiento, 'Varios') as establecimiento,
                         pp.precio,
-                        pp.fecha_registro
+                        pp.fecha_registro,
+                        if2.codigo_leido
                     FROM productos_maestros pm
+                    LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+                    LEFT JOIN facturas f ON f.id = if2.factura_id
                     WHERE pm.id = %s
                 """,
                     (prod_id,),
@@ -1978,10 +1981,13 @@ async def consolidar_productos(data: ConsolidacionRequest):
                         pm.codigo_ean,
                         e.nombre as establecimiento,
                         pp.precio,
-                        pp.fecha
+                        pp.fecha,
+                        if2.codigo_leido
                     FROM productos_maestros pm
+                    LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+                    LEFT JOIN facturas f ON f.id = if2.factura_id
                     WHERE pm.id = ?
                 """,
                     (prod_id,),
@@ -1994,18 +2000,22 @@ async def consolidar_productos(data: ConsolidacionRequest):
                 if database_type == "postgresql":
                     cursor.execute(
                         """
-                        SELECT nombre_normalizado, codigo_ean
-                        FROM productos_maestros
-                        WHERE id = %s
+                        SELECT pm.nombre_normalizado, pm.codigo_ean, if2.codigo_leido
+                        FROM productos_maestros pm
+                        LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                        WHERE pm.id = %s
+                        LIMIT 1
                     """,
                         (prod_id,),
                     )
                 else:
                     cursor.execute(
                         """
-                        SELECT nombre_normalizado, codigo_ean
-                        FROM productos_maestros
-                        WHERE id = ?
+                        SELECT pm.nombre_normalizado, pm.codigo_ean, if2.codigo_leido
+                        FROM productos_maestros pm
+                        LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                        WHERE pm.id = ?
+                        LIMIT 1
                     """,
                         (prod_id,),
                     )
@@ -2014,14 +2024,24 @@ async def consolidar_productos(data: ConsolidacionRequest):
 
                 if prod_info:
                     nombre_prod = prod_info[0]
-                    codigo_prod = prod_info[1]
+                    codigo_ean = prod_info[1]
+                    codigo_leido = prod_info[2]
 
-                    # ✅ Si no tiene código, generar uno temporal basado en ID
-                    if not codigo_prod or codigo_prod.strip() == "":
+                    # ✅ LÓGICA MEJORADA: Priorizar códigos reales
+                    if codigo_ean and len(codigo_ean) >= 8:
+                        # Tiene EAN válido
+                        codigo_prod = codigo_ean
+                        tipo_codigo = "EAN"
+                    elif codigo_leido and len(codigo_leido) >= 3:
+                        # Tiene código PLU/interno del supermercado
+                        codigo_prod = codigo_leido
+                        tipo_codigo = "PLU" if len(codigo_leido) <= 7 else "INTERNO"
+                    else:
+                        # No tiene ningún código, generar temporal
                         codigo_prod = f"TEMP_{prod_id}"
                         tipo_codigo = "INTERNO"
-                    else:
-                        tipo_codigo = "EAN" if len(codigo_prod) >= 8 else "PLU"
+
+                    print(f"   📦 Producto {prod_id}: código={codigo_prod} tipo={tipo_codigo}")
 
                     if database_type == "postgresql":
                         cursor.execute(
@@ -2052,17 +2072,25 @@ async def consolidar_productos(data: ConsolidacionRequest):
                 # Crear variante por cada establecimiento
                 for registro in registros:
                     nombre_variante = registro[0]
-                    codigo = registro[1]
+                    codigo_ean = registro[1]
                     establecimiento = registro[2] or "Varios"
                     precio = registro[3]
                     fecha = registro[4]
+                    codigo_leido = registro[5] if len(registro) > 5 else None
 
-                    # ✅ Si no tiene código, generar uno temporal basado en ID del producto
-                    if not codigo or codigo.strip() == "":
+                    # ✅ LÓGICA MEJORADA: Priorizar códigos reales
+                    if codigo_ean and len(codigo_ean) >= 8:
+                        # Tiene EAN válido
+                        codigo = codigo_ean
+                        tipo_codigo = "EAN"
+                    elif codigo_leido and len(codigo_leido) >= 3:
+                        # Tiene código PLU/interno del supermercado
+                        codigo = codigo_leido
+                        tipo_codigo = "PLU" if len(codigo_leido) <= 7 else "INTERNO"
+                    else:
+                        # No tiene ningún código, generar temporal
                         codigo = f"TEMP_{prod_id}"
                         tipo_codigo = "INTERNO"
-                    else:
-                        tipo_codigo = "EAN" if len(codigo) >= 8 else "PLU"
 
                     # Crear variante
                     if database_type == "postgresql":
