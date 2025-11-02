@@ -239,100 +239,272 @@
             font-weight: 600;
         }
 
-        .productos-lista {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
+        /* 🆕 ESTILOS PARA CHECKBOXES */
         .producto-item {
-            background: #f8f9fa;
+            margin: 10px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .producto-checkbox {
+            position: relative;
+        }
+
+        .producto-checkbox input[type="checkbox"] {
+            position: absolute;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .producto-checkbox label {
+            display: block;
             padding: 15px;
-            border-radius: 10px;
-            border: 2px solid transparent;
             cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 15px;
+            transition: all 0.2s;
+            border-radius: 6px;
         }
 
-        .producto-item:hover {
-            background: #e9ecef;
+        .producto-checkbox input[type="checkbox"]:checked+label {
+            background: linear-gradient(to right, #e3f2fd 0%, #e8eaf6 100%);
+            border-left: 4px solid #2196F3;
         }
 
-        .producto-item.seleccionado {
-            background: #d4edda;
-            border-color: #28a745;
-            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
+        .producto-checkbox label:hover {
+            background: #f5f5f5;
         }
 
-        .producto-radio {
-            width: 24px;
-            height: 24px;
-            cursor: pointer;
+        .producto-item:has(input:checked) {
+            border-color: #2196F3;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
         }
 
         .producto-info {
-            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .producto-nombre {
             font-weight: 600;
+            font-size: 1.1em;
             color: #333;
-            margin-bottom: 5px;
         }
 
         .producto-detalles {
             display: flex;
-            gap: 20px;
-            font-size: 0.9em;
-            color: #666;
             flex-wrap: wrap;
+            gap: 8px;
         }
 
         .badge {
             padding: 4px 10px;
             border-radius: 12px;
             font-size: 0.85em;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .badge-id {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-ean {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .badge-no-ean {
+            background: #ffecb3;
+            color: #f57c00;
+        }
+
+        .badge-lugar {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .badge-precio {
+            background: #fff3e0;
+            color: #e65100;
             font-weight: 600;
         }
 
-        .badge-info {
-            background: #d1ecf1;
-            color: #0c5460;
-        }
-
         .badge-success {
-            background: #d4edda;
-            color: #155724;
+            background: #4caf50;
+            color: white;
         }
 
-        .badge-warning {
-            background: #fff3cd;
-            color: #856404;
+        .badge-reportes {
+            background: #e0e0e0;
+            color: #616161;
         }
 
         .grupo-actions {
             display: flex;
-            gap: 10px;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
             padding-top: 15px;
             border-top: 2px solid #f0f0f0;
         }
 
+        .productos-seleccionados {
+            color: #666;
+            font-size: 14px;
+            background: #f5f5f5;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .btn-consolidar {
+            background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-consolidar:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .btn-consolidar:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* MODAL DE CONFIRMACIÓN */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-content h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .modal-section {
+            margin: 20px 0;
+        }
+
+        .modal-section h3 {
+            color: #666;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        .producto-preview {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            background: #f5f5f5;
+        }
+
+        .producto-preview strong {
+            color: #333;
+            font-size: 1.1em;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .producto-preview div {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .producto-preview.maestro {
+            background: linear-gradient(to right, #e8f5e9, #c8e6c9);
+            border-left: 4px solid #4CAF50;
+        }
+
+        .producto-preview.duplicado {
+            background: linear-gradient(to right, #fff3e0, #ffe0b2);
+            border-left: 4px solid #FF9800;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .modal-actions button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-cancelar {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-cancelar:hover {
+            background: #d32f2f;
+            transform: translateY(-2px);
+        }
+
+        .btn-confirmar {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-confirmar:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+
         .loading {
             text-align: center;
-            padding: 60px;
+            padding: 40px;
+            color: #666;
         }
 
         .spinner {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #667eea;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
         }
@@ -347,43 +519,6 @@
             }
         }
 
-        .alert {
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .alert span {
-            font-size: 1.5em;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border-left: 4px solid #28a745;
-        }
-
-        .alert-danger {
-            background: #f8d7da;
-            color: #721c24;
-            border-left: 4px solid #dc3545;
-        }
-
-        .alert-warning {
-            background: #fff3cd;
-            color: #856404;
-            border-left: 4px solid #ffc107;
-        }
-
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border-left: 4px solid #17a2b8;
-        }
-
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -395,223 +530,107 @@
             margin-bottom: 20px;
         }
 
-        .empty-state h3 {
-            color: #666;
-            margin-bottom: 10px;
+        /* RESTO DE ESTILOS ORIGINALES (alertas, modales, etc.) */
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            animation: slideIn 0.3s ease;
         }
 
-        /* ============================================ */
-        /* MODAL BASE */
-        /* ============================================ */
-        .modal {
+        @keyframes slideIn {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .alert-success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+
+        .alert-danger {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            color: #0c5460;
+        }
+
+        #modal-confirmacion {
             display: none;
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            right: 0;
+            bottom: 0;
             background: rgba(0, 0, 0, 0.7);
-            z-index: 9999;
-            justify-content: center;
+            z-index: 10000;
             align-items: center;
-            overflow-y: auto;
-            padding: 20px;
+            justify-content: center;
         }
 
-        .modal.active {
-            display: flex !important;
+        #modal-confirmacion.active {
+            display: flex;
         }
 
-        .modal-content {
+        .modal-dialog {
             background: white;
-            padding: 30px;
             border-radius: 15px;
-            max-width: 800px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Modal de edición de productos */
+        #modalEdicionProducto {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10001;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #modalEdicionProducto.active {
+            display: flex;
+        }
+
+        .modal-edicion-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 700px;
             width: 90%;
             max-height: 90vh;
             overflow-y: auto;
-        }
-
-        .modal-header {
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 15px;
-        }
-
-        .modal-header h2 {
-            color: #333;
-            margin: 0;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 32px;
-            cursor: pointer;
-            color: #7f8c8d;
-            padding: 0;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            transition: all 0.3s;
-        }
-
-        .close-btn:hover {
-            background: #ecf0f1;
-            color: #e74c3c;
-        }
-
-        .modal-body {
-            margin-bottom: 25px;
-        }
-
-        .preview-item {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-        }
-
-        .modal-footer {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            padding-top: 15px;
-            border-top: 2px solid #eee;
-        }
-
-        .btn-cancel {
-            background: #6c757d;
-            color: white;
-        }
-
-        .btn-cancel:hover {
-            background: #5a6268;
-        }
-
-        /* ============================================ */
-        /* MODAL DE EDICIÓN */
-        /* ============================================ */
-        .seccion-info,
-        .seccion-sugerencia,
-        .seccion-edicion {
-            margin-bottom: 25px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-
-        .seccion-info h3,
-        .seccion-sugerencia h3,
-        .seccion-edicion h3 {
-            margin-top: 0;
-            color: #34495e;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-        }
-
-        .info-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .info-item label {
-            font-size: 12px;
-            color: #7f8c8d;
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .info-item span {
-            font-size: 16px;
-            color: #2c3e50;
-            font-weight: 500;
-        }
-
-        .establecimientos-info {
-            margin-top: 20px;
-            padding: 15px;
-            background: white;
-            border-radius: 6px;
-        }
-
-        .establecimientos-info h4 {
-            margin-top: 0;
-            color: #2c3e50;
-        }
-
-        #edit_establecimientos_lista {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .establecimiento-tag {
-            background: #3498db;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .establecimiento-precio {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 12px;
-        }
-
-        .sugerencia-card {
-            display: flex;
-            gap: 20px;
-            align-items: flex-start;
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #27ae60;
-        }
-
-        .sugerencia-datos {
-            flex: 1;
-        }
-
-        .sugerencia-datos p {
-            margin: 8px 0;
-        }
-
-        .btn-usar-sugerencia {
-            background: #27ae60;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .btn-usar-sugerencia:hover {
-            background: #229954;
-            transform: translateY(-2px);
         }
 
         .form-group {
@@ -620,608 +639,483 @@
 
         .form-group label {
             display: block;
+            font-weight: 600;
             margin-bottom: 8px;
-            color: #2c3e50;
-            font-weight: 600;
+            color: #333;
         }
 
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .input-edicion {
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #dce1e6;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
             border-radius: 6px;
-            font-size: 15px;
-            transition: all 0.3s;
+            font-size: 1em;
         }
 
-        .input-edicion:focus {
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
             outline: none;
-            border-color: #3498db;
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            border-color: #667eea;
         }
 
-        .input-with-button {
-            display: flex;
-            gap: 10px;
+        .producto-actual-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
         }
 
-        .input-with-button input {
-            flex: 1;
+        .establecimiento-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #e3f2fd;
+            padding: 6px 12px;
+            border-radius: 20px;
+            margin: 4px;
+            font-size: 0.9em;
         }
 
-        .btn-consultar-api {
-            background: #9b59b6;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 6px;
-            cursor: pointer;
+        .establecimiento-precio {
+            background: white;
+            padding: 2px 8px;
+            border-radius: 10px;
             font-weight: 600;
-            white-space: nowrap;
-            transition: all 0.3s;
+            color: #1976d2;
         }
 
-        .btn-consultar-api:hover {
-            background: #8e44ad;
+        .sugerencia-api {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #4caf50;
         }
 
-        .form-group small {
-            display: block;
-            margin-top: 5px;
-            color: #7f8c8d;
-            font-size: 13px;
+        .sugerencia-api h4 {
+            color: #2e7d32;
+            margin-bottom: 10px;
         }
 
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                text-align: center;
-                gap: 15px;
-            }
-
-            .search-controls {
-                flex-direction: column;
-            }
-
-            .stats-bar {
-                flex-direction: column;
-            }
-
-            .producto-detalles {
-                flex-direction: column;
-                gap: 5px;
-            }
-
-            .form-row {
-                grid-template-columns: 1fr;
-            }
-
-            .sugerencia-card {
-                flex-direction: column;
-            }
-
-            .input-with-button {
-                flex-direction: column;
-            }
-
-            .btn-consultar-api {
-                width: 100%;
-            }
+        .sugerencia-imagen {
+            max-width: 150px;
+            border-radius: 8px;
+            margin-top: 10px;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
             <div>
-                <h1>🔧 Consolidación de Productos</h1>
-                <p>Gestión inteligente de productos duplicados</p>
+                <h1>🔗 Consolidación de Productos</h1>
+                <p>Unifica productos duplicados en el catálogo global</p>
             </div>
-            <a href="/dashboard.html" class="btn-back">← Volver al Dashboard</a>
+            <a href="/admin" class="btn-back">← Volver al Admin</a>
         </div>
 
+        <!-- Content -->
         <div class="content">
-            <!-- SECCIÓN DE BÚSQUEDA -->
+            <!-- Alertas -->
+            <div id="alert-container"></div>
+
+            <!-- Búsqueda -->
             <div class="search-section">
                 <h2>🔍 Buscar Duplicados</h2>
                 <div class="search-controls">
-                    <input type="text" id="search-ean" class="search-input"
-                        placeholder="Buscar por código EAN (ej: 7702001234567)">
-                    <input type="text" id="search-nombre" class="search-input"
-                        placeholder="Buscar por nombre similar (ej: Coca Cola)">
-                    <button class="btn btn-primary" onclick="buscarDuplicados()">
-                        🔎 Buscar
-                    </button>
-                    <button class="btn btn-warning" onclick="buscarTodosDuplicados()">
-                        📋 Ver Todos
-                    </button>
+                    <input type="text" id="search-ean" class="search-input" placeholder="Buscar por código EAN...">
+                    <input type="text" id="search-nombre" class="search-input" placeholder="Buscar por nombre...">
+                    <button class="btn btn-primary" onclick="buscarDuplicados()">🔍 Buscar</button>
+                    <button class="btn btn-warning" onclick="cargarTodos()">📋 Cargar Todos</button>
                 </div>
             </div>
 
-            <!-- BARRA DE ESTADÍSTICAS -->
-            <div class="stats-bar" id="stats-bar" style="display: none;">
+            <!-- Estadísticas -->
+            <div class="stats-bar">
                 <div class="stat-item">
-                    <div>
-                        <div class="stat-value" id="total-grupos">0</div>
-                        <div class="stat-label">Grupos encontrados</div>
-                    </div>
+                    <div class="stat-value" id="total-grupos">0</div>
+                    <div class="stat-label">Grupos detectados</div>
                 </div>
                 <div class="stat-item">
-                    <div>
-                        <div class="stat-value" id="total-productos">0</div>
-                        <div class="stat-label">Productos afectados</div>
-                    </div>
+                    <div class="stat-value" id="total-productos">0</div>
+                    <div class="stat-label">Productos afectados</div>
                 </div>
             </div>
 
-            <!-- ALERTAS -->
-            <div id="alert-container"></div>
+            <!-- Loading -->
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Buscando duplicados...</p>
+            </div>
 
-            <!-- CONTENEDOR DE RESULTADOS -->
-            <div id="resultados-container">
-                <div class="empty-state">
-                    <div class="empty-state-icon">🔍</div>
-                    <h3>Busca productos duplicados</h3>
-                    <p>Usa los filtros de arriba para encontrar productos que necesiten consolidación</p>
-                </div>
+            <!-- Contenedor de resultados -->
+            <div id="duplicados-container" class="duplicados-container"></div>
+
+            <!-- Empty state -->
+            <div id="empty-state" class="empty-state" style="display: none;">
+                <div class="empty-state-icon">🔍</div>
+                <h3>No se encontraron duplicados</h3>
+                <p>Intenta con otros criterios de búsqueda</p>
             </div>
         </div>
     </div>
 
-    <!-- MODAL DE CONFIRMACIÓN CONSOLIDACIÓN -->
-    <div id="modal-confirmacion" class="modal">
+    <!-- Modal de confirmación -->
+    <div id="modal-overlay" class="modal-overlay">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2>⚠️ Confirmar Consolidación</h2>
-            </div>
-            <div class="modal-body" id="modal-body">
-                <!-- Contenido dinámico -->
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-cancel" onclick="cerrarModal()">Cancelar</button>
-                <button class="btn btn-success" onclick="confirmarConsolidacion()">✅ Confirmar</button>
+            <h2>¿Confirmar consolidación?</h2>
+            <div id="modal-body"></div>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="cerrarModal()">❌ Cancelar</button>
+                <button class="btn-confirmar" onclick="confirmarConsolidacion()">✅ Confirmar</button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL DE EDICIÓN DE PRODUCTO -->
-    <div id="modalEdicionProducto" class="modal">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h2>✏️ Editar Producto</h2>
-                <button class="close-btn" onclick="cerrarModalEdicion()">&times;</button>
+    <!-- Modal de edición de producto -->
+    <div id="modalEdicionProducto" class="modal-overlay">
+        <div class="modal-edicion-content">
+            <h2>✏️ Editar Producto</h2>
+
+            <div class="producto-actual-info">
+                <h3>Información actual</h3>
+                <p><strong>Nombre:</strong> <span id="edit_nombre_actual"></span></p>
+                <p><strong>EAN:</strong> <span id="edit_ean_actual"></span></p>
+                <p><strong>Marca:</strong> <span id="edit_marca_actual"></span></p>
+                <p><strong>Precio:</strong> <span id="edit_precio_actual"></span></p>
+                <p><strong>Reportes:</strong> <span id="edit_reportes"></span></p>
+                <div id="edit_establecimientos_lista"></div>
             </div>
 
-            <div class="modal-body" id="modalEdicionBody">
-                <!-- Información actual -->
-                <div class="seccion-info">
-                    <h3>📋 Información Actual</h3>
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <label>ID:</label>
-                            <span id="edit_producto_id">-</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Nombre leído (OCR):</label>
-                            <span id="edit_nombre_actual" style="color: #e74c3c;">-</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Código EAN:</label>
-                            <span id="edit_ean_actual">-</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Precio Promedio:</label>
-                            <span id="edit_precio_actual">-</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Veces Reportado:</label>
-                            <span id="edit_reportes">-</span>
-                        </div>
-                    </div>
+            <div class="form-group">
+                <label>Nombre completo</label>
+                <input type="text" id="edit_nombre_completo" placeholder="Nombre completo del producto">
+            </div>
 
-                    <!-- Establecimientos donde se vio -->
-                    <div class="establecimientos-info" id="edit_establecimientos_info">
-                        <h4>🏪 Visto en:</h4>
-                        <div id="edit_establecimientos_lista"></div>
-                    </div>
-                </div>
-
-                <!-- Sugerencia de API (si está disponible) -->
-                <div class="seccion-sugerencia" id="seccion_sugerencia_api" style="display: none;">
-                    <h3>🌐 Sugerencia de OpenFoodFacts</h3>
-                    <div class="sugerencia-card">
-                        <img id="sugerencia_imagen" src="" alt="Imagen producto"
-                            style="max-width: 150px; display: none;">
-                        <div class="sugerencia-datos">
-                            <p><strong>Nombre:</strong> <span id="sugerencia_nombre">-</span></p>
-                            <p><strong>Marca:</strong> <span id="sugerencia_marca">-</span></p>
-                            <p><strong>Categorías:</strong> <span id="sugerencia_categorias">-</span></p>
-                        </div>
-                        <button class="btn-usar-sugerencia" onclick="usarSugerenciaAPI()">
-                            ✅ Usar esta información
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Formulario de edición -->
-                <div class="seccion-edicion">
-                    <h3>✏️ Corrección Manual</h3>
-
-                    <div class="form-group">
-                        <label for="edit_nombre_completo">Nombre Completo: *</label>
-                        <input type="text" id="edit_nombre_completo" placeholder="Ej: Carne Molida de Res Premium 500g"
-                            class="input-edicion">
-                        <small>Escribe el nombre completo del producto</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit_codigo_ean">Código EAN/Barras:</label>
-                        <div class="input-with-button">
-                            <input type="text" id="edit_codigo_ean" placeholder="7702461120013" class="input-edicion">
-                            <button class="btn-consultar-api" onclick="consultarAPI()">
-                                🌐 Consultar API
-                            </button>
-                        </div>
-                        <small>Si el OCR lo leyó mal, corrígelo aquí</small>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="edit_marca">Marca:</label>
-                            <input type="text" id="edit_marca" placeholder="Ej: Zenú, Alpina, etc"
-                                class="input-edicion">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="edit_categoria">Categoría:</label>
-                            <select id="edit_categoria" class="input-edicion">
-                                <option value="">Seleccionar...</option>
-                                <option value="carnes">Carnes</option>
-                                <option value="lacteos">Lácteos</option>
-                                <option value="frutas_verduras">Frutas y Verduras</option>
-                                <option value="panaderia">Panadería</option>
-                                <option value="bebidas">Bebidas</option>
-                                <option value="aseo">Aseo</option>
-                                <option value="despensa">Despensa</option>
-                                <option value="snacks">Snacks</option>
-                                <option value="congelados">Congelados</option>
-                                <option value="otro">Otro</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="edit_razon">Razón de la corrección:</label>
-                        <textarea id="edit_razon"
-                            placeholder="Ej: OCR truncó el nombre, solo leyó 'Molida de re' en lugar de 'Carne Molida de Res'"
-                            class="input-edicion" rows="3"></textarea>
-                    </div>
+            <div class="form-group">
+                <label>Código EAN</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="edit_codigo_ean" placeholder="Código EAN">
+                    <button class="btn btn-primary" onclick="consultarAPI()">🌐 Consultar API</button>
                 </div>
             </div>
 
-            <div class="modal-footer">
-                <button class="btn btn-cancel" onclick="cerrarModalEdicion()">Cancelar</button>
-                <button class="btn btn-primary" onclick="guardarCorreccion()">💾 Guardar Corrección</button>
+            <div id="seccion_sugerencia_api" class="sugerencia-api" style="display: none;">
+                <h4>💡 Sugerencia de OpenFoodFacts</h4>
+                <p><strong>Nombre:</strong> <span id="sugerencia_nombre"></span></p>
+                <p><strong>Marca:</strong> <span id="sugerencia_marca"></span></p>
+                <p><strong>Categorías:</strong> <span id="sugerencia_categorias"></span></p>
+                <img id="sugerencia_imagen" class="sugerencia-imagen" style="display: none;">
+                <button class="btn btn-success" onclick="usarSugerenciaAPI()" style="margin-top: 10px;">✅ Usar esta
+                    información</button>
+            </div>
+
+            <div class="form-group">
+                <label>Marca</label>
+                <input type="text" id="edit_marca" placeholder="Marca del producto">
+            </div>
+
+            <div class="form-group">
+                <label>Categoría</label>
+                <select id="edit_categoria">
+                    <option value="">Seleccionar categoría</option>
+                    <option value="lacteos">Lácteos</option>
+                    <option value="carnes">Carnes</option>
+                    <option value="frutas">Frutas y Verduras</option>
+                    <option value="panaderia">Panadería</option>
+                    <option value="bebidas">Bebidas</option>
+                    <option value="aseo">Aseo</option>
+                    <option value="otro">Otro</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Razón de la corrección</label>
+                <textarea id="edit_razon" rows="3" placeholder="Explica por qué corriges este producto..."></textarea>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="cerrarModalEdicion()">❌ Cancelar</button>
+                <button class="btn-confirmar" onclick="guardarCorreccion()">💾 Guardar</button>
             </div>
         </div>
     </div>
 
     <script>
         const API_URL = window.location.origin;
-        let gruposActuales = [];
+        let todosLosDuplicados = [];
         let consolidacionPendiente = null;
         let productoActualEdicion = null;
         let sugerenciaAPIActual = null;
 
-        console.log('🔧 Consolidación de Productos - Inicializado');
-        console.log('API URL:', API_URL);
+        // ==========================================
+        // 🆕 CARGAR DUPLICADOS AL INICIAR
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ Consolidación de Productos cargado');
+            cargarTodos();
+        });
 
         // ==========================================
-        // BUSCAR DUPLICADOS
+        // 🆕 FUNCIONES DE BÚSQUEDA
         // ==========================================
+        async function cargarTodos() {
+            await buscarDuplicados();
+        }
+
         async function buscarDuplicados() {
             const ean = document.getElementById('search-ean').value.trim();
             const nombre = document.getElementById('search-nombre').value.trim();
 
-            if (!ean && !nombre) {
-                mostrarAlerta('⚠️ Por favor ingresa un código EAN o nombre para buscar', 'warning');
-                return;
-            }
+            console.log('🔍 Buscando duplicados...', { ean, nombre });
 
-            mostrarCargando();
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('duplicados-container').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'none';
 
             try {
                 let url = `${API_URL}/admin/productos/duplicados-sospechosos?`;
                 if (ean) url += `ean=${encodeURIComponent(ean)}&`;
-                if (nombre) url += `nombre=${encodeURIComponent(nombre)}`;
+                if (nombre) url += `nombre=${encodeURIComponent(nombre)}&`;
 
                 const response = await fetch(url);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-
                 const data = await response.json();
-                console.log('✅ Duplicados encontrados:', data);
 
-                mostrarResultados(data.grupos || []);
+                console.log('✅ Duplicados obtenidos:', data);
 
-            } catch (error) {
-                console.error('❌ Error:', error);
-                mostrarAlerta('Error al buscar duplicados: ' + error.message, 'danger');
-                mostrarResultadosVacios();
-            }
-        }
+                if (data.success && data.grupos && data.grupos.length > 0) {
+                    todosLosDuplicados = data.grupos;
+                    renderizarDuplicados(data.grupos);
 
-        async function buscarTodosDuplicados() {
-            mostrarCargando();
-
-            try {
-                const response = await fetch(`${API_URL}/admin/productos/duplicados-sospechosos`);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                    // Actualizar stats
+                    document.getElementById('total-grupos').textContent = data.grupos.length;
+                    const totalProductos = data.grupos.reduce((sum, g) => sum + g.productos.length, 0);
+                    document.getElementById('total-productos').textContent = totalProductos;
+                } else {
+                    document.getElementById('empty-state').style.display = 'block';
+                    document.getElementById('total-grupos').textContent = '0';
+                    document.getElementById('total-productos').textContent = '0';
                 }
-
-                const data = await response.json();
-                console.log('✅ Todos los duplicados:', data);
-
-                mostrarResultados(data.grupos || []);
 
             } catch (error) {
                 console.error('❌ Error:', error);
                 mostrarAlerta('Error al cargar duplicados: ' + error.message, 'danger');
-                mostrarResultadosVacios();
+            } finally {
+                document.getElementById('loading').style.display = 'none';
             }
         }
 
         // ==========================================
-        // RENDERIZAR RESULTADOS
+        // 🆕 RENDERIZAR GRUPOS CON CHECKBOXES
         // ==========================================
-        function mostrarResultados(grupos) {
-            gruposActuales = grupos;
-
-            const container = document.getElementById('resultados-container');
-            const statsBar = document.getElementById('stats-bar');
-
-            if (!grupos || grupos.length === 0) {
-                mostrarResultadosVacios();
-                return;
-            }
-
-            // Actualizar estadísticas
-            statsBar.style.display = 'flex';
-            document.getElementById('total-grupos').textContent = grupos.length;
-
-            let totalProductos = 0;
-            grupos.forEach(g => totalProductos += g.productos.length);
-            document.getElementById('total-productos').textContent = totalProductos;
-
-            // Renderizar grupos
-            let html = '<div class="duplicados-container">';
+        function renderizarDuplicados(grupos) {
+            const container = document.getElementById('duplicados-container');
+            container.innerHTML = '';
+            container.style.display = 'flex';
 
             grupos.forEach((grupo, grupoIndex) => {
-                html += `
-                    <div class="grupo-duplicado">
-                        <div class="grupo-header">
-                            <div class="grupo-titulo">
-                                📦 ${grupo.nombre_grupo || 'Grupo de productos similares'}
-                            </div>
-                            <div class="grupo-similitud">
-                                ${grupo.similitud ? `${grupo.similitud}% similitud` : 'Mismo código EAN'}
-                            </div>
-                        </div>
+                const grupoDiv = document.createElement('div');
+                grupoDiv.className = 'grupo-duplicado';
+                grupoDiv.id = `grupo-${grupoIndex}`;
 
-                        <div class="productos-lista" id="grupo-${grupoIndex}">
+                // Header
+                const header = document.createElement('div');
+                header.className = 'grupo-header';
+                header.innerHTML = `
+                    <div class="grupo-titulo">${grupo.nombre_grupo}</div>
+                    <div class="grupo-similitud">${grupo.similitud}% similitud</div>
                 `;
+                grupoDiv.appendChild(header);
 
-                grupo.productos.forEach((producto, prodIndex) => {
-                    const tieneEAN = producto.codigo_ean ? '✅ EAN' : '⚠️ Sin EAN';
-                    const establecimiento = producto.establecimiento || 'Varios';
-                    const precio = producto.precio_promedio || 0;
-
-                    html += `
-                        <div class="producto-item" onclick="seleccionarProducto(${grupoIndex}, ${prodIndex})"
-                             id="prod-${grupoIndex}-${prodIndex}">
-                            <input type="radio" name="grupo-${grupoIndex}" class="producto-radio"
-                                   id="radio-${grupoIndex}-${prodIndex}">
-                            <div class="producto-info">
-                                <div class="producto-nombre">${producto.nombre}</div>
-                                <div class="producto-detalles">
-                                    <span><strong>ID:</strong> #${producto.id}</span>
-                                    <span><strong>Código:</strong> ${producto.codigo_ean || 'N/A'}</span>
-                                    <span><strong>Lugar:</strong> ${establecimiento}</span>
-                                    <span><strong>Precio:</strong> $${formatearNumero(precio)}</span>
-                                    <span class="badge ${producto.codigo_ean ? 'badge-success' : 'badge-warning'}">${tieneEAN}</span>
-                                    <span class="badge badge-info">${producto.veces_reportado || 0}x reportado</span>
+                // Productos con checkboxes
+                grupo.productos.forEach((producto, index) => {
+                    const productoDiv = document.createElement('div');
+                    productoDiv.className = 'producto-item';
+                    productoDiv.innerHTML = `
+                        <div class="producto-checkbox">
+                            <input
+                                type="checkbox"
+                                id="prod-${grupoIndex}-${producto.id}"
+                                data-grupo="${grupoIndex}"
+                                data-producto-id="${producto.id}"
+                                ${index === 0 ? 'checked' : ''}
+                                onchange="validarSeleccion(${grupoIndex})"
+                            >
+                            <label for="prod-${grupoIndex}-${producto.id}">
+                                <div class="producto-info">
+                                    <div class="producto-nombre">${producto.nombre}</div>
+                                    <div class="producto-detalles">
+                                        <span class="badge badge-id">ID: #${producto.id}</span>
+                                        ${producto.codigo_ean ?
+                            `<span class="badge badge-ean">Código: ${producto.codigo_ean}</span>` :
+                            '<span class="badge badge-no-ean">Sin EAN</span>'
+                        }
+                                        <span class="badge badge-lugar">Lugar: ${producto.establecimiento || 'Varios'}</span>
+                                        <span class="badge badge-precio">Precio: $${formatearNumero(producto.precio_promedio || 0)}</span>
+                                        ${producto.codigo_ean && producto.codigo_ean.length >= 8 ?
+                            '<span class="badge badge-success">✅ EAN</span>' :
+                            ''
+                        }
+                                        <span class="badge badge-reportes">${producto.veces_reportado}x reportado</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <button class="btn-editar-producto" onclick="event.stopPropagation(); abrirModalEdicion(${producto.id})">
-                                ✏️ Editar
-                            </button>
+                            </label>
                         </div>
+                        <button class="btn-editar-producto" onclick="abrirModalEdicion(${producto.id})">
+                            ✏️ Editar
+                        </button>
                     `;
+                    grupoDiv.appendChild(productoDiv);
                 });
 
-                html += `
-                        </div>
-                        <div class="grupo-actions">
-                            <button class="btn btn-success" onclick="prepararConsolidacion(${grupoIndex})">
-                                ✅ Consolidar Selección
-                            </button>
-                        </div>
-                    </div>
+                // Acciones
+                const actions = document.createElement('div');
+                actions.className = 'grupo-actions';
+                actions.innerHTML = `
+                    <button class="btn-consolidar" onclick="prepararConsolidacion(${grupoIndex})">
+                        🔗 Consolidar seleccionados
+                    </button>
+                    <span class="productos-seleccionados" id="count-${grupoIndex}">
+                        1 de ${grupo.productos.length} seleccionado(s)
+                    </span>
                 `;
+                grupoDiv.appendChild(actions);
+
+                container.appendChild(grupoDiv);
             });
 
-            html += '</div>';
-            container.innerHTML = html;
-        }
-
-        function mostrarResultadosVacios() {
-            const container = document.getElementById('resultados-container');
-            const statsBar = document.getElementById('stats-bar');
-
-            statsBar.style.display = 'none';
-
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">✅</div>
-                    <h3>No se encontraron productos duplicados</h3>
-                    <p>¡Excelente! El catálogo está limpio</p>
-                </div>
-            `;
-        }
-
-        function mostrarCargando() {
-            const container = document.getElementById('resultados-container');
-            container.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Buscando productos duplicados...</p>
-                </div>
-            `;
+            console.log('✅ Todos los duplicados:', todosLosDuplicados);
         }
 
         // ==========================================
-        // SELECCIÓN DE PRODUCTOS
+        // 🆕 VALIDAR SELECCIÓN (al menos 1 checked)
         // ==========================================
-        function seleccionarProducto(grupoIndex, prodIndex) {
-            // Deseleccionar todos del grupo
-            const grupo = document.getElementById(`grupo-${grupoIndex}`);
-            const items = grupo.querySelectorAll('.producto-item');
-            items.forEach(item => item.classList.remove('seleccionado'));
+        function validarSeleccion(grupoIndex) {
+            const checkboxes = document.querySelectorAll(`input[data-grupo="${grupoIndex}"]`);
+            const seleccionados = Array.from(checkboxes).filter(cb => cb.checked);
 
-            // Seleccionar el clickeado
-            const item = document.getElementById(`prod-${grupoIndex}-${prodIndex}`);
-            item.classList.add('seleccionado');
-
-            // Marcar radio
-            const radio = document.getElementById(`radio-${grupoIndex}-${prodIndex}`);
-            radio.checked = true;
-        }
-
-        // ==========================================
-        // PREPARAR CONSOLIDACIÓN
-        // ==========================================
-        function prepararConsolidacion(grupoIndex) {
-            const grupo = gruposActuales[grupoIndex];
-
-            // Verificar que hay un producto seleccionado
-            const radioSeleccionado = document.querySelector(`input[name="grupo-${grupoIndex}"]:checked`);
-
-            if (!radioSeleccionado) {
-                mostrarAlerta('⚠️ Por favor selecciona el producto maestro (el que tiene mejor información)', 'warning');
+            // Prevenir deseleccionar todos
+            if (seleccionados.length === 0) {
+                event.target.checked = true;
+                alert('⚠️ Debes mantener al menos un producto seleccionado');
                 return;
             }
 
-            const prodIndex = parseInt(radioSeleccionado.id.split('-')[2]);
-            const productoMaestro = grupo.productos[prodIndex];
-            const productosDuplicados = grupo.productos.filter((_, i) => i !== prodIndex);
+            // Actualizar contador
+            const countSpan = document.getElementById(`count-${grupoIndex}`);
+            if (countSpan) {
+                countSpan.textContent = `${seleccionados.length} de ${checkboxes.length} seleccionado(s)`;
+            }
+        }
 
+        // ==========================================
+        // 🆕 PREPARAR CONSOLIDACIÓN (solo seleccionados)
+        // ==========================================
+        function prepararConsolidacion(grupoIndex) {
+            console.log('🔄 Preparando consolidación del grupo:', grupoIndex);
+
+            const grupo = todosLosDuplicados[grupoIndex];
+            if (!grupo) {
+                alert('❌ Grupo no encontrado');
+                return;
+            }
+
+            // Obtener productos seleccionados
+            const checkboxes = document.querySelectorAll(`input[data-grupo="${grupoIndex}"]`);
+            const productosSeleccionados = grupo.productos.filter(producto => {
+                const checkbox = document.querySelector(`input[data-producto-id="${producto.id}"]`);
+                return checkbox && checkbox.checked;
+            });
+
+            console.log(`   📦 ${productosSeleccionados.length} de ${grupo.productos.length} seleccionados`);
+
+            if (productosSeleccionados.length < 2) {
+                alert('⚠️ Necesitas seleccionar al menos 2 productos para consolidar');
+                return;
+            }
+
+            // Identificar maestro (preferir EAN)
+            const productoMaestro = productosSeleccionados.find(p => p.codigo_ean && p.codigo_ean.length >= 8)
+                || productosSeleccionados[0];
+
+            const productosDuplicados = productosSeleccionados.filter(p => p.id !== productoMaestro.id);
+
+            // Guardar para confirmar
             consolidacionPendiente = {
-                grupoIndex,
-                productoMaestro,
-                productosDuplicados
+                maestro: productoMaestro,
+                duplicados: productosDuplicados
             };
 
             console.log('✅ Consolidación pendiente preparada:', consolidacionPendiente);
 
+            // Mostrar modal
             mostrarModalConfirmacion(productoMaestro, productosDuplicados);
         }
 
+        // ==========================================
+        // 🆕 MODAL DE CONFIRMACIÓN
+        // ==========================================
         function mostrarModalConfirmacion(maestro, duplicados) {
-            const modal = document.getElementById('modal-confirmacion');
-            const body = document.getElementById('modal-body');
+            const modalBody = document.getElementById('modal-body');
 
-            let html = `
-                <div class="alert alert-info">
-                    <span>ℹ️</span>
-                    <div>
-                        <strong>¿Qué va a pasar?</strong><br>
-                        Se creará/actualizará un producto canónico y se mantendrán todos los precios por establecimiento.
+            modalBody.innerHTML = `
+                <div class="modal-section">
+                    <h3>✅ Producto maestro:</h3>
+                    <div class="producto-preview maestro">
+                        <strong>${maestro.nombre}</strong>
+                        <div>ID: #${maestro.id} | ${maestro.codigo_ean || 'Sin EAN'}</div>
+                        <div>Establecimiento: ${maestro.establecimiento || 'Varios'}</div>
                     </div>
                 </div>
 
-                <h3 style="margin-bottom: 15px; color: #28a745;">✅ Producto Maestro:</h3>
-                <div class="preview-item" style="background: #d4edda; border-left: 4px solid #28a745;">
-                    <strong>${maestro.nombre}</strong><br>
-                    <small>ID: #${maestro.id} | EAN: ${maestro.codigo_ean || 'N/A'} | Precio: $${formatearNumero(maestro.precio_promedio || 0)}</small>
-                </div>
-
-                <h3 style="margin: 20px 0 15px; color: #dc3545;">🔄 Productos a consolidar:</h3>
-            `;
-
-            duplicados.forEach(prod => {
-                html += `
-                    <div class="preview-item">
-                        <strong>${prod.nombre}</strong><br>
-                        <small>ID: #${prod.id} | ${prod.establecimiento || 'Varios establecimientos'} | Precio: $${formatearNumero(prod.precio_promedio || 0)}</small>
-                    </div>
-                `;
-            });
-
-            html += `
-                <div class="alert alert-warning" style="margin-top: 20px;">
-                    <span>⚠️</span>
-                    <div>
-                        <strong>Nota importante:</strong> Esta acción no se puede deshacer.
-                        Los precios y fechas originales se mantendrán para cada establecimiento.
-                    </div>
+                <div class="modal-section">
+                    <h3>🔗 Se consolidarán estos duplicados:</h3>
+                    ${duplicados.map(d => `
+                        <div class="producto-preview duplicado">
+                            <strong>${d.nombre}</strong>
+                            <div>ID: #${d.id} | ${d.codigo_ean || 'Sin EAN'}</div>
+                            <div>Establecimiento: ${d.establecimiento || 'Varios'}</div>
+                        </div>
+                    `).join('')}
                 </div>
             `;
 
-            body.innerHTML = html;
-            modal.classList.add('active');
+            document.getElementById('modal-overlay').classList.add('active');
         }
 
         function cerrarModal() {
-            const modal = document.getElementById('modal-confirmacion');
-            modal.classList.remove('active');
-            // NO LIMPIAR consolidacionPendiente aquí
+            document.getElementById('modal-overlay').classList.remove('active');
         }
 
         // ==========================================
-        // CONFIRMAR CONSOLIDACIÓN - VERSIÓN CORREGIDA
+        // 🆕 CONFIRMAR Y ENVIAR AL BACKEND
         // ==========================================
         async function confirmarConsolidacion() {
-            // PRIMERO verificar y extraer datos ANTES de cerrar
             if (!consolidacionPendiente) {
-                console.error('❌ consolidacionPendiente es null');
-                mostrarAlerta('❌ Error: No hay consolidación pendiente', 'danger');
+                alert('❌ No hay consolidación pendiente');
                 return;
             }
 
-            const { productoMaestro, productosDuplicados } = consolidacionPendiente;
+            const { maestro, duplicados } = consolidacionPendiente;
 
-            console.log('🔄 Iniciando consolidación:', {
-                maestro: productoMaestro.id,
-                duplicados: productosDuplicados.map(p => p.id)
+            console.log('🔄 Iniciating consolidación:', {
+                maestro: maestro.id,
+                duplicados: duplicados.map(d => d.id)
             });
 
-            // AHORA sí cerrar modal
-            cerrarModal();
+            const payload = {
+                producto_maestro_id: maestro.id,
+                productos_duplicados_ids: duplicados.map(d => d.id)
+            };
 
-            // Limpiar consolidacionPendiente DESPUÉS de extraer datos
-            consolidacionPendiente = null;
-
-            mostrarAlerta('⏳ Consolidando productos...', 'info');
+            console.log('📤 Enviando payload:', payload);
 
             try {
-                const payload = {
-                    producto_maestro_id: productoMaestro.id,
-                    productos_duplicados_ids: productosDuplicados.map(p => p.id)
-                };
-
-                console.log('📤 Enviando payload:', payload);
-
                 const response = await fetch(`${API_URL}/admin/productos/consolidar`, {
                     method: 'POST',
                     headers: {
@@ -1232,73 +1126,55 @@
 
                 console.log('📥 Response status:', response.status);
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('❌ Error response:', errorText);
+                const data = await response.json();
 
-                    let errorMsg = 'Error en la consolidación';
-                    try {
-                        const errorJson = JSON.parse(errorText);
-                        errorMsg = errorJson.detail || errorMsg;
-                    } catch (e) {
-                        errorMsg = errorText;
-                    }
+                if (response.ok) {
+                    console.log('✅ Consolidación exitosa:', data);
+                    mostrarAlerta(
+                        `✅ ${data.message}\n\n` +
+                        `Producto canónico ID: ${data.producto_canonico_id}\n` +
+                        `Variantes creadas: ${data.variantes_creadas}`,
+                        'success'
+                    );
 
-                    throw new Error(errorMsg);
-                }
+                    cerrarModal();
 
-                const result = await response.json();
-                console.log('✅ Consolidación exitosa:', result);
-
-                mostrarAlerta(
-                    `✅ ¡Consolidación exitosa! Se creó el producto canónico #${result.producto_canonico_id} con ${result.variantes_creadas} variantes`,
-                    'success'
-                );
-
-                // Recargar búsqueda después de 2 segundos
-                setTimeout(() => {
-                    const nombreBusqueda = document.getElementById('search-nombre').value;
-                    const eanBusqueda = document.getElementById('search-ean').value;
-
-                    if (nombreBusqueda || eanBusqueda) {
+                    // Recargar duplicados
+                    setTimeout(() => {
                         buscarDuplicados();
-                    } else {
-                        buscarTodosDuplicados();
-                    }
-                }, 2000);
-
+                    }, 1500);
+                } else {
+                    console.error('❌ Error response:', data);
+                    alert('❌ Error en consolidación:\n\n' + data.detail);
+                }
             } catch (error) {
                 console.error('❌ Error completo:', error);
-                mostrarAlerta('❌ Error al consolidar: ' + error.message, 'danger');
+                alert('❌ Error de conexión: ' + error.message);
             }
         }
 
         // ==========================================
-        // MODAL DE EDICIÓN DE PRODUCTO
+        // EDICIÓN DE PRODUCTOS
         // ==========================================
         async function abrirModalEdicion(productoId) {
+            productoActualEdicion = { id: productoId };
+
             try {
-                console.log(`📝 Abriendo editor para producto #${productoId}`);
-
-                // Mostrar modal
-                document.getElementById('modalEdicionProducto').classList.add('active');
-
-                // Obtener detalles del producto
                 const response = await fetch(`${API_URL}/admin/productos/${productoId}/detalle`);
                 const data = await response.json();
 
                 if (!data.success) {
-                    alert('Error al cargar producto');
-                    cerrarModalEdicion();
+                    alert('Error al obtener detalles del producto');
                     return;
                 }
 
-                productoActualEdicion = data.producto;
+                // Mostrar modal
+                document.getElementById('modalEdicionProducto').classList.add('active');
 
                 // Llenar información actual
-                document.getElementById('edit_producto_id').textContent = `#${data.producto.id}`;
-                document.getElementById('edit_nombre_actual').textContent = data.producto.nombre || 'Sin nombre';
+                document.getElementById('edit_nombre_actual').textContent = data.producto.nombre || 'N/A';
                 document.getElementById('edit_ean_actual').textContent = data.producto.codigo_ean || 'Sin EAN';
+                document.getElementById('edit_marca_actual').textContent = data.producto.marca || 'N/A';
                 document.getElementById('edit_precio_actual').textContent = `$${formatearNumero(data.producto.precio_promedio)}`;
                 document.getElementById('edit_reportes').textContent = `${data.producto.total_reportes}x`;
 
@@ -1323,12 +1199,13 @@
                 document.getElementById('edit_categoria').value = data.producto.categoria || '';
                 document.getElementById('edit_razon').value = '';
 
-                // Ocultar sugerencia API inicialmente
+                // Ocultar sugerencia API
                 document.getElementById('seccion_sugerencia_api').style.display = 'none';
 
-                // Si tiene EAN, consultar API automáticamente
+                // Si tiene EAN, consultar API
                 if (data.producto.codigo_ean) {
-                    consultarAPI();
+                    // Comentado para no auto-consultar
+                    // consultarAPI();
                 }
 
             } catch (error) {
@@ -1371,13 +1248,11 @@
                 if (data.success && data.sugerencia) {
                     sugerenciaAPIActual = data.sugerencia;
 
-                    // Mostrar sección de sugerencia
                     document.getElementById('seccion_sugerencia_api').style.display = 'block';
                     document.getElementById('sugerencia_nombre').textContent = data.sugerencia.nombre_completo;
                     document.getElementById('sugerencia_marca').textContent = data.sugerencia.marca;
                     document.getElementById('sugerencia_categorias').textContent = data.sugerencia.categorias.join(', ') || 'N/A';
 
-                    // Mostrar imagen si existe
                     if (data.sugerencia.imagen_url) {
                         document.getElementById('sugerencia_imagen').src = data.sugerencia.imagen_url;
                         document.getElementById('sugerencia_imagen').style.display = 'block';
@@ -1404,14 +1279,6 @@
 
             document.getElementById('edit_nombre_completo').value = sugerenciaAPIActual.nombre_completo;
             document.getElementById('edit_marca').value = sugerenciaAPIActual.marca;
-
-            // Intentar mapear categoría
-            const categoria = sugerenciaAPIActual.categorias[0] || '';
-            if (categoria.includes('carne') || categoria.includes('meat')) {
-                document.getElementById('edit_categoria').value = 'carnes';
-            } else if (categoria.includes('dairy') || categoria.includes('lacteo')) {
-                document.getElementById('edit_categoria').value = 'lacteos';
-            }
 
             alert('✅ Información de la API aplicada. Revisa y guarda.');
         }
@@ -1452,14 +1319,7 @@
                 if (data.success) {
                     alert('✅ Producto actualizado correctamente');
                     cerrarModalEdicion();
-
-                    // Recargar búsqueda si hay una activa
-                    const nombreBusqueda = document.getElementById('search-nombre').value;
-                    const eanBusqueda = document.getElementById('search-ean').value;
-
-                    if (nombreBusqueda || eanBusqueda) {
-                        buscarDuplicados();
-                    }
+                    buscarDuplicados();
                 } else {
                     alert(`❌ Error: ${data.message}`);
                 }
@@ -1490,7 +1350,6 @@
                 </div>
             `;
 
-            // Auto-ocultar después de 5 segundos (excepto errores)
             if (tipo !== 'danger') {
                 setTimeout(() => {
                     container.innerHTML = '';
@@ -1508,28 +1367,11 @@
         // EVENTOS
         // ==========================================
         document.getElementById('search-ean').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                buscarDuplicados();
-            }
+            if (e.key === 'Enter') buscarDuplicados();
         });
 
         document.getElementById('search-nombre').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                buscarDuplicados();
-            }
-        });
-
-        // Cerrar modales al hacer clic fuera
-        document.getElementById('modal-confirmacion').addEventListener('click', (e) => {
-            if (e.target.id === 'modal-confirmacion') {
-                cerrarModal();
-            }
-        });
-
-        document.getElementById('modalEdicionProducto').addEventListener('click', (e) => {
-            if (e.target.id === 'modalEdicionProducto') {
-                cerrarModalEdicion();
-            }
+            if (e.key === 'Enter') buscarDuplicados();
         });
 
         // Cerrar modales con ESC
@@ -1540,7 +1382,7 @@
             }
         });
 
-        console.log('✅ Consolidación de Productos cargado correctamente');
+        console.log('✅ Sistema de consolidación cargado con checkboxes');
     </script>
 </body>
 
