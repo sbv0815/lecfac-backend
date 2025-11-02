@@ -3298,3 +3298,5 @@ print("✅ Todos los endpoints administrativos y de debug cargados")
 # ==========================================
 
 from pydantic import BaseModel
+
+# Force redeploy 11/02/2025 11:47:09
