@@ -297,7 +297,8 @@ class OCRProcessor:
             # ✅ BUSCAR O CREAR PRODUCTO INTELIGENTE
             # ========================================
             producto_maestro_id, accion = buscar_o_crear_producto_inteligente(
-                cursor, conn, codigo, tipo_codigo, nombre, establecimiento, precio
+            cursor, conn, codigo, tipo_codigo, nombre, establecimiento, precio,
+            codigo_raw=codigo_raw  # ✅ AGREGAR esta línea
             )
 
             if not producto_maestro_id:
