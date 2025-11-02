@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Productos - Información Completa | LecFac Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card h3 {
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .value {
+            color: #667eea;
+            font-size: 36px;
+            font-weight: 700;
+        }
+
+        .filters {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .filters input,
+        .filters select {
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+
+        .filters input:focus,
+        .filters select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .products-grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .product-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .product-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .product-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .product-codes {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .code-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .code-badge.ean {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .code-badge.plu {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .code-badge.none {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .supermarkets-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .supermarket-item {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            align-items: center;
+        }
+
+        .super-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .super-price {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .super-date {
+            text-align: right;
+        }
+
+        .date-label {
+            font-size: 11px;
+            color: #999;
+            display: block;
+            margin-bottom: 3px;
+        }
+
+        .date-value {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .freshness-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .freshness-badge.fresh {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .freshness-badge.recent {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .freshness-badge.old {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .no-prices {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+            font-style: italic;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 18px;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        .back-button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+
+        .back-button:hover {
+            background: #5568d3;
+        }
+
+        .price-comparison {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            align-items: center;
+        }
+
+        .price-tag {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .price-tag.lowest {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .price-tag.highest {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .export-button {
+            padding: 10px 20px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .export-button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Información Completa de Productos</h1>
+            <p style="color: #666; margin-top: 10px;">Vista detallada de todos los productos con precios por
+                supermercado</p>
+            <a href="/admin" class="back-button" style="margin-top: 20px;">← Volver al Dashboard</a>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <h3>Total Productos</h3>
+                <div class="value" id="totalProductos">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Con Precio Actualizado</h3>
+                <div class="value" id="conPrecio">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Supermercados Activos</h3>
+                <div class="value" id="totalSupers">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Última Actualización</h3>
+                <div class="value" id="ultimaActualizacion" style="font-size: 18px;">-</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <input type="text" id="searchInput" placeholder="🔍 Buscar producto por nombre o código..."
+                style="width: 300px;">
+            <select id="superFilter">
+                <option value="">Todos los supermercados</option>
+            </select>
+            <select id="freshnessFilter">
+                <option value="">Todas las actualizaciones</option>
+                <option value="fresh">Actualizado hoy (0-1 días)</option>
+                <option value="recent">Reciente (2-7 días)</option>
+                <option value="old">Antiguo (+7 días)</option>
+            </select>
+            <button class="export-button" onclick="exportToCSV()">📥 Exportar CSV</button>
+        </div>
+
+        <div id="content">
+            <div class="loading">Cargando información de productos...</div>
+        </div>
+    </div>
+
+    <script>
+        let allProducts = [];
+        let allSupermarkets = new Set();
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('/admin/productos/detalle-completo');
+                const data = await response.json();
+
+                allProducts = data.productos;
+
+                // Extraer todos los supermercados únicos
+                allProducts.forEach(p => {
+                    p.precios_por_super.forEach(s => {
+                        allSupermarkets.add(s.establecimiento);
+                    });
+                });
+
+                // Llenar filtro de supermercados
+                const superFilter = document.getElementById('superFilter');
+                Array.from(allSupermarkets).sort().forEach(supermarket => {
+                    const option = document.createElement('option');
+                    option.value = supermarket;
+                    option.textContent = supermarket;
+                    superFilter.appendChild(option);
+                });
+
+                updateStats(data);
+                displayProducts(allProducts);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('content').innerHTML = `
+                    <div class="error">
+                        <h3>❌ Error al cargar productos</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function updateStats(data) {
+            const totalProductos = data.total_productos;
+            const conPrecio = data.productos.filter(p => p.precios_por_super.length > 0).length;
+            const totalSupers = allSupermarkets.size;
+
+            // Encontrar la fecha más reciente
+            let ultimaFecha = null;
+            data.productos.forEach(p => {
+                p.precios_por_super.forEach(s => {
+                    if (s.ultima_actualizacion) {
+                        const fecha = new Date(s.ultima_actualizacion);
+                        if (!ultimaFecha || fecha > ultimaFecha) {
+                            ultimaFecha = fecha;
+                        }
+                    }
+                });
+            });
+
+            document.getElementById('totalProductos').textContent = totalProductos;
+            document.getElementById('conPrecio').textContent = conPrecio;
+            document.getElementById('totalSupers').textContent = totalSupers;
+            document.getElementById('ultimaActualizacion').textContent = ultimaFecha
+                ? formatDate(ultimaFecha)
+                : 'N/A';
+        }
+
+        function displayProducts(products) {
+            const content = document.getElementById('content');
+
+            if (products.length === 0) {
+                content.innerHTML = '<div class="no-prices">No se encontraron productos</div>';
+                return;
+            }
+
+            const html = products.map(producto => {
+                const precios = producto.precios_por_super;
+                const tienePrecios = precios.length > 0;
+
+                // Calcular precio más bajo y más alto
+                let precioMin = Infinity;
+                let precioMax = -Infinity;
+
+                precios.forEach(p => {
+                    if (p.precio > 0) {
+                        precioMin = Math.min(precioMin, p.precio);
+                        precioMax = Math.max(precioMax, p.precio);
+                    }
+                });
+
+                return `
+                    <div class="product-card">
+                        <div class="product-header">
+                            <div>
+                                <div class="product-name">${producto.nombre}</div>
+                                <div class="product-codes">
+                                    ${producto.codigo_ean !== 'Sin EAN'
+                        ? `<span class="code-badge ean">EAN: ${producto.codigo_ean}</span>`
+                        : `<span class="code-badge none">Sin EAN</span>`
+                    }
+                                    ${producto.codigo_plu !== 'Sin PLU'
+                        ? `<span class="code-badge plu">PLU: ${producto.codigo_plu}</span>`
+                        : `<span class="code-badge none">Sin PLU</span>`
+                    }
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 12px; color: #999;">Disponible en</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #667eea;">
+                                    ${producto.total_supermercados} super${producto.total_supermercados !== 1 ? 's' : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        ${tienePrecios ? `
+                            <div class="supermarkets-list">
+                                ${precios.map(supermarket => {
+                        const esMasBarato = supermarket.precio === precioMin && precioMin !== precioMax;
+                        const esMasCaro = supermarket.precio === precioMax && precioMin !== precioMax;
+                        const freshness = getFreshness(supermarket.dias_desde_actualizacion);
+
+                        return `
+                                        <div class="supermarket-item">
+                                            <div>
+                                                <div class="super-name">${supermarket.establecimiento}</div>
+                                                ${esMasBarato ? '<div class="price-tag lowest">💰 MÁS BARATO</div>' : ''}
+                                                ${esMasCaro ? '<div class="price-tag highest">💸 MÁS CARO</div>' : ''}
+                                            </div>
+                                            <div class="super-price">
+                                                $${supermarket.precio.toLocaleString('es-CO')}
+                                            </div>
+                                            <div class="super-date">
+                                                <span class="date-label">Última actualización</span>
+                                                <div class="date-value">
+                                                    ${supermarket.ultima_actualizacion ? formatDate(new Date(supermarket.ultima_actualizacion)) : 'N/A'}
+                                                </div>
+                                                <span class="freshness-badge ${freshness.class}">
+                                                    ${freshness.label}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    `;
+                    }).join('')}
+                            </div>
+                        ` : `
+                            <div class="no-prices">
+                                Sin información de precios disponible
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+
+            content.innerHTML = `<div class="products-grid">${html}</div>`;
+        }
+
+        function getFreshness(dias) {
+            if (dias === null) return { class: 'old', label: 'Desconocido' };
+            if (dias <= 1) return { class: 'fresh', label: '✨ Hoy' };
+            if (dias <= 7) return { class: 'recent', label: `📅 Hace ${dias} días` };
+            return { class: 'old', label: `⚠️ Hace ${dias} días` };
+        }
+
+        function formatDate(date) {
+            const options = {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            return date.toLocaleDateString('es-CO', options);
+        }
+
+        // Filtros
+        document.getElementById('searchInput').addEventListener('input', filterProducts);
+        document.getElementById('superFilter').addEventListener('change', filterProducts);
+        document.getElementById('freshnessFilter').addEventListener('change', filterProducts);
+
+        function filterProducts() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const superFilter = document.getElementById('superFilter').value;
+            const freshnessFilter = document.getElementById('freshnessFilter').value;
+
+            const filtered = allProducts.filter(producto => {
+                // Filtro de búsqueda
+                const matchesSearch = producto.nombre.toLowerCase().includes(searchTerm) ||
+                    producto.codigo_ean.includes(searchTerm) ||
+                    producto.codigo_plu.includes(searchTerm);
+
+                // Filtro de supermercado
+                const matchesSuper = !superFilter ||
+                    producto.precios_por_super.some(s => s.establecimiento === superFilter);
+
+                // Filtro de frescura
+                let matchesFreshness = true;
+                if (freshnessFilter) {
+                    matchesFreshness = producto.precios_por_super.some(s => {
+                        const freshness = getFreshness(s.dias_desde_actualizacion);
+                        return freshness.class === freshnessFilter;
+                    });
+                }
+
+                return matchesSearch && matchesSuper && matchesFreshness;
+            });
+
+            displayProducts(filtered);
+        }
+
+        function exportToCSV() {
+            const headers = ['Producto', 'EAN', 'PLU', 'Supermercado', 'Precio', 'Última Actualización', 'Días desde última actualización'];
+            const rows = [headers];
+
+            allProducts.forEach(producto => {
+                producto.precios_por_super.forEach(supermarket => {
+                    rows.push([
+                        producto.nombre,
+                        producto.codigo_ean,
+                        producto.codigo_plu,
+                        supermarket.establecimiento,
+                        supermarket.precio,
+                        supermarket.ultima_actualizacion || 'N/A',
+                        supermarket.dias_desde_actualizacion || 'N/A'
+                    ]);
+                });
+            });
+
+            const csv = rows.map(row => row.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `productos_lecfac_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        // Cargar al inicio
+        loadProducts();
+    </script>
+</body>
+
+</html>

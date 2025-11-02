@@ -5,6 +5,15 @@ from typing import List, Optional
 from difflib import SequenceMatcher
 from database import get_db_connection
 import os
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import text
+from datetime import datetime
+from typing import List, Dict, Any
+from sqlalchemy.orm import Session
+from fastapi.staticfiles import StaticFiles
+
+
+router = APIRouter()
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -2365,3 +2374,258 @@ async def consolidar_productos(data: ConsolidacionRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/productos/detalle-completo")
+async def obtener_productos_detalle_completo():
+    """
+    Retorna información COMPLETA de todos los productos con precios por supermercado
+    VERSIÓN CORREGIDA - Compatible con tu estructura de BD
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite")
+
+        print("📊 Obteniendo productos con precios...")
+
+        # Query adaptado a tu estructura
+        if database_type == "postgresql":
+            query = """
+                WITH ultimos_precios AS (
+                    SELECT
+                        pp.producto_maestro_id as producto_id,
+                        pp.establecimiento_id,
+                        pp.precio,
+                        pp.fecha_registro,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY pp.producto_maestro_id, pp.establecimiento_id
+                            ORDER BY pp.fecha_registro DESC
+                        ) as rn
+                    FROM precios_productos pp
+                    WHERE pp.producto_maestro_id IS NOT NULL
+                ),
+                productos_info AS (
+                    SELECT
+                        pm.id as producto_id,
+                        pm.nombre_normalizado as nombre_producto,
+                        pm.codigo_ean,
+                        (
+                            SELECT items.codigo_leido
+                            FROM items_factura items
+                            WHERE items.producto_maestro_id = pm.id
+                            AND items.codigo_leido IS NOT NULL
+                            AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                            AND items.codigo_leido NOT LIKE '77%'
+                            LIMIT 1
+                        ) as codigo_plu
+                    FROM productos_maestros pm
+                )
+                SELECT
+                    pi.producto_id,
+                    pi.nombre_producto as nombre,
+                    pi.codigo_ean,
+                    pi.codigo_plu,
+                    e.id as establecimiento_id,
+                    e.nombre_normalizado as establecimiento_nombre,
+                    up.precio,
+                    up.fecha_registro as ultima_actualizacion
+                FROM productos_info pi
+                LEFT JOIN ultimos_precios up ON up.producto_id = pi.producto_id AND up.rn = 1
+                LEFT JOIN establecimientos e ON e.id = up.establecimiento_id
+                WHERE pi.nombre_producto IS NOT NULL
+                ORDER BY pi.nombre_producto, e.nombre_normalizado
+                LIMIT 1000
+            """
+        else:
+            query = """
+                SELECT DISTINCT
+                    pm.id as producto_id,
+                    pm.nombre_normalizado as nombre,
+                    pm.codigo_ean,
+                    (
+                        SELECT items.codigo_leido
+                        FROM items_factura items
+                        WHERE items.producto_maestro_id = pm.id
+                        AND items.codigo_leido IS NOT NULL
+                        AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                        AND items.codigo_leido NOT LIKE '77%'
+                        LIMIT 1
+                    ) as codigo_plu,
+                    NULL as establecimiento_id,
+                    f.establecimiento as establecimiento_nombre,
+                    pp.precio,
+                    pp.fecha_registro as ultima_actualizacion
+                FROM productos_maestros pm
+                LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+                LEFT JOIN items_factura items ON items.producto_maestro_id = pm.id
+                LEFT JOIN facturas f ON f.id = items.factura_id
+                WHERE pm.nombre_normalizado IS NOT NULL
+                ORDER BY pm.nombre_normalizado, f.establecimiento
+                LIMIT 1000
+            """
+
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        print(f"   ✅ {len(rows)} registros obtenidos")
+
+        # Agrupar por producto
+        productos_map = {}
+
+        for row in rows:
+            producto_id = row[0]
+
+            if producto_id not in productos_map:
+                productos_map[producto_id] = {
+                    "producto_id": producto_id,
+                    "nombre": row[1] or "Sin nombre",
+                    "codigo_ean": row[2] or "Sin EAN",
+                    "codigo_plu": row[3] or "Sin PLU",
+                    "total_supermercados": 0,
+                    "precios_por_super": []
+                }
+
+            # Agregar precio si existe
+            if row[5] and row[6]:  # establecimiento_nombre y precio
+                establecimiento = row[5]
+                precio = row[6]
+                fecha = row[7]
+
+                # Verificar que no esté duplicado
+                existe = any(
+                    p["establecimiento"] == establecimiento
+                    for p in productos_map[producto_id]["precios_por_super"]
+                )
+
+                if not existe:
+                    from datetime import datetime
+
+                    # Calcular días desde última actualización
+                    dias = None
+                    if fecha:
+                        try:
+                            if isinstance(fecha, str):
+                                fecha_dt = datetime.fromisoformat(fecha.replace('Z', '+00:00'))
+                            else:
+                                fecha_dt = fecha
+                            dias = (datetime.now() - fecha_dt).days
+                        except:
+                            dias = None
+
+                    productos_map[producto_id]["precios_por_super"].append({
+                        "establecimiento_id": row[4],
+                        "establecimiento": establecimiento,
+                        "precio": float(precio) if precio else 0,
+                        "ultima_actualizacion": str(fecha) if fecha else None,
+                        "dias_desde_actualizacion": dias
+                    })
+
+        # Actualizar contadores
+        for prod in productos_map.values():
+            prod["total_supermercados"] = len(prod["precios_por_super"])
+
+        cursor.close()
+        conn.close()
+
+        print(f"✅ {len(productos_map)} productos únicos procesados")
+
+        return {
+            "total_productos": len(productos_map),
+            "productos": list(productos_map.values())
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/productos-detalle-page", response_class=HTMLResponse)
+async def productos_detalle_page():
+    """
+    Sirve la página HTML de visualización completa de productos
+    """
+    try:
+        file_path = os.path.join("static", "productos_detalle.html")
+
+        # Verificar si el archivo existe
+        if not os.path.exists(file_path):
+            return HTMLResponse(
+                content="""
+                <html>
+                <head>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            padding: 50px;
+                            text-align: center;
+                            background: #f5f5f5;
+                        }
+                        .error-box {
+                            background: white;
+                            border-radius: 10px;
+                            padding: 40px;
+                            max-width: 600px;
+                            margin: 0 auto;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        }
+                        h1 { color: #c62828; }
+                        code {
+                            background: #f0f0f0;
+                            padding: 2px 8px;
+                            border-radius: 4px;
+                            font-family: monospace;
+                        }
+                        ol {
+                            text-align: left;
+                            margin: 20px auto;
+                            max-width: 500px;
+                        }
+                        li { margin: 10px 0; }
+                    </style>
+                </head>
+                <body>
+                    <div class="error-box">
+                        <h1>❌ Error 404</h1>
+                        <h2>Archivo productos_detalle.html no encontrado</h2>
+                        <p>El archivo debe estar en: <code>static/productos_detalle.html</code></p>
+
+                        <h3>📋 Pasos para resolver:</h3>
+                        <ol>
+                            <li>Crear carpeta <code>static</code> en la raíz del proyecto</li>
+                            <li>Copiar el archivo <code>productos_detalle.html</code> descargado</li>
+                            <li>Colocarlo en <code>static/productos_detalle.html</code></li>
+                            <li>Reiniciar el servidor</li>
+                        </ol>
+
+                        <p style="margin-top: 30px;">
+                            <a href="/admin" style="color: #667eea; text-decoration: none;">← Volver al Dashboard</a>
+                        </p>
+                    </div>
+                </body>
+                </html>
+                """,
+                status_code=404
+            )
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <body style="font-family: Arial; padding: 50px; text-align: center;">
+                <h1 style="color: #c62828;">❌ Error del Servidor</h1>
+                <p>{str(e)}</p>
+                <p><a href="/admin">← Volver al Dashboard</a></p>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )
+
+
+print("✅ Endpoints de productos detalle agregados correctamente")
