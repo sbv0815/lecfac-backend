@@ -2372,133 +2372,83 @@ async def consolidar_productos(data: ConsolidacionRequest):
 @router.get("/productos/detalle-completo")
 async def obtener_productos_detalle_completo():
     """
-    Retorna información COMPLETA Y DETALLADA de productos:
-    - EAN + nombre que aparece con ese EAN
-    - PLU + nombre que aparece con ese PLU
-    - Supermercados donde está registrado
-    - Precio en cada supermercado
-    - Fecha última actualización por supermercado
+    Retorna información COMPLETA de productos con precios
+    VERSIÓN FUNCIONAL - Usa items_factura como fuente de precios
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
-        print("📊 Obteniendo productos con información detallada...")
+        print("📊 Obteniendo productos con precios desde items_factura...")
 
-        # Query mejorado con todos los nombres por código
+        # Query que obtiene precios de items_factura directamente
         if database_type == "postgresql":
             query = """
-                WITH productos_con_codigos AS (
-                    SELECT DISTINCT
-                        pm.id as producto_id,
-                        pm.nombre_normalizado as nombre_maestro,
-                        pm.codigo_ean,
-                        -- Obtener TODOS los nombres asociados al EAN
-                        (
-                            SELECT string_agg(DISTINCT items.nombre_leido, ' | ')
-                            FROM items_factura items
-                            WHERE items.producto_maestro_id = pm.id
-                            AND items.codigo_leido = pm.codigo_ean
-                            AND items.nombre_leido IS NOT NULL
-                        ) as nombres_por_ean,
-                        -- Obtener código PLU
-                        (
-                            SELECT items.codigo_leido
-                            FROM items_factura items
-                            WHERE items.producto_maestro_id = pm.id
-                            AND items.codigo_leido IS NOT NULL
-                            AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                            AND items.codigo_leido NOT LIKE '77%'
-                            AND items.codigo_leido != pm.codigo_ean
-                            LIMIT 1
-                        ) as codigo_plu,
-                        -- Obtener nombres asociados al PLU
-                        (
-                            SELECT string_agg(DISTINCT items.nombre_leido, ' | ')
-                            FROM items_factura items
-                            WHERE items.producto_maestro_id = pm.id
-                            AND items.codigo_leido IS NOT NULL
-                            AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                            AND items.codigo_leido NOT LIKE '77%'
-                            AND items.codigo_leido != pm.codigo_ean
-                            AND items.nombre_leido IS NOT NULL
-                        ) as nombres_por_plu,
-                        pm.marca,
-                        pm.categoria
-                    FROM productos_maestros pm
-                    WHERE pm.nombre_normalizado IS NOT NULL
-                )
                 SELECT
-                    pc.producto_id,
-                    pc.nombre_maestro,
-                    pc.codigo_ean,
-                    pc.nombres_por_ean,
-                    pc.codigo_plu,
-                    pc.nombres_por_plu,
-                    pc.marca,
-                    pc.categoria,
-                    COALESCE(e.nombre_normalizado, f.establecimiento, 'Desconocido') as establecimiento,
-                    pp.precio,
-                    pp.fecha_registro,
-                    f.fecha_cargue
-                FROM productos_con_codigos pc
-                LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pc.producto_id
-                LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
-                LEFT JOIN items_factura items ON items.producto_maestro_id = pc.producto_id
-                LEFT JOIN facturas f ON f.id = items.factura_id
-                WHERE pc.nombre_maestro IS NOT NULL
-                ORDER BY pc.nombre_maestro, establecimiento
+                    pm.id as producto_id,
+                    pm.nombre_normalizado as nombre_maestro,
+                    pm.codigo_ean,
+                    pm.marca,
+                    pm.categoria,
+                    -- Nombres asociados al EAN
+                    string_agg(DISTINCT
+                        CASE WHEN items.codigo_leido = pm.codigo_ean
+                        THEN items.nombre_leido END, ' | ') as nombres_por_ean,
+                    -- Código PLU
+                    MIN(CASE
+                        WHEN items.codigo_leido IS NOT NULL
+                        AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                        AND items.codigo_leido NOT LIKE '77%'
+                        AND (pm.codigo_ean IS NULL OR items.codigo_leido != pm.codigo_ean)
+                        THEN items.codigo_leido
+                    END) as codigo_plu,
+                    -- Nombres asociados al PLU
+                    string_agg(DISTINCT
+                        CASE
+                            WHEN items.codigo_leido IS NOT NULL
+                            AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                            AND items.codigo_leido NOT LIKE '77%'
+                            AND (pm.codigo_ean IS NULL OR items.codigo_leido != pm.codigo_ean)
+                            THEN items.nombre_leido
+                        END, ' | ') as nombres_por_plu,
+                    f.establecimiento,
+                    AVG(items.precio_pagado) as precio_promedio,
+                    MAX(f.fecha_cargue) as ultima_fecha
+                FROM productos_maestros pm
+                INNER JOIN items_factura items ON items.producto_maestro_id = pm.id
+                INNER JOIN facturas f ON f.id = items.factura_id
+                WHERE pm.nombre_normalizado IS NOT NULL
+                AND f.establecimiento IS NOT NULL
+                AND items.precio_pagado IS NOT NULL
+                AND items.precio_pagado > 0
+                GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca, pm.categoria, f.establecimiento
+                ORDER BY pm.nombre_normalizado, f.establecimiento
                 LIMIT 1000
             """
         else:
             query = """
-                SELECT DISTINCT
+                SELECT
                     pm.id as producto_id,
                     pm.nombre_normalizado as nombre_maestro,
                     pm.codigo_ean,
-                    -- Nombres asociados al EAN (manual en SQLite)
-                    (
-                        SELECT GROUP_CONCAT(DISTINCT items.nombre_leido, ' | ')
-                        FROM items_factura items
-                        WHERE items.producto_maestro_id = pm.id
-                        AND items.codigo_leido = pm.codigo_ean
-                        AND items.nombre_leido IS NOT NULL
-                    ) as nombres_por_ean,
-                    -- Código PLU
-                    (
-                        SELECT items.codigo_leido
-                        FROM items_factura items
-                        WHERE items.producto_maestro_id = pm.id
-                        AND items.codigo_leido IS NOT NULL
-                        AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                        AND items.codigo_leido NOT LIKE '77%'
-                        AND items.codigo_leido != pm.codigo_ean
-                        LIMIT 1
-                    ) as codigo_plu,
-                    -- Nombres asociados al PLU
-                    (
-                        SELECT GROUP_CONCAT(DISTINCT items.nombre_leido, ' | ')
-                        FROM items_factura items
-                        WHERE items.producto_maestro_id = pm.id
-                        AND items.codigo_leido IS NOT NULL
-                        AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                        AND items.codigo_leido NOT LIKE '77%'
-                        AND items.codigo_leido != pm.codigo_ean
-                        AND items.nombre_leido IS NOT NULL
-                    ) as nombres_por_plu,
                     pm.marca,
                     pm.categoria,
-                    COALESCE(f.establecimiento, 'Desconocido') as establecimiento,
-                    pp.precio,
-                    pp.fecha_registro,
-                    f.fecha_cargue
+                    NULL as nombres_por_ean,
+                    NULL as codigo_plu,
+                    NULL as nombres_por_plu,
+                    f.establecimiento,
+                    AVG(items.precio_pagado) as precio_promedio,
+                    MAX(f.fecha_cargue) as ultima_fecha
                 FROM productos_maestros pm
-                LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                LEFT JOIN items_factura items ON items.producto_maestro_id = pm.id
-                LEFT JOIN facturas f ON f.id = items.factura_id
+                INNER JOIN items_factura items ON items.producto_maestro_id = pm.id
+                INNER JOIN facturas f ON f.id = items.factura_id
                 WHERE pm.nombre_normalizado IS NOT NULL
-                ORDER BY pm.nombre_normalizado, establecimiento
+                AND f.establecimiento IS NOT NULL
+                AND items.precio_pagado IS NOT NULL
+                AND items.precio_pagado > 0
+                GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca, pm.categoria, f.establecimiento
+                ORDER BY pm.nombre_normalizado, f.establecimiento
                 LIMIT 1000
             """
 
@@ -2518,52 +2468,41 @@ async def obtener_productos_detalle_completo():
                     "producto_id": producto_id,
                     "nombre_maestro": row[1] or "Sin nombre",
                     "codigo_ean": row[2] or "Sin EAN",
-                    "nombres_por_ean": row[3] or "N/A",  # Nombres que aparecen con este EAN
-                    "codigo_plu": row[4] or "Sin PLU",
-                    "nombres_por_plu": row[5] or "N/A",  # Nombres que aparecen con este PLU
-                    "marca": row[6] or "Sin marca",
-                    "categoria": row[7] or "Sin categoría",
+                    "marca": row[3] or "Sin marca",
+                    "categoria": row[4] or "Sin categoría",
+                    "nombres_por_ean": row[5] or "N/A",
+                    "codigo_plu": row[6] or "Sin PLU",
+                    "nombres_por_plu": row[7] or "N/A",
                     "total_supermercados": 0,
                     "precios_por_super": []
                 }
 
-            # Agregar precio si existe
+            # Agregar precio del establecimiento
             establecimiento = row[8]
             precio = row[9]
-            fecha_registro = row[10]
-            fecha_cargue = row[11]
+            fecha = row[10]
 
             if establecimiento and precio:
-                # Verificar que no esté duplicado
-                existe = any(
-                    p["establecimiento"] == establecimiento
-                    for p in productos_map[producto_id]["precios_por_super"]
-                )
+                from datetime import datetime
 
-                if not existe:
-                    from datetime import datetime
+                # Calcular días desde última actualización
+                dias = None
+                if fecha:
+                    try:
+                        if isinstance(fecha, str):
+                            fecha_dt = datetime.fromisoformat(fecha.replace('Z', '+00:00'))
+                        else:
+                            fecha_dt = fecha
+                        dias = (datetime.now() - fecha_dt).days
+                    except:
+                        dias = None
 
-                    # Usar fecha_cargue si existe, sino fecha_registro
-                    fecha_a_usar = fecha_cargue or fecha_registro
-
-                    # Calcular días desde última actualización
-                    dias = None
-                    if fecha_a_usar:
-                        try:
-                            if isinstance(fecha_a_usar, str):
-                                fecha_dt = datetime.fromisoformat(fecha_a_usar.replace('Z', '+00:00'))
-                            else:
-                                fecha_dt = fecha_a_usar
-                            dias = (datetime.now() - fecha_dt).days
-                        except:
-                            dias = None
-
-                    productos_map[producto_id]["precios_por_super"].append({
-                        "establecimiento": establecimiento,
-                        "precio": float(precio) if precio else 0,
-                        "ultima_actualizacion": str(fecha_a_usar) if fecha_a_usar else None,
-                        "dias_desde_actualizacion": dias
-                    })
+                productos_map[producto_id]["precios_por_super"].append({
+                    "establecimiento": establecimiento,
+                    "precio": float(precio) if precio else 0,
+                    "ultima_actualizacion": str(fecha) if fecha else None,
+                    "dias_desde_actualizacion": dias
+                })
 
         # Actualizar contadores
         for prod in productos_map.values():
@@ -2573,6 +2512,7 @@ async def obtener_productos_detalle_completo():
         conn.close()
 
         print(f"✅ {len(productos_map)} productos únicos procesados")
+        print(f"✅ Total productos con precios: {sum(1 for p in productos_map.values() if p['total_supermercados'] > 0)}")
 
         return {
             "total_productos": len(productos_map),
@@ -2583,6 +2523,7 @@ async def obtener_productos_detalle_completo():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/productos-detalle-page", response_class=HTMLResponse)
