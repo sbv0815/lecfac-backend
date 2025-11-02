@@ -1997,20 +1997,20 @@ async def consolidar_productos(data: ConsolidacionRequest):
             # Obtener info del producto y sus precios por establecimiento
             if database_type == "postgresql":
                 cursor.execute(
-                    """
-                    SELECT DISTINCT
-                        pm.nombre_normalizado,
-                        pm.codigo_ean,
-                        pp.establecimiento,
-                        pp.precio,
-                        pp.fecha
+                """
+                SELECT DISTINCT
+                    pm.nombre_normalizado,
+                    pm.codigo_ean,
+                    COALESCE(e.nombre_normalizado, 'Varios') as establecimiento,  # ← CORREGIDO
+                    pp.precio,
+                    pp.fecha_registro  # ← También corregido (fecha → fecha_registro)
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-
+                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
                     WHERE pm.id = %s
-                """,
+                    """,
                     (producto_maestro_id,)
-                )
+                    )
             else:
                 cursor.execute(
                     """
