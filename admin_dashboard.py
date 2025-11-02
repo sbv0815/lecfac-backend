@@ -1346,11 +1346,11 @@ async def detectar_productos_duplicados_sospechosos(
                 pm.precio_promedio_global,
                 pm.total_reportes,
                 f.establecimiento,
-                if2.precio_pagado,
+                items.precio_pagado,
                 f.fecha_cargue
             FROM productos_maestros pm
-            INNER JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
-            INNER JOIN facturas f ON f.id = if2.factura_id
+            INNER JOIN items_factura items ON items.producto_maestro_id = pm.id
+            INNER JOIN facturas f ON f.id = items.factura_id
             WHERE pm.nombre_normalizado IS NOT NULL
               AND f.establecimiento IS NOT NULL
               AND pm.producto_canonico_id IS NULL
@@ -1631,8 +1631,8 @@ async def obtener_detalle_producto(producto_id: int):
                     pp.fecha_registro
                 FROM precios_productos pp
                 LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
-                LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pp.producto_maestro_id
-                LEFT JOIN facturas f ON f.id = if2.factura_id
+                LEFT JOIN items_factura items ON items.producto_maestro_id = pp.producto_maestro_id
+                LEFT JOIN facturas f ON f.id = items.factura_id
                 WHERE pp.producto_maestro_id = %s
                 ORDER BY pp.fecha_registro DESC
                 LIMIT 10
@@ -1645,8 +1645,8 @@ async def obtener_detalle_producto(producto_id: int):
                     pp.fecha_registro
                 FROM precios_productos pp
                 LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
-                LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pp.producto_maestro_id
-                LEFT JOIN facturas f ON f.id = if2.factura_id
+                LEFT JOIN items_factura items ON items.producto_maestro_id = pp.producto_maestro_id
+                LEFT JOIN facturas f ON f.id = items.factura_id
                 WHERE pp.producto_maestro_id = ?
                 ORDER BY pp.fecha_registro DESC
                 LIMIT 10
@@ -1963,12 +1963,12 @@ async def consolidar_productos(data: ConsolidacionRequest):
                         COALESCE(e.nombre_normalizado, f.establecimiento, 'Varios') as establecimiento,
                         pp.precio,
                         pp.fecha_registro,
-                        if2.codigo_leido
+                        items.codigo_leido
                     FROM productos_maestros pm
-                    LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                    LEFT JOIN items_factura items ON items.producto_maestro_id = pm.id
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
-                    LEFT JOIN facturas f ON f.id = if2.factura_id
+                    LEFT JOIN facturas f ON f.id = items.factura_id
                     WHERE pm.id = %s
                 """,
                     (prod_id,),
@@ -1982,12 +1982,12 @@ async def consolidar_productos(data: ConsolidacionRequest):
                         e.nombre as establecimiento,
                         pp.precio,
                         pp.fecha,
-                        if2.codigo_leido
+                        items.codigo_leido
                     FROM productos_maestros pm
-                    LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                    LEFT JOIN items_factura items ON items.producto_maestro_id = pm.id
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
                     LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
-                    LEFT JOIN facturas f ON f.id = if2.factura_id
+                    LEFT JOIN facturas f ON f.id = items.factura_id
                     WHERE pm.id = ?
                 """,
                     (prod_id,),
@@ -2000,9 +2000,9 @@ async def consolidar_productos(data: ConsolidacionRequest):
                 if database_type == "postgresql":
                     cursor.execute(
                         """
-                        SELECT pm.nombre_normalizado, pm.codigo_ean, if2.codigo_leido
+                        SELECT pm.nombre_normalizado, pm.codigo_ean, items.codigo_leido
                         FROM productos_maestros pm
-                        LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                        LEFT JOIN items_factura items ON items.producto_maestro_id = pm.id
                         WHERE pm.id = %s
                         LIMIT 1
                     """,
@@ -2011,9 +2011,9 @@ async def consolidar_productos(data: ConsolidacionRequest):
                 else:
                     cursor.execute(
                         """
-                        SELECT pm.nombre_normalizado, pm.codigo_ean, if2.codigo_leido
+                        SELECT pm.nombre_normalizado, pm.codigo_ean, items.codigo_leido
                         FROM productos_maestros pm
-                        LEFT JOIN items_factura if2 ON if2.producto_maestro_id = pm.id
+                        LEFT JOIN items_factura items ON items.producto_maestro_id = pm.id
                         WHERE pm.id = ?
                         LIMIT 1
                     """,
