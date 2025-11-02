@@ -20,7 +20,7 @@
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
         }
 
@@ -80,6 +80,7 @@
             border-radius: 10px;
             font-size: 14px;
             margin-right: 10px;
+            margin-bottom: 10px;
         }
 
         .filters input:focus,
@@ -122,17 +123,43 @@
             margin-bottom: 10px;
         }
 
-        .product-codes {
-            display: flex;
+        .product-info-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .info-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
             gap: 10px;
-            flex-wrap: wrap;
+            margin-bottom: 10px;
+            padding: 8px 0;
+        }
+
+        .info-row:not(:last-child) {
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #555;
+            font-size: 13px;
+        }
+
+        .info-value {
+            color: #333;
+            font-size: 14px;
         }
 
         .code-badge {
+            display: inline-block;
             padding: 6px 12px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
+            margin-right: 8px;
         }
 
         .code-badge.ean {
@@ -148,6 +175,16 @@
         .code-badge.none {
             background: #ffebee;
             color: #c62828;
+        }
+
+        .nombres-list {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 5px;
+            font-size: 13px;
+            color: #666;
+            border-left: 3px solid #667eea;
         }
 
         .supermarkets-list {
@@ -218,6 +255,25 @@
             color: #c62828;
         }
 
+        .price-tag {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 5px;
+        }
+
+        .price-tag.lowest {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .price-tag.highest {
+            background: #ffebee;
+            color: #c62828;
+        }
+
         .no-prices {
             text-align: center;
             padding: 30px;
@@ -240,7 +296,8 @@
             text-align: center;
         }
 
-        .back-button {
+        .back-button,
+        .export-button {
             display: inline-block;
             padding: 12px 24px;
             background: #667eea;
@@ -249,45 +306,18 @@
             border-radius: 10px;
             font-weight: 600;
             transition: background 0.3s ease;
+            border: none;
+            cursor: pointer;
+            margin-right: 10px;
         }
 
-        .back-button:hover {
+        .back-button:hover,
+        .export-button:hover {
             background: #5568d3;
         }
 
-        .price-comparison {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-            align-items: center;
-        }
-
-        .price-tag {
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
-        .price-tag.lowest {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .price-tag.highest {
-            background: #ffebee;
-            color: #c62828;
-        }
-
         .export-button {
-            padding: 10px 20px;
             background: #4caf50;
-            color: white;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 600;
-            margin-left: 10px;
         }
 
         .export-button:hover {
@@ -300,8 +330,8 @@
     <div class="container">
         <div class="header">
             <h1>📊 Información Completa de Productos</h1>
-            <p style="color: #666; margin-top: 10px;">Vista detallada de todos los productos con precios por
-                supermercado</p>
+            <p style="color: #666; margin-top: 10px;">Vista detallada con códigos, nombres y precios por supermercado
+            </p>
             <a href="/admin" class="back-button" style="margin-top: 20px;">← Volver al Dashboard</a>
         </div>
 
@@ -325,8 +355,7 @@
         </div>
 
         <div class="filters">
-            <input type="text" id="searchInput" placeholder="🔍 Buscar producto por nombre o código..."
-                style="width: 300px;">
+            <input type="text" id="searchInput" placeholder="🔍 Buscar por nombre o código..." style="width: 300px;">
             <select id="superFilter">
                 <option value="">Todos los supermercados</option>
             </select>
@@ -352,6 +381,9 @@
             try {
                 const response = await fetch('/admin/productos/detalle-completo');
                 const data = await response.json();
+
+                console.log('Datos recibidos:', data);
+                console.log('Primer producto:', data.productos[0]);
 
                 allProducts = data.productos;
 
@@ -427,26 +459,25 @@
                 let precioMax = -Infinity;
 
                 precios.forEach(p => {
-                    if (p.precio > 0) {
-                        precioMin = Math.min(precioMin, p.precio);
-                        precioMax = Math.max(precioMax, p.precio);
+                    // ✅ FIX: Convertir precio a número
+                    const precioNum = parseFloat(p.precio) || 0;
+                    if (precioNum > 0) {
+                        precioMin = Math.min(precioMin, precioNum);
+                        precioMax = Math.max(precioMax, precioNum);
                     }
                 });
+
+                // ✅ FIX: Validar que nombre_maestro exista
+                const nombreProducto = producto.nombre_maestro || 'Sin nombre';
 
                 return `
                     <div class="product-card">
                         <div class="product-header">
                             <div>
-                                <div class="product-name">${producto.nombre}</div>
-                                <div class="product-codes">
-                                    ${producto.codigo_ean !== 'Sin EAN'
-                        ? `<span class="code-badge ean">EAN: ${producto.codigo_ean}</span>`
-                        : `<span class="code-badge none">Sin EAN</span>`
-                    }
-                                    ${producto.codigo_plu !== 'Sin PLU'
-                        ? `<span class="code-badge plu">PLU: ${producto.codigo_plu}</span>`
-                        : `<span class="code-badge none">Sin PLU</span>`
-                    }
+                                <div class="product-name">${nombreProducto}</div>
+                                <div style="margin-top: 10px;">
+                                    ${producto.marca !== 'Sin marca' ? `<span style="color: #666; font-size: 13px;">Marca: ${producto.marca}</span>` : ''}
+                                    ${producto.categoria !== 'Sin categoría' ? `<span style="color: #666; font-size: 13px; margin-left: 15px;">Categoría: ${producto.categoria}</span>` : ''}
                                 </div>
                             </div>
                             <div style="text-align: right;">
@@ -457,11 +488,54 @@
                             </div>
                         </div>
 
+                        <!-- INFORMACIÓN DE CÓDIGOS Y NOMBRES -->
+                        <div class="product-info-section">
+                            <div class="info-row">
+                                <div class="info-label">🏷️ Código EAN:</div>
+                                <div class="info-value">
+                                    ${producto.codigo_ean !== 'Sin EAN'
+                        ? `<span class="code-badge ean">${producto.codigo_ean}</span>`
+                        : `<span class="code-badge none">Sin EAN</span>`
+                    }
+                                </div>
+                            </div>
+                            ${producto.codigo_ean !== 'Sin EAN' && producto.nombres_por_ean !== 'N/A' ? `
+                                <div class="info-row">
+                                    <div class="info-label">📝 Nombres con EAN:</div>
+                                    <div class="info-value">
+                                        <div class="nombres-list">${producto.nombres_por_ean}</div>
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            <div class="info-row" style="margin-top: 15px;">
+                                <div class="info-label">🔢 Código PLU:</div>
+                                <div class="info-value">
+                                    ${producto.codigo_plu !== 'Sin PLU'
+                        ? `<span class="code-badge plu">${producto.codigo_plu}</span>`
+                        : `<span class="code-badge none">Sin PLU</span>`
+                    }
+                                </div>
+                            </div>
+                            ${producto.codigo_plu !== 'Sin PLU' && producto.nombres_por_plu !== 'N/A' ? `
+                                <div class="info-row">
+                                    <div class="info-label">📝 Nombres con PLU:</div>
+                                    <div class="info-value">
+                                        <div class="nombres-list">${producto.nombres_por_plu}</div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- PRECIOS POR SUPERMERCADO -->
                         ${tienePrecios ? `
+                            <h3 style="margin: 20px 0 15px 0; color: #333; font-size: 16px;">💰 Precios por Supermercado:</h3>
                             <div class="supermarkets-list">
                                 ${precios.map(supermarket => {
-                        const esMasBarato = supermarket.precio === precioMin && precioMin !== precioMax;
-                        const esMasCaro = supermarket.precio === precioMax && precioMin !== precioMax;
+                        // ✅ FIX: Convertir precio a número
+                        const precioNum = parseFloat(supermarket.precio) || 0;
+                        const esMasBarato = precioNum === precioMin && precioMin !== precioMax;
+                        const esMasCaro = precioNum === precioMax && precioMin !== precioMax;
                         const freshness = getFreshness(supermarket.dias_desde_actualizacion);
 
                         return `
@@ -472,7 +546,7 @@
                                                 ${esMasCaro ? '<div class="price-tag highest">💸 MÁS CARO</div>' : ''}
                                             </div>
                                             <div class="super-price">
-                                                $${supermarket.precio.toLocaleString('es-CO')}
+                                                $${Math.round(precioNum).toLocaleString('es-CO')}
                                             </div>
                                             <div class="super-date">
                                                 <span class="date-label">Última actualización</span>
@@ -500,7 +574,7 @@
         }
 
         function getFreshness(dias) {
-            if (dias === null) return { class: 'old', label: 'Desconocido' };
+            if (dias === null || dias === undefined) return { class: 'old', label: 'Desconocido' };
             if (dias <= 1) return { class: 'fresh', label: '✨ Hoy' };
             if (dias <= 7) return { class: 'recent', label: `📅 Hace ${dias} días` };
             return { class: 'old', label: `⚠️ Hace ${dias} días` };
@@ -528,16 +602,21 @@
             const freshnessFilter = document.getElementById('freshnessFilter').value;
 
             const filtered = allProducts.filter(producto => {
-                // Filtro de búsqueda
-                const matchesSearch = producto.nombre.toLowerCase().includes(searchTerm) ||
-                    producto.codigo_ean.includes(searchTerm) ||
-                    producto.codigo_plu.includes(searchTerm);
+                const nombreMaestro = producto.nombre_maestro || '';
+                const codigoEan = producto.codigo_ean || '';
+                const codigoPlu = producto.codigo_plu || '';
+                const nombresEan = producto.nombres_por_ean || '';
+                const nombresPlu = producto.nombres_por_plu || '';
 
-                // Filtro de supermercado
+                const matchesSearch = nombreMaestro.toLowerCase().includes(searchTerm) ||
+                    codigoEan.includes(searchTerm) ||
+                    codigoPlu.includes(searchTerm) ||
+                    nombresEan.toLowerCase().includes(searchTerm) ||
+                    nombresPlu.toLowerCase().includes(searchTerm);
+
                 const matchesSuper = !superFilter ||
                     producto.precios_por_super.some(s => s.establecimiento === superFilter);
 
-                // Filtro de frescura
                 let matchesFreshness = true;
                 if (freshnessFilter) {
                     matchesFreshness = producto.precios_por_super.some(s => {
@@ -553,17 +632,21 @@
         }
 
         function exportToCSV() {
-            const headers = ['Producto', 'EAN', 'PLU', 'Supermercado', 'Precio', 'Última Actualización', 'Días desde última actualización'];
+            const headers = ['Producto', 'EAN', 'Nombres EAN', 'PLU', 'Nombres PLU', 'Marca', 'Categoría', 'Supermercado', 'Precio', 'Última Actualización', 'Días'];
             const rows = [headers];
 
             allProducts.forEach(producto => {
                 producto.precios_por_super.forEach(supermarket => {
                     rows.push([
-                        producto.nombre,
-                        producto.codigo_ean,
-                        producto.codigo_plu,
-                        supermarket.establecimiento,
-                        supermarket.precio,
+                        producto.nombre_maestro || 'Sin nombre',
+                        producto.codigo_ean || '',
+                        producto.nombres_por_ean || '',
+                        producto.codigo_plu || '',
+                        producto.nombres_por_plu || '',
+                        producto.marca || '',
+                        producto.categoria || '',
+                        supermarket.establecimiento || '',
+                        supermarket.precio || 0,
                         supermarket.ultima_actualizacion || 'N/A',
                         supermarket.dias_desde_actualizacion || 'N/A'
                     ]);
@@ -575,7 +658,7 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `productos_lecfac_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `productos_lecfac_completo_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
         }
 
