@@ -2372,22 +2372,20 @@ async def consolidar_productos(data: ConsolidacionRequest):
 @router.get("/productos/detalle-completo")
 async def obtener_productos_detalle_completo():
     """
-    Retorna información COMPLETA de productos con precios
-    VERSIÓN CON DEBUGGING
+    Retorna información COMPLETA de productos con nombres asociados a códigos
     """
     try:
-        print("🔍 Iniciando endpoint productos/detalle-completo...")
+        print("📊 Obteniendo productos con información completa...")
 
         conn = get_db_connection()
         cursor = conn.cursor()
         database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
         print(f"📊 Database type: {database_type}")
-        print("📊 Ejecutando query...")
 
-        # Query simplificado para debugging
+        # PASO 1: Obtener productos con precios
         if database_type == "postgresql":
-            query = """
+            query_base = """
                 SELECT
                     pm.id as producto_id,
                     pm.nombre_normalizado as nombre_maestro,
@@ -2406,10 +2404,10 @@ async def obtener_productos_detalle_completo():
                 AND items.precio_pagado > 0
                 GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca, pm.categoria, f.establecimiento
                 ORDER BY pm.nombre_normalizado, f.establecimiento
-                LIMIT 100
+                LIMIT 1000
             """
         else:
-            query = """
+            query_base = """
                 SELECT
                     pm.id as producto_id,
                     pm.nombre_normalizado as nombre_maestro,
@@ -2428,20 +2426,20 @@ async def obtener_productos_detalle_completo():
                 AND items.precio_pagado > 0
                 GROUP BY pm.id, pm.nombre_normalizado, pm.codigo_ean, pm.marca, pm.categoria, f.establecimiento
                 ORDER BY pm.nombre_normalizado, f.establecimiento
-                LIMIT 100
+                LIMIT 1000
             """
 
-        cursor.execute(query)
-        print("✅ Query ejecutado")
-
+        cursor.execute(query_base)
         rows = cursor.fetchall()
-        print(f"✅ {len(rows)} registros obtenidos")
+        print(f"✅ {len(rows)} registros base obtenidos")
 
-        # Procesar datos de forma simple
+        # PASO 2: Procesar productos
         productos_map = {}
+        producto_ids = set()
 
         for row in rows:
             producto_id = row[0]
+            producto_ids.add(producto_id)
 
             if producto_id not in productos_map:
                 productos_map[producto_id] = {
@@ -2450,9 +2448,9 @@ async def obtener_productos_detalle_completo():
                     "codigo_ean": str(row[2]) if row[2] else "Sin EAN",
                     "marca": str(row[3]) if row[3] else "Sin marca",
                     "categoria": str(row[4]) if row[4] else "Sin categoría",
-                    "nombres_por_ean": "N/A",
-                    "codigo_plu": "Sin PLU",
-                    "nombres_por_plu": "N/A",
+                    "nombres_por_ean": None,
+                    "codigo_plu": None,
+                    "nombres_por_plu": None,
                     "total_supermercados": 0,
                     "precios_por_super": []
                 }
@@ -2465,7 +2463,6 @@ async def obtener_productos_detalle_completo():
             if establecimiento and precio:
                 from datetime import datetime
 
-                # Calcular días
                 dias = None
                 if fecha:
                     try:
@@ -2474,8 +2471,7 @@ async def obtener_productos_detalle_completo():
                         else:
                             fecha_dt = fecha
                         dias = (datetime.now() - fecha_dt).days
-                    except Exception as e:
-                        print(f"⚠️ Error calculando días: {e}")
+                    except:
                         dias = None
 
                 productos_map[producto_id]["precios_por_super"].append({
@@ -2485,26 +2481,103 @@ async def obtener_productos_detalle_completo():
                     "dias_desde_actualizacion": dias
                 })
 
-        # Actualizar contadores
+        # PASO 3: Obtener nombres asociados a EAN y PLU para cada producto
+        print(f"📝 Obteniendo nombres asociados para {len(producto_ids)} productos...")
+
+        for producto_id in producto_ids:
+            producto = productos_map[producto_id]
+            codigo_ean = producto["codigo_ean"]
+
+            # Obtener nombres asociados al EAN
+            if codigo_ean and codigo_ean != "Sin EAN":
+                try:
+                    if database_type == "postgresql":
+                        cursor.execute("""
+                            SELECT DISTINCT nombre_leido
+                            FROM items_factura
+                            WHERE producto_maestro_id = %s
+                            AND codigo_leido = %s
+                            AND nombre_leido IS NOT NULL
+                            LIMIT 5
+                        """, (producto_id, codigo_ean))
+                    else:
+                        cursor.execute("""
+                            SELECT DISTINCT nombre_leido
+                            FROM items_factura
+                            WHERE producto_maestro_id = ?
+                            AND codigo_leido = ?
+                            AND nombre_leido IS NOT NULL
+                            LIMIT 5
+                        """, (producto_id, codigo_ean))
+
+                    nombres_ean = [row[0] for row in cursor.fetchall() if row[0]]
+                    if nombres_ean:
+                        producto["nombres_por_ean"] = " | ".join(nombres_ean)
+                except:
+                    pass
+
+            # Obtener código PLU y sus nombres
+            try:
+                if database_type == "postgresql":
+                    cursor.execute("""
+                        SELECT DISTINCT codigo_leido, nombre_leido
+                        FROM items_factura
+                        WHERE producto_maestro_id = %s
+                        AND codigo_leido IS NOT NULL
+                        AND LENGTH(codigo_leido) BETWEEN 3 AND 7
+                        AND codigo_leido NOT LIKE '77%'
+                        AND codigo_leido != %s
+                        LIMIT 5
+                    """, (producto_id, codigo_ean if codigo_ean != "Sin EAN" else ""))
+                else:
+                    cursor.execute("""
+                        SELECT DISTINCT codigo_leido, nombre_leido
+                        FROM items_factura
+                        WHERE producto_maestro_id = ?
+                        AND codigo_leido IS NOT NULL
+                        AND LENGTH(codigo_leido) BETWEEN 3 AND 7
+                        AND codigo_leido NOT LIKE '77%'
+                        AND codigo_leido != ?
+                        LIMIT 5
+                    """, (producto_id, codigo_ean if codigo_ean != "Sin EAN" else ""))
+
+                plu_results = cursor.fetchall()
+                if plu_results:
+                    # Tomar el primer PLU encontrado
+                    producto["codigo_plu"] = plu_results[0][0]
+                    # Obtener todos los nombres asociados a ese PLU
+                    nombres_plu = [row[1] for row in plu_results if row[1]]
+                    if nombres_plu:
+                        producto["nombres_por_plu"] = " | ".join(nombres_plu)
+            except:
+                pass
+
+            # Establecer valores por defecto si no se encontró nada
+            if not producto["nombres_por_ean"]:
+                producto["nombres_por_ean"] = "N/A"
+            if not producto["codigo_plu"]:
+                producto["codigo_plu"] = "Sin PLU"
+            if not producto["nombres_por_plu"]:
+                producto["nombres_por_plu"] = "N/A"
+
+        # PASO 4: Actualizar contadores
         for prod in productos_map.values():
             prod["total_supermercados"] = len(prod["precios_por_super"])
 
         cursor.close()
         conn.close()
 
-        print(f"✅ Procesados {len(productos_map)} productos")
+        print(f"✅ Procesados {len(productos_map)} productos con nombres")
 
         resultado = {
             "total_productos": len(productos_map),
             "productos": list(productos_map.values())
         }
 
-        print(f"✅ Retornando {resultado['total_productos']} productos")
-
         return resultado
 
     except Exception as e:
-        print(f"❌ ERROR en endpoint: {e}")
+        print(f"❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
