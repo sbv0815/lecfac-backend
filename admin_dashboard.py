@@ -1335,6 +1335,7 @@ async def detectar_productos_duplicados_sospechosos(
         print("\n📊 Obteniendo productos con establecimientos...")
 
         # Query base: productos con información de factura
+        # ✅ EXCLUIR productos ya consolidados (que tienen producto_canonico_id)
         query_base = """
             SELECT DISTINCT
                 pm.id,
@@ -1352,6 +1353,7 @@ async def detectar_productos_duplicados_sospechosos(
             INNER JOIN facturas f ON f.id = if2.factura_id
             WHERE pm.nombre_normalizado IS NOT NULL
               AND f.establecimiento IS NOT NULL
+              AND pm.producto_canonico_id IS NULL
         """
 
         params = []
@@ -2130,7 +2132,34 @@ async def consolidar_productos(data: ConsolidacionRequest):
         print(f"✅ {variantes_creadas} variantes creadas")
 
         # =====================================
-        # 4. ACTUALIZAR ITEMS_FACTURA
+        # 4. MARCAR PRODUCTOS MAESTROS COMO CONSOLIDADOS
+        # =====================================
+        print("\n📌 Marcando productos como consolidados...")
+
+        for prod_id in todos_los_productos:
+            if database_type == "postgresql":
+                cursor.execute(
+                    """
+                    UPDATE productos_maestros
+                    SET producto_canonico_id = %s
+                    WHERE id = %s
+                """,
+                    (producto_canonico_id, prod_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE productos_maestros
+                    SET producto_canonico_id = ?
+                    WHERE id = ?
+                """,
+                    (producto_canonico_id, prod_id),
+                )
+
+        print(f"✅ {len(todos_los_productos)} productos marcados como consolidados")
+
+        # =====================================
+        # 5. ACTUALIZAR ITEMS_FACTURA
         # =====================================
         for prod_id in todos_los_productos:
             if database_type == "postgresql":
