@@ -1132,6 +1132,8 @@
                 productosDuplicados
             };
 
+            console.log('✅ Consolidación pendiente preparada:', consolidacionPendiente);
+
             mostrarModalConfirmacion(productoMaestro, productosDuplicados);
         }
 
@@ -1183,36 +1185,66 @@
         function cerrarModal() {
             const modal = document.getElementById('modal-confirmacion');
             modal.classList.remove('active');
-            consolidacionPendiente = null;
+            // NO LIMPIAR consolidacionPendiente aquí
         }
 
         // ==========================================
-        // CONFIRMAR CONSOLIDACIÓN
+        // CONFIRMAR CONSOLIDACIÓN - VERSIÓN CORREGIDA
         // ==========================================
         async function confirmarConsolidacion() {
-            if (!consolidacionPendiente) return;
-
-            cerrarModal();
+            // PRIMERO verificar y extraer datos ANTES de cerrar
+            if (!consolidacionPendiente) {
+                console.error('❌ consolidacionPendiente es null');
+                mostrarAlerta('❌ Error: No hay consolidación pendiente', 'danger');
+                return;
+            }
 
             const { productoMaestro, productosDuplicados } = consolidacionPendiente;
+
+            console.log('🔄 Iniciando consolidación:', {
+                maestro: productoMaestro.id,
+                duplicados: productosDuplicados.map(p => p.id)
+            });
+
+            // AHORA sí cerrar modal
+            cerrarModal();
+
+            // Limpiar consolidacionPendiente DESPUÉS de extraer datos
+            consolidacionPendiente = null;
 
             mostrarAlerta('⏳ Consolidando productos...', 'info');
 
             try {
+                const payload = {
+                    producto_maestro_id: productoMaestro.id,
+                    productos_duplicados_ids: productosDuplicados.map(p => p.id)
+                };
+
+                console.log('📤 Enviando payload:', payload);
+
                 const response = await fetch(`${API_URL}/admin/productos/consolidar`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        producto_maestro_id: productoMaestro.id,
-                        productos_duplicados_ids: productosDuplicados.map(p => p.id)
-                    })
+                    body: JSON.stringify(payload)
                 });
 
+                console.log('📥 Response status:', response.status);
+
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Error en la consolidación');
+                    const errorText = await response.text();
+                    console.error('❌ Error response:', errorText);
+
+                    let errorMsg = 'Error en la consolidación';
+                    try {
+                        const errorJson = JSON.parse(errorText);
+                        errorMsg = errorJson.detail || errorMsg;
+                    } catch (e) {
+                        errorMsg = errorText;
+                    }
+
+                    throw new Error(errorMsg);
                 }
 
                 const result = await response.json();
@@ -1225,15 +1257,20 @@
 
                 // Recargar búsqueda después de 2 segundos
                 setTimeout(() => {
-                    buscarTodosDuplicados();
+                    const nombreBusqueda = document.getElementById('search-nombre').value;
+                    const eanBusqueda = document.getElementById('search-ean').value;
+
+                    if (nombreBusqueda || eanBusqueda) {
+                        buscarDuplicados();
+                    } else {
+                        buscarTodosDuplicados();
+                    }
                 }, 2000);
 
             } catch (error) {
-                console.error('❌ Error:', error);
+                console.error('❌ Error completo:', error);
                 mostrarAlerta('❌ Error al consolidar: ' + error.message, 'danger');
             }
-
-            consolidacionPendiente = null;
         }
 
         // ==========================================
