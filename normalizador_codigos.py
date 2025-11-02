@@ -102,10 +102,12 @@ def buscar_o_crear_producto_inteligente(
     tipo_codigo: str,
     nombre: str,
     establecimiento: str,
-    precio: int
+    precio: int,
+    codigo_raw: str = None  # ✅ NUEVO parámetro
 ) -> tuple:
     """
     Busca o crea producto según el tipo de código
+    ✅ MEJORADO: Usa tabla codigos_locales para PLU/INTERNO
 
     Args:
         cursor: Cursor de BD
@@ -115,11 +117,34 @@ def buscar_o_crear_producto_inteligente(
         nombre: Nombre del producto
         establecimiento: Establecimiento
         precio: Precio del producto
+        codigo_raw: Código original del OCR (antes de normalizar)
 
     Returns:
         tuple: (producto_maestro_id, accion)
-        accion: 'encontrado_ean', 'encontrado_nombre', 'creado_nuevo'
     """
+
+    # ===========================================
+    # PASO 0: Obtener establecimiento_id
+    # ===========================================
+    cursor.execute("""
+        SELECT id FROM establecimientos
+        WHERE LOWER(nombre_normalizado) = LOWER(%s)
+        LIMIT 1
+    """, (establecimiento,))
+
+    establecimiento_row = cursor.fetchone()
+    establecimiento_id = establecimiento_row[0] if establecimiento_row else None
+
+    if not establecimiento_id:
+        # Crear establecimiento si no existe
+        cursor.execute("""
+            INSERT INTO establecimientos (nombre_normalizado, activo)
+            VALUES (%s, TRUE)
+            RETURNING id
+        """, (establecimiento,))
+        establecimiento_id = cursor.fetchone()[0]
+        conn.commit()
+        print(f"   ➕ Establecimiento creado: {establecimiento} (ID={establecimiento_id})")
 
     # ===========================================
     # CASO 1: EAN (búsqueda global)
@@ -136,27 +161,45 @@ def buscar_o_crear_producto_inteligente(
             return (resultado[0], 'encontrado_ean')
 
     # ===========================================
-    # CASO 2: PLU o INTERNO (búsqueda por código + establecimiento)
+    # CASO 2: PLU o INTERNO (búsqueda en codigos_locales)
+    # ✅ NUEVO: Usa tabla codigos_locales
     # ===========================================
-    if tipo_codigo in ['PLU', 'INTERNO'] and codigo:
-        # El código ya viene prefijado con el establecimiento
+    if tipo_codigo in ['PLU', 'INTERNO', 'DESCONOCIDO'] and codigo_raw and establecimiento_id:
         cursor.execute("""
-            SELECT id FROM productos_maestros
-            WHERE codigo_ean = %s
-        """, (codigo,))
+            SELECT cl.producto_maestro_id, pm.nombre_normalizado, cl.veces_visto
+            FROM codigos_locales cl
+            JOIN productos_maestros pm ON cl.producto_maestro_id = pm.id
+            WHERE cl.codigo_local = %s
+              AND cl.establecimiento_id = %s
+              AND cl.activo = TRUE
+        """, (codigo_raw, establecimiento_id))
 
         resultado = cursor.fetchone()
         if resultado:
-            print(f"   ✅ Producto local encontrado: ID={resultado[0]}")
-            return (resultado[0], 'encontrado_codigo_local')
+            producto_id = resultado[0]
+            nombre_existente = resultado[1]
+            veces_visto = resultado[2]
+
+            # Actualizar estadísticas
+            cursor.execute("""
+                UPDATE codigos_locales
+                SET veces_visto = veces_visto + 1,
+                    ultima_vez_visto = CURRENT_TIMESTAMP
+                WHERE codigo_local = %s
+                  AND establecimiento_id = %s
+            """, (codigo_raw, establecimiento_id))
+            conn.commit()
+
+            print(f"   ✅ Código local encontrado: {codigo_raw} → Producto #{producto_id} '{nombre_existente}' (visto {veces_visto+1} veces)")
+            return (producto_id, 'encontrado_codigo_local')
 
     # ===========================================
-    # CASO 3: Sin código o no encontrado - buscar por NOMBRE SIMILAR
+    # CASO 3: Buscar por NOMBRE SIMILAR
+    # ✅ MEJORADO: Si encuentra por nombre, registra el código local
     # ===========================================
     if nombre and len(nombre) >= 3:
         nombre_busqueda = nombre.lower().strip()
 
-        # Buscar productos con nombres similares
         cursor.execute("""
             SELECT id, nombre_normalizado
             FROM productos_maestros
@@ -167,19 +210,43 @@ def buscar_o_crear_producto_inteligente(
         resultados = cursor.fetchall()
 
         if resultados:
-            # Si hay coincidencias muy cercanas, usar el primero
             for row in resultados:
+                producto_id = row[0]
                 nombre_existente = row[1].lower()
+
                 # Coincidencia de al menos 70% de las palabras
                 palabras_busqueda = set(nombre_busqueda.split())
                 palabras_existente = set(nombre_existente.split())
 
                 if len(palabras_busqueda & palabras_existente) >= len(palabras_busqueda) * 0.7:
-                    print(f"   ✅ Producto encontrado por nombre: ID={row[0]} ('{row[1]}')")
-                    return (row[0], 'encontrado_nombre')
+                    print(f"   ✅ Producto encontrado por nombre: ID={producto_id} ('{row[1]}')")
+
+                    # ✅ NUEVO: Registrar el código local si existe
+                    if codigo_raw and establecimiento_id and tipo_codigo in ['PLU', 'INTERNO', 'DESCONOCIDO']:
+                        try:
+                            cursor.execute("""
+                                INSERT INTO codigos_locales (
+                                    producto_maestro_id,
+                                    establecimiento_id,
+                                    codigo_local,
+                                    descripcion_local,
+                                    veces_visto,
+                                    activo
+                                ) VALUES (%s, %s, %s, %s, 1, TRUE)
+                                ON CONFLICT (establecimiento_id, codigo_local)
+                                DO UPDATE SET veces_visto = codigos_locales.veces_visto + 1
+                            """, (producto_id, establecimiento_id, codigo_raw, nombre))
+                            conn.commit()
+                            print(f"   📝 Código local aprendido: {codigo_raw} → Producto #{producto_id}")
+                        except Exception as e:
+                            print(f"   ⚠️ No se pudo registrar código local: {e}")
+                            conn.rollback()
+
+                    return (producto_id, 'encontrado_nombre')
 
     # ===========================================
     # CASO 4: CREAR NUEVO PRODUCTO
+    # ✅ MEJORADO: Si tiene código local, registrarlo
     # ===========================================
     try:
         cursor.execute("""
@@ -191,13 +258,33 @@ def buscar_o_crear_producto_inteligente(
                 primera_vez_reportado
             ) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP)
             RETURNING id
-        """, (codigo if codigo else None, nombre, precio))
+        """, (codigo if tipo_codigo == 'EAN' else None, nombre, precio))
 
         nuevo_id = cursor.fetchone()[0]
         conn.commit()
 
         tipo_msg = "EAN" if tipo_codigo == 'EAN' else tipo_codigo
         print(f"   ➕ Producto nuevo creado: ID={nuevo_id} ({tipo_msg})")
+
+        # ✅ NUEVO: Si tiene código local (PLU/INTERNO), registrarlo
+        if codigo_raw and establecimiento_id and tipo_codigo in ['PLU', 'INTERNO', 'DESCONOCIDO']:
+            try:
+                cursor.execute("""
+                    INSERT INTO codigos_locales (
+                        producto_maestro_id,
+                        establecimiento_id,
+                        codigo_local,
+                        descripcion_local,
+                        veces_visto,
+                        activo
+                    ) VALUES (%s, %s, %s, %s, 1, TRUE)
+                """, (nuevo_id, establecimiento_id, codigo_raw, nombre))
+                conn.commit()
+                print(f"   📝 Código local registrado: {codigo_raw} en {establecimiento}")
+            except Exception as e:
+                print(f"   ⚠️ No se pudo registrar código local: {e}")
+                conn.rollback()
+
         return (nuevo_id, 'creado_nuevo')
 
     except Exception as e:
