@@ -2674,3 +2674,135 @@ async def productos_detalle_page():
 
 
 print("✅ Endpoints de productos detalle agregados correctamente")
+
+# ============================================
+# SCRIPT DE DIAGNÓSTICO
+# ============================================
+# Agregar temporalmente a admin_dashboard.py para diagnosticar
+
+@router.get("/admin/diagnostico-productos")
+async def diagnostico_productos():
+    """
+    Endpoint de diagnóstico para ver qué datos tenemos
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        diagnostico = {}
+
+        # 1. Total productos_maestros
+        cursor.execute("SELECT COUNT(*) FROM productos_maestros")
+        diagnostico["total_productos_maestros"] = cursor.fetchone()[0]
+
+        # 2. Total precios_productos
+        cursor.execute("SELECT COUNT(*) FROM precios_productos")
+        diagnostico["total_precios_productos"] = cursor.fetchone()[0]
+
+        # 3. Total items_factura
+        cursor.execute("SELECT COUNT(*) FROM items_factura")
+        diagnostico["total_items_factura"] = cursor.fetchone()[0]
+
+        # 4. Total facturas
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        diagnostico["total_facturas"] = cursor.fetchone()[0]
+
+        # 5. Total establecimientos
+        cursor.execute("SELECT COUNT(*) FROM establecimientos")
+        diagnostico["total_establecimientos"] = cursor.fetchone()[0]
+
+        # 6. Productos con precio
+        cursor.execute("""
+            SELECT COUNT(DISTINCT pm.id)
+            FROM productos_maestros pm
+            INNER JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+        """)
+        diagnostico["productos_con_precio"] = cursor.fetchone()[0]
+
+        # 7. Productos con items_factura
+        cursor.execute("""
+            SELECT COUNT(DISTINCT pm.id)
+            FROM productos_maestros pm
+            INNER JOIN items_factura items ON items.producto_maestro_id = pm.id
+        """)
+        diagnostico["productos_con_items"] = cursor.fetchone()[0]
+
+        # 8. Ejemplo de producto con precio
+        cursor.execute("""
+            SELECT
+                pm.id,
+                pm.nombre_normalizado,
+                pm.codigo_ean,
+                pp.precio,
+                pp.establecimiento_id,
+                e.nombre_normalizado as establecimiento
+            FROM productos_maestros pm
+            INNER JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+            LEFT JOIN establecimientos e ON e.id = pp.establecimiento_id
+            WHERE pm.nombre_normalizado IS NOT NULL
+            LIMIT 5
+        """)
+
+        ejemplos_con_precio = []
+        for row in cursor.fetchall():
+            ejemplos_con_precio.append({
+                "id": row[0],
+                "nombre": row[1],
+                "ean": row[2],
+                "precio": row[3],
+                "establecimiento_id": row[4],
+                "establecimiento": row[5]
+            })
+
+        diagnostico["ejemplos_productos_con_precio"] = ejemplos_con_precio
+
+        # 9. Ejemplo de producto con item pero sin precio
+        cursor.execute("""
+            SELECT
+                pm.id,
+                pm.nombre_normalizado,
+                pm.codigo_ean,
+                items.precio_pagado,
+                f.establecimiento
+            FROM productos_maestros pm
+            INNER JOIN items_factura items ON items.producto_maestro_id = pm.id
+            INNER JOIN facturas f ON f.id = items.factura_id
+            LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
+            WHERE pp.id IS NULL
+            AND pm.nombre_normalizado IS NOT NULL
+            LIMIT 5
+        """)
+
+        ejemplos_sin_precio = []
+        for row in cursor.fetchall():
+            ejemplos_sin_precio.append({
+                "id": row[0],
+                "nombre": row[1],
+                "ean": row[2],
+                "precio_en_item": row[3],
+                "establecimiento": row[4]
+            })
+
+        diagnostico["ejemplos_productos_sin_precio_tabla"] = ejemplos_sin_precio
+
+        # 10. Verificar si establecimientos tiene datos
+        cursor.execute("""
+            SELECT id, nombre_normalizado
+            FROM establecimientos
+            LIMIT 10
+        """)
+
+        diagnostico["establecimientos_registrados"] = [
+            {"id": row[0], "nombre": row[1]}
+            for row in cursor.fetchall()
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return diagnostico
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
