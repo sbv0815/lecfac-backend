@@ -2001,15 +2001,15 @@ async def consolidar_productos(data: ConsolidacionRequest):
                     SELECT DISTINCT
                         pm.nombre_normalizado,
                         pm.codigo_ean,
-                        e.nombre as establecimiento,
+                        pp.establecimiento,
                         pp.precio,
                         pp.fecha
                     FROM productos_maestros pm
                     LEFT JOIN precios_productos pp ON pp.producto_maestro_id = pm.id
-                    LEFT JOIN establecimientos e ON pp.establecimiento_id = e.id
+
                     WHERE pm.id = %s
                 """,
-                    (prod_id,),
+                    (producto_maestro_id,)
                 )
             else:
                 cursor.execute(
