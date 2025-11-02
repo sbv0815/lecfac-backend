@@ -2013,6 +2013,16 @@ async def consolidar_productos(data: ConsolidacionRequest):
                 prod_info = cursor.fetchone()
 
                 if prod_info:
+                    nombre_prod = prod_info[0]
+                    codigo_prod = prod_info[1]
+
+                    # ✅ Si no tiene código, generar uno temporal basado en ID
+                    if not codigo_prod or codigo_prod.strip() == "":
+                        codigo_prod = f"TEMP_{prod_id}"
+                        tipo_codigo = "INTERNO"
+                    else:
+                        tipo_codigo = "EAN" if len(codigo_prod) >= 8 else "PLU"
+
                     if database_type == "postgresql":
                         cursor.execute(
                             """
@@ -2022,8 +2032,8 @@ async def consolidar_productos(data: ConsolidacionRequest):
                             VALUES (%s, %s, %s, %s, %s, %s)
                             ON CONFLICT (codigo, establecimiento) DO NOTHING
                         """,
-                            (producto_canonico_id, prod_info[1], "EAN" if prod_info[1] else "PLU",
-                             prod_info[0], "Varios", 1),
+                            (producto_canonico_id, codigo_prod, tipo_codigo,
+                             nombre_prod, "Varios", 1),
                         )
                     else:
                         cursor.execute(
@@ -2033,8 +2043,8 @@ async def consolidar_productos(data: ConsolidacionRequest):
                                  establecimiento, veces_reportado)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                            (producto_canonico_id, prod_info[1], "EAN" if prod_info[1] else "PLU",
-                             prod_info[0], "Varios", 1),
+                            (producto_canonico_id, codigo_prod, tipo_codigo,
+                             nombre_prod, "Varios", 1),
                         )
 
                     variantes_creadas += 1
@@ -2046,6 +2056,13 @@ async def consolidar_productos(data: ConsolidacionRequest):
                     establecimiento = registro[2] or "Varios"
                     precio = registro[3]
                     fecha = registro[4]
+
+                    # ✅ Si no tiene código, generar uno temporal basado en ID del producto
+                    if not codigo or codigo.strip() == "":
+                        codigo = f"TEMP_{prod_id}"
+                        tipo_codigo = "INTERNO"
+                    else:
+                        tipo_codigo = "EAN" if len(codigo) >= 8 else "PLU"
 
                     # Crear variante
                     if database_type == "postgresql":
@@ -2059,7 +2076,7 @@ async def consolidar_productos(data: ConsolidacionRequest):
                             SET veces_reportado = productos_variantes.veces_reportado + 1
                             RETURNING id
                         """,
-                            (producto_canonico_id, codigo, "EAN" if codigo else "PLU",
+                            (producto_canonico_id, codigo, tipo_codigo,
                              nombre_variante, establecimiento, 1),
                         )
                         variante_id = cursor.fetchone()[0]
@@ -2071,7 +2088,7 @@ async def consolidar_productos(data: ConsolidacionRequest):
                                  establecimiento, veces_reportado)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                            (producto_canonico_id, codigo, "EAN" if codigo else "PLU",
+                            (producto_canonico_id, codigo, tipo_codigo,
                              nombre_variante, establecimiento, 1),
                         )
                         variante_id = cursor.lastrowid
