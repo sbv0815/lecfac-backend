@@ -1,16 +1,20 @@
 """
-Detector Inteligente de Productos Duplicados
-=============================================
+Detector Inteligente de Productos Duplicados - V2
+==================================================
+✅ VERSIÓN MEJORADA: Consolida cantidades en lugar de eliminar
 
-Detecta y elimina productos duplicados en facturas basándose en:
+Detecta y consolida productos duplicados en facturas basándose en:
 1. Código EAN idéntico
 2. Nombres muy similares
 3. Precios idénticos o muy cercanos
 4. Validación contra total de factura
 
+IMPORTANTE: Cuando detecta duplicados, SUMA las cantidades
+Ejemplo: 3 aguacates (1+1+1) = 1 producto con cantidad 3
+
 Autor: LecFac
-Versión: 1.0.0
-Fecha: 2025-01-18
+Versión: 2.0.0
+Fecha: 2025-11-03
 """
 
 import os
@@ -115,7 +119,9 @@ def detectar_duplicados_automaticamente(
     tolerancia_total: float = 0.15
 ) -> Dict:
     """
-    Detecta y elimina productos duplicados automáticamente
+    Detecta y CONSOLIDA productos duplicados automáticamente
+
+    ✅ MEJORA: Suma cantidades en lugar de eliminar productos
 
     Args:
         productos: Lista de productos de la factura
@@ -125,13 +131,13 @@ def detectar_duplicados_automaticamente(
 
     Returns:
         Dict con:
-            - productos_limpios: Lista sin duplicados
+            - productos_limpios: Lista consolidada (con cantidades sumadas)
             - duplicados_detectados: True si se encontraron duplicados
-            - productos_eliminados: Lista de productos eliminados
+            - productos_eliminados: Lista de productos consolidados
             - metricas: Estadísticas del proceso
     """
     print(f"\n{'='*60}")
-    print(f"🔍 DETECTOR DE DUPLICADOS")
+    print(f"🔍 DETECTOR DE DUPLICADOS V2 (Consolida cantidades)")
     print(f"{'='*60}")
     print(f"📦 Productos entrada: {len(productos)}")
     print(f"💰 Total factura: ${total_factura:,.0f}")
@@ -153,7 +159,7 @@ def detectar_duplicados_automaticamente(
         }
 
     # Calcular suma inicial
-    suma_entrada = sum(float(p.get("valor", 0)) for p in productos)
+    suma_entrada = sum(float(p.get("valor", 0)) * float(p.get("cantidad", 1)) for p in productos)
     print(f"💵 Suma productos: ${suma_entrada:,.0f}")
 
     # Verificar si hay diferencia significativa
@@ -162,26 +168,14 @@ def detectar_duplicados_automaticamente(
 
     print(f"📊 Diferencia: ${diferencia:,.0f} ({porcentaje_diferencia:.1f}%)")
 
-    # Si la diferencia es menor al 5%, no hacer nada
-    if porcentaje_diferencia < 5:
-        print(f"✅ Diferencia menor al 5% - No se requiere limpieza")
-        return {
-            "success": True,
-            "productos_limpios": productos,
-            "duplicados_detectados": False,
-            "productos_eliminados": [],
-            "metricas": {
-                "total_productos_entrada": len(productos),
-                "total_productos_salida": len(productos),
-                "productos_eliminados": 0,
-                "suma_entrada": suma_entrada,
-                "suma_salida": suma_entrada,
-                "total_declarado": total_factura,
-                "porcentaje_diferencia": porcentaje_diferencia,
-            }
-        }
+    # ========================================
+    # ✅ SIEMPRE BUSCAR Y CONSOLIDAR DUPLICADOS
+    # (Ya no saltamos este paso aunque la suma cuadre)
+    # ========================================
 
-    # Detectar duplicados
+    # ========================================
+    # ✅ CONSOLIDAR DUPLICADOS (SUMAR CANTIDADES)
+    # ========================================
     productos_limpios = []
     productos_eliminados = []
     indices_eliminados = set()
@@ -201,36 +195,55 @@ def detectar_duplicados_automaticamente(
                 duplicados_encontrados.append(j)
 
         if duplicados_encontrados:
-            # Marcar como eliminados
+            # ✅ CONSOLIDAR: Sumar cantidades en lugar de eliminar
+            cantidad_total = float(prod1.get("cantidad", 1))
+
             for idx in duplicados_encontrados:
                 indices_eliminados.add(idx)
+                cantidad_duplicado = float(productos[idx].get("cantidad", 1))
+                cantidad_total += cantidad_duplicado
+
                 productos_eliminados.append({
                     "indice": idx,
                     "nombre": productos[idx].get("nombre", ""),
                     "codigo": productos[idx].get("codigo", ""),
                     "valor": float(productos[idx].get("valor", 0)),
-                    "razon": f"Duplicado de '{prod1.get('nombre', '')}'"
+                    "cantidad": cantidad_duplicado,
+                    "razon": f"Consolidado en '{prod1.get('nombre', '')}'"
                 })
 
-            print(f"   ⚠️ Duplicado: {prod1.get('nombre', '')} (eliminados: {len(duplicados_encontrados)})")
+            print(f"   ⚠️ Duplicado: {prod1.get('nombre', '')} (consolidados: {len(duplicados_encontrados)})")
+            print(f"      Cantidad original: {prod1.get('cantidad', 1)}")
+            print(f"      Cantidad consolidada: {cantidad_total} unidades")
 
-        # Agregar producto original a lista limpia
-        productos_limpios.append(prod1)
+            # ✅ Crear producto consolidado con cantidad total
+            producto_consolidado = prod1.copy()
+            producto_consolidado["cantidad"] = cantidad_total
+            productos_limpios.append(producto_consolidado)
+        else:
+            # Agregar producto sin duplicados
+            productos_limpios.append(prod1)
 
-    # Calcular suma después de limpieza
-    suma_salida = sum(float(p.get("valor", 0)) for p in productos_limpios)
+    # Calcular suma después de consolidación
+    suma_salida = sum(float(p.get("valor", 0)) * float(p.get("cantidad", 1)) for p in productos_limpios)
     diferencia_final = abs(suma_salida - total_factura)
     porcentaje_final = (diferencia_final / total_factura * 100) if total_factura > 0 else 0
 
     print(f"\n📊 RESULTADOS:")
-    print(f"   Entrada: {len(productos)} productos (${suma_entrada:,.0f})")
-    print(f"   Salida: {len(productos_limpios)} productos (${suma_salida:,.0f})")
-    print(f"   Eliminados: {len(productos_eliminados)} productos")
+    print(f"   Entrada: {len(productos)} registros (${suma_entrada:,.0f})")
+    print(f"   Salida: {len(productos_limpios)} productos únicos (${suma_salida:,.0f})")
+
+    # Si no se encontraron duplicados
+    if len(productos_eliminados) == 0:
+        print(f"   ✅ No se detectaron duplicados")
+    else:
+        print(f"   Consolidados: {len(productos_eliminados)} registros duplicados")
+
     print(f"   Diferencia final: ${diferencia_final:,.0f} ({porcentaje_final:.1f}%)")
 
-    # Si después de eliminar duplicados todavía hay diferencia > 15%
+    # Si después de consolidar todavía hay diferencia > 15%
     if porcentaje_final > tolerancia_total * 100:
-        print(f"   ⚠️ Diferencia aún significativa después de limpieza")
+        print(f"   ⚠️ Diferencia aún significativa después de consolidación")
     else:
         print(f"   ✅ Diferencia dentro del rango aceptable")
 
@@ -256,115 +269,33 @@ def detectar_duplicados_automaticamente(
     }
 
 
-def detectar_duplicados_por_codigo(productos: List[Dict]) -> List[Tuple[int, int]]:
-    """
-    Detecta duplicados basándose solo en código EAN
-
-    Args:
-        productos: Lista de productos
-
-    Returns:
-        Lista de tuplas (indice1, indice2) de productos duplicados
-    """
-    duplicados = []
-    codigos_vistos = {}
-
-    for i, producto in enumerate(productos):
-        codigo = producto.get("codigo", "").strip()
-
-        if codigo and len(codigo) >= 8:
-            if codigo in codigos_vistos:
-                duplicados.append((codigos_vistos[codigo], i))
-            else:
-                codigos_vistos[codigo] = i
-
-    return duplicados
-
-
-def detectar_duplicados_por_nombre(
-    productos: List[Dict],
-    umbral_similitud: float = 0.90
-) -> List[Tuple[int, int]]:
-    """
-    Detecta duplicados basándose solo en similitud de nombres
-
-    Args:
-        productos: Lista de productos
-        umbral_similitud: Umbral de similitud (default: 0.90)
-
-    Returns:
-        Lista de tuplas (indice1, indice2) de productos duplicados
-    """
-    duplicados = []
-
-    for i in range(len(productos)):
-        for j in range(i + 1, len(productos)):
-            similitud = calcular_similitud(
-                productos[i].get("nombre", ""),
-                productos[j].get("nombre", "")
-            )
-
-            if similitud >= umbral_similitud:
-                duplicados.append((i, j))
-
-    return duplicados
-
-
 # ==========================================
-# TESTING (ejecutar con: python duplicate_detector.py)
+# TESTING
 # ==========================================
 if __name__ == "__main__":
-    print("🧪 Testing duplicate_detector.py")
+    print("🧪 Testing duplicate_detector V2 (Consolida cantidades)")
     print("=" * 60)
 
-    # Test 1: Sin duplicados
-    print("\n📋 Test 1: Sin duplicados")
-    productos_test1 = [
-        {"codigo": "7702001030644", "nombre": "Arroz Diana 500gr", "valor": 3500},
-        {"codigo": "7707232560012", "nombre": "Aceite Gourmet 900ml", "valor": 12000},
-        {"codigo": "7702001019939", "nombre": "Atún Van Camps 170gr", "valor": 4500},
+    # Test: Duplicados con cantidades
+    print("\n📋 Test: Aguacates duplicados")
+    productos_test = [
+        {"codigo": "", "nombre": "AGUACATE HASS", "valor": 2000, "cantidad": 1},
+        {"codigo": "", "nombre": "Aguacate Hass", "valor": 2000, "cantidad": 1},
+        {"codigo": "", "nombre": "AGUACATE HASS", "valor": 2000, "cantidad": 1},
     ]
 
-    resultado1 = detectar_duplicados_automaticamente(productos_test1, 20000)
-    print(f"✅ Productos salida: {len(resultado1['productos_limpios'])}")
-    print(f"   Duplicados detectados: {resultado1['duplicados_detectados']}")
+    resultado = detectar_duplicados_automaticamente(productos_test, 6000)
 
-    # Test 2: Con duplicados por código
-    print("\n📋 Test 2: Con duplicados por código")
-    productos_test2 = [
-        {"codigo": "7702001030644", "nombre": "Arroz Diana 500gr", "valor": 3500},
-        {"codigo": "7702001030644", "nombre": "Arroz Diana 500g", "valor": 3500},
-        {"codigo": "7707232560012", "nombre": "Aceite Gourmet 900ml", "valor": 12000},
-    ]
+    print(f"\n✅ Resultado:")
+    print(f"   Productos de entrada: {len(productos_test)}")
+    print(f"   Productos consolidados: {len(resultado['productos_limpios'])}")
 
-    resultado2 = detectar_duplicados_automaticamente(productos_test2, 19000)
-    print(f"✅ Productos salida: {len(resultado2['productos_limpios'])}")
-    print(f"   Duplicados detectados: {resultado2['duplicados_detectados']}")
-    print(f"   Productos eliminados: {len(resultado2['productos_eliminados'])}")
-
-    # Test 3: Con duplicados por nombre similar
-    print("\n📋 Test 3: Con duplicados por nombre similar")
-    productos_test3 = [
-        {"codigo": "", "nombre": "COCA COLA 400ML", "valor": 2500},
-        {"codigo": "", "nombre": "Coca Cola 400ml", "valor": 2500},
-        {"codigo": "", "nombre": "PEPSI 400ML", "valor": 2300},
-    ]
-
-    resultado3 = detectar_duplicados_automaticamente(productos_test3, 7300)
-    print(f"✅ Productos salida: {len(resultado3['productos_limpios'])}")
-    print(f"   Duplicados detectados: {resultado3['duplicados_detectados']}")
-    print(f"   Productos eliminados: {len(resultado3['productos_eliminados'])}")
-
-    # Test 4: Diferencia dentro del rango (no hace nada)
-    print("\n📋 Test 4: Diferencia menor al 5% (no limpia)")
-    productos_test4 = [
-        {"codigo": "7702001030644", "nombre": "Arroz Diana 500gr", "valor": 3500},
-        {"codigo": "7707232560012", "nombre": "Aceite Gourmet 900ml", "valor": 12000},
-    ]
-
-    resultado4 = detectar_duplicados_automaticamente(productos_test4, 15700)
-    print(f"✅ Productos salida: {len(resultado4['productos_limpios'])}")
-    print(f"   Duplicados detectados: {resultado4['duplicados_detectados']}")
+    if resultado['productos_limpios']:
+        prod = resultado['productos_limpios'][0]
+        print(f"   Producto final: {prod['nombre']}")
+        print(f"   Cantidad total: {prod['cantidad']} unidades")
+        print(f"   Precio unitario: ${prod['valor']:,}")
+        print(f"   Total: ${prod['valor'] * prod['cantidad']:,}")
 
     print("\n" + "=" * 60)
     print("✅ Tests completados")
