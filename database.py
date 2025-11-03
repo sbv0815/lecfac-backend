@@ -1639,46 +1639,40 @@ Esta versión:
 def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
     """
     Actualiza el inventario del usuario con datos LIMPIOS del catálogo maestro
-
-    Args:
-        factura_id: ID de la factura procesada
-        usuario_id: ID del usuario
-
-    Returns:
-        bool: True si se actualizó correctamente
+    Compatible con psycopg2 y psycopg3
     """
-    # Importar aquí para evitar circular imports
-    import psycopg
-    import os
-    from datetime import datetime, date
+    print(f"📦 Actualizando inventario para usuario {usuario_id} desde factura {factura_id}")
 
-    # Usar DATABASE_URL directamente si está disponible
-    database_url = os.environ.get("DATABASE_URL")
-
-    if not database_url:
-        print("❌ DATABASE_URL no configurada")
-        return False
-
+    conn = None
     try:
-        conn = psycopg.connect(database_url)
+        # ✅ Usar get_db_connection() en lugar de importar psycopg directamente
+        conn = get_db_connection()
+
+        if not conn:
+            print("❌ No se pudo conectar a la base de datos")
+            return False
+
         cursor = conn.cursor()
 
-        print(f"📦 Actualizando inventario para usuario {usuario_id} desde factura {factura_id}")
-
         # 1. Obtener datos de la factura
-        cursor.execute("""
-            SELECT establecimiento_id, establecimiento, fecha_factura
-            FROM facturas
-            WHERE id = %s
-        """, (factura_id,))
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT establecimiento_id, establecimiento, fecha_factura
+                FROM facturas
+                WHERE id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT establecimiento_id, establecimiento, fecha_factura
+                FROM facturas
+                WHERE id = ?
+            """, (factura_id,))
 
-        try:
-            factura_data = cursor.fetchone()
-        except:
-            factura_data = None
+        factura_data = cursor.fetchone()
 
         if not factura_data:
             print(f"⚠️ Factura {factura_id} no encontrada")
+            cursor.close()
             conn.close()
             return False
 
@@ -1688,39 +1682,60 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         # Convertir fecha
         if isinstance(fecha_factura_raw, str):
+            from datetime import datetime
             fecha_compra = datetime.strptime(fecha_factura_raw, "%Y-%m-%d").date()
         elif hasattr(fecha_factura_raw, "date"):
             fecha_compra = fecha_factura_raw if isinstance(fecha_factura_raw, date) else fecha_factura_raw.date()
         else:
-            fecha_compra = fecha_factura_raw or date.today()
+            from datetime import date as date_type
+            fecha_compra = fecha_factura_raw or date_type.today()
 
         print(f"   🏪 Establecimiento: {establecimiento_nombre}")
         print(f"   📅 Fecha: {fecha_compra}")
 
-        # 2. Obtener items CON datos del producto maestro (JOIN)
-        cursor.execute("""
-            SELECT
-                i.producto_maestro_id,
-                i.codigo_leido,
-                i.nombre_leido,
-                i.precio_pagado,
-                i.cantidad,
-                -- Datos LIMPIOS del catálogo maestro
-                pm.nombre_normalizado,
-                pm.codigo_ean,
-                pm.marca,
-                pm.categoria,
-                pm.subcategoria,
-                pm.presentacion
-            FROM items_factura i
-            INNER JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
-            WHERE i.factura_id = %s
-        """, (factura_id,))
+        # 2. Obtener items CON datos del producto maestro
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT
+                    i.producto_maestro_id,
+                    i.codigo_leido,
+                    i.nombre_leido,
+                    i.precio_pagado,
+                    i.cantidad,
+                    pm.nombre_normalizado,
+                    pm.codigo_ean,
+                    pm.marca,
+                    pm.categoria,
+                    pm.subcategoria,
+                    pm.presentacion
+                FROM items_factura i
+                INNER JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
+                WHERE i.factura_id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    i.producto_maestro_id,
+                    i.codigo_leido,
+                    i.nombre_leido,
+                    i.precio_pagado,
+                    i.cantidad,
+                    pm.nombre_normalizado,
+                    pm.codigo_ean,
+                    pm.marca,
+                    pm.categoria,
+                    pm.subcategoria,
+                    pm.presentacion
+                FROM items_factura i
+                INNER JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
+                WHERE i.factura_id = ?
+            """, (factura_id,))
 
         items = cursor.fetchall()
 
         if not items:
             print(f"⚠️ No hay items con producto_maestro_id en factura {factura_id}")
+            cursor.close()
             conn.close()
             return False
 
@@ -1732,45 +1747,34 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         # 3. Procesar cada item
         for item in items:
             producto_maestro_id = item[0]
-            codigo_leido = item[1]  # Del OCR (puede ser PLU)
-            nombre_ocr = item[2]    # Del OCR (puede tener errores)
             precio = int(item[3])
             cantidad = int(item[4])
-
-            # ✅ DATOS LIMPIOS del catálogo maestro
             nombre_correcto = item[5]
-            codigo_ean = item[6]
             marca = item[7]
-            categoria = item[8]
-            subcategoria = item[9]
-            presentacion = item[10]
 
             try:
-                # 3.1 Verificar si ya existe en inventario
-                cursor.execute("""
-                    SELECT
-                        id,
-                        cantidad_actual,
-                        precio_promedio,
-                        precio_minimo,
-                        precio_maximo,
-                        numero_compras,
-                        cantidad_total_comprada,
-                        total_gastado,
-                        fecha_ultima_compra
-                    FROM inventario_usuario
-                    WHERE usuario_id = %s AND producto_maestro_id = %s
-                """, (usuario_id, producto_maestro_id))
+                # Verificar si existe en inventario
+                if os.environ.get("DATABASE_TYPE") == "postgresql":
+                    cursor.execute("""
+                        SELECT id, cantidad_actual, precio_promedio, precio_minimo,
+                               precio_maximo, numero_compras, cantidad_total_comprada,
+                               total_gastado, fecha_ultima_compra
+                        FROM inventario_usuario
+                        WHERE usuario_id = %s AND producto_maestro_id = %s
+                    """, (usuario_id, producto_maestro_id))
+                else:
+                    cursor.execute("""
+                        SELECT id, cantidad_actual, precio_promedio, precio_minimo,
+                               precio_maximo, numero_compras, cantidad_total_comprada,
+                               total_gastado, fecha_ultima_compra
+                        FROM inventario_usuario
+                        WHERE usuario_id = ? AND producto_maestro_id = ?
+                    """, (usuario_id, producto_maestro_id))
 
-                try:
-                    inventario_existente = cursor.fetchone()
-                except:
-                    inventario_existente = None
+                inventario_existente = cursor.fetchone()
 
                 if inventario_existente:
-                    # ========================================
-                    # ACTUALIZAR EXISTENTE
-                    # ========================================
+                    # ACTUALIZAR
                     inv_id = inventario_existente[0]
                     cantidad_actual = float(inventario_existente[1] or 0)
                     precio_promedio_actual = float(inventario_existente[2] or 0)
@@ -1779,117 +1783,74 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                     num_compras = int(inventario_existente[5] or 0)
                     cantidad_total = float(inventario_existente[6] or 0)
                     total_gastado = float(inventario_existente[7] or 0)
-                    fecha_ultima_compra_anterior = inventario_existente[8]
 
-                    # Calcular nuevos valores
                     nueva_cantidad = cantidad_actual + cantidad
                     nuevo_num_compras = num_compras + 1
                     nueva_cantidad_total = cantidad_total + cantidad
                     nuevo_total_gastado = total_gastado + (precio * cantidad)
                     nuevo_precio_promedio = int(nuevo_total_gastado / nueva_cantidad_total if nueva_cantidad_total > 0 else precio)
-                    nuevo_precio_min = min(precio_min_actual, precio)
-                    nuevo_precio_max = max(precio_max_actual, precio)
 
-                    # Calcular días desde última compra
-                    dias_desde_ultima = 0
-                    if fecha_ultima_compra_anterior:
-                        try:
-                            if isinstance(fecha_ultima_compra_anterior, str):
-                                fecha_anterior = datetime.strptime(fecha_ultima_compra_anterior, "%Y-%m-%d").date()
-                            elif hasattr(fecha_ultima_compra_anterior, "date"):
-                                fecha_anterior = fecha_ultima_compra_anterior if isinstance(fecha_ultima_compra_anterior, date) else fecha_ultima_compra_anterior.date()
-                            else:
-                                fecha_anterior = fecha_ultima_compra_anterior
-                            dias_desde_ultima = (fecha_compra - fecha_anterior).days
-                        except:
-                            dias_desde_ultima = 0
-
-                    # ✅ UPDATE con datos LIMPIOS
-                    cursor.execute("""
-                        UPDATE inventario_usuario
-                        SET cantidad_actual = %s,
-                            precio_ultima_compra = %s,
-                            precio_promedio = %s,
-                            precio_minimo = %s,
-                            precio_maximo = %s,
-                            establecimiento = %s,
-                            establecimiento_id = %s,
-                            fecha_ultima_compra = %s,
-                            numero_compras = %s,
-                            cantidad_total_comprada = %s,
-                            total_gastado = %s,
-                            ultima_factura_id = %s,
-                            dias_desde_ultima_compra = %s,
-                            marca = %s,
-                            fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                    """, (
-                        nueva_cantidad,
-                        precio,
-                        nuevo_precio_promedio,
-                        nuevo_precio_min,
-                        nuevo_precio_max,
-                        establecimiento_nombre,
-                        establecimiento_id,
-                        fecha_compra,
-                        nuevo_num_compras,
-                        nueva_cantidad_total,
-                        nuevo_total_gastado,
-                        factura_id,
-                        dias_desde_ultima,
-                        marca,
-                        inv_id
-                    ))
+                    if os.environ.get("DATABASE_TYPE") == "postgresql":
+                        cursor.execute("""
+                            UPDATE inventario_usuario
+                            SET cantidad_actual = %s, precio_ultima_compra = %s,
+                                precio_promedio = %s, precio_minimo = %s, precio_maximo = %s,
+                                establecimiento = %s, establecimiento_id = %s,
+                                fecha_ultima_compra = %s, numero_compras = %s,
+                                cantidad_total_comprada = %s, total_gastado = %s,
+                                ultima_factura_id = %s, marca = %s,
+                                fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (nueva_cantidad, precio, nuevo_precio_promedio,
+                              min(precio_min_actual, precio), max(precio_max_actual, precio),
+                              establecimiento_nombre, establecimiento_id, fecha_compra,
+                              nuevo_num_compras, nueva_cantidad_total, nuevo_total_gastado,
+                              factura_id, marca, inv_id))
+                    else:
+                        cursor.execute("""
+                            UPDATE inventario_usuario
+                            SET cantidad_actual = ?, precio_ultima_compra = ?,
+                                precio_promedio = ?, precio_minimo = ?, precio_maximo = ?,
+                                establecimiento = ?, establecimiento_id = ?,
+                                fecha_ultima_compra = ?, numero_compras = ?,
+                                cantidad_total_comprada = ?, total_gastado = ?,
+                                ultima_factura_id = ?, marca = ?
+                            WHERE id = ?
+                        """, (nueva_cantidad, precio, nuevo_precio_promedio,
+                              min(precio_min_actual, precio), max(precio_max_actual, precio),
+                              establecimiento_nombre, establecimiento_id, fecha_compra,
+                              nuevo_num_compras, nueva_cantidad_total, nuevo_total_gastado,
+                              factura_id, marca, inv_id))
 
                     actualizados += 1
                     print(f"      ✅ {nombre_correcto}: {cantidad_actual} → {nueva_cantidad}")
 
                 else:
-                    # ========================================
                     # CREAR NUEVO
-                    # ========================================
-                    cursor.execute("""
-                        INSERT INTO inventario_usuario (
-                            usuario_id,
-                            producto_maestro_id,
-                            cantidad_actual,
-                            precio_ultima_compra,
-                            precio_promedio,
-                            precio_minimo,
-                            precio_maximo,
-                            establecimiento,
-                            establecimiento_id,
-                            fecha_ultima_compra,
-                            numero_compras,
-                            cantidad_total_comprada,
-                            total_gastado,
-                            ultima_factura_id,
-                            nivel_alerta,
-                            marca,
-                            unidad_medida,
-                            dias_desde_ultima_compra
-                        ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, 'unidades', 0
-                        )
-                    """, (
-                        usuario_id,
-                        producto_maestro_id,
-                        cantidad,
-                        precio,
-                        precio,
-                        precio,
-                        precio,
-                        establecimiento_nombre,
-                        establecimiento_id,
-                        fecha_compra,
-                        1,
-                        cantidad,
-                        precio * cantidad,
-                        factura_id,
-                        cantidad * 0.3,
-                        marca
-                    ))
+                    if os.environ.get("DATABASE_TYPE") == "postgresql":
+                        cursor.execute("""
+                            INSERT INTO inventario_usuario (
+                                usuario_id, producto_maestro_id, cantidad_actual,
+                                precio_ultima_compra, precio_promedio, precio_minimo,
+                                precio_maximo, establecimiento, establecimiento_id,
+                                fecha_ultima_compra, numero_compras, cantidad_total_comprada,
+                                total_gastado, ultima_factura_id, marca, unidad_medida
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'unidades')
+                        """, (usuario_id, producto_maestro_id, cantidad, precio, precio,
+                              precio, precio, establecimiento_nombre, establecimiento_id,
+                              fecha_compra, 1, cantidad, precio * cantidad, factura_id, marca))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO inventario_usuario (
+                                usuario_id, producto_maestro_id, cantidad_actual,
+                                precio_ultima_compra, precio_promedio, precio_minimo,
+                                precio_maximo, establecimiento, establecimiento_id,
+                                fecha_ultima_compra, numero_compras, cantidad_total_comprada,
+                                total_gastado, ultima_factura_id, marca, unidad_medida
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unidades')
+                        """, (usuario_id, producto_maestro_id, cantidad, precio, precio,
+                              precio, precio, establecimiento_nombre, establecimiento_id,
+                              fecha_compra, 1, cantidad, precio * cantidad, factura_id, marca))
 
                     creados += 1
                     print(f"      ➕ {nombre_correcto}: nuevo ({cantidad} unidades)")
@@ -1903,10 +1864,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                 conn.rollback()
                 continue
 
-        print(f"✅ Inventario actualizado:")
-        print(f"   - {actualizados} productos actualizados")
-        print(f"   - {creados} productos nuevos")
-
+        print(f"✅ Inventario actualizado: {actualizados} actualizados, {creados} nuevos")
+        cursor.close()
         conn.close()
         return True
 
@@ -1914,6 +1873,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         print(f"❌ Error actualizando inventario: {e}")
         import traceback
         traceback.print_exc()
+        if conn:
+            conn.close()
         return False
 
 
