@@ -2397,10 +2397,290 @@ async def obtener_estadisticas_auditoria(current_user: dict = Depends(get_curren
 print("=" * 80)
 print("✅ ENDPOINTS DE AUDITORÍA CORREGIDOS Y CARGADOS")
 print("=" * 80)
-if __name__ == "__main__":
+
+@app.get("/admin/force-update-inventario/{factura_id}/{usuario_id}")
+async def force_update_inventario(factura_id: int, usuario_id: int):
+    """
+    Endpoint de emergencia para forzar actualización de inventario
+    """
+    print("=" * 80)
+    print(f"🔧 FORZANDO ACTUALIZACIÓN DE INVENTARIO")
+    print(f"   Factura ID: {factura_id}")
+    print(f"   Usuario ID: {usuario_id}")
+    print("=" * 80)
+
+    try:
+        # Verificar que la factura existe
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT id, establecimiento, total_factura, productos_guardados
+                FROM facturas
+                WHERE id = %s AND usuario_id = %s
+            """, (factura_id, usuario_id))
+        else:
+            cursor.execute("""
+                SELECT id, establecimiento, total_factura, productos_guardados
+                FROM facturas
+                WHERE id = ? AND usuario_id = ?
+            """, (factura_id, usuario_id))
+
+        factura = cursor.fetchone()
+
+        if not factura:
+            cursor.close()
+            conn.close()
+            return {
+                "success": False,
+                "error": f"Factura {factura_id} no encontrada para usuario {usuario_id}"
+            }
+
+        print(f"✅ Factura encontrada:")
+        print(f"   Establecimiento: {factura[1]}")
+        print(f"   Total: ${factura[2]:,}")
+        print(f"   Productos guardados: {factura[3]}")
+
+        # Verificar items
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT COUNT(*), COUNT(producto_maestro_id)
+                FROM items_factura
+                WHERE factura_id = %s
+            """, (factura_id,))
+        else:
+            cursor.execute("""
+                SELECT COUNT(*), COUNT(producto_maestro_id)
+                FROM items_factura
+                WHERE factura_id = ?
+            """, (factura_id,))
+
+        items_stats = cursor.fetchone()
+        print(f"📦 Items en BD:")
+        print(f"   Total items: {items_stats[0]}")
+        print(f"   Con producto_maestro_id: {items_stats[1]}")
+
+        cursor.close()
+        conn.close()
+
+        if items_stats[1] == 0:
+            return {
+                "success": False,
+                "error": f"La factura {factura_id} no tiene items con producto_maestro_id",
+                "factura": {
+                    "id": factura[0],
+                    "establecimiento": factura[1],
+                    "total": float(factura[2]) if factura[2] else 0,
+                    "productos_guardados": factura[3]
+                },
+                "total_items": items_stats[0],
+                "items_con_producto_maestro": items_stats[1]
+            }
+
+        # Forzar actualización
+        print(f"\n🔄 Ejecutando actualizar_inventario_desde_factura...")
+        resultado = actualizar_inventario_desde_factura(factura_id, usuario_id)
+
+        if resultado:
+            print(f"✅ Inventario actualizado exitosamente")
+
+            # Verificar inventario
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            if os.environ.get("DATABASE_TYPE") == "postgresql":
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM inventario_usuario
+                    WHERE usuario_id = %s
+                """, (usuario_id,))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM inventario_usuario
+                    WHERE usuario_id = ?
+                """, (usuario_id,))
+
+            total_inventario = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
+
+            return {
+                "success": True,
+                "message": "Inventario actualizado correctamente",
+                "factura": {
+                    "id": factura[0],
+                    "establecimiento": factura[1],
+                    "total": float(factura[2]) if factura[2] else 0,
+                    "productos_guardados": factura[3]
+                },
+                "items_procesados": items_stats[1],
+                "productos_en_inventario": total_inventario
+            }
+        else:
+            return {
+                "success": False,
+                "error": "actualizar_inventario_desde_factura retornó False",
+                "mensaje": "Revisa los logs para ver el error específico"
+            }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/admin/debug-inventario/{usuario_id}")
+async def debug_inventario(usuario_id: int):
+    """
+    Ver estado actual del inventario de un usuario
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Contar productos en inventario
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM inventario_usuario
+                WHERE usuario_id = %s
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM inventario_usuario
+                WHERE usuario_id = ?
+            """, (usuario_id,))
+
+        total_inventario = cursor.fetchone()[0]
+
+        # Obtener últimas facturas
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT
+                    f.id,
+                    f.establecimiento,
+                    f.total_factura,
+                    f.productos_guardados,
+                    f.fecha_cargue,
+                    COUNT(i.id) as items_guardados,
+                    COUNT(i.producto_maestro_id) as items_con_producto_maestro
+                FROM facturas f
+                LEFT JOIN items_factura i ON f.id = i.factura_id
+                WHERE f.usuario_id = %s
+                GROUP BY f.id, f.establecimiento, f.total_factura, f.productos_guardados, f.fecha_cargue
+                ORDER BY f.fecha_cargue DESC
+                LIMIT 5
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    f.id,
+                    f.establecimiento,
+                    f.total_factura,
+                    f.productos_guardados,
+                    f.fecha_cargue,
+                    COUNT(i.id) as items_guardados,
+                    COUNT(i.producto_maestro_id) as items_con_producto_maestro
+                FROM facturas f
+                LEFT JOIN items_factura i ON f.id = i.factura_id
+                WHERE f.usuario_id = ?
+                GROUP BY f.id, f.establecimiento, f.total_factura, f.productos_guardados, f.fecha_cargue
+                ORDER BY f.fecha_cargue DESC
+                LIMIT 5
+            """, (usuario_id,))
+
+        facturas = []
+        for row in cursor.fetchall():
+            facturas.append({
+                "id": row[0],
+                "establecimiento": row[1],
+                "total": float(row[2]) if row[2] else 0,
+                "productos_guardados": row[3],
+                "fecha": str(row[4]) if row[4] else None,
+                "items_en_bd": row[5],
+                "items_con_producto_maestro": row[6]
+            })
+
+        # Ver muestra del inventario
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                SELECT
+                    iu.producto_maestro_id,
+                    pm.nombre_normalizado,
+                    iu.cantidad_actual,
+                    iu.precio_ultima_compra,
+                    iu.establecimiento,
+                    iu.fecha_ultima_compra
+                FROM inventario_usuario iu
+                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = %s
+                ORDER BY iu.fecha_ultima_actualizacion DESC
+                LIMIT 10
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    iu.producto_maestro_id,
+                    pm.nombre_normalizado,
+                    iu.cantidad_actual,
+                    iu.precio_ultima_compra,
+                    iu.establecimiento,
+                    iu.fecha_ultima_compra
+                FROM inventario_usuario iu
+                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                WHERE iu.usuario_id = ?
+                ORDER BY iu.fecha_ultima_actualizacion DESC
+                LIMIT 10
+            """, (usuario_id,))
+
+        inventario_muestra = []
+        for row in cursor.fetchall():
+            inventario_muestra.append({
+                "producto_maestro_id": row[0],
+                "nombre": row[1],
+                "cantidad": float(row[2]) if row[2] else 0,
+                "precio": float(row[3]) if row[3] else 0,
+                "establecimiento": row[4],
+                "fecha_compra": str(row[5]) if row[5] else None
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "usuario_id": usuario_id,
+            "total_productos_inventario": total_inventario,
+            "total_facturas": len(facturas),
+            "facturas_recientes": facturas,
+            "inventario_muestra": inventario_muestra
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+print("✅ Endpoints de mantenimiento agregados:")
+print("   GET /admin/force-update-inventario/{factura_id}/{usuario_id}")
+print("   GET /admin/debug-inventario/{usuario_id}")
+
+if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
-    print("=" * 60)
 
     test_database_connection()
     create_tables()
@@ -3309,284 +3589,3 @@ print("✅ Todos los endpoints administrativos y de debug cargados")
 from pydantic import BaseModel
 
 # Force redeploy 11/02/2025 11:47:09
-@app.get("/admin/force-update-inventario/{factura_id}/{usuario_id}")
-async def force_update_inventario(factura_id: int, usuario_id: int):
-    """
-    Endpoint de emergencia para forzar actualización de inventario
-    """
-    print("=" * 80)
-    print(f"🔧 FORZANDO ACTUALIZACIÓN DE INVENTARIO")
-    print(f"   Factura ID: {factura_id}")
-    print(f"   Usuario ID: {usuario_id}")
-    print("=" * 80)
-
-    try:
-        # Verificar que la factura existe
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT id, establecimiento, total_factura, productos_guardados
-                FROM facturas
-                WHERE id = %s AND usuario_id = %s
-            """, (factura_id, usuario_id))
-        else:
-            cursor.execute("""
-                SELECT id, establecimiento, total_factura, productos_guardados
-                FROM facturas
-                WHERE id = ? AND usuario_id = ?
-            """, (factura_id, usuario_id))
-
-        factura = cursor.fetchone()
-
-        if not factura:
-            cursor.close()
-            conn.close()
-            return {
-                "success": False,
-                "error": f"Factura {factura_id} no encontrada para usuario {usuario_id}"
-            }
-
-        print(f"✅ Factura encontrada:")
-        print(f"   Establecimiento: {factura[1]}")
-        print(f"   Total: ${factura[2]:,}")
-        print(f"   Productos guardados: {factura[3]}")
-
-        # Verificar items
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT COUNT(*), COUNT(producto_maestro_id)
-                FROM items_factura
-                WHERE factura_id = %s
-            """, (factura_id,))
-        else:
-            cursor.execute("""
-                SELECT COUNT(*), COUNT(producto_maestro_id)
-                FROM items_factura
-                WHERE factura_id = ?
-            """, (factura_id,))
-
-        items_stats = cursor.fetchone()
-        print(f"📦 Items en BD:")
-        print(f"   Total items: {items_stats[0]}")
-        print(f"   Con producto_maestro_id: {items_stats[1]}")
-
-        cursor.close()
-        conn.close()
-
-        if items_stats[1] == 0:
-            return {
-                "success": False,
-                "error": f"La factura {factura_id} no tiene items con producto_maestro_id",
-                "factura": {
-                    "id": factura[0],
-                    "establecimiento": factura[1],
-                    "total": float(factura[2]) if factura[2] else 0,
-                    "productos_guardados": factura[3]
-                },
-                "total_items": items_stats[0],
-                "items_con_producto_maestro": items_stats[1]
-            }
-
-        # Forzar actualización
-        print(f"\n🔄 Ejecutando actualizar_inventario_desde_factura...")
-        resultado = actualizar_inventario_desde_factura(factura_id, usuario_id)
-
-        if resultado:
-            print(f"✅ Inventario actualizado exitosamente")
-
-            # Verificar inventario
-            conn = get_db_connection()
-            cursor = conn.cursor()
-
-            if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
-                    SELECT COUNT(*)
-                    FROM inventario_usuario
-                    WHERE usuario_id = %s
-                """, (usuario_id,))
-            else:
-                cursor.execute("""
-                    SELECT COUNT(*)
-                    FROM inventario_usuario
-                    WHERE usuario_id = ?
-                """, (usuario_id,))
-
-            total_inventario = cursor.fetchone()[0]
-            cursor.close()
-            conn.close()
-
-            return {
-                "success": True,
-                "message": "Inventario actualizado correctamente",
-                "factura": {
-                    "id": factura[0],
-                    "establecimiento": factura[1],
-                    "total": float(factura[2]) if factura[2] else 0,
-                    "productos_guardados": factura[3]
-                },
-                "items_procesados": items_stats[1],
-                "productos_en_inventario": total_inventario
-            }
-        else:
-            return {
-                "success": False,
-                "error": "actualizar_inventario_desde_factura retornó False",
-                "mensaje": "Revisa los logs para ver el error específico"
-            }
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-
-@app.get("/admin/debug-inventario/{usuario_id}")
-async def debug_inventario(usuario_id: int):
-    """
-    Ver estado actual del inventario de un usuario
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Contar productos en inventario
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT COUNT(*)
-                FROM inventario_usuario
-                WHERE usuario_id = %s
-            """, (usuario_id,))
-        else:
-            cursor.execute("""
-                SELECT COUNT(*)
-                FROM inventario_usuario
-                WHERE usuario_id = ?
-            """, (usuario_id,))
-
-        total_inventario = cursor.fetchone()[0]
-
-        # Obtener últimas facturas
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT
-                    f.id,
-                    f.establecimiento,
-                    f.total_factura,
-                    f.productos_guardados,
-                    f.fecha_cargue,
-                    COUNT(i.id) as items_guardados,
-                    COUNT(i.producto_maestro_id) as items_con_producto_maestro
-                FROM facturas f
-                LEFT JOIN items_factura i ON f.id = i.factura_id
-                WHERE f.usuario_id = %s
-                GROUP BY f.id, f.establecimiento, f.total_factura, f.productos_guardados, f.fecha_cargue
-                ORDER BY f.fecha_cargue DESC
-                LIMIT 5
-            """, (usuario_id,))
-        else:
-            cursor.execute("""
-                SELECT
-                    f.id,
-                    f.establecimiento,
-                    f.total_factura,
-                    f.productos_guardados,
-                    f.fecha_cargue,
-                    COUNT(i.id) as items_guardados,
-                    COUNT(i.producto_maestro_id) as items_con_producto_maestro
-                FROM facturas f
-                LEFT JOIN items_factura i ON f.id = i.factura_id
-                WHERE f.usuario_id = ?
-                GROUP BY f.id, f.establecimiento, f.total_factura, f.productos_guardados, f.fecha_cargue
-                ORDER BY f.fecha_cargue DESC
-                LIMIT 5
-            """, (usuario_id,))
-
-        facturas = []
-        for row in cursor.fetchall():
-            facturas.append({
-                "id": row[0],
-                "establecimiento": row[1],
-                "total": float(row[2]) if row[2] else 0,
-                "productos_guardados": row[3],
-                "fecha": str(row[4]) if row[4] else None,
-                "items_en_bd": row[5],
-                "items_con_producto_maestro": row[6]
-            })
-
-        # Ver muestra del inventario
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT
-                    iu.producto_maestro_id,
-                    pm.nombre_normalizado,
-                    iu.cantidad_actual,
-                    iu.precio_ultima_compra,
-                    iu.establecimiento,
-                    iu.fecha_ultima_compra
-                FROM inventario_usuario iu
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
-                WHERE iu.usuario_id = %s
-                ORDER BY iu.fecha_ultima_actualizacion DESC
-                LIMIT 10
-            """, (usuario_id,))
-        else:
-            cursor.execute("""
-                SELECT
-                    iu.producto_maestro_id,
-                    pm.nombre_normalizado,
-                    iu.cantidad_actual,
-                    iu.precio_ultima_compra,
-                    iu.establecimiento,
-                    iu.fecha_ultima_compra
-                FROM inventario_usuario iu
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
-                WHERE iu.usuario_id = ?
-                ORDER BY iu.fecha_ultima_actualizacion DESC
-                LIMIT 10
-            """, (usuario_id,))
-
-        inventario_muestra = []
-        for row in cursor.fetchall():
-            inventario_muestra.append({
-                "producto_maestro_id": row[0],
-                "nombre": row[1],
-                "cantidad": float(row[2]) if row[2] else 0,
-                "precio": float(row[3]) if row[3] else 0,
-                "establecimiento": row[4],
-                "fecha_compra": str(row[5]) if row[5] else None
-            })
-
-        cursor.close()
-        conn.close()
-
-        return {
-            "success": True,
-            "usuario_id": usuario_id,
-            "total_productos_inventario": total_inventario,
-            "total_facturas": len(facturas),
-            "facturas_recientes": facturas,
-            "inventario_muestra": inventario_muestra
-        }
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-print("✅ Endpoints de mantenimiento agregados:")
-print("   GET /admin/force-update-inventario/{factura_id}/{usuario_id}")
-print("   GET /admin/debug-inventario/{usuario_id}")
-
-if __name__ == "__main__"
