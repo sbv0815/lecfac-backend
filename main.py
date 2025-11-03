@@ -162,23 +162,58 @@ async def require_admin(user=Depends(get_current_user)):
 def get_user_id_from_token(authorization: str) -> int:
     """
     Extraer usuario_id desde el token JWT
+    VERSIÓN MEJORADA con más debugging
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        print("⚠️ No se encontró token de autorización válido")
+    print(f"🔐 [AUTH] Procesando autorización...")
+    print(f"🔐 [AUTH] Header recibido: {authorization[:50] if authorization else 'None'}...")
+
+    if not authorization:
+        print("⚠️ [AUTH] No se recibió header de autorización")
+        print("⚠️ [AUTH] Usando usuario_id = 1 por defecto")
+        return 1
+
+    if not authorization.startswith("Bearer "):
+        print(f"⚠️ [AUTH] Header no empieza con 'Bearer '")
+        print(f"⚠️ [AUTH] Usando usuario_id = 1 por defecto")
         return 1
 
     try:
         import jwt
         token = authorization.replace("Bearer ", "")
+        print(f"🔐 [AUTH] Token extraído: {token[:30]}...")
+
+        # Decodificar SIN verificar signature (para desarrollo)
         payload = jwt.decode(token, options={"verify_signature": False})
-        usuario_id = payload.get("user_id", 1)
-        print(f"✅ Usuario extraído del token: {usuario_id}")
-        return int(usuario_id)
+        print(f"🔐 [AUTH] Payload decodificado: {payload}")
+
+        # Intentar obtener user_id de diferentes campos
+        usuario_id = None
+
+        if "user_id" in payload:
+            usuario_id = payload["user_id"]
+            print(f"✅ [AUTH] user_id encontrado en payload: {usuario_id}")
+        elif "sub" in payload:
+            usuario_id = payload["sub"]
+            print(f"✅ [AUTH] sub encontrado en payload: {usuario_id}")
+        elif "id" in payload:
+            usuario_id = payload["id"]
+            print(f"✅ [AUTH] id encontrado en payload: {usuario_id}")
+        else:
+            print(f"⚠️ [AUTH] No se encontró user_id en payload")
+            print(f"⚠️ [AUTH] Campos disponibles: {list(payload.keys())}")
+            usuario_id = 1
+
+        usuario_id_int = int(usuario_id)
+        print(f"✅ [AUTH] Usuario final: {usuario_id_int}")
+        return usuario_id_int
+
     except jwt.DecodeError as e:
-        print(f"⚠️ Error decodificando token JWT: {e}")
+        print(f"❌ [AUTH] Error decodificando token JWT: {e}")
         return 1
     except Exception as e:
-        print(f"⚠️ Error inesperado procesando token: {e}")
+        print(f"❌ [AUTH] Error inesperado procesando token: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 
