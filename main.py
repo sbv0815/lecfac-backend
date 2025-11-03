@@ -41,6 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+
 # ==========================================
 # IMPORTACIONES LOCALES
 # ==========================================
@@ -52,7 +53,7 @@ from database import (
     test_database_connection,
     detectar_cadena,
     obtener_o_crear_establecimiento,
-    actualizar_inventario_desde_factura_v2 as actualizar_inventario_desde_factura,  # ✅ USAR V2
+    actualizar_inventario_desde_factura as actualizar_inventario_desde_factura,
     procesar_items_factura_y_guardar_precios,
 )
 
