@@ -52,8 +52,8 @@ from database import (
     test_database_connection,
     detectar_cadena,
     obtener_o_crear_establecimiento,
-    actualizar_inventario_desde_factura,
-    procesar_items_factura_y_guardar_precios,  # ← AGREGAR ESTA LÍNEA
+    actualizar_inventario_desde_factura_v2 as actualizar_inventario_desde_factura,  # ✅ USAR V2
+    procesar_items_factura_y_guardar_precios,
 )
 
 # Importar routers
@@ -65,6 +65,14 @@ from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 from product_matcher import buscar_o_crear_producto_inteligente
+try:
+    from product_resolver import ProductResolver
+    PRODUCT_RESOLVER_AVAILABLE = True
+    print("✅ ProductResolver importado correctamente")
+except ImportError as e:
+    PRODUCT_RESOLVER_AVAILABLE = False
+    print(f"⚠️ ProductResolver no disponible: {e}")
+    print("   Se usará product_matcher como fallback")
 
 from admin_dashboard import router as admin_dashboard_router
 from auth import router as auth_router

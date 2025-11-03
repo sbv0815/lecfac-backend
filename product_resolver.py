@@ -1,258 +1,43 @@
+"""
+============================================================================
+PRODUCT RESOLVER - Sistema de Productos Canónicos
+============================================================================
+Resuelve productos usando la arquitectura unificada:
+- productos_canonicos: La verdad única del producto
+- productos_variantes: Alias por establecimiento
+- productos_maestros: Legacy (compatibilidad)
+============================================================================
+"""
+
 import os
+from typing import Tuple, Optional, Dict, Any
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
-from database import get_db_connection
-import re
-import unicodedata
-
-# Intentar importar Levenshtein, pero funcionar sin él
-try:
-    import Levenshtein
-    LEVENSHTEIN_AVAILABLE = True
-    print("✅ Levenshtein disponible - usando algoritmo avanzado")
-except ImportError:
-    LEVENSHTEIN_AVAILABLE = False
-    print("⚠️ Levenshtein no disponible - usando similitud básica")
-
-
-def calcular_similitud(texto1: str, texto2: str) -> float:
-    """
-    Calcula similitud entre dos textos
-    Usa Levenshtein si está disponible, sino usa Jaccard básico
-    """
-    if not texto1 or not texto2:
-        return 0.0
-
-    texto1 = texto1.lower().strip()
-    texto2 = texto2.lower().strip()
-
-    if texto1 == texto2:
-        return 1.0
-
-    if LEVENSHTEIN_AVAILABLE:
-        return Levenshtein.ratio(texto1, texto2)
-    else:
-        # Similitud Jaccard básica (palabras en común)
-        palabras1 = set(texto1.split())
-        palabras2 = set(texto2.split())
-
-        if not palabras1 or not palabras2:
-            return 0.0
-
-        interseccion = len(palabras1.intersection(palabras2))
-        union = len(palabras1.union(palabras2))
-
-        return interseccion / union if union > 0 else 0.0
 
 
 class ProductResolver:
     """
-    Resuelve la identidad de productos usando múltiples estrategias
+    Resuelve productos usando el sistema de productos canónicos
+
+    Flujo:
+    1. Busca variante existente (código + establecimiento)
+    2. Si no existe, busca en canónicos por EAN
+    3. Si no existe, crea canónico nuevo + variante
+    4. Actualiza/crea producto_maestro para compatibilidad
     """
 
     def __init__(self):
+        """Inicializa el resolver con conexión a BD"""
+        from database import get_db_connection
         self.conn = get_db_connection()
         self.cursor = self.conn.cursor()
+        self.database_type = os.environ.get("DATABASE_TYPE", "postgresql")
 
-    def normalizar_nombre(self, nombre: str) -> str:
-        """
-        Normaliza nombres para comparación
-        """
-        if not nombre:
-            return ""
-
-        nombre = nombre.lower().strip()
-
-        # Remover acentos
-        nombre = ''.join(c for c in unicodedata.normalize('NFD', nombre)
-                        if unicodedata.category(c) != 'Mn')
-
-        # Remover caracteres especiales
-        nombre = re.sub(r'[^\w\s]', ' ', nombre)
-
-        # Normalizar espacios
-        nombre = re.sub(r'\s+', ' ', nombre)
-
-        # Remover palabras comunes que no aportan
-        stop_words = {'x', 'un', 'gr', 'ml', 'kg', 'lt', 'und'}
-        palabras = [p for p in nombre.split() if p not in stop_words]
-
-        return ' '.join(palabras)
-
-    def extraer_palabras_clave(self, nombre: str) -> List[str]:
-        """
-        Extrae palabras significativas
-        """
-        normalizado = self.normalizar_nombre(nombre)
-        return [p for p in normalizado.split() if len(p) >= 3]
-
-    def buscar_por_ean(self, ean: str) -> Optional[int]:
-        """
-        Estrategia 1: Match exacto por EAN
-        Confianza: 100%
-        """
-        if not ean or len(ean) < 8:
-            return None
-
-        self.cursor.execute("""
-            SELECT producto_canonico_id
-            FROM productos_variantes
-            WHERE codigo = %s AND tipo_codigo = 'EAN'
-            LIMIT 1
-        """, (ean,))
-
-        result = self.cursor.fetchone()
-        return result[0] if result else None
-
-    def buscar_por_nombre_similar(
-        self,
-        nombre: str,
-        establecimiento: str,
-        threshold: float = 0.80
-    ) -> Optional[Tuple[int, float]]:
-        """
-        Estrategia 2: Match por similitud de nombre
-        Usa Levenshtein si está disponible, sino usa similitud básica
-        """
-        nombre_norm = self.normalizar_nombre(nombre)
-
-        if len(nombre_norm) < 5:
-            return None
-
-        # Buscar productos canónicos con palabras clave similares
-        palabras = self.extraer_palabras_clave(nombre)
-
-        if not palabras:
-            return None
-
-        # Construir query con búsqueda por palabras clave
-        query = """
-            SELECT
-                pc.id,
-                pc.nombre_oficial,
-                pc.nombre_normalizado
-            FROM productos_canonicos pc
-            WHERE 1=1
-        """
-
-        # Agregar condiciones OR para cada palabra clave
-        conditions = []
-        for palabra in palabras[:3]:  # Máximo 3 palabras más relevantes
-            conditions.append(f"pc.palabras_clave @> ARRAY['{palabra}']::TEXT[]")
-
-        if conditions:
-            query += " AND (" + " OR ".join(conditions) + ")"
-
-        query += " LIMIT 20"
-
-        self.cursor.execute(query)
-        candidatos = self.cursor.fetchall()
-
-        mejor_match = None
-        mejor_score = 0.0
-
-        for candidato in candidatos:
-            canonico_id, nombre_oficial, nombre_normalizado = candidato
-
-            # Calcular similitud
-            score = calcular_similitud(nombre_norm, nombre_normalizado)
-
-            if score > mejor_score and score >= threshold:
-                mejor_score = score
-                mejor_match = canonico_id
-
-        if mejor_match:
-            return (mejor_match, mejor_score)
-
-        return None
-
-    def crear_producto_canonico(
-        self,
-        nombre: str,
-        ean: Optional[str],
-        marca: Optional[str],
-        categoria: Optional[str]
-    ) -> int:
-        """
-        Crea un nuevo producto canónico
-        """
-        nombre_norm = self.normalizar_nombre(nombre)
-        palabras_clave = self.extraer_palabras_clave(nombre)
-
-        self.cursor.execute("""
-            INSERT INTO productos_canonicos (
-                nombre_oficial,
-                marca,
-                categoria,
-                ean_principal,
-                nombre_normalizado,
-                palabras_clave
-            ) VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            nombre,
-            marca,
-            categoria,
-            ean,
-            nombre_norm,
-            palabras_clave
-        ))
-
-        canonico_id = self.cursor.fetchone()[0]
-        self.conn.commit()
-
-        print(f"   ✅ Producto canónico creado: ID {canonico_id} - {nombre}")
-
-        return canonico_id
-
-    def registrar_variante(
-        self,
-        canonico_id: int,
-        codigo: str,
-        tipo_codigo: str,
-        nombre_en_recibo: str,
-        establecimiento: str,
-        cadena: Optional[str]
-    ) -> int:
-        """
-        Registra una variante (alias) del producto canónico
-        """
-        try:
-            self.cursor.execute("""
-                INSERT INTO productos_variantes (
-                    producto_canonico_id,
-                    codigo,
-                    tipo_codigo,
-                    nombre_en_recibo,
-                    establecimiento,
-                    cadena,
-                    veces_reportado,
-                    primera_vez_visto,
-                    ultima_vez_visto
-                ) VALUES (%s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (codigo, establecimiento)
-                DO UPDATE SET
-                    veces_reportado = productos_variantes.veces_reportado + 1,
-                    ultima_vez_visto = CURRENT_TIMESTAMP
-                RETURNING id
-            """, (
-                canonico_id,
-                codigo,
-                tipo_codigo,
-                nombre_en_recibo,
-                establecimiento,
-                cadena
-            ))
-
-            variante_id = self.cursor.fetchone()[0]
-            self.conn.commit()
-
-            return variante_id
-
-        except Exception as e:
-            self.conn.rollback()
-            print(f"   ⚠️ Error registrando variante: {e}")
-            return None
+    def close(self):
+        """Cierra la conexión a la base de datos"""
+        if self.cursor:
+            self.cursor.close()
+        if self.conn:
+            self.conn.close()
 
     def resolver_producto(
         self,
@@ -264,83 +49,466 @@ class ProductResolver:
         categoria: Optional[str] = None
     ) -> Tuple[int, int, str]:
         """
-        FUNCIÓN PRINCIPAL: Resuelve la identidad de un producto
+        Resuelve un producto y retorna IDs + acción realizada
+
+        Args:
+            codigo: Código del producto (EAN, PLU, etc.)
+            nombre: Nombre del producto
+            establecimiento: Nombre del establecimiento
+            precio: Precio del producto
+            marca: Marca del producto (opcional)
+            categoria: Categoría del producto (opcional)
 
         Returns:
-            (canonico_id, variante_id, accion)
-            accion: 'found_ean', 'found_similar', 'created_new'
+            Tuple[canonico_id, variante_id, accion]
+            - canonico_id: ID del producto canónico
+            - variante_id: ID de la variante
+            - accion: 'found_variant' | 'found_canonical' | 'created_new'
         """
 
-        print(f"\n   🔍 Resolviendo: {nombre} ({codigo}) en {establecimiento}")
+        # Normalizar datos
+        codigo = str(codigo).strip() if codigo else ""
+        nombre = str(nombre).strip()
+        establecimiento = str(establecimiento).strip()
 
-        # ESTRATEGIA 1: Match por EAN
-        if codigo and len(codigo) >= 8:
-            canonico_id = self.buscar_por_ean(codigo)
+        if not nombre:
+            raise ValueError("El nombre del producto es requerido")
 
-            if canonico_id:
-                print(f"      ✅ Match por EAN → Canónico #{canonico_id}")
+        # Determinar tipo de código
+        tipo_codigo = self._determinar_tipo_codigo(codigo)
 
-                variante_id = self.registrar_variante(
-                    canonico_id,
-                    codigo,
-                    'EAN',
-                    nombre,
-                    establecimiento,
-                    None
-                )
+        # PASO 1: Buscar variante existente
+        variante = self._buscar_variante(codigo, establecimiento)
 
-                return (canonico_id, variante_id, 'found_ean')
+        if variante:
+            canonico_id = variante['producto_canonico_id']
+            variante_id = variante['id']
 
-        # ESTRATEGIA 2: Match por nombre similar
-        resultado = self.buscar_por_nombre_similar(nombre, establecimiento)
+            # Actualizar estadísticas de la variante
+            self._actualizar_variante(variante_id)
 
-        if resultado:
-            canonico_id, score = resultado
-            print(f"      ✅ Match por nombre (score: {score:.2%}) → Canónico #{canonico_id}")
+            return (canonico_id, variante_id, 'found_variant')
 
-            tipo_codigo = 'EAN' if codigo and len(codigo) >= 8 else 'PLU'
+        # PASO 2: Buscar canónico por EAN (si es EAN válido)
+        canonico_id = None
 
-            variante_id = self.registrar_variante(
-                canonico_id,
-                codigo or f"PLU_{establecimiento}_{nombre[:20]}",
-                tipo_codigo,
-                nombre,
-                establecimiento,
-                None
+        if tipo_codigo == 'EAN' and len(codigo) >= 8:
+            canonico = self._buscar_canonico_por_ean(codigo)
+            if canonico:
+                canonico_id = canonico['id']
+
+        # PASO 3: Si no existe canónico, crear uno nuevo
+        if not canonico_id:
+            canonico_id = self._crear_producto_canonico(
+                codigo=codigo,
+                nombre=nombre,
+                marca=marca,
+                categoria=categoria,
+                precio=precio
             )
 
-            return (canonico_id, variante_id, 'found_similar')
-
-        # ESTRATEGIA 3: Crear nuevo producto canónico
-        print(f"      ➕ Creando nuevo producto canónico")
-
-        canonico_id = self.crear_producto_canonico(
-            nombre,
-            codigo if codigo and len(codigo) >= 8 else None,
-            marca,
-            categoria
+        # PASO 4: Crear variante
+        variante_id = self._crear_variante(
+            canonico_id=canonico_id,
+            codigo=codigo,
+            tipo_codigo=tipo_codigo,
+            nombre_en_recibo=nombre,
+            establecimiento=establecimiento
         )
 
-        tipo_codigo = 'EAN' if codigo and len(codigo) >= 8 else 'PLU'
-
-        variante_id = self.registrar_variante(
-            canonico_id,
-            codigo or f"PLU_{establecimiento}_{canonico_id}",
-            tipo_codigo,
-            nombre,
-            establecimiento,
-            None
-        )
+        # PASO 5: Crear/actualizar producto_maestro (legacy)
+        self._sincronizar_producto_maestro(canonico_id, codigo, nombre, marca, categoria)
 
         return (canonico_id, variante_id, 'created_new')
 
-    def close(self):
-        """Cerrar conexiones"""
-        if self.cursor:
-            self.cursor.close()
-        if self.conn:
-            self.conn.close()
+    def _determinar_tipo_codigo(self, codigo: str) -> str:
+        """Determina el tipo de código (EAN, PLU, INTERNO)"""
+        if not codigo:
+            return 'INTERNO'
+
+        # EAN: 8-14 dígitos
+        if codigo.isdigit() and 8 <= len(codigo) <= 14:
+            return 'EAN'
+
+        # PLU: 3-5 dígitos
+        if codigo.isdigit() and 3 <= len(codigo) <= 5:
+            return 'PLU'
+
+        # Cualquier otro caso
+        return 'INTERNO'
+
+    def _buscar_variante(self, codigo: str, establecimiento: str) -> Optional[Dict[str, Any]]:
+        """Busca una variante existente por código + establecimiento"""
+        try:
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    SELECT id, producto_canonico_id, codigo, tipo_codigo
+                    FROM productos_variantes
+                    WHERE codigo = %s AND establecimiento = %s
+                    LIMIT 1
+                """, (codigo, establecimiento))
+            else:
+                self.cursor.execute("""
+                    SELECT id, producto_canonico_id, codigo, tipo_codigo
+                    FROM productos_variantes
+                    WHERE codigo = ? AND establecimiento = ?
+                    LIMIT 1
+                """, (codigo, establecimiento))
+
+            row = self.cursor.fetchone()
+
+            if row:
+                return {
+                    'id': row[0],
+                    'producto_canonico_id': row[1],
+                    'codigo': row[2],
+                    'tipo_codigo': row[3]
+                }
+
+            return None
+
+        except Exception as e:
+            print(f"⚠️ Error buscando variante: {e}")
+            return None
+
+    def _buscar_canonico_por_ean(self, ean: str) -> Optional[Dict[str, Any]]:
+        """Busca un producto canónico por EAN"""
+        try:
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    SELECT id, nombre_oficial, marca, categoria
+                    FROM productos_canonicos
+                    WHERE ean_principal = %s
+                    LIMIT 1
+                """, (ean,))
+            else:
+                self.cursor.execute("""
+                    SELECT id, nombre_oficial, marca, categoria
+                    FROM productos_canonicos
+                    WHERE ean_principal = ?
+                    LIMIT 1
+                """, (ean,))
+
+            row = self.cursor.fetchone()
+
+            if row:
+                return {
+                    'id': row[0],
+                    'nombre_oficial': row[1],
+                    'marca': row[2],
+                    'categoria': row[3]
+                }
+
+            return None
+
+        except Exception as e:
+            print(f"⚠️ Error buscando canónico por EAN: {e}")
+            return None
+
+    def _crear_producto_canonico(
+        self,
+        codigo: str,
+        nombre: str,
+        marca: Optional[str],
+        categoria: Optional[str],
+        precio: int
+    ) -> int:
+        """Crea un nuevo producto canónico"""
+        try:
+            # Determinar EAN principal
+            ean_principal = codigo if len(codigo) >= 8 and codigo.isdigit() else None
+
+            # Normalizar nombre
+            nombre_normalizado = nombre.lower().strip()
+
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    INSERT INTO productos_canonicos (
+                        nombre_oficial,
+                        marca,
+                        categoria,
+                        ean_principal,
+                        nombre_normalizado,
+                        precio_promedio_global,
+                        total_reportes,
+                        fecha_creacion,
+                        ultima_actualizacion
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING id
+                """, (nombre, marca, categoria, ean_principal, nombre_normalizado, precio))
+
+                canonico_id = self.cursor.fetchone()[0]
+            else:
+                self.cursor.execute("""
+                    INSERT INTO productos_canonicos (
+                        nombre_oficial,
+                        marca,
+                        categoria,
+                        ean_principal,
+                        nombre_normalizado,
+                        precio_promedio_global,
+                        total_reportes
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                """, (nombre, marca, categoria, ean_principal, nombre_normalizado, precio))
+
+                canonico_id = self.cursor.lastrowid
+
+            self.conn.commit()
+
+            print(f"   ✅ Producto canónico creado: {nombre} (ID: {canonico_id})")
+
+            return canonico_id
+
+        except Exception as e:
+            print(f"❌ Error creando producto canónico: {e}")
+            self.conn.rollback()
+            raise e
+
+    def _crear_variante(
+        self,
+        canonico_id: int,
+        codigo: str,
+        tipo_codigo: str,
+        nombre_en_recibo: str,
+        establecimiento: str
+    ) -> int:
+        """Crea una nueva variante del producto"""
+        try:
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    INSERT INTO productos_variantes (
+                        producto_canonico_id,
+                        codigo,
+                        tipo_codigo,
+                        nombre_en_recibo,
+                        establecimiento,
+                        veces_reportado,
+                        primera_vez_visto,
+                        ultima_vez_visto
+                    ) VALUES (%s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING id
+                """, (canonico_id, codigo, tipo_codigo, nombre_en_recibo, establecimiento))
+
+                variante_id = self.cursor.fetchone()[0]
+            else:
+                self.cursor.execute("""
+                    INSERT INTO productos_variantes (
+                        producto_canonico_id,
+                        codigo,
+                        tipo_codigo,
+                        nombre_en_recibo,
+                        establecimiento,
+                        veces_reportado
+                    ) VALUES (?, ?, ?, ?, ?, 1)
+                """, (canonico_id, codigo, tipo_codigo, nombre_en_recibo, establecimiento))
+
+                variante_id = self.cursor.lastrowid
+
+            self.conn.commit()
+
+            print(f"   ✅ Variante creada: {codigo} en {establecimiento} (ID: {variante_id})")
+
+            return variante_id
+
+        except Exception as e:
+            print(f"❌ Error creando variante: {e}")
+            self.conn.rollback()
+            raise e
+
+    def _actualizar_variante(self, variante_id: int):
+        """Actualiza estadísticas de una variante existente"""
+        try:
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    UPDATE productos_variantes
+                    SET veces_reportado = veces_reportado + 1,
+                        ultima_vez_visto = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (variante_id,))
+            else:
+                self.cursor.execute("""
+                    UPDATE productos_variantes
+                    SET veces_reportado = veces_reportado + 1
+                    WHERE id = ?
+                """, (variante_id,))
+
+            self.conn.commit()
+
+        except Exception as e:
+            print(f"⚠️ Error actualizando variante: {e}")
+            self.conn.rollback()
+
+    def _sincronizar_producto_maestro(
+        self,
+        canonico_id: int,
+        codigo: str,
+        nombre: str,
+        marca: Optional[str],
+        categoria: Optional[str]
+    ):
+        """Sincroniza con productos_maestros (legacy) para compatibilidad"""
+        try:
+            # Buscar si ya existe
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    SELECT id FROM productos_maestros
+                    WHERE producto_canonico_id = %s
+                    LIMIT 1
+                """, (canonico_id,))
+            else:
+                self.cursor.execute("""
+                    SELECT id FROM productos_maestros
+                    WHERE producto_canonico_id = ?
+                    LIMIT 1
+                """, (canonico_id,))
+
+            maestro = self.cursor.fetchone()
+
+            if maestro:
+                # Actualizar existente
+                maestro_id = maestro[0]
+
+                if self.database_type == "postgresql":
+                    self.cursor.execute("""
+                        UPDATE productos_maestros
+                        SET total_reportes = total_reportes + 1,
+                            ultima_actualizacion = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (maestro_id,))
+                else:
+                    self.cursor.execute("""
+                        UPDATE productos_maestros
+                        SET total_reportes = total_reportes + 1
+                        WHERE id = ?
+                    """, (maestro_id,))
+            else:
+                # Crear nuevo
+                codigo_ean = codigo if len(codigo) >= 8 and codigo.isdigit() else None
+
+                if self.database_type == "postgresql":
+                    self.cursor.execute("""
+                        INSERT INTO productos_maestros (
+                            producto_canonico_id,
+                            codigo_ean,
+                            nombre_normalizado,
+                            marca,
+                            categoria,
+                            total_reportes,
+                            primera_vez_reportado,
+                            ultima_actualizacion
+                        ) VALUES (%s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """, (canonico_id, codigo_ean, nombre, marca, categoria))
+                else:
+                    self.cursor.execute("""
+                        INSERT INTO productos_maestros (
+                            producto_canonico_id,
+                            codigo_ean,
+                            nombre_normalizado,
+                            marca,
+                            categoria,
+                            total_reportes
+                        ) VALUES (?, ?, ?, ?, ?, 1)
+                    """, (canonico_id, codigo_ean, nombre, marca, categoria))
+
+            self.conn.commit()
+
+        except Exception as e:
+            print(f"⚠️ Error sincronizando producto_maestro: {e}")
+            self.conn.rollback()
 
 
-print("✅ ProductResolver cargado - Sistema de productos canónicos")
-print(f"   Algoritmo: {'Levenshtein avanzado' if LEVENSHTEIN_AVAILABLE else 'Similitud básica (Jaccard)'}")
+# ============================================================================
+# FUNCIONES DE UTILIDAD
+# ============================================================================
+
+def resolver_producto_simple(
+    codigo: str,
+    nombre: str,
+    establecimiento: str,
+    precio: int,
+    marca: Optional[str] = None,
+    categoria: Optional[str] = None
+) -> Tuple[int, int, str]:
+    """
+    Función de conveniencia para resolver un producto sin manejar conexión
+
+    Returns:
+        Tuple[canonico_id, variante_id, accion]
+    """
+    resolver = ProductResolver()
+    try:
+        return resolver.resolver_producto(
+            codigo=codigo,
+            nombre=nombre,
+            establecimiento=establecimiento,
+            precio=precio,
+            marca=marca,
+            categoria=categoria
+        )
+    finally:
+        resolver.close()
+
+
+# ============================================================================
+# TESTING
+# ============================================================================
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("🧪 TESTING PRODUCT RESOLVER")
+    print("=" * 80)
+
+    # Test 1: Crear producto nuevo
+    print("\n1️⃣ Test: Crear producto nuevo")
+    try:
+        canonico_id, variante_id, accion = resolver_producto_simple(
+            codigo="7702129001234",
+            nombre="Leche Colanta Entera 1100ml",
+            establecimiento="JUMBO",
+            precio=4500,
+            marca="Colanta",
+            categoria="Lácteos"
+        )
+        print(f"✅ Canónico ID: {canonico_id}")
+        print(f"✅ Variante ID: {variante_id}")
+        print(f"✅ Acción: {accion}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+    # Test 2: Buscar producto existente
+    print("\n2️⃣ Test: Buscar mismo producto")
+    try:
+        canonico_id, variante_id, accion = resolver_producto_simple(
+            codigo="7702129001234",
+            nombre="Leche Colanta Entera 1100ml",
+            establecimiento="JUMBO",
+            precio=4600,
+            marca="Colanta",
+            categoria="Lácteos"
+        )
+        print(f"✅ Canónico ID: {canonico_id}")
+        print(f"✅ Variante ID: {variante_id}")
+        print(f"✅ Acción: {accion}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+    # Test 3: Mismo EAN, diferente establecimiento
+    print("\n3️⃣ Test: Mismo EAN, diferente establecimiento")
+    try:
+        canonico_id, variante_id, accion = resolver_producto_simple(
+            codigo="7702129001234",
+            nombre="Leche Colanta Entera 1100ml",
+            establecimiento="EXITO",
+            precio=4700,
+            marca="Colanta",
+            categoria="Lácteos"
+        )
+        print(f"✅ Canónico ID: {canonico_id}")
+        print(f"✅ Variante ID: {variante_id}")
+        print(f"✅ Acción: {accion}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+    print("\n" + "=" * 80)
+    print("✅ TESTING COMPLETADO")
+    print("=" * 80)
