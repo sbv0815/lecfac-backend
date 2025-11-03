@@ -1,7 +1,8 @@
 """
 Sistema de Procesamiento Automático de OCR para Facturas
-VERSIÓN 2.1 - CON NORMALIZACIÓN INTELIGENTE DE CÓDIGOS
+VERSIÓN 2.2 - CON DETECCIÓN DE DUPLICADOS AUTOMÁTICA
 Maneja múltiples establecimientos y tipos de códigos (EAN, PLU, internos)
+Detecta y elimina productos duplicados dentro de cada factura
 """
 
 import threading
@@ -21,6 +22,9 @@ from normalizador_codigos import (
     normalizar_codigo_por_establecimiento,
     buscar_o_crear_producto_inteligente
 )
+
+# ✅ NUEVO: Importar detector de duplicados
+from duplicate_detector import detectar_duplicados_automaticamente
 
 # Colas y tracking globales
 ocr_queue = Queue()
@@ -97,11 +101,11 @@ def limpiar_precio_colombiano(precio_str):
 
 
 # ==============================================================================
-# CLASE OCPROCESSOR - VERSIÓN 2.1 CON NORMALIZACIÓN DE CÓDIGOS
+# CLASE OCPROCESSOR - VERSIÓN 2.2 CON DETECCIÓN DE DUPLICADOS
 # ==============================================================================
 
 class OCRProcessor:
-    """Procesador automático de facturas con OCR - Versión 2.1"""
+    """Procesador automático de facturas con OCR - Versión 2.2"""
 
     def __init__(self):
         self.is_running = False
@@ -121,7 +125,8 @@ class OCRProcessor:
         self.worker_thread = threading.Thread(target=self.process_queue, daemon=True)
         self.worker_thread.start()
         print("🤖 Procesador OCR automático iniciado")
-        print("   ✅ VERSIÓN 2.1 - Normalización inteligente de códigos")
+        print("   ✅ VERSIÓN 2.2 - Normalización inteligente de códigos")
+        print("   🧹 VERSIÓN 2.2 - Detección automática de duplicados")
 
     def stop(self):
         """Detiene el procesador"""
@@ -232,10 +237,70 @@ class OCRProcessor:
         establecimiento = data.get("establecimiento", "Desconocido")
         cadena = detectar_cadena(establecimiento)
 
+        # ========================================
+        # ✅ NUEVO: DETECCIÓN DE DUPLICADOS
+        # ========================================
+        productos_originales = data.get("productos", [])
+        total_factura = data.get("total", 0)
+
+        print(f"\n{'='*70}")
+        print(f"🧹 LIMPIEZA DE DUPLICADOS - Factura #{factura_id}")
+        print(f"{'='*70}")
+
+        # Convertir productos al formato esperado por duplicate_detector
+        # Claude retorna: {"codigo": "...", "nombre": "...", "precio": 123}
+        # duplicate_detector espera: {"codigo": "...", "nombre": "...", "valor": 123}
+        productos_para_detector = []
+        for prod in productos_originales:
+            productos_para_detector.append({
+                "codigo": prod.get("codigo", ""),
+                "nombre": prod.get("nombre", ""),
+                "valor": prod.get("precio", 0),  # duplicate_detector usa "valor"
+                "cantidad": prod.get("cantidad", 1)
+            })
+
+        # Ejecutar detección de duplicados
+        resultado_limpieza = detectar_duplicados_automaticamente(
+            productos=productos_para_detector,
+            total_factura=total_factura,
+            umbral_similitud=0.85,
+            tolerancia_total=0.15
+        )
+
+        # Registrar resultado de limpieza
+        if resultado_limpieza["duplicados_detectados"]:
+            print(f"\n📊 RESULTADO LIMPIEZA:")
+            print(f"   📦 Productos originales: {len(productos_originales)}")
+            print(f"   ✅ Productos limpios: {len(resultado_limpieza['productos_limpios'])}")
+            print(f"   🗑️ Duplicados eliminados: {len(resultado_limpieza['productos_eliminados'])}")
+
+            # Mostrar qué se eliminó
+            for prod_eliminado in resultado_limpieza["productos_eliminados"]:
+                print(f"      ❌ Eliminado: {prod_eliminado['nombre'][:40]} (${prod_eliminado['valor']:,})")
+                print(f"         Razón: {prod_eliminado['razon']}")
+        else:
+            print(f"   ✅ No se detectaron duplicados en esta factura")
+
+        print(f"{'='*70}\n")
+
+        # Convertir productos limpios de vuelta al formato original
+        # duplicate_detector retorna "valor", convertir a "precio"
+        productos_a_procesar = []
+        for prod_limpio in resultado_limpieza["productos_limpios"]:
+            productos_a_procesar.append({
+                "codigo": prod_limpio.get("codigo", ""),
+                "nombre": prod_limpio.get("nombre", ""),
+                "precio": prod_limpio.get("valor", 0),  # Convertir "valor" a "precio"
+                "cantidad": prod_limpio.get("cantidad", 1)
+            })
+
+        # ========================================
+        # PROCESAMIENTO DE PRODUCTOS LIMPIOS
+        # ========================================
         productos_guardados = 0
         productos_rechazados = 0
 
-        for product in data.get("productos", []):
+        for product in productos_a_procesar:  # ⭐ Usar productos limpios
             item_id = self._save_product_to_items_factura(
                 cursor, conn, product, factura_id, user_id, establecimiento, cadena
             )
@@ -250,7 +315,7 @@ class OCRProcessor:
     def _save_product_to_items_factura(self, cursor, conn, product: Dict, factura_id: int,
                                        user_id: int, establecimiento: str, cadena: str) -> Optional[int]:
         """
-        ✅ VERSIÓN 2.1 - CON NORMALIZACIÓN INTELIGENTE DE CÓDIGOS
+        ✅ VERSIÓN 2.2 - CON NORMALIZACIÓN INTELIGENTE DE CÓDIGOS
 
         Guarda un producto con:
         1. Normalización de códigos según establecimiento (ARA, D1, etc.)
@@ -297,8 +362,8 @@ class OCRProcessor:
             # ✅ BUSCAR O CREAR PRODUCTO INTELIGENTE
             # ========================================
             producto_maestro_id, accion = buscar_o_crear_producto_inteligente(
-            cursor, conn, codigo, tipo_codigo, nombre, establecimiento, precio,
-            codigo_raw=codigo_raw  # ✅ AGREGAR esta línea
+                cursor, conn, codigo, tipo_codigo, nombre, establecimiento, precio,
+                codigo_raw=codigo_raw
             )
 
             if not producto_maestro_id:
@@ -368,8 +433,9 @@ class OCRProcessor:
         }
 
 
-print("✅ OCR Processor V2.1 cargado")
+print("✅ OCR Processor V2.2 cargado")
 print("   📟 Normalización inteligente de códigos habilitada")
+print("   🧹 Detección automática de duplicados habilitada")
 print("   🏪 Soporta: ARA, D1, Éxito, Jumbo, y cualquier establecimiento")
 
 # Crear instancia global del procesador
