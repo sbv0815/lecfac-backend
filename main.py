@@ -1061,6 +1061,16 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     conn=conn
                 )
 
+                # ✅ CAMBIO B: Usar buscar_o_crear_producto_inteligente
+                producto_maestro_id = buscar_o_crear_producto_inteligente(
+                    codigo=codigo_ean_valido or "",
+                    nombre=nombre,
+                    precio=precio_unitario,
+                    establecimiento=establecimiento_raw,
+                    cursor=cursor,
+                    conn=conn
+                )
+
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                 # Guardar en items_factura
@@ -1068,15 +1078,14 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
+                            factura_id, usuario_id, producto_maestro_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                         (
                             factura_id,
                             usuario_id,
                             producto_maestro_id,
-                            canonico_id,
                             codigo_ean_valido,
                             nombre,
                             precio_unitario,
@@ -1087,15 +1096,14 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
+                            factura_id, usuario_id, producto_maestro_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             factura_id,
                             usuario_id,
                             producto_maestro_id,
-                            canonico_id,
                             codigo_ean_valido,
                             nombre,
                             precio_unitario,
@@ -1290,6 +1298,7 @@ async def save_invoice_with_image(
                 # ✅ NUEVO: Usar ProductResolver
                 # ========================================
                 # ✅ CAMBIO C: Usar buscar_o_crear_producto_inteligente
+                # ✅ CAMBIO C: Usar buscar_o_crear_producto_inteligente
                 producto_maestro_id = buscar_o_crear_producto_inteligente(
                     codigo=codigo,
                     nombre=nombre,
@@ -1306,22 +1315,22 @@ async def save_invoice_with_image(
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
+                            factura_id, usuario_id, producto_maestro_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, 1)
                     """,
-                        (factura_id, usuario_id, producto_maestro_id, canonico_id,
+                        (factura_id, usuario_id, producto_maestro_id,
                          codigo, nombre, precio),
                     )
                 else:
                     cursor.execute(
                         """
                         INSERT INTO items_factura (
-                            factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
+                            factura_id, usuario_id, producto_maestro_id,
                             codigo_leido, nombre_leido, precio_pagado, cantidad
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                        ) VALUES (?, ?, ?, ?, ?, ?, 1)
                     """,
-                        (factura_id, usuario_id, producto_maestro_id, canonico_id,
+                        (factura_id, usuario_id, producto_maestro_id,
                          codigo, nombre, precio),
                     )
 
@@ -1803,6 +1812,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     # ✅ NUEVO: Usar ProductResolver
                     # ========================================
                     # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
+                    # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
                     producto_maestro_id = None
 
                     if codigo and len(codigo) >= 3:
@@ -1821,15 +1831,14 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         cursor.execute(
                             """
                             INSERT INTO items_factura (
-                                factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
+                                factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 factura_id,
                                 usuario_id,
                                 producto_maestro_id,
-                                canonico_id,
                                 codigo or None,
                                 nombre,
                                 cantidad,
@@ -1840,15 +1849,14 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         cursor.execute(
                             """
                             INSERT INTO items_factura (
-                                factura_id, usuario_id, producto_maestro_id, producto_canonico_id,
+                                factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 factura_id,
                                 usuario_id,
                                 producto_maestro_id,
-                                canonico_id,
                                 codigo or None,
                                 nombre,
                                 cantidad,
