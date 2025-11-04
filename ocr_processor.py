@@ -559,3 +559,4 @@ print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica, Carulla, y mas")
 print("=" * 80)
 
 processor = OCRProcessor()
+
