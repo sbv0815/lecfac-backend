@@ -66,14 +66,10 @@ from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 from product_matcher import buscar_o_crear_producto_inteligente
-try:
-    from product_resolver import ProductResolver
-    PRODUCT_RESOLVER_AVAILABLE = True
-    print("✅ ProductResolver importado correctamente")
-except ImportError as e:
-    PRODUCT_RESOLVER_AVAILABLE = False
-    print(f"⚠️ ProductResolver no disponible: {e}")
-    print("   Se usará product_matcher como fallback")
+
+# ✅ ProductResolver removido - usando product_matcher
+PRODUCT_RESOLVER_AVAILABLE = False
+print("✅ product_matcher configurado")
 
 from admin_dashboard import router as admin_dashboard_router
 from auth import router as auth_router
@@ -1055,34 +1051,17 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                 # ========================================
                 # ✅ NUEVO: Usar ProductResolver
                 # ========================================
-                producto_maestro_id = None
-                canonico_id = None
-                variante_id = None
+                # ✅ CAMBIO B: Usar buscar_o_crear_producto_inteligente
+                producto_maestro_id = buscar_o_crear_producto_inteligente(
+                    codigo=codigo_ean_valido or "",
+                    nombre=nombre,
+                    precio=precio_unitario,
+                    establecimiento=establecimiento_raw,
+                    cursor=cursor,
+                    conn=conn
+                )
 
-                if codigo_ean_valido:
-                    try:
-                        resolver = ProductResolver()
-                        try:
-                            canonico_id, variante_id, accion = resolver.resolver_producto(
-                                codigo=codigo_ean_valido or "",
-                                nombre=nombre,
-                                establecimiento=establecimiento_raw,
-                                precio=precio_unitario,
-                                marca=None,
-                                categoria=None
-                            )
-
-                            # Para compatibilidad con código que espera producto_maestro_id
-                            producto_maestro_id = canonico_id
-
-                            print(f"   ✅ Producto canónico: {nombre} (ID: {canonico_id}, Variante: {variante_id}, Acción: {accion})")
-
-                        finally:
-                            resolver.close()
-
-                    except Exception as e:
-                        print(f"   ⚠️ Error en ProductResolver: {e}")
-                        traceback.print_exc()
+                print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                 # Guardar en items_factura
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
@@ -1310,34 +1289,17 @@ async def save_invoice_with_image(
                 # ========================================
                 # ✅ NUEVO: Usar ProductResolver
                 # ========================================
-                producto_maestro_id = None
-                canonico_id = None
-                variante_id = None
+                # ✅ CAMBIO C: Usar buscar_o_crear_producto_inteligente
+                producto_maestro_id = buscar_o_crear_producto_inteligente(
+                    codigo=codigo,
+                    nombre=nombre,
+                    precio=int(precio),
+                    establecimiento=establecimiento,
+                    cursor=cursor,
+                    conn=conn
+                )
 
-                try:
-                    resolver = ProductResolver()
-                    try:
-                        canonico_id, variante_id, accion = resolver.resolver_producto(
-                            codigo=codigo,
-                            nombre=nombre,
-                            establecimiento=establecimiento,
-                            precio=int(precio),
-                            marca=None,
-                            categoria=None
-                        )
-
-                        # Para compatibilidad
-                        producto_maestro_id = canonico_id
-
-                        print(f"   ✅ Producto canónico: {nombre} (ID: {canonico_id}, Variante: {variante_id}, Acción: {accion})")
-
-                    finally:
-                        resolver.close()
-
-                except Exception as e:
-                    print(f"   ⚠️ Error en ProductResolver: {e}")
-                    traceback.print_exc()
-                    continue
+                print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                 # Guardar en items_factura
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
@@ -1840,32 +1802,19 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     # ========================================
                     # ✅ NUEVO: Usar ProductResolver
                     # ========================================
+                    # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
                     producto_maestro_id = None
-                    canonico_id = None
-                    variante_id = None
 
                     if codigo and len(codigo) >= 3:
-                        try:
-                            resolver = ProductResolver()
-                            try:
-                                canonico_id, variante_id, accion = resolver.resolver_producto(
-                                    codigo=codigo,
-                                    nombre=nombre,
-                                    establecimiento=establecimiento,
-                                    precio=int(precio),
-                                    marca=None,
-                                    categoria=None
-                                )
-
-                                producto_maestro_id = canonico_id
-
-                                print(f"   ✅ Producto canónico: {nombre} (ID: {canonico_id}, Variante: {variante_id}, Acción: {accion})")
-
-                            finally:
-                                resolver.close()
-
-                        except Exception as e:
-                            print(f"   ⚠️ Error en ProductResolver para '{nombre}': {e}")
+                        producto_maestro_id = buscar_o_crear_producto_inteligente(
+                            codigo=codigo,
+                            nombre=nombre,
+                            precio=int(precio),
+                            establecimiento=establecimiento,
+                            cursor=cursor,
+                            conn=conn
+                        )
+                        print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                     # Guardar en items_factura
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
