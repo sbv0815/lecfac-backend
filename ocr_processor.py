@@ -1,27 +1,27 @@
-"""
+﻿"""
 ============================================================================
-SISTEMA DE PROCESAMIENTO AUTOMÁTICO DE OCR PARA FACTURAS
-VERSIÓN 3.1 - BUG FIX CRÍTICO: ProductResolver retorna maestro_id
+SISTEMA DE PROCESAMIENTO AUTOMÃTICO DE OCR PARA FACTURAS
+VERSIÃ“N 3.1 - BUG FIX CRÃTICO: ProductResolver retorna maestro_id
 ============================================================================
 
-MEJORAS EN ESTA VERSIÓN:
-✅ Integración con ProductResolver (sistema de productos canónicos)
-✅ FIX CRÍTICO: ProductResolver ahora retorna maestro_id directamente
-✅ Normalización inteligente de códigos por establecimiento
-✅ Detección automática de duplicados
-✅ Validación robusta de precios colombianos
-✅ Manejo de múltiples tipos de códigos (EAN, PLU, internos)
-✅ Actualización automática de inventario
-✅ Sistema de auditoría completo
+MEJORAS EN ESTA VERSIÃ“N:
+âœ… IntegraciÃ³n con ProductResolver (sistema de productos canÃ³nicos)
+âœ… FIX CRÃTICO: ProductResolver ahora retorna maestro_id directamente
+âœ… NormalizaciÃ³n inteligente de cÃ³digos por establecimiento
+âœ… DetecciÃ³n automÃ¡tica de duplicados
+âœ… ValidaciÃ³n robusta de precios colombianos
+âœ… Manejo de mÃºltiples tipos de cÃ³digos (EAN, PLU, internos)
+âœ… ActualizaciÃ³n automÃ¡tica de inventario
+âœ… Sistema de auditorÃ­a completo
 
 ARQUITECTURA:
-- productos_canonicos: Verdad única del producto
+- productos_canonicos: Verdad Ãºnica del producto
 - productos_variantes: Alias por establecimiento
 - productos_maestros: Legacy (compatibilidad)
 - items_factura: Items con referencias a todos los sistemas
 
 AUTOR: LecFac Team
-ÚLTIMA ACTUALIZACIÓN: 2025-11-04
+ÃšLTIMA ACTUALIZACIÃ“N: 2025-11-04
 ============================================================================
 """
 
@@ -42,27 +42,27 @@ from database import (
 )
 from claude_invoice import parse_invoice_with_claude
 
-# ✅ Importar normalizador de códigos
+# âœ… Importar normalizador de cÃ³digos
 from normalizador_codigos import normalizar_codigo_por_establecimiento
 
-# ✅ Importar ProductResolver (sistema canónico)
+# âœ… Importar ProductResolver (sistema canÃ³nico)
 try:
     from product_resolver import ProductResolver
     PRODUCT_RESOLVER_AVAILABLE = True
-    print("✅ ProductResolver cargado correctamente")
+    print("âœ… ProductResolver cargado correctamente")
 except ImportError as e:
     PRODUCT_RESOLVER_AVAILABLE = False
-    print(f"❌ ProductResolver no disponible: {e}")
-    print("   El sistema NO funcionará correctamente sin ProductResolver")
+    print(f"âŒ ProductResolver no disponible: {e}")
+    print("   El sistema NO funcionarÃ¡ correctamente sin ProductResolver")
 
-# ✅ Importar detector de duplicados
+# âœ… Importar detector de duplicados
 try:
     from duplicate_detector import detectar_duplicados_automaticamente
     DUPLICATE_DETECTOR_AVAILABLE = True
-    print("✅ Detector de duplicados cargado")
+    print("âœ… Detector de duplicados cargado")
 except ImportError:
     DUPLICATE_DETECTOR_AVAILABLE = False
-    print("⚠️ Detector de duplicados no disponible")
+    print("âš ï¸ Detector de duplicados no disponible")
 
 # Colas y tracking globales
 ocr_queue = Queue()
@@ -71,7 +71,7 @@ error_log = []
 
 
 # ==============================================================================
-# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
+# FUNCIÃ“N PARA LIMPIAR PRECIOS COLOMBIANOS
 # ==============================================================================
 
 def limpiar_precio_colombiano(precio_str) -> int:
@@ -81,11 +81,11 @@ def limpiar_precio_colombiano(precio_str) -> int:
     En Colombia NO se usan decimales/centavos, solo pesos enteros.
 
     Casos manejados:
-    - None, vacío → 0
-    - Enteros → sin cambios
-    - Floats → convertir a entero
-    - Strings con separadores de miles (., ,) → limpiar y convertir
-    - Strings con símbolos ($, COP) → limpiar y convertir
+    - None, vacÃ­o â†’ 0
+    - Enteros â†’ sin cambios
+    - Floats â†’ convertir a entero
+    - Strings con separadores de miles (., ,) â†’ limpiar y convertir
+    - Strings con sÃ­mbolos ($, COP) â†’ limpiar y convertir
 
     Args:
         precio_str: Precio en cualquier formato
@@ -101,7 +101,7 @@ def limpiar_precio_colombiano(precio_str) -> int:
         >>> limpiar_precio_colombiano(2500.0)
         2500
     """
-    # Caso 1: None o vacío
+    # Caso 1: None o vacÃ­o
     if precio_str is None or precio_str == "":
         return 0
 
@@ -114,21 +114,21 @@ def limpiar_precio_colombiano(precio_str) -> int:
         # Si es un float "limpio" como 2500.0
         if precio_str == int(precio_str):
             return max(0, int(precio_str))
-        # Si tiene decimales significativos, podría ser error OCR
+        # Si tiene decimales significativos, podrÃ­a ser error OCR
         # Ejemplo: 25.50 probablemente es $2,550
         return max(0, int(precio_str * 100))
 
     # Caso 4: Es string - procesar
     precio_str = str(precio_str).strip()
 
-    # Eliminar espacios y símbolos de moneda
+    # Eliminar espacios y sÃ­mbolos de moneda
     precio_str = precio_str.replace(" ", "")
     precio_str = precio_str.replace("$", "")
     precio_str = precio_str.replace("COP", "")
     precio_str = precio_str.replace("cop", "")
     precio_str = precio_str.strip()
 
-    # Caso 4A: Tiene múltiples puntos o comas (separador de miles)
+    # Caso 4A: Tiene mÃºltiples puntos o comas (separador de miles)
     # Ejemplo: "1.500.000" o "1,500,000"
     if precio_str.count('.') > 1 or precio_str.count(',') > 1:
         precio_str = precio_str.replace(",", "").replace(".", "")
@@ -140,11 +140,11 @@ def limpiar_precio_colombiano(precio_str) -> int:
         else:
             partes = precio_str.split(',')
 
-        # Si hay 3 dígitos después, es separador de miles
+        # Si hay 3 dÃ­gitos despuÃ©s, es separador de miles
         # Ejemplo: "1.500" = $1,500
         if len(partes) == 2 and len(partes[1]) == 3:
             precio_str = precio_str.replace(",", "").replace(".", "")
-        # Si hay 1-2 dígitos, en Colombia igual es separador de miles mal escrito
+        # Si hay 1-2 dÃ­gitos, en Colombia igual es separador de miles mal escrito
         # Ejemplo: "1.5" probablemente es $1,500 (OCR error)
         elif len(partes) == 2 and len(partes[1]) <= 2:
             precio_str = precio_str.replace(",", "").replace(".", "")
@@ -156,13 +156,13 @@ def limpiar_precio_colombiano(precio_str) -> int:
         precio = int(float(precio_str))
 
         if precio < 0:
-            print(f"   ⚠️ Precio negativo detectado: {precio}, retornando 0")
+            print(f"   âš ï¸ Precio negativo detectado: {precio}, retornando 0")
             return 0
 
         return precio
 
     except (ValueError, TypeError) as e:
-        print(f"   ⚠️ No se pudo convertir precio '{precio_str}': {e}")
+        print(f"   âš ï¸ No se pudo convertir precio '{precio_str}': {e}")
         return 0
 
 
@@ -172,12 +172,12 @@ def limpiar_precio_colombiano(precio_str) -> int:
 
 def validar_producto(nombre: str, precio: int, codigo: str = "") -> Tuple[bool, Optional[str]]:
     """
-    Valida que un producto cumpla con los requisitos mínimos
+    Valida que un producto cumpla con los requisitos mÃ­nimos
 
     Args:
         nombre: Nombre del producto
         precio: Precio en pesos
-        codigo: Código del producto (opcional)
+        codigo: CÃ³digo del producto (opcional)
 
     Returns:
         Tuple[es_valido, razon_rechazo]
@@ -197,7 +197,7 @@ def validar_producto(nombre: str, precio: int, codigo: str = "") -> Tuple[bool, 
 
     # Validar precio
     if precio <= 0:
-        return False, f"Precio inválido: ${precio:,}"
+        return False, f"Precio invÃ¡lido: ${precio:,}"
 
     if precio < 10:
         return False, f"Precio muy bajo: ${precio:,} (posible error OCR)"
@@ -217,20 +217,20 @@ def validar_producto(nombre: str, precio: int, codigo: str = "") -> Tuple[bool, 
 
 
 # ==============================================================================
-# CLASE OCPROCESSOR - VERSIÓN 3.1 CON BUG FIX
+# CLASE OCPROCESSOR - VERSIÃ“N 3.1 CON BUG FIX
 # ==============================================================================
 
 class OCRProcessor:
     """
-    Procesador automático de facturas con OCR - Versión 3.1
+    Procesador automÃ¡tico de facturas con OCR - VersiÃ³n 3.1
 
-    Características:
-    - Procesamiento asíncrono con cola
-    - Integración con ProductResolver
-    - Detección de duplicados
-    - Validación robusta
-    - Sistema de auditoría
-    - Actualización automática de inventario
+    CaracterÃ­sticas:
+    - Procesamiento asÃ­ncrono con cola
+    - IntegraciÃ³n con ProductResolver
+    - DetecciÃ³n de duplicados
+    - ValidaciÃ³n robusta
+    - Sistema de auditorÃ­a
+    - ActualizaciÃ³n automÃ¡tica de inventario
     - FIX: ProductResolver retorna maestro_id correctamente
     """
 
@@ -243,19 +243,19 @@ class OCRProcessor:
         self.last_processed = None
         self.worker_thread = None
 
-        # Validar que ProductResolver esté disponible
+        # Validar que ProductResolver estÃ© disponible
         if not PRODUCT_RESOLVER_AVAILABLE:
-            print("❌ ADVERTENCIA: ProductResolver no está disponible")
-            print("   El sistema NO funcionará correctamente")
+            print("âŒ ADVERTENCIA: ProductResolver no estÃ¡ disponible")
+            print("   El sistema NO funcionarÃ¡ correctamente")
 
     def start(self):
         """Inicia el procesador en background"""
         if self.is_running:
-            print("⚠️ Procesador ya está en ejecución")
+            print("âš ï¸ Procesador ya estÃ¡ en ejecuciÃ³n")
             return
 
         if not PRODUCT_RESOLVER_AVAILABLE:
-            print("❌ No se puede iniciar: ProductResolver no disponible")
+            print("âŒ No se puede iniciar: ProductResolver no disponible")
             return
 
         self.is_running = True
@@ -263,21 +263,21 @@ class OCRProcessor:
         self.worker_thread.start()
 
         print("=" * 80)
-        print("🤖 PROCESADOR OCR AUTOMÁTICO INICIADO")
+        print("ðŸ¤– PROCESADOR OCR AUTOMÃTICO INICIADO")
         print("=" * 80)
-        print("✅ VERSIÓN 3.1 - BUG FIX: maestro_id correcto")
-        print("✅ ProductResolver integrado")
-        print("✅ Normalización inteligente de códigos")
-        print("✅ Detección automática de duplicados")
-        print("✅ Validación robusta de productos")
-        print("✅ Actualización automática de inventario")
-        print("🏪 Soporta: ARA, D1, Éxito, Jumbo, Olímpica y más")
+        print("âœ… VERSIÃ“N 3.1 - BUG FIX: maestro_id correcto")
+        print("âœ… ProductResolver integrado")
+        print("âœ… NormalizaciÃ³n inteligente de cÃ³digos")
+        print("âœ… DetecciÃ³n automÃ¡tica de duplicados")
+        print("âœ… ValidaciÃ³n robusta de productos")
+        print("âœ… ActualizaciÃ³n automÃ¡tica de inventario")
+        print("ðŸª Soporta: ARA, D1, Ã‰xito, Jumbo, OlÃ­mpica y mÃ¡s")
         print("=" * 80)
 
     def stop(self):
         """Detiene el procesador"""
         self.is_running = False
-        print("🛑 Deteniendo procesador OCR...")
+        print("ðŸ›‘ Deteniendo procesador OCR...")
 
     def process_queue(self):
         """Procesa facturas continuamente de la cola"""
@@ -287,7 +287,7 @@ class OCRProcessor:
                     task = ocr_queue.get(timeout=1)
                     self.process_invoice(task)
 
-                    # Actualizar tasa de éxito
+                    # Actualizar tasa de Ã©xito
                     if self.processed_count + self.error_count > 0:
                         self.success_rate = (self.processed_count /
                                            (self.processed_count + self.error_count)) * 100
@@ -297,7 +297,7 @@ class OCRProcessor:
                     time.sleep(5)
 
             except Exception as e:
-                print(f"❌ Error en procesador: {e}")
+                print(f"âŒ Error en procesador: {e}")
                 error_log.append({
                     'timestamp': datetime.now(),
                     'error': str(e),
@@ -320,12 +320,12 @@ class OCRProcessor:
         user_id = task.get('user_id', 1)
 
         if not factura_id or not image_path:
-            print(f"❌ Task inválido: {task}")
+            print(f"âŒ Task invÃ¡lido: {task}")
             return
 
         try:
             print(f"\n{'='*80}")
-            print(f"🔄 PROCESANDO FACTURA #{factura_id}")
+            print(f"ðŸ”„ PROCESANDO FACTURA #{factura_id}")
             print(f"{'='*80}")
 
             processing[factura_id] = {
@@ -338,7 +338,7 @@ class OCRProcessor:
                 raise FileNotFoundError(f"Imagen no encontrada: {image_path}")
 
             # Procesar con Claude OCR
-            print("📸 Extrayendo datos con Claude Vision...")
+            print("ðŸ“¸ Extrayendo datos con Claude Vision...")
             result = parse_invoice_with_claude(image_path)
 
             # Conectar a base de datos
@@ -356,21 +356,21 @@ class OCRProcessor:
                 conn.commit()
 
                 # Actualizar inventario del usuario
-                print(f"\n📦 Actualizando inventario del usuario {user_id}...")
+                print(f"\nðŸ“¦ Actualizando inventario del usuario {user_id}...")
                 try:
                     actualizar_inventario_desde_factura(factura_id, user_id)
-                    print(f"   ✅ Inventario actualizado")
+                    print(f"   âœ… Inventario actualizado")
                 except Exception as e:
-                    print(f"   ⚠️ Error actualizando inventario: {e}")
+                    print(f"   âš ï¸ Error actualizando inventario: {e}")
 
                 # Guardar precios en tabla de precios
-                print(f"\n💰 Guardando precios históricos...")
+                print(f"\nðŸ’° Guardando precios histÃ³ricos...")
                 try:
                     resultado_precios = procesar_items_factura_y_guardar_precios(factura_id, user_id)
                     if resultado_precios.get('precios_guardados', 0) > 0:
-                        print(f"   ✅ {resultado_precios['precios_guardados']} precios guardados")
+                        print(f"   âœ… {resultado_precios['precios_guardados']} precios guardados")
                 except Exception as e:
-                    print(f"   ⚠️ Error guardando precios: {e}")
+                    print(f"   âš ï¸ Error guardando precios: {e}")
 
                 self.processed_count += 1
                 self.last_processed = datetime.now()
@@ -380,7 +380,7 @@ class OCRProcessor:
                     'completed_at': datetime.now()
                 }
 
-                print(f"\n✅ FACTURA #{factura_id} PROCESADA EXITOSAMENTE")
+                print(f"\nâœ… FACTURA #{factura_id} PROCESADA EXITOSAMENTE")
                 print(f"{'='*80}\n")
 
             else:
@@ -398,12 +398,12 @@ class OCRProcessor:
                     'failed_at': datetime.now()
                 }
 
-                print(f"⚠️ Error OCR en factura #{factura_id}: {result.get('error')}")
+                print(f"âš ï¸ Error OCR en factura #{factura_id}: {result.get('error')}")
 
             conn.close()
 
         except Exception as e:
-            print(f"❌ Error procesando factura {factura_id}: {e}")
+            print(f"âŒ Error procesando factura {factura_id}: {e}")
             traceback.print_exc()
 
             self.error_count += 1
@@ -419,9 +419,9 @@ class OCRProcessor:
 
         Args:
             cursor: Cursor de base de datos
-            conn: Conexión a base de datos
+            conn: ConexiÃ³n a base de datos
             factura_id: ID de la factura
-            data: Datos extraídos por OCR
+            data: Datos extraÃ­dos por OCR
             user_id: ID del usuario
         """
 
@@ -429,16 +429,16 @@ class OCRProcessor:
         cadena = detectar_cadena(establecimiento)
         total_factura = limpiar_precio_colombiano(data.get("total", 0))
 
-        print(f"🏪 Establecimiento: {establecimiento} (Cadena: {cadena})")
-        print(f"💵 Total factura: ${total_factura:,}")
+        print(f"ðŸª Establecimiento: {establecimiento} (Cadena: {cadena})")
+        print(f"ðŸ’µ Total factura: ${total_factura:,}")
 
         # ========================================
-        # PASO 1: DETECCIÓN DE DUPLICADOS
+        # PASO 1: DETECCIÃ“N DE DUPLICADOS
         # ========================================
         productos_originales = data.get("productos", [])
 
         print(f"\n{'='*70}")
-        print(f"🧹 LIMPIEZA DE DUPLICADOS")
+        print(f"ðŸ§¹ LIMPIEZA DE DUPLICADOS")
         print(f"{'='*70}")
 
         if DUPLICATE_DETECTOR_AVAILABLE and len(productos_originales) > 0:
@@ -452,7 +452,7 @@ class OCRProcessor:
                     "cantidad": prod.get("cantidad", 1)
                 })
 
-            # Ejecutar detección de duplicados
+            # Ejecutar detecciÃ³n de duplicados
             resultado_limpieza = detectar_duplicados_automaticamente(
                 productos=productos_para_detector,
                 total_factura=total_factura,
@@ -462,15 +462,15 @@ class OCRProcessor:
 
             # Mostrar resultado
             if resultado_limpieza["duplicados_detectados"]:
-                print(f"📊 Productos originales: {len(productos_originales)}")
-                print(f"✅ Productos limpios: {len(resultado_limpieza['productos_limpios'])}")
-                print(f"🗑️ Duplicados eliminados: {len(resultado_limpieza['productos_eliminados'])}")
+                print(f"ðŸ“Š Productos originales: {len(productos_originales)}")
+                print(f"âœ… Productos limpios: {len(resultado_limpieza['productos_limpios'])}")
+                print(f"ðŸ—‘ï¸ Duplicados eliminados: {len(resultado_limpieza['productos_eliminados'])}")
 
                 for prod_eliminado in resultado_limpieza["productos_eliminados"]:
-                    print(f"   ❌ {prod_eliminado['nombre'][:40]} (${prod_eliminado['valor']:,})")
-                    print(f"      Razón: {prod_eliminado['razon']}")
+                    print(f"   âŒ {prod_eliminado['nombre'][:40]} (${prod_eliminado['valor']:,})")
+                    print(f"      RazÃ³n: {prod_eliminado['razon']}")
             else:
-                print(f"✅ No se detectaron duplicados ({len(productos_originales)} productos)")
+                print(f"âœ… No se detectaron duplicados ({len(productos_originales)} productos)")
 
             # Convertir productos limpios de vuelta al formato original
             productos_a_procesar = []
@@ -484,8 +484,8 @@ class OCRProcessor:
         else:
             # Sin detector de duplicados, usar todos los productos
             productos_a_procesar = productos_originales
-            print(f"⚠️ Detector de duplicados no disponible")
-            print(f"📦 Procesando {len(productos_originales)} productos sin filtrar")
+            print(f"âš ï¸ Detector de duplicados no disponible")
+            print(f"ðŸ“¦ Procesando {len(productos_originales)} productos sin filtrar")
 
         print(f"{'='*70}\n")
 
@@ -493,7 +493,7 @@ class OCRProcessor:
         # PASO 2: PROCESAMIENTO DE PRODUCTOS
         # ========================================
         print(f"{'='*70}")
-        print(f"📦 PROCESAMIENTO DE PRODUCTOS")
+        print(f"ðŸ“¦ PROCESAMIENTO DE PRODUCTOS")
         print(f"{'='*70}\n")
 
         productos_guardados = 0
@@ -519,19 +519,19 @@ class OCRProcessor:
 
         # Mostrar resumen
         print(f"\n{'='*70}")
-        print(f"📊 RESUMEN DE PROCESAMIENTO")
+        print(f"ðŸ“Š RESUMEN DE PROCESAMIENTO")
         print(f"{'='*70}")
-        print(f"✅ Productos guardados: {productos_guardados}")
-        print(f"❌ Productos rechazados: {productos_rechazados}")
+        print(f"âœ… Productos guardados: {productos_guardados}")
+        print(f"âŒ Productos rechazados: {productos_rechazados}")
 
         if productos_rechazados > 0 and errores_detalle:
-            print(f"\n❌ Productos rechazados:")
-            for error in errores_detalle[:5]:  # Mostrar máximo 5
-                print(f"   • {error['nombre'][:40]} (${error['precio']:,})")
+            print(f"\nâŒ Productos rechazados:")
+            for error in errores_detalle[:5]:  # Mostrar mÃ¡ximo 5
+                print(f"   â€¢ {error['nombre'][:40]} (${error['precio']:,})")
 
         print(f"{'='*70}\n")
 
-        # Actualizar factura con estadísticas
+        # Actualizar factura con estadÃ­sticas
         cursor.execute("""
             UPDATE facturas
             SET productos_detectados = %s,
@@ -552,17 +552,17 @@ class OCRProcessor:
         cadena: str
     ) -> Optional[int]:
         """
-        ✅ VERSIÓN 3.1 - BUG FIX: ProductResolver retorna maestro_id
+        âœ… VERSIÃ“N 3.1 - BUG FIX: ProductResolver retorna maestro_id
 
         Guarda un producto en items_factura usando:
-        1. Normalización de códigos según establecimiento
-        2. ProductResolver para gestión de productos canónicos
+        1. NormalizaciÃ³n de cÃ³digos segÃºn establecimiento
+        2. ProductResolver para gestiÃ³n de productos canÃ³nicos
         3. Validaciones robustas
-        4. Sistema de auditoría
+        4. Sistema de auditorÃ­a
 
         Args:
             cursor: Cursor de base de datos
-            conn: Conexión a base de datos
+            conn: ConexiÃ³n a base de datos
             product: Diccionario con datos del producto
             factura_id: ID de la factura
             user_id: ID del usuario
@@ -570,11 +570,11 @@ class OCRProcessor:
             cadena: Cadena comercial
 
         Returns:
-            int: ID del item creado, o None si falló
+            int: ID del item creado, o None si fallÃ³
         """
         try:
             # ========================================
-            # EXTRACCIÓN Y LIMPIEZA DE DATOS
+            # EXTRACCIÃ“N Y LIMPIEZA DE DATOS
             # ========================================
             codigo_raw = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
@@ -583,40 +583,40 @@ class OCRProcessor:
             cantidad = int(product.get("cantidad", 1))
 
             # ========================================
-            # VALIDACIÓN DEL PRODUCTO
+            # VALIDACIÃ“N DEL PRODUCTO
             # ========================================
             es_valido, razon_rechazo = validar_producto(nombre, precio, codigo_raw)
 
             if not es_valido:
-                print(f"   ❌ RECHAZADO: {razon_rechazo}")
+                print(f"   âŒ RECHAZADO: {razon_rechazo}")
                 return None
 
             # ========================================
-            # NORMALIZACIÓN DE CÓDIGO
+            # NORMALIZACIÃ“N DE CÃ“DIGO
             # ========================================
             codigo, tipo_codigo, confianza = normalizar_codigo_por_establecimiento(
                 codigo_raw, establecimiento
             )
 
-            print(f"   💰 ${precio:,} x{cantidad}")
+            print(f"   ðŸ’° ${precio:,} x{cantidad}")
             if codigo_raw != codigo:
-                print(f"   📟 Código normalizado: {codigo_raw} → {codigo} ({tipo_codigo})")
+                print(f"   ðŸ“Ÿ CÃ³digo normalizado: {codigo_raw} â†’ {codigo} ({tipo_codigo})")
             else:
-                print(f"   📟 Código: {codigo or 'SIN CÓDIGO'} ({tipo_codigo})")
+                print(f"   ðŸ“Ÿ CÃ³digo: {codigo or 'SIN CÃ“DIGO'} ({tipo_codigo})")
 
             # ========================================
             # RESOLVER PRODUCTO CON PRODUCTRESOLVER
             # ========================================
             if not PRODUCT_RESOLVER_AVAILABLE:
-                print(f"   ❌ ProductResolver no disponible")
+                print(f"   âŒ ProductResolver no disponible")
                 return None
 
             resolver = ProductResolver()
             try:
-                # Usar código normalizado, o código raw si no hay normalizado
+                # Usar cÃ³digo normalizado, o cÃ³digo raw si no hay normalizado
                 codigo_final = codigo if codigo else codigo_raw
 
-                # 🔥 FIX: Ahora recibe 4 valores (incluye maestro_id)
+                # ðŸ”¥ FIX: Ahora recibe 4 valores (incluye maestro_id)
                 canonico_id, variante_id, maestro_id, accion = resolver.resolver_producto(
                     codigo=codigo_final if codigo_final else f"INTERNO_{hash(nombre) % 100000}",
                     nombre=nombre,
@@ -626,23 +626,23 @@ class OCRProcessor:
                     categoria=None  # TODO: Extraer de Claude en futuras versiones
                 )
 
-                # 🔥 FIX: Usar maestro_id directamente del resolver
+                # ðŸ”¥ FIX: Usar maestro_id directamente del resolver
                 producto_maestro_id = maestro_id
 
                 accion_emoji = {
-                    'found_variant': '🔍',
-                    'found_canonical': '🆕',
-                    'created_new': '✨'
-                }.get(accion, '❓')
+                    'found_variant': 'ðŸ”',
+                    'found_canonical': 'ðŸ†•',
+                    'created_new': 'âœ¨'
+                }.get(accion, 'â“')
 
-                print(f"   {accion_emoji} ProductResolver: Canónico={canonico_id}, Variante={variante_id}, Maestro={maestro_id}")
+                print(f"   {accion_emoji} ProductResolver: CanÃ³nico={canonico_id}, Variante={variante_id}, Maestro={maestro_id}")
 
                 if not producto_maestro_id:
-                    print(f"   ⚠️ ProductResolver no retornó maestro_id válido")
+                    print(f"   âš ï¸ ProductResolver no retornÃ³ maestro_id vÃ¡lido")
                     return None
 
             except Exception as e:
-                print(f"   ❌ Error en ProductResolver: {e}")
+                print(f"   âŒ Error en ProductResolver: {e}")
                 traceback.print_exc()
                 return None
             finally:
@@ -682,12 +682,12 @@ class OCRProcessor:
             item_id = cursor.fetchone()[0]
             conn.commit()
 
-            print(f"   ✅ Item guardado (ID: {item_id})")
+            print(f"   âœ… Item guardado (ID: {item_id})")
 
             return item_id
 
         except Exception as e:
-            print(f"   ❌ Error guardando producto: {e}")
+            print(f"   âŒ Error guardando producto: {e}")
             traceback.print_exc()
             conn.rollback()
             return None
@@ -711,18 +711,18 @@ class OCRProcessor:
 
     def get_stats(self) -> Dict[str, Any]:
         """
-        Retorna estadísticas del procesador
+        Retorna estadÃ­sticas del procesador
 
         Returns:
-            Dict con estadísticas:
-            - is_running: Si está activo
+            Dict con estadÃ­sticas:
+            - is_running: Si estÃ¡ activo
             - processed_count: Facturas procesadas
             - error_count: Facturas con error
-            - success_rate: Tasa de éxito (%)
-            - last_processed: Última factura procesada
-            - queue_size: Tamaño de la cola
+            - success_rate: Tasa de Ã©xito (%)
+            - last_processed: Ãšltima factura procesada
+            - queue_size: TamaÃ±o de la cola
             - processing_count: Facturas en proceso
-            - recent_errors: Últimos errores
+            - recent_errors: Ãšltimos errores
         """
         return {
             'is_running': self.is_running,
@@ -743,19 +743,19 @@ class OCRProcessor:
 
 
 # ==============================================================================
-# INICIALIZACIÓN
+# INICIALIZACIÃ“N
 # ==============================================================================
 
 print("=" * 80)
-print("✅ OCR PROCESSOR V3.1 CARGADO - BUG FIX")
+print("âœ… OCR PROCESSOR V3.1 CARGADO - BUG FIX")
 print("=" * 80)
-print("🐛 FIX CRÍTICO: ProductResolver retorna maestro_id correctamente")
-print("📟 Normalización inteligente de códigos: ✅")
-print("🧹 Detección automática de duplicados: ✅" if DUPLICATE_DETECTOR_AVAILABLE else "🧹 Detección automática de duplicados: ❌")
-print("🎯 ProductResolver (sistema canónico): ✅" if PRODUCT_RESOLVER_AVAILABLE else "🎯 ProductResolver (sistema canónico): ❌")
-print("💰 Validación robusta de precios: ✅")
-print("📦 Actualización automática de inventario: ✅")
-print("🏪 Soporta: ARA, D1, Éxito, Jumbo, Olímpica, Carulla, y más")
+print("ðŸ› FIX CRÃTICO: ProductResolver retorna maestro_id correctamente")
+print("ðŸ“Ÿ NormalizaciÃ³n inteligente de cÃ³digos: âœ…")
+print("ðŸ§¹ DetecciÃ³n automÃ¡tica de duplicados: âœ…" if DUPLICATE_DETECTOR_AVAILABLE else "ðŸ§¹ DetecciÃ³n automÃ¡tica de duplicados: âŒ")
+print("ðŸŽ¯ ProductResolver (sistema canÃ³nico): âœ…" if PRODUCT_RESOLVER_AVAILABLE else "ðŸŽ¯ ProductResolver (sistema canÃ³nico): âŒ")
+print("ðŸ’° ValidaciÃ³n robusta de precios: âœ…")
+print("ðŸ“¦ ActualizaciÃ³n automÃ¡tica de inventario: âœ…")
+print("ðŸª Soporta: ARA, D1, Ã‰xito, Jumbo, OlÃ­mpica, Carulla, y mÃ¡s")
 print("=" * 80)
 
 # Crear instancia global del procesador
