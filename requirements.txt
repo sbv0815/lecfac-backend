@@ -9,6 +9,8 @@ passlib[bcrypt]==1.7.4
 python-dotenv==1.0.0
 psycopg2-binary==2.9.9
 pydantic==2.5.0
+pydantic[email]==2.5.0
+email-validator==2.1.0
 jinja2==3.1.2
 PyJWT==2.8.0
 requests==2.31.0
@@ -18,5 +20,3 @@ openpyxl==3.1.2
 pypdf2==3.0.1
 markdown==3.5.1
 unidecode==1.3.7
-
-# Force rebuild 10/27/2025 07:01:16
