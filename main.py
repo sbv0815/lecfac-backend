@@ -59,7 +59,6 @@ from database import (
 
 # Importar routers
 from api_inventario import router as inventario_router
-from api_stats import router as stats_router
 from audit_system import AuditSystem
 from mobile_endpoints import router as mobile_router
 from storage import save_image_to_db, get_image_from_db
@@ -303,7 +302,7 @@ app.add_middleware(
 )
 print("✅ CORS configurado")
 
-app.include_router(stats_router)
+
 app.include_router(inventario_router)
 app.include_router(diagnostico_router)
 
