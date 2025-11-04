@@ -65,6 +65,7 @@ from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 from product_matcher import buscar_o_crear_producto_inteligente
+from comparacion_precios import router as comparacion_router
 
 # ✅ ProductResolver removido - usando product_matcher
 PRODUCT_RESOLVER_AVAILABLE = False
@@ -305,6 +306,9 @@ print("✅ CORS configurado")
 
 app.include_router(inventario_router)
 app.include_router(diagnostico_router)
+app.include_router(comparacion_router, tags=["comparacion"])
+
+print("✅ comparacion_router registrado en /api/productos/*")
 
 @app.post("/invoices/parse-video")
 async def parse_video(
