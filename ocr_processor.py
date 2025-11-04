@@ -1,11 +1,12 @@
 """
 ============================================================================
 SISTEMA DE PROCESAMIENTO AUTOMÁTICO DE OCR PARA FACTURAS
-VERSIÓN 3.0 - INTEGRACIÓN COMPLETA CON PRODUCTRESOLVER
+VERSIÓN 3.1 - BUG FIX CRÍTICO: ProductResolver retorna maestro_id
 ============================================================================
 
 MEJORAS EN ESTA VERSIÓN:
 ✅ Integración con ProductResolver (sistema de productos canónicos)
+✅ FIX CRÍTICO: ProductResolver ahora retorna maestro_id directamente
 ✅ Normalización inteligente de códigos por establecimiento
 ✅ Detección automática de duplicados
 ✅ Validación robusta de precios colombianos
@@ -216,12 +217,12 @@ def validar_producto(nombre: str, precio: int, codigo: str = "") -> Tuple[bool, 
 
 
 # ==============================================================================
-# CLASE OCPROCESSOR - VERSIÓN 3.0 CON PRODUCTRESOLVER
+# CLASE OCPROCESSOR - VERSIÓN 3.1 CON BUG FIX
 # ==============================================================================
 
 class OCRProcessor:
     """
-    Procesador automático de facturas con OCR - Versión 3.0
+    Procesador automático de facturas con OCR - Versión 3.1
 
     Características:
     - Procesamiento asíncrono con cola
@@ -230,6 +231,7 @@ class OCRProcessor:
     - Validación robusta
     - Sistema de auditoría
     - Actualización automática de inventario
+    - FIX: ProductResolver retorna maestro_id correctamente
     """
 
     def __init__(self):
@@ -263,7 +265,8 @@ class OCRProcessor:
         print("=" * 80)
         print("🤖 PROCESADOR OCR AUTOMÁTICO INICIADO")
         print("=" * 80)
-        print("✅ VERSIÓN 3.0 - ProductResolver integrado")
+        print("✅ VERSIÓN 3.1 - BUG FIX: maestro_id correcto")
+        print("✅ ProductResolver integrado")
         print("✅ Normalización inteligente de códigos")
         print("✅ Detección automática de duplicados")
         print("✅ Validación robusta de productos")
@@ -549,7 +552,7 @@ class OCRProcessor:
         cadena: str
     ) -> Optional[int]:
         """
-        ✅ VERSIÓN 3.0 - CON PRODUCTRESOLVER INTEGRADO
+        ✅ VERSIÓN 3.1 - BUG FIX: ProductResolver retorna maestro_id
 
         Guarda un producto en items_factura usando:
         1. Normalización de códigos según establecimiento
@@ -613,7 +616,8 @@ class OCRProcessor:
                 # Usar código normalizado, o código raw si no hay normalizado
                 codigo_final = codigo if codigo else codigo_raw
 
-                canonico_id, variante_id, accion = resolver.resolver_producto(
+                # 🔥 FIX: Ahora recibe 4 valores (incluye maestro_id)
+                canonico_id, variante_id, maestro_id, accion = resolver.resolver_producto(
                     codigo=codigo_final if codigo_final else f"INTERNO_{hash(nombre) % 100000}",
                     nombre=nombre,
                     establecimiento=establecimiento,
@@ -622,40 +626,19 @@ class OCRProcessor:
                     categoria=None  # TODO: Extraer de Claude en futuras versiones
                 )
 
+                # 🔥 FIX: Usar maestro_id directamente del resolver
+                producto_maestro_id = maestro_id
+
                 accion_emoji = {
                     'found_variant': '🔍',
                     'found_canonical': '🆕',
                     'created_new': '✨'
                 }.get(accion, '❓')
 
-                print(f"   {accion_emoji} ProductResolver: Canónico={canonico_id}, Variante={variante_id}")
-
-                # Obtener producto_maestro_id desde el canónico
-                cursor.execute("""
-                    SELECT id FROM productos_maestros
-                    WHERE producto_canonico_id = %s
-                    LIMIT 1
-                """, (canonico_id,))
-
-                result = cursor.fetchone()
-                producto_maestro_id = result[0] if result else None
+                print(f"   {accion_emoji} ProductResolver: Canónico={canonico_id}, Variante={variante_id}, Maestro={maestro_id}")
 
                 if not producto_maestro_id:
-                    # El ProductResolver debería haber creado el maestro
-                    # Hacer commit y reintentar
-                    conn.commit()
-
-                    cursor.execute("""
-                        SELECT id FROM productos_maestros
-                        WHERE producto_canonico_id = %s
-                        LIMIT 1
-                    """, (canonico_id,))
-
-                    result = cursor.fetchone()
-                    producto_maestro_id = result[0] if result else None
-
-                if not producto_maestro_id:
-                    print(f"   ⚠️ No se pudo obtener producto_maestro_id para canónico {canonico_id}")
+                    print(f"   ⚠️ ProductResolver no retornó maestro_id válido")
                     return None
 
             except Exception as e:
@@ -764,8 +747,9 @@ class OCRProcessor:
 # ==============================================================================
 
 print("=" * 80)
-print("✅ OCR PROCESSOR V3.0 CARGADO")
+print("✅ OCR PROCESSOR V3.1 CARGADO - BUG FIX")
 print("=" * 80)
+print("🐛 FIX CRÍTICO: ProductResolver retorna maestro_id correctamente")
 print("📟 Normalización inteligente de códigos: ✅")
 print("🧹 Detección automática de duplicados: ✅" if DUPLICATE_DETECTOR_AVAILABLE else "🧹 Detección automática de duplicados: ❌")
 print("🎯 ProductResolver (sistema canónico): ✅" if PRODUCT_RESOLVER_AVAILABLE else "🎯 ProductResolver (sistema canónico): ❌")
