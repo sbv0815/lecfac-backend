@@ -6,6 +6,12 @@ Resuelve productos usando la arquitectura unificada:
 - productos_canonicos: La verdad única del producto
 - productos_variantes: Alias por establecimiento
 - productos_maestros: Legacy (compatibilidad)
+
+VERSIÓN 3.1 - BUG FIX CRÍTICO
+============================================================================
+✅ CORREGIDO: Sincronización de producto_maestro
+✅ CORREGIDO: Retorna maestro_id directamente
+✅ CORREGIDO: Commit forzado antes de retornar
 ============================================================================
 """
 
@@ -22,7 +28,8 @@ class ProductResolver:
     1. Busca variante existente (código + establecimiento)
     2. Si no existe, busca en canónicos por EAN
     3. Si no existe, crea canónico nuevo + variante
-    4. Actualiza/crea producto_maestro para compatibilidad
+    4. Crea/actualiza producto_maestro para compatibilidad
+    5. Retorna IDs (canónico, variante, maestro)
     """
 
     def __init__(self):
@@ -47,7 +54,7 @@ class ProductResolver:
         precio: int,
         marca: Optional[str] = None,
         categoria: Optional[str] = None
-    ) -> Tuple[int, int, str]:
+    ) -> Tuple[int, int, int, str]:
         """
         Resuelve un producto y retorna IDs + acción realizada
 
@@ -60,9 +67,10 @@ class ProductResolver:
             categoria: Categoría del producto (opcional)
 
         Returns:
-            Tuple[canonico_id, variante_id, accion]
+            Tuple[canonico_id, variante_id, maestro_id, accion]
             - canonico_id: ID del producto canónico
             - variante_id: ID de la variante
+            - maestro_id: ID del producto maestro (legacy)
             - accion: 'found_variant' | 'found_canonical' | 'created_new'
         """
 
@@ -87,7 +95,16 @@ class ProductResolver:
             # Actualizar estadísticas de la variante
             self._actualizar_variante(variante_id)
 
-            return (canonico_id, variante_id, 'found_variant')
+            # Obtener o crear maestro para este canónico
+            maestro_id = self._obtener_maestro_por_canonico(canonico_id)
+
+            if not maestro_id:
+                # Crear maestro si no existe
+                maestro_id = self._crear_producto_maestro(
+                    canonico_id, codigo, nombre, marca, categoria
+                )
+
+            return (canonico_id, variante_id, maestro_id, 'found_variant')
 
         # PASO 2: Buscar canónico por EAN (si es EAN válido)
         canonico_id = None
@@ -117,9 +134,14 @@ class ProductResolver:
         )
 
         # PASO 5: Crear/actualizar producto_maestro (legacy)
-        self._sincronizar_producto_maestro(canonico_id, codigo, nombre, marca, categoria)
+        maestro_id = self._sincronizar_producto_maestro(
+            canonico_id, codigo, nombre, marca, categoria
+        )
 
-        return (canonico_id, variante_id, 'created_new')
+        if not maestro_id:
+            raise Exception(f"No se pudo crear producto_maestro para canónico {canonico_id}")
+
+        return (canonico_id, variante_id, maestro_id, 'created_new')
 
     def _determinar_tipo_codigo(self, codigo: str) -> str:
         """Determina el tipo de código (EAN, PLU, INTERNO)"""
@@ -338,17 +360,9 @@ class ProductResolver:
             print(f"⚠️ Error actualizando variante: {e}")
             self.conn.rollback()
 
-    def _sincronizar_producto_maestro(
-        self,
-        canonico_id: int,
-        codigo: str,
-        nombre: str,
-        marca: Optional[str],
-        categoria: Optional[str]
-    ):
-        """Sincroniza con productos_maestros (legacy) para compatibilidad"""
+    def _obtener_maestro_por_canonico(self, canonico_id: int) -> Optional[int]:
+        """Obtiene el ID del producto_maestro asociado a un canónico"""
         try:
-            # Buscar si ya existe
             if self.database_type == "postgresql":
                 self.cursor.execute("""
                     SELECT id FROM productos_maestros
@@ -362,12 +376,88 @@ class ProductResolver:
                     LIMIT 1
                 """, (canonico_id,))
 
-            maestro = self.cursor.fetchone()
+            result = self.cursor.fetchone()
+            return result[0] if result else None
 
-            if maestro:
+        except Exception as e:
+            print(f"⚠️ Error obteniendo maestro por canónico: {e}")
+            return None
+
+    def _crear_producto_maestro(
+        self,
+        canonico_id: int,
+        codigo: str,
+        nombre: str,
+        marca: Optional[str],
+        categoria: Optional[str]
+    ) -> int:
+        """Crea un nuevo producto_maestro vinculado a un canónico"""
+        try:
+            codigo_ean = codigo if len(codigo) >= 8 and codigo.isdigit() else None
+
+            if self.database_type == "postgresql":
+                self.cursor.execute("""
+                    INSERT INTO productos_maestros (
+                        producto_canonico_id,
+                        codigo_ean,
+                        nombre_normalizado,
+                        marca,
+                        categoria,
+                        total_reportes,
+                        primera_vez_reportado,
+                        ultima_actualizacion
+                    ) VALUES (%s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING id
+                """, (canonico_id, codigo_ean, nombre, marca, categoria))
+
+                maestro_id = self.cursor.fetchone()[0]
+            else:
+                self.cursor.execute("""
+                    INSERT INTO productos_maestros (
+                        producto_canonico_id,
+                        codigo_ean,
+                        nombre_normalizado,
+                        marca,
+                        categoria,
+                        total_reportes
+                    ) VALUES (?, ?, ?, ?, ?, 1)
+                """, (canonico_id, codigo_ean, nombre, marca, categoria))
+
+                maestro_id = self.cursor.lastrowid
+
+            self.conn.commit()
+
+            print(f"   ✅ Producto maestro creado: {nombre} (ID: {maestro_id}, Canónico: {canonico_id})")
+
+            return maestro_id
+
+        except Exception as e:
+            print(f"❌ Error creando producto_maestro: {e}")
+            import traceback
+            traceback.print_exc()
+            self.conn.rollback()
+            raise e
+
+    def _sincronizar_producto_maestro(
+        self,
+        canonico_id: int,
+        codigo: str,
+        nombre: str,
+        marca: Optional[str],
+        categoria: Optional[str]
+    ) -> int:
+        """
+        Sincroniza con productos_maestros (legacy) para compatibilidad
+
+        ✅ CORREGIDO: Ahora retorna el maestro_id correctamente
+        ✅ CORREGIDO: Commit forzado antes de retornar
+        """
+        try:
+            # Buscar si ya existe un maestro para este canónico
+            maestro_id = self._obtener_maestro_por_canonico(canonico_id)
+
+            if maestro_id:
                 # Actualizar existente
-                maestro_id = maestro[0]
-
                 if self.database_type == "postgresql":
                     self.cursor.execute("""
                         UPDATE productos_maestros
@@ -381,40 +471,26 @@ class ProductResolver:
                         SET total_reportes = total_reportes + 1
                         WHERE id = ?
                     """, (maestro_id,))
+
+                self.conn.commit()
+
+                print(f"   ✅ Producto maestro actualizado (ID: {maestro_id})")
+
+                return maestro_id
             else:
-                # Crear nuevo
-                codigo_ean = codigo if len(codigo) >= 8 and codigo.isdigit() else None
+                # Crear nuevo maestro
+                maestro_id = self._crear_producto_maestro(
+                    canonico_id, codigo, nombre, marca, categoria
+                )
 
-                if self.database_type == "postgresql":
-                    self.cursor.execute("""
-                        INSERT INTO productos_maestros (
-                            producto_canonico_id,
-                            codigo_ean,
-                            nombre_normalizado,
-                            marca,
-                            categoria,
-                            total_reportes,
-                            primera_vez_reportado,
-                            ultima_actualizacion
-                        ) VALUES (%s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """, (canonico_id, codigo_ean, nombre, marca, categoria))
-                else:
-                    self.cursor.execute("""
-                        INSERT INTO productos_maestros (
-                            producto_canonico_id,
-                            codigo_ean,
-                            nombre_normalizado,
-                            marca,
-                            categoria,
-                            total_reportes
-                        ) VALUES (?, ?, ?, ?, ?, 1)
-                    """, (canonico_id, codigo_ean, nombre, marca, categoria))
-
-            self.conn.commit()
+                return maestro_id
 
         except Exception as e:
-            print(f"⚠️ Error sincronizando producto_maestro: {e}")
+            print(f"❌ Error sincronizando producto_maestro: {e}")
+            import traceback
+            traceback.print_exc()
             self.conn.rollback()
+            raise e
 
 
 # ============================================================================
@@ -428,12 +504,12 @@ def resolver_producto_simple(
     precio: int,
     marca: Optional[str] = None,
     categoria: Optional[str] = None
-) -> Tuple[int, int, str]:
+) -> Tuple[int, int, int, str]:
     """
     Función de conveniencia para resolver un producto sin manejar conexión
 
     Returns:
-        Tuple[canonico_id, variante_id, accion]
+        Tuple[canonico_id, variante_id, maestro_id, accion]
     """
     resolver = ProductResolver()
     try:
@@ -455,13 +531,13 @@ def resolver_producto_simple(
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("🧪 TESTING PRODUCT RESOLVER")
+    print("🧪 TESTING PRODUCT RESOLVER V3.1")
     print("=" * 80)
 
     # Test 1: Crear producto nuevo
     print("\n1️⃣ Test: Crear producto nuevo")
     try:
-        canonico_id, variante_id, accion = resolver_producto_simple(
+        canonico_id, variante_id, maestro_id, accion = resolver_producto_simple(
             codigo="7702129001234",
             nombre="Leche Colanta Entera 1100ml",
             establecimiento="JUMBO",
@@ -471,6 +547,7 @@ if __name__ == "__main__":
         )
         print(f"✅ Canónico ID: {canonico_id}")
         print(f"✅ Variante ID: {variante_id}")
+        print(f"✅ Maestro ID: {maestro_id}")
         print(f"✅ Acción: {accion}")
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -478,7 +555,7 @@ if __name__ == "__main__":
     # Test 2: Buscar producto existente
     print("\n2️⃣ Test: Buscar mismo producto")
     try:
-        canonico_id, variante_id, accion = resolver_producto_simple(
+        canonico_id, variante_id, maestro_id, accion = resolver_producto_simple(
             codigo="7702129001234",
             nombre="Leche Colanta Entera 1100ml",
             establecimiento="JUMBO",
@@ -488,6 +565,7 @@ if __name__ == "__main__":
         )
         print(f"✅ Canónico ID: {canonico_id}")
         print(f"✅ Variante ID: {variante_id}")
+        print(f"✅ Maestro ID: {maestro_id}")
         print(f"✅ Acción: {accion}")
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -495,7 +573,7 @@ if __name__ == "__main__":
     # Test 3: Mismo EAN, diferente establecimiento
     print("\n3️⃣ Test: Mismo EAN, diferente establecimiento")
     try:
-        canonico_id, variante_id, accion = resolver_producto_simple(
+        canonico_id, variante_id, maestro_id, accion = resolver_producto_simple(
             codigo="7702129001234",
             nombre="Leche Colanta Entera 1100ml",
             establecimiento="EXITO",
@@ -505,6 +583,7 @@ if __name__ == "__main__":
         )
         print(f"✅ Canónico ID: {canonico_id}")
         print(f"✅ Variante ID: {variante_id}")
+        print(f"✅ Maestro ID: {maestro_id}")
         print(f"✅ Acción: {accion}")
     except Exception as e:
         print(f"❌ Error: {e}")
