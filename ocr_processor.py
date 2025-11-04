@@ -6,7 +6,7 @@ VERSION 3.2 - ROLLBACK A SISTEMA FUNCIONAL
 
 CAMBIOS EN ESTA VERSION:
 - REMOVIDO: ProductResolver (sistema de canonicos con bugs)
-- RESTAURADO: product_matching_v2.py (sistema probado y funcional)
+- RESTAURADO: product_matcher.py (sistema probado y funcional)
 - SIMPLIFICADO: Flujo directo a producto_maestro_id
 - OPTIMIZADO: Menos pasos, mas confiabilidad
 
@@ -40,15 +40,15 @@ from claude_invoice import parse_invoice_with_claude
 # Importar normalizador de codigos (solo la función de normalización)
 from normalizador_codigos import normalizar_codigo_por_establecimiento
 
-# Importar product_matching_v2 (sistema funcional para buscar/crear productos)
+# Importar product_matcher (sistema funcional para buscar/crear productos)
 try:
-    from product_matching_v2 import buscar_o_crear_producto_inteligente as buscar_producto_v2
+    from product_matcher import buscar_o_crear_producto_inteligente as buscar_producto_v2
     PRODUCT_MATCHING_AVAILABLE = True
-    print("✅ product_matching_v2 cargado correctamente")
+    print("✅ product_matcher cargado correctamente")
 except ImportError as e:
     PRODUCT_MATCHING_AVAILABLE = False
-    print(f"❌ product_matching_v2 no disponible: {e}")
-    print("   El sistema NO funcionara sin product_matching_v2")
+    print(f"❌ product_matcher no disponible: {e}")
+    print("   El sistema NO funcionara sin product_matcher")
 
 # Importar detector de duplicados
 try:
@@ -164,7 +164,7 @@ class OCRProcessor:
         print("🚀 PROCESADOR OCR AUTOMATICO INICIADO")
         print("=" * 80)
         print("VERSION 3.2 - ROLLBACK A SISTEMA FUNCIONAL")
-        print("✅ product_matching_v2 integrado")
+        print("✅ product_matcher integrado")
         print("✅ Normalizacion inteligente de codigos")
         print("✅ Deteccion automatica de duplicados")
         print("✅ Validacion robusta de productos")
@@ -452,7 +452,7 @@ class OCRProcessor:
             try:
                 codigo_final = codigo if codigo else codigo_raw if codigo_raw else ""
 
-                # Llamar a product_matching_v2 (buscar_producto_v2 es el alias)
+                # Llamar a product_matcher (buscar_producto_v2 es el alias)
                 producto_maestro_id = buscar_producto_v2(
                     codigo=codigo_final,
                     nombre=nombre,
@@ -469,7 +469,7 @@ class OCRProcessor:
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id}")
 
             except Exception as e:
-                print(f"   ❌ Error en product_matching_v2: {e}")
+                print(f"   ❌ Error en product_matcher: {e}")
                 traceback.print_exc()
                 return None
 
@@ -549,10 +549,10 @@ class OCRProcessor:
 print("=" * 80)
 print("🚀 OCR PROCESSOR V3.2 CARGADO - ROLLBACK FUNCIONAL")
 print("=" * 80)
-print("✅ Sistema simplificado con product_matching_v2")
+print("✅ Sistema simplificado con product_matcher")
 print("✅ Normalizacion inteligente de codigos: OK")
 print("✅ Deteccion automatica de duplicados: OK" if DUPLICATE_DETECTOR_AVAILABLE else "⚠️  Deteccion automatica de duplicados: NO")
-print("✅ product_matching_v2 (sistema funcional): OK" if PRODUCT_MATCHING_AVAILABLE else "❌ product_matching_v2: NO")
+print("✅ product_matcher (sistema funcional): OK" if PRODUCT_MATCHING_AVAILABLE else "❌ product_matcher: NO")
 print("✅ Validacion robusta de precios: OK")
 print("✅ Actualizacion automatica de inventario: OK")
 print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica, Carulla, y mas")
