@@ -169,10 +169,10 @@ async function cargarProductos(pagina = 1, busqueda = '', filtro = '') {
 }
 
 function renderizarTabla(productos) {
-    const tbody = document.querySelector('#tabla-productos tbody');
+    const tbody = document.querySelector('#productos-body');
 
     if (!tbody) {
-        console.error('❌ No se encontró tbody de tabla-productos');
+        console.error('❌ No se encontró #productos-body');
         return;
     }
 
