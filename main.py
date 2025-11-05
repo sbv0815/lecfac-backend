@@ -901,6 +901,14 @@ async def serve_editor():
     print("❌ Archivo editor.html no encontrado")
     raise HTTPException(status_code=404, detail="Editor no encontrado")
 
+@app.get("/productos.html", response_class=HTMLResponse)
+async def serve_productos():
+    """Servir página de gestión de productos v2"""
+    try:
+        return FileResponse("productos.html", media_type="text/html")
+    except Exception as e:
+        print(f"❌ Error sirviendo productos.html: {e}")
+        raise HTTPException(status_code=404, detail=f"Productos no disponible: {e}")
 
 @app.get("/health")
 @app.get("/api/health-check")
