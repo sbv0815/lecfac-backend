@@ -97,18 +97,18 @@ async def comparar_precios_producto(
                     f.establecimiento,
                     f.cadena,
                     i.precio_pagado,
-                    f.fecha as fecha_compra,
+                    f.fecha_cargue as fecha_compra,
                     COUNT(*) OVER (PARTITION BY f.establecimiento) as num_reportes,
                     AVG(i.precio_pagado) OVER (PARTITION BY f.establecimiento) as precio_promedio,
                     MIN(i.precio_pagado) OVER (PARTITION BY f.establecimiento) as precio_minimo,
                     MAX(i.precio_pagado) OVER (PARTITION BY f.establecimiento) as precio_maximo,
-                    MAX(f.fecha) OVER (PARTITION BY f.establecimiento) as fecha_ultimo_reporte
+                    MAX(f.fecha_cargue) OVER (PARTITION BY f.establecimiento) as fecha_ultimo_reporte
                 FROM items_factura i
                 INNER JOIN facturas f ON i.factura_id = f.id
                 WHERE i.producto_maestro_id = %s
-                AND f.fecha >= %s
+                AND f.fecha_cargue >= %s
                 AND i.precio_pagado > 0
-                ORDER BY f.establecimiento, f.fecha DESC
+                ORDER BY f.establecimiento, f.fecha_cargue DESC
             """, (producto_id, fecha_limite))
         else:
             cursor.execute("""
@@ -116,18 +116,18 @@ async def comparar_precios_producto(
                     f.establecimiento,
                     f.cadena,
                     i.precio_pagado,
-                    f.fecha as fecha_compra,
+                    f.fecha_cargue as fecha_compra,
                     COUNT(*) OVER (PARTITION BY f.establecimiento) as num_reportes,
                     AVG(i.precio_pagado) OVER (PARTITION BY f.establecimiento) as precio_promedio,
                     MIN(i.precio_pagado) OVER (PARTITION BY f.establecimiento) as precio_minimo,
                     MAX(i.precio_pagado) OVER (PARTITION BY f.establecimiento) as precio_maximo,
-                    MAX(f.fecha) OVER (PARTITION BY f.establecimiento) as fecha_ultimo_reporte
+                    MAX(f.fecha_cargue) OVER (PARTITION BY f.establecimiento) as fecha_ultimo_reporte
                 FROM items_factura i
                 INNER JOIN facturas f ON i.factura_id = f.id
                 WHERE i.producto_maestro_id = ?
-                AND f.fecha >= ?
+                AND f.fecha_cargue >= ?
                 AND i.precio_pagado > 0
-                ORDER BY f.establecimiento, f.fecha DESC
+                ORDER BY f.establecimiento, f.fecha_cargue DESC
             """, (producto_id, fecha_limite))
 
         # Procesar resultados agrupados por establecimiento
@@ -171,12 +171,12 @@ async def comparar_precios_producto(
                 SELECT
                     i.precio_pagado,
                     f.establecimiento,
-                    f.fecha as fecha_compra
+                    f.fecha_cargue as fecha_compra
                 FROM items_factura i
                 INNER JOIN facturas f ON i.factura_id = f.id
                 WHERE i.producto_maestro_id = %s
                 AND i.usuario_id = %s
-                ORDER BY f.fecha DESC
+                ORDER BY f.fecha_cargue DESC
                 LIMIT 1
             """, (producto_id, usuario_id))
         else:
@@ -184,12 +184,12 @@ async def comparar_precios_producto(
                 SELECT
                     i.precio_pagado,
                     f.establecimiento,
-                    f.fecha as fecha_compra
+                    f.fecha_cargue as fecha_compra
                 FROM items_factura i
                 INNER JOIN facturas f ON i.factura_id = f.id
                 WHERE i.producto_maestro_id = ?
                 AND i.usuario_id = ?
-                ORDER BY f.fecha DESC
+                ORDER BY f.fecha_cargue DESC
                 LIMIT 1
             """, (producto_id, usuario_id))
 
@@ -250,7 +250,7 @@ async def historial_precios_producto(
 
         query = """
             SELECT
-                DATE(f.fecha) as fecha,
+                DATE(f.fecha_cargue) as fecha,
                 f.establecimiento,
                 AVG(i.precio_pagado) as precio_promedio,
                 MIN(i.precio_pagado) as precio_minimo,
@@ -259,7 +259,7 @@ async def historial_precios_producto(
             FROM items_factura i
             INNER JOIN facturas f ON i.factura_id = f.id
             WHERE i.producto_maestro_id = {}
-            AND f.fecha >= '{}'
+            AND f.fecha_cargue >= '{}'
             AND i.precio_pagado > 0
         """.format(producto_id, fecha_limite)
 
@@ -267,7 +267,7 @@ async def historial_precios_producto(
             query += " AND f.establecimiento = '{}'".format(establecimiento)
 
         query += """
-            GROUP BY DATE(f.fecha), f.establecimiento
+            GROUP BY DATE(f.fecha_cargue), f.establecimiento
             ORDER BY fecha DESC, f.establecimiento
         """
 
