@@ -693,8 +693,9 @@ async def fusionar_productos(request: FusionarRequest):
                         request.producto_principal_id
                     ))
 
-        # REEMPLAZAR DESDE "# Actualizar items_factura" HASTA "return {"
+# REEMPLAZAR DESDE "# Actualizar items_factura" HASTA "return {"
 # En productos_mejoras.py, función fusionar_productos()
+# VERSIÓN FINAL con auditoria_productos
 
         # ====================================================================
         # PASO 1: Actualizar referencias en items_factura
@@ -739,6 +740,28 @@ async def fusionar_productos(request: FusionarRequest):
                 """, (request.producto_principal_id, dup_id))
 
             precios_actualizados += cursor.rowcount
+
+        # ====================================================================
+        # PASO 2.5: Actualizar referencias en auditoria_productos
+        # ====================================================================
+        auditoria_actualizados = 0
+        for dup in productos_duplicados:
+            dup_id = dup[0]
+
+            if database_type == "postgresql":
+                cursor.execute("""
+                    UPDATE auditoria_productos
+                    SET producto_maestro_id = %s
+                    WHERE producto_maestro_id = %s
+                """, (request.producto_principal_id, dup_id))
+            else:
+                cursor.execute("""
+                    UPDATE auditoria_productos
+                    SET producto_maestro_id = ?
+                    WHERE producto_maestro_id = ?
+                """, (request.producto_principal_id, dup_id))
+
+            auditoria_actualizados += cursor.rowcount
 
         # ====================================================================
         # PASO 3: Consolidar inventario_usuario
@@ -857,6 +880,7 @@ async def fusionar_productos(request: FusionarRequest):
             'producto_resultante_id': request.producto_principal_id,
             'items_factura_actualizados': items_actualizados,
             'precios_actualizados': precios_actualizados,
+            'auditoria_actualizados': auditoria_actualizados,
             'inventarios_consolidados': inventarios_actualizados,
             'productos_eliminados': len(productos_duplicados)
         }
