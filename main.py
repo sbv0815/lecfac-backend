@@ -306,11 +306,21 @@ print("✅ CORS configurado")
 
 
 app.include_router(inventario_router)
-app.include_router(diagnostico_router)
-app.include_router(comparacion_router, tags=["comparacion"])
-app.include_router(productos_mejoras_router)
+print("✅ inventario_router registrado")
 
+app.include_router(diagnostico_router)
+print("✅ diagnostico_router registrado")
+
+app.include_router(comparacion_router, tags=["comparacion"])
 print("✅ comparacion_router registrado en /api/productos/*")
+
+try:
+    app.include_router(productos_mejoras_router)
+    print("✅ productos_mejoras_router registrado en /api/productos/*")
+except Exception as e:
+    print(f"❌ Error registrando productos_mejoras_router: {e}")
+    import traceback
+    traceback.print_exc()
 
 @app.post("/invoices/parse-video")
 async def parse_video(
