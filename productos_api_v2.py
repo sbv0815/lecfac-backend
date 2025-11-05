@@ -1,6 +1,11 @@
 """
 API de productos para productos.html v2
 Incluye PLUs desde productos_por_establecimiento
+
+✅ VERSIÓN CORREGIDA:
+- Soporte dual: SQLite + PostgreSQL
+- Sin referencias directas a codigo_plu en productos_maestros
+- PLUs obtenidos correctamente desde productos_por_establecimiento
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -24,6 +29,7 @@ async def obtener_productos(
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
         offset = (pagina - 1) * limite
 
@@ -32,7 +38,11 @@ async def obtener_productos(
         params = []
 
         if busqueda:
-            where_clauses.append("(pm.nombre_normalizado ILIKE %s OR pm.codigo_ean ILIKE %s OR pm.marca ILIKE %s)")
+            if database_type == "postgresql":
+                where_clauses.append("(pm.nombre_normalizado ILIKE %s OR pm.codigo_ean ILIKE %s OR pm.marca ILIKE %s)")
+            else:
+                where_clauses.append("(pm.nombre_normalizado LIKE ? OR pm.codigo_ean LIKE ? OR pm.marca LIKE ?)")
+
             search_pattern = f"%{busqueda}%"
             params.extend([search_pattern, search_pattern, search_pattern])
 
@@ -45,30 +55,56 @@ async def obtener_productos(
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # Query con LEFT JOIN para obtener PLUs
-        query = f"""
-            SELECT
-                pm.id,
-                pm.codigo_ean,
-                pm.nombre_normalizado,
-                pm.nombre_comercial,
-                pm.marca,
-                pm.categoria,
-                pm.subcategoria,
-                pm.presentacion,
-                pm.total_reportes,
-                pm.precio_promedio_global,
-                STRING_AGG(DISTINCT pe.codigo_plu_local, ', ') as plus,
-                COUNT(DISTINCT pe.establecimiento_nombre) as num_establecimientos
-            FROM productos_maestros pm
-            LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
-            WHERE {where_sql}
-            GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
-                     pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
-                     pm.total_reportes, pm.precio_promedio_global
-            ORDER BY pm.total_reportes DESC
-            LIMIT %s OFFSET %s
-        """
+        # Query con LEFT JOIN para obtener PLUs (adaptado según BD)
+        if database_type == "postgresql":
+            query = f"""
+                SELECT
+                    pm.id,
+                    pm.codigo_ean,
+                    pm.nombre_normalizado,
+                    pm.nombre_comercial,
+                    pm.marca,
+                    pm.categoria,
+                    pm.subcategoria,
+                    pm.presentacion,
+                    pm.total_reportes,
+                    pm.precio_promedio_global,
+                    STRING_AGG(DISTINCT pe.codigo_plu_local, ', ') as plus,
+                    COUNT(DISTINCT pe.establecimiento_nombre) as num_establecimientos
+                FROM productos_maestros pm
+                LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
+                WHERE {where_sql}
+                GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
+                         pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
+                         pm.total_reportes, pm.precio_promedio_global
+                ORDER BY pm.total_reportes DESC
+                LIMIT %s OFFSET %s
+            """
+        else:
+            # SQLite usa GROUP_CONCAT en lugar de STRING_AGG
+            query = f"""
+                SELECT
+                    pm.id,
+                    pm.codigo_ean,
+                    pm.nombre_normalizado,
+                    pm.nombre_comercial,
+                    pm.marca,
+                    pm.categoria,
+                    pm.subcategoria,
+                    pm.presentacion,
+                    pm.total_reportes,
+                    pm.precio_promedio_global,
+                    GROUP_CONCAT(DISTINCT pe.codigo_plu_local, ', ') as plus,
+                    COUNT(DISTINCT pe.establecimiento_nombre) as num_establecimientos
+                FROM productos_maestros pm
+                LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
+                WHERE {where_sql}
+                GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
+                         pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
+                         pm.total_reportes, pm.precio_promedio_global
+                ORDER BY pm.total_reportes DESC
+                LIMIT ? OFFSET ?
+            """
 
         params.extend([limite, offset])
         cursor.execute(query, params)
@@ -87,7 +123,7 @@ async def obtener_productos(
             productos.append({
                 "id": row[0],
                 "codigo_ean": row[1],
-                "codigo_plu": row[10],  # PLUs concatenados
+                "codigo_plu": row[10],  # PLUs concatenados desde productos_por_establecimiento
                 "nombre_normalizado": row[2],
                 "nombre_comercial": row[3],
                 "marca": row[4],
@@ -121,7 +157,7 @@ async def obtener_productos(
         }
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error en obtener_productos: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -173,7 +209,7 @@ async def obtener_estadisticas_calidad():
         }
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error en estadisticas_calidad: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -185,16 +221,27 @@ async def obtener_producto(producto_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
         # Obtener datos base
-        cursor.execute("""
-            SELECT
-                id, codigo_ean, nombre_normalizado, nombre_comercial,
-                marca, categoria, subcategoria, presentacion,
-                total_reportes, precio_promedio_global
-            FROM productos_maestros
-            WHERE id = %s
-        """, (producto_id,))
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT
+                    id, codigo_ean, nombre_normalizado, nombre_comercial,
+                    marca, categoria, subcategoria, presentacion,
+                    total_reportes, precio_promedio_global
+                FROM productos_maestros
+                WHERE id = %s
+            """, (producto_id,))
+        else:
+            cursor.execute("""
+                SELECT
+                    id, codigo_ean, nombre_normalizado, nombre_comercial,
+                    marca, categoria, subcategoria, presentacion,
+                    total_reportes, precio_promedio_global
+                FROM productos_maestros
+                WHERE id = ?
+            """, (producto_id,))
 
         row = cursor.fetchone()
 
@@ -203,12 +250,20 @@ async def obtener_producto(producto_id: int):
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
         # Obtener PLUs
-        cursor.execute("""
-            SELECT codigo_plu_local, establecimiento_nombre
-            FROM productos_por_establecimiento
-            WHERE producto_maestro_id = %s
-            AND codigo_plu_local IS NOT NULL
-        """, (producto_id,))
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT codigo_plu_local, establecimiento_nombre
+                FROM productos_por_establecimiento
+                WHERE producto_maestro_id = %s
+                AND codigo_plu_local IS NOT NULL
+            """, (producto_id,))
+        else:
+            cursor.execute("""
+                SELECT codigo_plu_local, establecimiento_nombre
+                FROM productos_por_establecimiento
+                WHERE producto_maestro_id = ?
+                AND codigo_plu_local IS NOT NULL
+            """, (producto_id,))
 
         plus = cursor.fetchall()
         conn.close()
@@ -231,7 +286,7 @@ async def obtener_producto(producto_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error en obtener_producto: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -243,6 +298,7 @@ async def actualizar_producto(producto_id: int, data: dict):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
         # Construir UPDATE dinámico
         campos_permitidos = [
@@ -255,19 +311,30 @@ async def actualizar_producto(producto_id: int, data: dict):
 
         for campo in campos_permitidos:
             if campo in data:
-                updates.append(f"{campo} = %s")
+                if database_type == "postgresql":
+                    updates.append(f"{campo} = %s")
+                else:
+                    updates.append(f"{campo} = ?")
                 params.append(data[campo])
 
         if not updates:
+            conn.close()
             raise HTTPException(status_code=400, detail="No hay campos para actualizar")
 
         params.append(producto_id)
 
-        query = f"""
-            UPDATE productos_maestros
-            SET {', '.join(updates)}
-            WHERE id = %s
-        """
+        if database_type == "postgresql":
+            query = f"""
+                UPDATE productos_maestros
+                SET {', '.join(updates)}
+                WHERE id = %s
+            """
+        else:
+            query = f"""
+                UPDATE productos_maestros
+                SET {', '.join(updates)}
+                WHERE id = ?
+            """
 
         cursor.execute(query, params)
 
@@ -283,11 +350,11 @@ async def actualizar_producto(producto_id: int, data: dict):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error en actualizar_producto: {e}")
         if conn:
             conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ API de productos v2 cargada (con PLUs desde productos_por_establecimiento)")
+print("✅ API de productos v2 cargada (con soporte dual SQLite/PostgreSQL y PLUs desde productos_por_establecimiento)")
