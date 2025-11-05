@@ -94,6 +94,8 @@ from productos_mejoras import router as productos_mejoras_router
 from fastapi import FastAPI
 from productos_establecimiento_endpoints import router as productos_est_router
 from productos_api_v2 import router as productos_v2_router
+from establecimientos_api import router as establecimientos_router
+
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
@@ -406,6 +408,7 @@ async def parse_video(
         raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(mobile_router, tags=["mobile"])
+app.include_router(establecimientos_router)
 
 
 
