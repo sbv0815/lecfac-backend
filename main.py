@@ -93,6 +93,7 @@ from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_e
 from productos_mejoras import router as productos_mejoras_router
 from fastapi import FastAPI
 from productos_establecimiento_endpoints import router as productos_est_router
+from productos_api_v2 import router as productos_v2_router
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
@@ -325,6 +326,9 @@ except Exception as e:
 
 app.include_router(productos_est_router)
 print("✅ productos_establecimiento_router registrado")
+
+app.include_router(productos_v2_router)
+print("✅ productos_v2_router registrado")
 
 @app.post("/invoices/parse-video")
 async def parse_video(
