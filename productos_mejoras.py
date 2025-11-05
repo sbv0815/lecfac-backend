@@ -145,7 +145,7 @@ async def detectar_duplicados_ean():
                     cursor.execute("""
                         SELECT
                             pm.id, pm.nombre_normalizado, pm.nombre_comercial, pm.marca,
-                            pm.categoria, pm.subcategoria, pm.codigo_ean, pm.codigo_plu,
+                            pm.categoria, pm.subcategoria, pm.codigo_ean,NULL as codigo_plu,
                             pm.primera_vez_reportado,
                             (SELECT COUNT(*) FROM items_factura WHERE producto_maestro_id = pm.id) as total_compras
                         FROM productos_maestros pm
@@ -155,7 +155,7 @@ async def detectar_duplicados_ean():
                     cursor.execute("""
                         SELECT
                             pm.id, pm.nombre_normalizado, pm.nombre_comercial, pm.marca,
-                            pm.categoria, pm.subcategoria, pm.codigo_ean, pm.codigo_plu
+                            pm.categoria, pm.subcategoria, pm.codigo_ean, NULL as codigo_plu
                         FROM productos_maestros pm
                         WHERE pm.id = ?
                     """, (prod_id,))
@@ -228,34 +228,34 @@ async def detectar_duplicados_plu_establecimiento():
         if database_type == "postgresql":
             cursor.execute("""
                 SELECT
-                    pm.codigo_plu,
+                    NULL as codigo_plu,
                     f.establecimiento,
                     ARRAY_AGG(DISTINCT pm.id) as producto_ids,
                     COUNT(DISTINCT pm.id) as total_productos
                 FROM productos_maestros pm
                 INNER JOIN items_factura i ON i.producto_maestro_id = pm.id
                 INNER JOIN facturas f ON f.id = i.factura_id
-                WHERE pm.codigo_plu IS NOT NULL
-                  AND pm.codigo_plu != ''
+                WHERE NULL as codigo_plu
+                  AND NULL as codigo_plu != ''
                   AND f.establecimiento IS NOT NULL
-                GROUP BY pm.codigo_plu, f.establecimiento
+                GROUP BY NULL as codigo_plu, f.establecimiento
                 HAVING COUNT(DISTINCT pm.id) > 1
                 ORDER BY COUNT(DISTINCT pm.id) DESC
             """)
         else:
             cursor.execute("""
                 SELECT
-                    pm.codigo_plu,
+                    NULL as codigo_plu,
                     f.establecimiento,
                     GROUP_CONCAT(DISTINCT pm.id) as producto_ids,
                     COUNT(DISTINCT pm.id) as total_productos
                 FROM productos_maestros pm
                 INNER JOIN items_factura i ON i.producto_maestro_id = pm.id
                 INNER JOIN facturas f ON f.id = i.factura_id
-                WHERE pm.codigo_plu IS NOT NULL
-                  AND pm.codigo_plu != ''
+                WHERE NULL as codigo_plu IS NOT NULL
+                  AND NULL as codigo_plu != ''
                   AND f.establecimiento IS NOT NULL
-                GROUP BY pm.codigo_plu, f.establecimiento
+                GROUP BY NULL as codigo_plu, f.establecimiento
                 HAVING COUNT(DISTINCT pm.id) > 1
                 ORDER BY COUNT(DISTINCT pm.id) DESC
             """)
