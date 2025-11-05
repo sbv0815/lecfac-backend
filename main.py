@@ -912,11 +912,10 @@ async def serve_editor():
 async def serve_productos():
     """Servir página de gestión de productos v2"""
     try:
-        return FileResponse("productos.html", media_type="text/html")
+        return FileResponse("static/productos.html", media_type="text/html")
     except Exception as e:
         print(f"❌ Error sirviendo productos.html: {e}")
         raise HTTPException(status_code=404, detail=f"Productos no disponible: {e}")
-
 @app.get("/health")
 @app.get("/api/health-check")
 async def health_check():
