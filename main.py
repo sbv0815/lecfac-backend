@@ -90,7 +90,10 @@ from fastapi import APIRouter
 from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 from duplicate_detector import detectar_duplicados_automaticamente
 from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
-
+from productos_mejoras import router as productos_mejoras_router
+from database import get_db
+from models import ProductoMaestro, ItemFactura, InventarioUsuario, Factura
+from fastapi import FastAPI
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
@@ -307,6 +310,7 @@ print("✅ CORS configurado")
 app.include_router(inventario_router)
 app.include_router(diagnostico_router)
 app.include_router(comparacion_router, tags=["comparacion"])
+app.include_router(productos_mejoras_router)
 
 print("✅ comparacion_router registrado en /api/productos/*")
 
