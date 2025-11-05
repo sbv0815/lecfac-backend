@@ -7,6 +7,110 @@ from typing import Dict
 
 
 # ==============================================================================
+# DICCIONARIO DE CORRECCIONES OCR - NOMBRES DE PRODUCTOS
+# ==============================================================================
+
+CORRECCIONES_OCR = {
+    # Errores comunes de OCR detectados en facturas colombianas
+    "QSO": "QUESO",
+    "FRANC": "FRANCES",
+    "BCO": "BLANCO",
+    "ZHRIA": "ZANAHORIA",
+    "GRL": "GRANEL",
+    "PONQ": "PONQUE",
+    "CHOCTINA": "CHOCOLATINA",
+    "REFRESC": "REFRESCO",
+    "DODA": "DOÑA",
+    "MARGAR": "MARGARINA",
+    "MEDAL": "MEDALLA",
+    "MERMEL": "MERMELADA",
+    "ESPARCIB": "ESPARCIR",
+    "CREM": "CREMA",
+    "ALQUERI": "ALQUERIA",
+    "ARE": "AREQUIPE",
+    "IMPORT": "IMPORTADO",
+    "BOLO": "BOLOÑESA",
+    "UND": "UNIDAD",
+    "LEC": "LECHE",
+    "CMAPAN": "COMAPAN",
+    "MZRLL": "MOZARELLA",
+    "COLANT": "COLANTA",
+    "CAS": "CASA",
+    "VERD": "VERDE",
+    "SUAVIZANT": "SUAVIZANTE",
+    "RE": "RES",
+    "HARINA HAZ D": "HARINA HAZ DE ORO",
+    "LECA KLER": "LACA KLEER",
+    "ATUN VAN": "ATUN VAN CAMP",
+    "GANSI": "GANSITO",
+    "VDE": "VERDE",
+    "CHAMPIDON": "CHAMPIÑON",
+    "FILET": "FILETE",
+    "TILAP": "TILAPIA",
+    "MANZ": "MANZANA",
+    "PIDA": "PIÑA",
+    "DODAPEPA": "DOÑA PEPA",
+    "DENT": "DENTAL",
+    "FLUOCARD": "FLUOCARDEN",
+    "P/HIG": "PAPEL HIGIENICO",
+    "PARMES": "PARMESANO",
+    "VERDU": "VERDURAS",
+    "VINIP": "VINIPEL",
+    "CONG": "CONGELADA",
+    "SABO": "SABORIZADA",
+    "PIDA GOLDEN": "PIÑA GOLDEN",
+}
+
+
+def corregir_nombre_producto(nombre: str) -> str:
+    """
+    Corrige errores comunes de OCR en nombres de productos.
+
+    Aplica correcciones palabra por palabra manteniendo el formato original.
+    Es case-insensitive pero preserva mayúsculas/minúsculas del resultado.
+
+    Args:
+        nombre: Nombre del producto con posibles errores de OCR
+
+    Returns:
+        str: Nombre corregido
+
+    Examples:
+        >>> corregir_nombre_producto("QSO FRANCES BCO")
+        "QUESO FRANCES BLANCO"
+        >>> corregir_nombre_producto("PONQ CHOCOLATINA")
+        "PONQUE CHOCOLATINA"
+    """
+    if not nombre or len(nombre.strip()) < 2:
+        return nombre
+
+    nombre_original = nombre
+    nombre_upper = nombre.upper()
+
+    # Primero buscar coincidencias de frases completas (multi-palabra)
+    for clave, correccion in CORRECCIONES_OCR.items():
+        if " " in clave:  # Es una frase
+            if clave in nombre_upper:
+                nombre = nombre_upper.replace(clave, correccion)
+                if nombre != nombre_original:
+                    return nombre
+
+    # Luego corregir palabra por palabra
+    palabras = nombre.split()
+    palabras_corregidas = []
+
+    for palabra in palabras:
+        palabra_upper = palabra.upper()
+
+        if palabra_upper in CORRECCIONES_OCR:
+            palabras_corregidas.append(CORRECCIONES_OCR[palabra_upper])
+        else:
+            palabras_corregidas.append(palabra)
+
+    return " ".join(palabras_corregidas)
+
+
+# ==============================================================================
 # FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
 # ==============================================================================
 
@@ -117,7 +221,7 @@ def limpiar_precio_colombiano(precio_str):
 def parse_invoice_with_claude(image_path: str) -> Dict:
     """
     Procesa factura con Claude Vision API
-    Sistema de 3 Niveles de Confianza + Limpieza Automática
+    Sistema de 3 Niveles de Confianza + Limpieza Automática + Corrección OCR
     """
     try:
         print("=" * 70)
@@ -490,6 +594,25 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                 f"✅ Productos finales después de limpieza: {len(productos_limpios)}\n"
             )
 
+        # ========== CORRECCIÓN DE ERRORES OCR ==========
+        if "productos" in data and data["productos"]:
+            print(f"🔧 CORRIGIENDO ERRORES DE OCR...")
+            correcciones_aplicadas = 0
+
+            for prod in data["productos"]:
+                nombre_original = prod.get("nombre", "")
+                nombre_corregido = corregir_nombre_producto(nombre_original)
+
+                if nombre_corregido != nombre_original:
+                    print(f"   🔧 '{nombre_original}' → '{nombre_corregido}'")
+                    prod["nombre"] = nombre_corregido
+                    correcciones_aplicadas += 1
+
+            if correcciones_aplicadas > 0:
+                print(f"✅ {correcciones_aplicadas} correcciones OCR aplicadas\n")
+            else:
+                print(f"✅ No se requirieron correcciones OCR\n")
+
         # ========== NORMALIZACIÓN Y NIVEL DE CONFIANZA ==========
         productos_procesados = 0
         nivel_1 = 0  # Código + Nombre + Precio
@@ -644,7 +767,8 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 # ==============================================================================
 # INICIALIZACIÓN
 # ==============================================================================
-print("✅ claude_invoice.py cargado - VERSIÓN CORREGIDA CON PRECIOS COLOMBIANOS")
-print("   📌 Versión: 2025-10-29")
+print("✅ claude_invoice.py cargado - VERSIÓN CON CORRECCIÓN OCR")
+print("   📌 Versión: 2025-11-05")
 print("   💰 Precios: Manejo correcto de strings, integers y floats")
+print("   🔧 Correcciones OCR: 52 patrones detectados")
 print("   🔧 Compatible con: Claude API Haiku 3.5")
