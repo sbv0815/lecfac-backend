@@ -92,6 +92,7 @@ from duplicate_detector import detectar_duplicados_automaticamente
 from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
 from productos_mejoras import router as productos_mejoras_router
 from fastapi import FastAPI
+from productos_establecimiento_endpoints import router as productos_est_router
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
@@ -321,6 +322,9 @@ except Exception as e:
     print(f"❌ Error registrando productos_mejoras_router: {e}")
     import traceback
     traceback.print_exc()
+
+app.include_router(productos_est_router)
+print("✅ productos_establecimiento_router registrado")
 
 @app.post("/invoices/parse-video")
 async def parse_video(

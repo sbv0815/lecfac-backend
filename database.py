@@ -1024,6 +1024,46 @@ def create_postgresql_tables():
                 conn.rollback()
         else:
             print("   ✓ Columna 'producto_canonico_id' ya existe")
+    # En database.py, después de crear productos_por_establecimiento
+# (busca la línea ~450 aproximadamente)
+
+# 3.6. HISTORIAL DE CAMBIOS EN PRODUCTOS
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS historial_cambios_productos (
+            id SERIAL PRIMARY KEY,
+
+             -- Qué se cambió
+                producto_maestro_id INTEGER REFERENCES productos_maestros(id),
+                tabla_afectada VARCHAR(100) NOT NULL,
+
+                -- Quién lo cambió
+                usuario_id INTEGER,
+                usuario_email VARCHAR(255),
+
+                -- Qué cambió
+                campo_modificado VARCHAR(100),
+                valor_anterior TEXT,
+                valor_nuevo TEXT,
+
+                -- Cuándo
+                fecha_cambio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                -- Metadata
+                origen VARCHAR(50) DEFAULT 'admin',
+                ip_address VARCHAR(45)
+    )
+                """)
+        print("✓ Tabla 'historial_cambios_productos' creada")
+
+        # Índices
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_historial_producto ON historial_cambios_productos(producto_maestro_id)",
+                "historial_cambios_productos.producto"
+            )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_historial_fecha ON historial_cambios_productos(fecha_cambio)",
+                "historial_cambios_productos.fecha"
+            )
 
         # ============================================
         # TABLAS LEGACY (mantener para migración)
