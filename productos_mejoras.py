@@ -1,6 +1,6 @@
 """
 =============================================================================
-LECFAC - PRODUCTOS_MEJORAS.PY
+LEFACT - PRODUCTOS_MEJORAS.PY
 =============================================================================
 Endpoints para gestión avanzada de productos:
 - Detección de duplicados (EAN, PLU, nombres similares)
@@ -694,140 +694,34 @@ async def fusionar_productos(request: FusionarRequest):
                     ))
 
         # Actualizar items_factura
-        items_actualizados = 0
-        for dup in productos_duplicados:
-            dup_id = dup[0]
+       # NUEVO: Actualizar precios_productos
+            precios_actualizados = 0
+            for dup in productos_duplicados:
+                dup_id = dup[0]
 
-            if database_type == "postgresql":
-                cursor.execute("""
-                    UPDATE items_factura
-                    SET producto_maestro_id = %s
-                    WHERE producto_maestro_id = %s
-                """, (request.producto_principal_id, dup_id))
-            else:
-                cursor.execute("""
-                    UPDATE items_factura
-                    SET producto_maestro_id = ?
-                    WHERE producto_maestro_id = ?
-                """, (request.producto_principal_id, dup_id))
-
-            items_actualizados += cursor.rowcount
-
-        # Consolidar inventario_usuario
-        inventarios_actualizados = 0
-        for dup in productos_duplicados:
-            dup_id = dup[0]
-
-            # Buscar inventarios del producto duplicado
-            if database_type == "postgresql":
-                cursor.execute("""
-                    SELECT id, usuario_id, cantidad_actual,
-                           cantidad_total_comprada
-                    FROM inventario_usuario
-                    WHERE producto_maestro_id = %s
-                """, (dup_id,))
-            else:
-                cursor.execute("""
-                    SELECT id, usuario_id, cantidad_actual,
-                           cantidad_total_comprada
-                    FROM inventario_usuario
-                    WHERE producto_maestro_id = ?
-                """, (dup_id,))
-
-            inventarios_dup = cursor.fetchall()
-
-            for inv_dup in inventarios_dup:
-                inv_id = inv_dup[0]
-                usuario_id = inv_dup[1]
-                cantidad = inv_dup[2]
-                cantidad_total = inv_dup[3]
-
-                # Ver si ya existe inventario del producto principal
                 if database_type == "postgresql":
                     cursor.execute("""
-                        SELECT id, cantidad_actual, cantidad_total_comprada
-                        FROM inventario_usuario
-                        WHERE usuario_id = %s AND producto_maestro_id = %s
-                    """, (usuario_id, request.producto_principal_id))
+                        UPDATE precios_productos
+                        SET producto_maestro_id = %s
+                        WHERE producto_maestro_id = %s
+                    """, (request.producto_principal_id, dup_id))
                 else:
                     cursor.execute("""
-                        SELECT id, cantidad_actual, cantidad_total_comprada
-                        FROM inventario_usuario
-                        WHERE usuario_id = ? AND producto_maestro_id = ?
-                    """, (usuario_id, request.producto_principal_id))
+                        UPDATE precios_productos
+                        SET producto_maestro_id = ?
+                        WHERE producto_maestro_id = ?
+                    """, (request.producto_principal_id, dup_id))
 
-                inv_principal = cursor.fetchone()
-
-                if inv_principal:
-                    # Consolidar cantidades
-                    nueva_cantidad = float(inv_principal[1]) + float(cantidad)
-                    nueva_cantidad_total = float(inv_principal[2]) + float(cantidad_total)
-
-                    if database_type == "postgresql":
-                        cursor.execute("""
-                            UPDATE inventario_usuario
-                            SET cantidad_actual = %s,
-                                cantidad_total_comprada = %s
-                            WHERE id = %s
-                        """, (nueva_cantidad, nueva_cantidad_total, inv_principal[0]))
-
-                        cursor.execute("""
-                            DELETE FROM inventario_usuario WHERE id = %s
-                        """, (inv_id,))
-                    else:
-                        cursor.execute("""
-                            UPDATE inventario_usuario
-                            SET cantidad_actual = ?,
-                                cantidad_total_comprada = ?
-                            WHERE id = ?
-                        """, (nueva_cantidad, nueva_cantidad_total, inv_principal[0]))
-
-                        cursor.execute("""
-                            DELETE FROM inventario_usuario WHERE id = ?
-                        """, (inv_id,))
-                else:
-                    # Cambiar producto_maestro_id
-                    if database_type == "postgresql":
-                        cursor.execute("""
-                            UPDATE inventario_usuario
-                            SET producto_maestro_id = %s
-                            WHERE id = %s
-                        """, (request.producto_principal_id, inv_id))
-                    else:
-                        cursor.execute("""
-                            UPDATE inventario_usuario
-                            SET producto_maestro_id = ?
-                            WHERE id = ?
-                        """, (request.producto_principal_id, inv_id))
-
-                inventarios_actualizados += 1
-
-        # Eliminar productos duplicados
-        for dup in productos_duplicados:
-            dup_id = dup[0]
-
-            if database_type == "postgresql":
-                cursor.execute("""
-                    DELETE FROM productos_maestros WHERE id = %s
-                """, (dup_id,))
-            else:
-                cursor.execute("""
-                    DELETE FROM productos_maestros WHERE id = ?
-                """, (dup_id,))
-
-        # Commit
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        return {
-            'success': True,
-            'mensaje': 'Productos fusionados exitosamente',
-            'producto_resultante_id': request.producto_principal_id,
-            'items_factura_actualizados': items_actualizados,
-            'inventarios_consolidados': inventarios_actualizados,
-            'productos_eliminados': len(productos_duplicados)
-        }
+                precios_actualizados += cursor.rowcount
+            return {
+                'success': True,
+                'mensaje': 'Productos fusionados exitosamente',
+                'producto_resultante_id': request.producto_principal_id,
+                'items_factura_actualizados': items_actualizados,
+                'precios_actualizados': precios_actualizados,  # ← NUEVO
+                'inventarios_consolidados': inventarios_actualizados,
+                'productos_eliminados': len(productos_duplicados)
+            }
 
     except HTTPException:
         if conn:
