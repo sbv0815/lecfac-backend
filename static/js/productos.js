@@ -153,6 +153,11 @@ async function cargarProductos(pagina = 1, busqueda = '', filtro = '') {
 
         console.log(`✅ ${data.productos.length} productos cargados`);
 
+        // Debug: Ver primer producto
+        if (data.productos.length > 0) {
+            console.log('📋 Ejemplo producto:', data.productos[0]);
+        }
+
         // Renderizar tabla
         renderizarTabla(data.productos);
 
@@ -325,6 +330,28 @@ window.recargarColores = async function () {
     cambiarPagina(1);
 
     alert('✅ Colores actualizados');
+};
+
+window.switchTab = function (tabName) {
+    // Ocultar todos los tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+
+    // Mostrar el tab seleccionado
+    const tabContent = document.getElementById(`tab-${tabName}`);
+    if (tabContent) {
+        tabContent.classList.add('active');
+    }
+
+    // Activar botón del tab
+    event.target.classList.add('active');
+
+    console.log(`📑 Tab cambiado a: ${tabName}`);
 };
 
 // ============================================================================
