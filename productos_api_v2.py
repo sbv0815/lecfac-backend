@@ -2,10 +2,10 @@
 API de productos para productos.html v2
 Incluye PLUs desde productos_por_establecimiento
 
-✅ VERSIÓN CORREGIDA:
+✅ VERSIÓN ACTUALIZADA:
 - Soporte dual: SQLite + PostgreSQL
-- Sin referencias directas a codigo_plu en productos_maestros
-- PLUs obtenidos correctamente desde productos_por_establecimiento
+- PLUs obtenidos desde productos_por_establecimiento (tabla nueva)
+- Separación correcta de EAN vs PLU
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -55,9 +55,24 @@ async def obtener_productos(
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # Query con LEFT JOIN para obtener PLUs (adaptado según BD)
+        # Query con productos_por_establecimiento (adaptado según BD)
         if database_type == "postgresql":
             query = f"""
+                WITH producto_plus AS (
+                    -- Obtener PLUs desde productos_por_establecimiento
+                    SELECT
+                        ppe.producto_maestro_id,
+                        STRING_AGG(
+                            CONCAT(ppe.codigo_plu, ' (', e.nombre_normalizado, ')'),
+                            ', '
+                            ORDER BY e.nombre_normalizado
+                        ) as plus_texto,
+                        COUNT(DISTINCT ppe.establecimiento_id) as num_establecimientos
+                    FROM productos_por_establecimiento ppe
+                    JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                    WHERE ppe.codigo_plu IS NOT NULL
+                    GROUP BY ppe.producto_maestro_id
+                )
                 SELECT
                     pm.id,
                     pm.codigo_ean,
@@ -69,25 +84,16 @@ async def obtener_productos(
                     pm.presentacion,
                     pm.total_reportes,
                     pm.precio_promedio_global,
-                    STRING_AGG(DISTINCT
-                        CONCAT(items.codigo_leido, ' (', COALESCE(f.establecimiento, 'Sin tienda'), ')'),
-                        ', '
-                    ) as plus_con_tienda,
-                    COUNT(DISTINCT f.establecimiento) as num_establecimientos
+                    COALESCE(pp.plus_texto, '-') as plus_con_tienda,
+                    COALESCE(pp.num_establecimientos, 0) as num_establecimientos
                 FROM productos_maestros pm
-                LEFT JOIN items_factura items ON pm.id = items.producto_maestro_id
-                    AND items.codigo_leido IS NOT NULL
-                    AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                LEFT JOIN facturas f ON f.id = items.factura_id
+                LEFT JOIN producto_plus pp ON pp.producto_maestro_id = pm.id
                 WHERE {where_sql}
-                GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
-                         pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
-                         pm.total_reportes, pm.precio_promedio_global
                 ORDER BY pm.total_reportes DESC
                 LIMIT %s OFFSET %s
             """
         else:
-            # SQLite usa GROUP_CONCAT en lugar de STRING_AGG
+            # SQLite - Fallback a items_factura si productos_por_establecimiento no existe
             query = f"""
                 SELECT
                     pm.id,
@@ -135,7 +141,7 @@ async def obtener_productos(
             productos.append({
                 "id": row[0],
                 "codigo_ean": row[1],
-                "codigo_plu": row[10],  # PLUs concatenados desde productos_por_establecimiento
+                "codigo_plu": row[10] if row[10] != '-' else None,  # PLUs desde productos_por_establecimiento
                 "nombre_normalizado": row[2],
                 "nombre_comercial": row[3],
                 "marca": row[4],
@@ -228,7 +234,7 @@ async def obtener_estadisticas_calidad():
 @router.get("/{producto_id}")
 async def obtener_producto(producto_id: int):
     """
-    Obtener un producto específico con sus PLUs
+    Obtener un producto específico con sus PLUs desde productos_por_establecimiento
     """
     try:
         conn = get_db_connection()
@@ -261,25 +267,28 @@ async def obtener_producto(producto_id: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # Obtener PLUs con sus establecimientos
+        # Obtener PLUs desde productos_por_establecimiento
         if database_type == "postgresql":
             cursor.execute("""
-                SELECT DISTINCT
-                    items.codigo_leido,
-                    f.establecimiento
-                FROM items_factura items
-                INNER JOIN facturas f ON f.id = items.factura_id
-                WHERE items.producto_maestro_id = %s
-                  AND items.codigo_leido IS NOT NULL
-                  AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
-                  AND f.establecimiento IS NOT NULL
-                ORDER BY f.establecimiento, items.codigo_leido
+                SELECT
+                    ppe.codigo_plu,
+                    e.nombre_normalizado as establecimiento,
+                    ppe.precio_actual,
+                    ppe.total_reportes
+                FROM productos_por_establecimiento ppe
+                JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                WHERE ppe.producto_maestro_id = %s
+                  AND ppe.codigo_plu IS NOT NULL
+                ORDER BY e.nombre_normalizado, ppe.codigo_plu
             """, (producto_id,))
         else:
+            # SQLite - Fallback a items_factura
             cursor.execute("""
                 SELECT DISTINCT
                     items.codigo_leido,
-                    f.establecimiento
+                    f.establecimiento,
+                    items.precio_pagado,
+                    1 as reportes
                 FROM items_factura items
                 INNER JOIN facturas f ON f.id = items.factura_id
                 WHERE items.producto_maestro_id = ?
@@ -296,7 +305,15 @@ async def obtener_producto(producto_id: int):
             "id": row[0],
             "codigo_ean": row[1],
             "codigo_plu": ", ".join([p[0] for p in plus]) if plus else None,
-            "plus_por_establecimiento": [{"plu": p[0], "establecimiento": p[1]} for p in plus],
+            "plus_por_establecimiento": [
+                {
+                    "plu": p[0],
+                    "establecimiento": p[1],
+                    "precio_actual": p[2] if len(p) > 2 else None,
+                    "reportes": p[3] if len(p) > 3 else None
+                }
+                for p in plus
+            ],
             "nombre_normalizado": row[2],
             "nombre_comercial": row[3],
             "marca": row[4],
@@ -381,4 +398,4 @@ async def actualizar_producto(producto_id: int, data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ API de productos v2 cargada (con soporte dual SQLite/PostgreSQL y PLUs desde productos_por_establecimiento)")
+print("✅ API de productos v2 cargada (con soporte para productos_por_establecimiento)")
