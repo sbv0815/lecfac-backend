@@ -141,8 +141,14 @@ async function cargarProductos(pagina = 1, busqueda = '', filtro = '') {
 
         const data = await response.json();
 
-        if (!data.success) {
+        // Verificar si hay error explícito
+        if (data.success === false) {
             throw new Error(data.message || 'Error desconocido');
+        }
+
+        // Verificar que tenga productos
+        if (!data.productos) {
+            throw new Error('La API no devolvió productos');
         }
 
         console.log(`✅ ${data.productos.length} productos cargados`);
