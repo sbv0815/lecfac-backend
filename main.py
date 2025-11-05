@@ -409,6 +409,7 @@ async def parse_video(
 
 app.include_router(mobile_router, tags=["mobile"])
 app.include_router(establecimientos_router)
+app.include_router(productos_v2_router)
 
 
 
