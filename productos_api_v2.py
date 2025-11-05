@@ -1,5 +1,5 @@
 """
-API de productos para productos.html v2
+API de productos para productos.html v2_ otra version actualizada
 Incluye PLUs desde productos_por_establecimiento
 
 ✅ VERSIÓN ACTUALIZADA:
