@@ -1,5 +1,6 @@
 """
 API de productos para productos.html v2
+Incluye PLUs desde productos_por_establecimiento
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -18,6 +19,7 @@ async def obtener_productos(
 ):
     """
     Obtener lista de productos con paginación
+    Incluye PLUs desde productos_por_establecimiento
     """
     try:
         conn = get_db_connection()
@@ -30,35 +32,41 @@ async def obtener_productos(
         params = []
 
         if busqueda:
-            where_clauses.append("(nombre_normalizado ILIKE %s OR codigo_ean ILIKE %s OR marca ILIKE %s)")
+            where_clauses.append("(pm.nombre_normalizado ILIKE %s OR pm.codigo_ean ILIKE %s OR pm.marca ILIKE %s)")
             search_pattern = f"%{busqueda}%"
             params.extend([search_pattern, search_pattern, search_pattern])
 
         if filtro == "sin_ean":
-            where_clauses.append("(codigo_ean IS NULL OR codigo_ean = '')")
+            where_clauses.append("(pm.codigo_ean IS NULL OR pm.codigo_ean = '')")
         elif filtro == "sin_marca":
-            where_clauses.append("(marca IS NULL OR marca = '')")
+            where_clauses.append("(pm.marca IS NULL OR pm.marca = '')")
         elif filtro == "sin_categoria":
-            where_clauses.append("(categoria IS NULL OR categoria = '')")
+            where_clauses.append("(pm.categoria IS NULL OR pm.categoria = '')")
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # Query principal
+        # Query con LEFT JOIN para obtener PLUs
         query = f"""
             SELECT
-                id,
-                codigo_ean,
-                nombre_normalizado,
-                nombre_comercial,
-                marca,
-                categoria,
-                subcategoria,
-                presentacion,
-                total_reportes,
-                precio_promedio_global
-            FROM productos_maestros
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_normalizado,
+                pm.nombre_comercial,
+                pm.marca,
+                pm.categoria,
+                pm.subcategoria,
+                pm.presentacion,
+                pm.total_reportes,
+                pm.precio_promedio_global,
+                STRING_AGG(DISTINCT pe.codigo_plu_local, ', ') as plus,
+                COUNT(DISTINCT pe.establecimiento_nombre) as num_establecimientos
+            FROM productos_maestros pm
+            LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
             WHERE {where_sql}
-            ORDER BY total_reportes DESC
+            GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
+                     pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
+                     pm.total_reportes, pm.precio_promedio_global
+            ORDER BY pm.total_reportes DESC
             LIMIT %s OFFSET %s
         """
 
@@ -79,7 +87,7 @@ async def obtener_productos(
             productos.append({
                 "id": row[0],
                 "codigo_ean": row[1],
-                "codigo_plu": None,  # No existe en productos_maestros
+                "codigo_plu": row[10],  # PLUs concatenados
                 "nombre_normalizado": row[2],
                 "nombre_comercial": row[3],
                 "marca": row[4],
@@ -88,11 +96,12 @@ async def obtener_productos(
                 "presentacion": row[7],
                 "total_reportes": row[8],
                 "precio_promedio": row[9],
+                "num_establecimientos": row[11],
                 "problemas": problemas
             })
 
         # Contar total
-        count_query = f"SELECT COUNT(*) FROM productos_maestros WHERE {where_sql}"
+        count_query = f"SELECT COUNT(*) FROM productos_maestros pm WHERE {where_sql}"
         cursor.execute(count_query, params[:-2])  # Sin LIMIT/OFFSET
         total = cursor.fetchone()[0]
 
@@ -160,7 +169,7 @@ async def obtener_estadisticas_calidad():
             "porcentaje_categoria": porcentaje_categoria,
             "sin_categoria": total_productos - con_categoria,
             "productos_huerfanos": productos_huerfanos,
-            "duplicados_potenciales": 0  # Implementar después
+            "duplicados_potenciales": 0
         }
 
     except Exception as e:
@@ -171,12 +180,13 @@ async def obtener_estadisticas_calidad():
 @router.get("/{producto_id}")
 async def obtener_producto(producto_id: int):
     """
-    Obtener un producto específico
+    Obtener un producto específico con sus PLUs
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Obtener datos base
         cursor.execute("""
             SELECT
                 id, codigo_ean, nombre_normalizado, nombre_comercial,
@@ -187,15 +197,27 @@ async def obtener_producto(producto_id: int):
         """, (producto_id,))
 
         row = cursor.fetchone()
-        conn.close()
 
         if not row:
+            conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Obtener PLUs
+        cursor.execute("""
+            SELECT codigo_plu_local, establecimiento_nombre
+            FROM productos_por_establecimiento
+            WHERE producto_maestro_id = %s
+            AND codigo_plu_local IS NOT NULL
+        """, (producto_id,))
+
+        plus = cursor.fetchall()
+        conn.close()
 
         return {
             "id": row[0],
             "codigo_ean": row[1],
-            "codigo_plu": None,
+            "codigo_plu": ", ".join([p[0] for p in plus]) if plus else None,
+            "plus_por_establecimiento": [{"plu": p[0], "establecimiento": p[1]} for p in plus],
             "nombre_normalizado": row[2],
             "nombre_comercial": row[3],
             "marca": row[4],
@@ -268,4 +290,4 @@ async def actualizar_producto(producto_id: int, data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ API de productos v2 cargada")
+print("✅ API de productos v2 cargada (con PLUs desde productos_por_establecimiento)")
