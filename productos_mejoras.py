@@ -9,6 +9,8 @@ Endpoints para gestión avanzada de productos:
 - Estadísticas de estandarización
 
 Compatible con database.py de LecFac (sin SQLAlchemy - conexiones directas)
+
+✅ VERSIÓN CORREGIDA - Sin referencias a codigo_plu en productos_maestros
 =============================================================================
 """
 
@@ -66,7 +68,6 @@ def producto_mas_completo(productos: List[Dict]) -> Dict:
     def puntaje_completitud(p: Dict) -> int:
         puntos = 0
         if p.get('codigo_ean'): puntos += 3
-        if p.get('codigo_plu'): puntos += 2
         if p.get('marca'): puntos += 2
         if p.get('categoria'): puntos += 1
         if p.get('subcategoria'): puntos += 1
@@ -145,7 +146,7 @@ async def detectar_duplicados_ean():
                     cursor.execute("""
                         SELECT
                             pm.id, pm.nombre_normalizado, pm.nombre_comercial, pm.marca,
-                            pm.categoria, pm.subcategoria, pm.codigo_ean,NULL as codigo_plu,
+                            pm.categoria, pm.subcategoria, pm.codigo_ean,
                             pm.primera_vez_reportado,
                             (SELECT COUNT(*) FROM items_factura WHERE producto_maestro_id = pm.id) as total_compras
                         FROM productos_maestros pm
@@ -155,7 +156,7 @@ async def detectar_duplicados_ean():
                     cursor.execute("""
                         SELECT
                             pm.id, pm.nombre_normalizado, pm.nombre_comercial, pm.marca,
-                            pm.categoria, pm.subcategoria, pm.codigo_ean, NULL as codigo_plu
+                            pm.categoria, pm.subcategoria, pm.codigo_ean
                         FROM productos_maestros pm
                         WHERE pm.id = ?
                     """, (prod_id,))
@@ -172,7 +173,7 @@ async def detectar_duplicados_ean():
                     """, (prod_id,))
                     total_compras = cursor.fetchone()[0]
                 else:
-                    total_compras = p[9] if len(p) > 9 else 0
+                    total_compras = p[8] if len(p) > 8 else 0
 
                 productos_info.append({
                     'id': p[0],
@@ -182,9 +183,8 @@ async def detectar_duplicados_ean():
                     'categoria': p[4],
                     'subcategoria': p[5],
                     'codigo_ean': p[6],
-                    'codigo_plu': p[7],
                     'total_compras': total_compras,
-                    'fecha_creacion': str(p[8]) if len(p) > 8 and p[8] else None
+                    'fecha_creacion': str(p[7]) if len(p) > 7 and p[7] else None
                 })
 
             resultados.append({
@@ -215,6 +215,8 @@ async def detectar_duplicados_plu_establecimiento():
     """
     Detecta productos con el mismo PLU en el mismo establecimiento
     ❌ SEVERIDAD ALTA - Cada PLU es único por tienda
+
+    NOTA: Los PLUs están en productos_por_establecimiento, no en productos_maestros
     """
     conn = get_db_connection()
     if not conn:
@@ -225,39 +227,38 @@ async def detectar_duplicados_plu_establecimiento():
         database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
         # Query para encontrar PLUs duplicados por establecimiento
+        # CORREGIDO: Usar productos_por_establecimiento
         if database_type == "postgresql":
             cursor.execute("""
                 SELECT
-                    NULL as codigo_plu,
-                    f.establecimiento,
-                    ARRAY_AGG(DISTINCT pm.id) as producto_ids,
-                    COUNT(DISTINCT pm.id) as total_productos
-                FROM productos_maestros pm
-                INNER JOIN items_factura i ON i.producto_maestro_id = pm.id
-                INNER JOIN facturas f ON f.id = i.factura_id
-                WHERE NULL as codigo_plu
-                  AND NULL as codigo_plu != ''
-                  AND f.establecimiento IS NOT NULL
-                GROUP BY NULL as codigo_plu, f.establecimiento
-                HAVING COUNT(DISTINCT pm.id) > 1
-                ORDER BY COUNT(DISTINCT pm.id) DESC
+                    ppe.codigo_plu_local,
+                    ppe.establecimiento_nombre,
+                    ARRAY_AGG(DISTINCT ppe.producto_maestro_id) as producto_ids,
+                    COUNT(DISTINCT ppe.producto_maestro_id) as total_productos
+                FROM productos_por_establecimiento ppe
+                WHERE ppe.codigo_plu_local IS NOT NULL
+                  AND ppe.codigo_plu_local != ''
+                  AND ppe.establecimiento_nombre IS NOT NULL
+                GROUP BY ppe.codigo_plu_local, ppe.establecimiento_nombre
+                HAVING COUNT(DISTINCT ppe.producto_maestro_id) > 1
+                ORDER BY COUNT(DISTINCT ppe.producto_maestro_id) DESC
+                LIMIT 100
             """)
         else:
             cursor.execute("""
                 SELECT
-                    NULL as codigo_plu,
-                    f.establecimiento,
-                    GROUP_CONCAT(DISTINCT pm.id) as producto_ids,
-                    COUNT(DISTINCT pm.id) as total_productos
-                FROM productos_maestros pm
-                INNER JOIN items_factura i ON i.producto_maestro_id = pm.id
-                INNER JOIN facturas f ON f.id = i.factura_id
-                WHERE NULL as codigo_plu IS NOT NULL
-                  AND NULL as codigo_plu != ''
-                  AND f.establecimiento IS NOT NULL
-                GROUP BY NULL as codigo_plu, f.establecimiento
-                HAVING COUNT(DISTINCT pm.id) > 1
-                ORDER BY COUNT(DISTINCT pm.id) DESC
+                    ppe.codigo_plu_local,
+                    ppe.establecimiento_nombre,
+                    GROUP_CONCAT(DISTINCT ppe.producto_maestro_id) as producto_ids,
+                    COUNT(DISTINCT ppe.producto_maestro_id) as total_productos
+                FROM productos_por_establecimiento ppe
+                WHERE ppe.codigo_plu_local IS NOT NULL
+                  AND ppe.codigo_plu_local != ''
+                  AND ppe.establecimiento_nombre IS NOT NULL
+                GROUP BY ppe.codigo_plu_local, ppe.establecimiento_nombre
+                HAVING COUNT(DISTINCT ppe.producto_maestro_id) > 1
+                ORDER BY COUNT(DISTINCT ppe.producto_maestro_id) DESC
+                LIMIT 100
             """)
 
         duplicados_plu = cursor.fetchall()
@@ -282,7 +283,7 @@ async def detectar_duplicados_plu_establecimiento():
                     cursor.execute("""
                         SELECT
                             id, nombre_normalizado, nombre_comercial, marca,
-                            codigo_ean, codigo_plu
+                            codigo_ean
                         FROM productos_maestros
                         WHERE id = %s
                     """, (prod_id,))
@@ -290,7 +291,7 @@ async def detectar_duplicados_plu_establecimiento():
                     cursor.execute("""
                         SELECT
                             id, nombre_normalizado, nombre_comercial, marca,
-                            codigo_ean, codigo_plu
+                            codigo_ean
                         FROM productos_maestros
                         WHERE id = ?
                     """, (prod_id,))
@@ -325,7 +326,7 @@ async def detectar_duplicados_plu_establecimiento():
                     'nombre_comercial': p[2],
                     'marca': p[3],
                     'codigo_ean': p[4],
-                    'codigo_plu': p[5],
+                    'codigo_plu': codigo_plu,
                     'total_compras_establecimiento': total_compras
                 })
 
@@ -376,7 +377,7 @@ async def detectar_nombres_similares(
         if database_type == "postgresql":
             cursor.execute("""
                 SELECT id, nombre_normalizado, nombre_comercial, marca,
-                       codigo_ean, codigo_plu, total_reportes
+                       codigo_ean, total_reportes
                 FROM productos_maestros
                 WHERE nombre_normalizado IS NOT NULL
                 ORDER BY total_reportes DESC
@@ -385,7 +386,7 @@ async def detectar_nombres_similares(
         else:
             cursor.execute("""
                 SELECT id, nombre_normalizado, nombre_comercial, marca,
-                       codigo_ean, codigo_plu, total_reportes
+                       codigo_ean, total_reportes
                 FROM productos_maestros
                 WHERE nombre_normalizado IS NOT NULL
                 ORDER BY total_reportes DESC
@@ -446,9 +447,8 @@ async def detectar_nombres_similares(
                         'nombre_comercial': p[2],
                         'marca': p[3],
                         'codigo_ean': p[4],
-                        'codigo_plu': p[5],
                         'total_compras': total_compras,
-                        'total_reportes': p[6]
+                        'total_reportes': p[5]
                     })
 
                 duplicados_encontrados.append({
@@ -458,6 +458,13 @@ async def detectar_nombres_similares(
                     'razon': f'Nombres con similitud >= {int(umbral_similitud * 100)}%',
                     'severidad': 'media' if umbral_similitud >= 0.9 else 'baja'
                 })
+
+                # Limitar a 50 duplicados
+                if len(duplicados_encontrados) >= 50:
+                    break
+
+            if len(duplicados_encontrados) >= 50:
+                break
 
         cursor.close()
         conn.close()
@@ -575,13 +582,13 @@ async def fusionar_productos(request: FusionarRequest):
         # Validar producto principal
         if database_type == "postgresql":
             cursor.execute("""
-                SELECT id, codigo_ean, codigo_plu, marca, categoria,
+                SELECT id, codigo_ean, marca, categoria,
                        subcategoria, presentacion, nombre_normalizado
                 FROM productos_maestros WHERE id = %s
             """, (request.producto_principal_id,))
         else:
             cursor.execute("""
-                SELECT id, codigo_ean, codigo_plu, marca, categoria,
+                SELECT id, codigo_ean, marca, categoria,
                        subcategoria, presentacion, nombre_normalizado
                 FROM productos_maestros WHERE id = ?
             """, (request.producto_principal_id,))
@@ -598,13 +605,13 @@ async def fusionar_productos(request: FusionarRequest):
         for dup_id in request.productos_duplicados_ids:
             if database_type == "postgresql":
                 cursor.execute("""
-                    SELECT id, codigo_ean, codigo_plu, marca, categoria,
+                    SELECT id, codigo_ean, marca, categoria,
                            subcategoria, presentacion, nombre_normalizado
                     FROM productos_maestros WHERE id = %s
                 """, (dup_id,))
             else:
                 cursor.execute("""
-                    SELECT id, codigo_ean, codigo_plu, marca, categoria,
+                    SELECT id, codigo_ean, marca, categoria,
                            subcategoria, presentacion, nombre_normalizado
                     FROM productos_maestros WHERE id = ?
                 """, (dup_id,))
@@ -624,11 +631,10 @@ async def fusionar_productos(request: FusionarRequest):
                 {
                     'id': producto_principal[0],
                     'codigo_ean': producto_principal[1],
-                    'codigo_plu': producto_principal[2],
-                    'marca': producto_principal[3],
-                    'categoria': producto_principal[4],
-                    'subcategoria': producto_principal[5],
-                    'presentacion': producto_principal[6]
+                    'marca': producto_principal[2],
+                    'categoria': producto_principal[3],
+                    'subcategoria': producto_principal[4],
+                    'presentacion': producto_principal[5]
                 }
             ]
 
@@ -636,11 +642,10 @@ async def fusionar_productos(request: FusionarRequest):
                 todos_productos.append({
                     'id': dup[0],
                     'codigo_ean': dup[1],
-                    'codigo_plu': dup[2],
-                    'marca': dup[3],
-                    'categoria': dup[4],
-                    'subcategoria': dup[5],
-                    'presentacion': dup[6]
+                    'marca': dup[2],
+                    'categoria': dup[3],
+                    'subcategoria': dup[4],
+                    'presentacion': dup[5]
                 })
 
             mejor_producto = producto_mas_completo(todos_productos)
@@ -651,7 +656,6 @@ async def fusionar_productos(request: FusionarRequest):
                     cursor.execute("""
                         UPDATE productos_maestros
                         SET codigo_ean = COALESCE(%s, codigo_ean),
-                            codigo_plu = COALESCE(%s, codigo_plu),
                             marca = COALESCE(%s, marca),
                             categoria = COALESCE(%s, categoria),
                             subcategoria = COALESCE(%s, subcategoria),
@@ -659,7 +663,6 @@ async def fusionar_productos(request: FusionarRequest):
                         WHERE id = %s
                     """, (
                         mejor_producto.get('codigo_ean'),
-                        mejor_producto.get('codigo_plu'),
                         mejor_producto.get('marca'),
                         mejor_producto.get('categoria'),
                         mejor_producto.get('subcategoria'),
@@ -670,7 +673,6 @@ async def fusionar_productos(request: FusionarRequest):
                     cursor.execute("""
                         UPDATE productos_maestros
                         SET codigo_ean = COALESCE(?, codigo_ean),
-                            codigo_plu = COALESCE(?, codigo_plu),
                             marca = COALESCE(?, marca),
                             categoria = COALESCE(?, categoria),
                             subcategoria = COALESCE(?, subcategoria),
@@ -678,7 +680,6 @@ async def fusionar_productos(request: FusionarRequest):
                         WHERE id = ?
                     """, (
                         mejor_producto.get('codigo_ean'),
-                        mejor_producto.get('codigo_plu'),
                         mejor_producto.get('marca'),
                         mejor_producto.get('categoria'),
                         mejor_producto.get('subcategoria'),
@@ -883,19 +884,6 @@ async def estadisticas_calidad():
             """)
         con_ean = cursor.fetchone()[0]
 
-        # Con PLU
-        if database_type == "postgresql":
-            cursor.execute("""
-                SELECT COUNT(*) FROM productos_maestros
-                WHERE codigo_plu IS NOT NULL AND codigo_plu != ''
-            """)
-        else:
-            cursor.execute("""
-                SELECT COUNT(*) FROM productos_maestros
-                WHERE codigo_plu IS NOT NULL AND codigo_plu != ''
-            """)
-        con_plu = cursor.fetchone()[0]
-
         # Con marca
         if database_type == "postgresql":
             cursor.execute("""
@@ -965,7 +953,6 @@ async def estadisticas_calidad():
 
         # Calcular porcentajes
         pct_ean = round((con_ean / total * 100) if total > 0 else 0, 1)
-        pct_plu = round((con_plu / total * 100) if total > 0 else 0, 1)
         pct_marca = round((con_marca / total * 100) if total > 0 else 0, 1)
         pct_categoria = round((con_categoria / total * 100) if total > 0 else 0, 1)
 
@@ -977,9 +964,6 @@ async def estadisticas_calidad():
             'con_ean': con_ean,
             'sin_ean': total - con_ean,
             'porcentaje_ean': pct_ean,
-            'con_plu': con_plu,
-            'sin_plu': total - con_plu,
-            'porcentaje_plu': pct_plu,
             'con_marca': con_marca,
             'sin_marca': total - con_marca,
             'porcentaje_marca': pct_marca,
@@ -1117,7 +1101,7 @@ async def listar_productos(
         if database_type == "postgresql":
             query = f"""
                 SELECT
-                    id, codigo_ean, codigo_plu, nombre_normalizado, nombre_comercial,
+                    id, codigo_ean, nombre_normalizado, nombre_comercial,
                     marca, categoria, subcategoria, total_reportes,
                     precio_promedio_global
                 FROM productos_maestros
@@ -1129,7 +1113,7 @@ async def listar_productos(
         else:
             query = f"""
                 SELECT
-                    id, codigo_ean, codigo_plu, nombre_normalizado, nombre_comercial,
+                    id, codigo_ean, nombre_normalizado, nombre_comercial,
                     marca, categoria, subcategoria, total_reportes,
                     precio_promedio_global
                 FROM productos_maestros
@@ -1160,22 +1144,21 @@ async def listar_productos(
             problemas = []
             if not p[1]:  # sin EAN
                 problemas.append('sin_ean')
-            if not p[5]:  # sin marca
+            if not p[4]:  # sin marca
                 problemas.append('sin_marca')
-            if not p[6]:  # sin categoría
+            if not p[5]:  # sin categoría
                 problemas.append('sin_categoria')
 
             productos_list.append({
                 'id': p[0],
                 'codigo_ean': p[1],
-                'codigo_plu': p[2],
-                'nombre_normalizado': p[3],
-                'nombre_comercial': p[4],
-                'marca': p[5],
-                'categoria': p[6],
-                'subcategoria': p[7],
-                'total_reportes': p[8],
-                'precio_promedio': p[9],
+                'nombre_normalizado': p[2],
+                'nombre_comercial': p[3],
+                'marca': p[4],
+                'categoria': p[5],
+                'subcategoria': p[6],
+                'total_reportes': p[7],
+                'precio_promedio': p[8],
                 'problemas': problemas
             })
 
@@ -1213,7 +1196,7 @@ async def obtener_producto(producto_id: int):
         if database_type == "postgresql":
             cursor.execute("""
                 SELECT
-                    id, codigo_ean, codigo_plu, nombre_normalizado, nombre_comercial,
+                    id, codigo_ean, nombre_normalizado, nombre_comercial,
                     marca, categoria, subcategoria, presentacion, total_reportes,
                     precio_promedio_global, precio_minimo_historico, precio_maximo_historico
                 FROM productos_maestros
@@ -1222,7 +1205,7 @@ async def obtener_producto(producto_id: int):
         else:
             cursor.execute("""
                 SELECT
-                    id, codigo_ean, codigo_plu, nombre_normalizado, nombre_comercial,
+                    id, codigo_ean, nombre_normalizado, nombre_comercial,
                     marca, categoria, subcategoria, presentacion, total_reportes,
                     precio_promedio_global, precio_minimo_historico, precio_maximo_historico
                 FROM productos_maestros
@@ -1240,17 +1223,16 @@ async def obtener_producto(producto_id: int):
         return {
             'id': producto[0],
             'codigo_ean': producto[1],
-            'codigo_plu': producto[2],
-            'nombre_normalizado': producto[3],
-            'nombre_comercial': producto[4],
-            'marca': producto[5],
-            'categoria': producto[6],
-            'subcategoria': producto[7],
-            'presentacion': producto[8],
-            'total_reportes': producto[9],
-            'precio_promedio': producto[10],
-            'precio_minimo': producto[11],
-            'precio_maximo': producto[12]
+            'nombre_normalizado': producto[2],
+            'nombre_comercial': producto[3],
+            'marca': producto[4],
+            'categoria': producto[5],
+            'subcategoria': producto[6],
+            'presentacion': producto[7],
+            'total_reportes': producto[8],
+            'precio_promedio': producto[9],
+            'precio_minimo': producto[10],
+            'precio_maximo': producto[11]
         }
 
     except HTTPException:
@@ -1276,7 +1258,7 @@ async def actualizar_producto(producto_id: int, datos: Dict[str, Any]):
 
         # Construir SET clause dinámicamente
         campos_permitidos = [
-            'codigo_ean', 'codigo_plu', 'nombre_normalizado', 'nombre_comercial',
+            'codigo_ean', 'nombre_normalizado', 'nombre_comercial',
             'marca', 'categoria', 'subcategoria', 'presentacion'
         ]
 
