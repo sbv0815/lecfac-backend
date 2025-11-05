@@ -216,7 +216,7 @@ async def detectar_duplicados_plu_establecimiento():
     Detecta productos con el mismo PLU en el mismo establecimiento
     ❌ SEVERIDAD ALTA - Cada PLU es único por tienda
 
-    NOTA: Los PLUs están en productos_por_establecimiento, no en productos_maestros
+    NOTA: Los PLUs están en codigos_locales o items_factura.codigo_leido
     """
     conn = get_db_connection()
     if not conn:
@@ -227,37 +227,43 @@ async def detectar_duplicados_plu_establecimiento():
         database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
         # Query para encontrar PLUs duplicados por establecimiento
-        # CORREGIDO: Usar productos_por_establecimiento
+        # Usar items_factura + facturas para obtener PLUs con establecimiento
         if database_type == "postgresql":
             cursor.execute("""
                 SELECT
-                    ppe.codigo_plu_local,
-                    ppe.establecimiento_nombre,
-                    ARRAY_AGG(DISTINCT ppe.producto_maestro_id) as producto_ids,
-                    COUNT(DISTINCT ppe.producto_maestro_id) as total_productos
-                FROM productos_por_establecimiento ppe
-                WHERE ppe.codigo_plu_local IS NOT NULL
-                  AND ppe.codigo_plu_local != ''
-                  AND ppe.establecimiento_nombre IS NOT NULL
-                GROUP BY ppe.codigo_plu_local, ppe.establecimiento_nombre
-                HAVING COUNT(DISTINCT ppe.producto_maestro_id) > 1
-                ORDER BY COUNT(DISTINCT ppe.producto_maestro_id) DESC
+                    items.codigo_leido as codigo_plu,
+                    f.establecimiento,
+                    ARRAY_AGG(DISTINCT items.producto_maestro_id) as producto_ids,
+                    COUNT(DISTINCT items.producto_maestro_id) as total_productos
+                FROM items_factura items
+                INNER JOIN facturas f ON f.id = items.factura_id
+                WHERE items.codigo_leido IS NOT NULL
+                  AND items.codigo_leido != ''
+                  AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                  AND f.establecimiento IS NOT NULL
+                  AND items.producto_maestro_id IS NOT NULL
+                GROUP BY items.codigo_leido, f.establecimiento
+                HAVING COUNT(DISTINCT items.producto_maestro_id) > 1
+                ORDER BY COUNT(DISTINCT items.producto_maestro_id) DESC
                 LIMIT 100
             """)
         else:
             cursor.execute("""
                 SELECT
-                    ppe.codigo_plu_local,
-                    ppe.establecimiento_nombre,
-                    GROUP_CONCAT(DISTINCT ppe.producto_maestro_id) as producto_ids,
-                    COUNT(DISTINCT ppe.producto_maestro_id) as total_productos
-                FROM productos_por_establecimiento ppe
-                WHERE ppe.codigo_plu_local IS NOT NULL
-                  AND ppe.codigo_plu_local != ''
-                  AND ppe.establecimiento_nombre IS NOT NULL
-                GROUP BY ppe.codigo_plu_local, ppe.establecimiento_nombre
-                HAVING COUNT(DISTINCT ppe.producto_maestro_id) > 1
-                ORDER BY COUNT(DISTINCT ppe.producto_maestro_id) DESC
+                    items.codigo_leido as codigo_plu,
+                    f.establecimiento,
+                    GROUP_CONCAT(DISTINCT items.producto_maestro_id) as producto_ids,
+                    COUNT(DISTINCT items.producto_maestro_id) as total_productos
+                FROM items_factura items
+                INNER JOIN facturas f ON f.id = items.factura_id
+                WHERE items.codigo_leido IS NOT NULL
+                  AND items.codigo_leido != ''
+                  AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                  AND f.establecimiento IS NOT NULL
+                  AND items.producto_maestro_id IS NOT NULL
+                GROUP BY items.codigo_leido, f.establecimiento
+                HAVING COUNT(DISTINCT items.producto_maestro_id) > 1
+                ORDER BY COUNT(DISTINCT items.producto_maestro_id) DESC
                 LIMIT 100
             """)
 
@@ -716,14 +722,14 @@ async def fusionar_productos(request: FusionarRequest):
             if database_type == "postgresql":
                 cursor.execute("""
                     SELECT id, usuario_id, cantidad_actual,
-                           cantidad_total_comprada, ultima_actualizacion
+                           cantidad_total_comprada
                     FROM inventario_usuario
                     WHERE producto_maestro_id = %s
                 """, (dup_id,))
             else:
                 cursor.execute("""
                     SELECT id, usuario_id, cantidad_actual,
-                           cantidad_total_comprada, ultima_actualizacion
+                           cantidad_total_comprada
                     FROM inventario_usuario
                     WHERE producto_maestro_id = ?
                 """, (dup_id,))
@@ -735,7 +741,6 @@ async def fusionar_productos(request: FusionarRequest):
                 usuario_id = inv_dup[1]
                 cantidad = inv_dup[2]
                 cantidad_total = inv_dup[3]
-                fecha_act = inv_dup[4]
 
                 # Ver si ya existe inventario del producto principal
                 if database_type == "postgresql":

@@ -69,10 +69,16 @@ async def obtener_productos(
                     pm.presentacion,
                     pm.total_reportes,
                     pm.precio_promedio_global,
-                    STRING_AGG(DISTINCT pe.codigo_plu_local, ', ') as plus,
-                    COUNT(DISTINCT pe.establecimiento_nombre) as num_establecimientos
+                    STRING_AGG(DISTINCT
+                        CONCAT(items.codigo_leido, ' (', COALESCE(f.establecimiento, 'Sin tienda'), ')'),
+                        ', '
+                    ) as plus_con_tienda,
+                    COUNT(DISTINCT f.establecimiento) as num_establecimientos
                 FROM productos_maestros pm
-                LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
+                LEFT JOIN items_factura items ON pm.id = items.producto_maestro_id
+                    AND items.codigo_leido IS NOT NULL
+                    AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                LEFT JOIN facturas f ON f.id = items.factura_id
                 WHERE {where_sql}
                 GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
                          pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
@@ -94,10 +100,16 @@ async def obtener_productos(
                     pm.presentacion,
                     pm.total_reportes,
                     pm.precio_promedio_global,
-                    GROUP_CONCAT(DISTINCT pe.codigo_plu_local, ', ') as plus,
-                    COUNT(DISTINCT pe.establecimiento_nombre) as num_establecimientos
+                    GROUP_CONCAT(DISTINCT
+                        items.codigo_leido || ' (' || COALESCE(f.establecimiento, 'Sin tienda') || ')',
+                        ', '
+                    ) as plus_con_tienda,
+                    COUNT(DISTINCT f.establecimiento) as num_establecimientos
                 FROM productos_maestros pm
-                LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
+                LEFT JOIN items_factura items ON pm.id = items.producto_maestro_id
+                    AND items.codigo_leido IS NOT NULL
+                    AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                LEFT JOIN facturas f ON f.id = items.factura_id
                 WHERE {where_sql}
                 GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
                          pm.marca, pm.categoria, pm.subcategoria, pm.presentacion,
@@ -249,20 +261,32 @@ async def obtener_producto(producto_id: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # Obtener PLUs
+        # Obtener PLUs con sus establecimientos
         if database_type == "postgresql":
             cursor.execute("""
-                SELECT codigo_plu_local, establecimiento_nombre
-                FROM productos_por_establecimiento
-                WHERE producto_maestro_id = %s
-                AND codigo_plu_local IS NOT NULL
+                SELECT DISTINCT
+                    items.codigo_leido,
+                    f.establecimiento
+                FROM items_factura items
+                INNER JOIN facturas f ON f.id = items.factura_id
+                WHERE items.producto_maestro_id = %s
+                  AND items.codigo_leido IS NOT NULL
+                  AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                  AND f.establecimiento IS NOT NULL
+                ORDER BY f.establecimiento, items.codigo_leido
             """, (producto_id,))
         else:
             cursor.execute("""
-                SELECT codigo_plu_local, establecimiento_nombre
-                FROM productos_por_establecimiento
-                WHERE producto_maestro_id = ?
-                AND codigo_plu_local IS NOT NULL
+                SELECT DISTINCT
+                    items.codigo_leido,
+                    f.establecimiento
+                FROM items_factura items
+                INNER JOIN facturas f ON f.id = items.factura_id
+                WHERE items.producto_maestro_id = ?
+                  AND items.codigo_leido IS NOT NULL
+                  AND LENGTH(items.codigo_leido) BETWEEN 3 AND 7
+                  AND f.establecimiento IS NOT NULL
+                ORDER BY f.establecimiento, items.codigo_leido
             """, (producto_id,))
 
         plus = cursor.fetchall()
