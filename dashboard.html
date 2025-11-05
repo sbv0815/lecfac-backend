@@ -606,34 +606,21 @@
             </div>
 
             <!-- TAB: PRODUCTOS -->
+            <!-- TAB: PRODUCTOS -->
             <div id="tab-productos" class="tab-content">
                 <div class="section">
-                    <h2>🛒 Catálogo de Productos</h2>
-
-                    <div class="search-filters">
-                        <input type="text" id="filter-producto" placeholder="🔎 Buscar por nombre, código o marca..."
-                            oninput="filtrarProductos()">
-                        <select id="filter-categoria" onchange="filtrarProductos()">
-                            <option value="">Todas las categorías</option>
-                            <option value="LACTEOS">Lácteos</option>
-                            <option value="CARNES">Carnes y Pescados</option>
-                            <option value="FRUTAS_VERDURAS">Frutas y Verduras</option>
-                            <option value="PANADERIA">Panadería</option>
-                            <option value="BEBIDAS">Bebidas</option>
-                            <option value="SNACKS">Snacks y Dulces</option>
-                            <option value="ASEO_HOGAR">Aseo del Hogar</option>
-                            <option value="ASEO_PERSONAL">Aseo Personal</option>
-                            <option value="GRANOS_CEREALES">Granos y Cereales</option>
-                            <option value="ENLATADOS">Enlatados y Conservas</option>
-                            <option value="CONGELADOS">Congelados</option>
-                            <option value="OTROS">Otros</option>
-                        </select>
-                        <button class="btn btn-primary" onclick="limpiarFiltrosProductos()">
-                            🔄 Limpiar
+                    <h2>🛒 Gestión de Productos</h2>
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 20px; border-radius: 15px; margin-bottom: 20px; color: white;">
+                        <h3 style="margin-bottom: 10px;">📦 Sistema de Gestión Completa</h3>
+                        <p style="margin-bottom: 15px; opacity: 0.9;">
+                            Edita productos, detecta duplicados y consolida tu catálogo
+                        </p>
+                        <button class="btn btn-success" onclick="window.open('/productos.html', '_blank')"
+                            style="font-size: 1.1em; background: white; color: #667eea;">
+                            🚀 Abrir Gestor de Productos
                         </button>
                     </div>
-
-                    <div id="productos-container"></div>
                 </div>
             </div>
 
