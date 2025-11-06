@@ -424,19 +424,20 @@ async function cargarDuplicados() {
                 grupo.tipo === 'plu' ? '🟠 Mismo PLU' :
                     '🟡 Nombres Similares';
 
+            const productosGrupo = Array.isArray(grupo.productos) ? grupo.productos : [];
             return `
                 <div class="${tipoClase}">
                     <div class="duplicado-header">
                         <div>
                             <strong>${tipoLabel}</strong>
-                            <span class="badge badge-error">${grupo.productos.length} productos</span>
+                            <span class="badge badge-error">${productosGrupo.length} productos</span>
                         </div>
-                        <button class="btn-success btn-small" onclick="fusionarGrupo([${grupo.productos.map(p => p.id).join(',')}])">
+                        <button class="btn-success btn-small" onclick="fusionarGrupo([${productosGrupo.map(p => p.id).join(',')}])">
                             🔗 Fusionar Todos
                         </button>
                     </div>
                     <div class="productos-duplicados">
-                        ${grupo.productos.map((p, i) => `
+                        ${productosGrupo.map((p, i) => `
                             <div class="producto-dup-card ${i === 0 ? 'principal' : ''}">
                                 <div style="display: flex; justify-content: space-between; align-items: start;">
                                     <div>
@@ -541,17 +542,17 @@ async function editarProducto(id) {
         document.getElementById('edit-subcategoria').value = producto.subcategoria || '';
         document.getElementById('edit-presentacion').value = producto.presentacion || '';
 
-        // Estadísticas
-        document.getElementById('vecesComprado').value = producto.veces_comprado || '0';
-        document.getElementById('precioPromedio').value = producto.precio_promedio_global ?
+        // Estadísticas (coincidir IDs del HTML)
+        document.getElementById('edit-veces-comprado').value = producto.veces_comprado || '0';
+        document.getElementById('edit-precio-promedio').value = producto.precio_promedio_global ?
             `$${producto.precio_promedio_global.toLocaleString('es-CO')}` : 'Sin datos';
-        document.getElementById('numEstablecimientos').value = producto.num_establecimientos || '0';
+        document.getElementById('edit-num-establecimientos').value = producto.num_establecimientos || '0';
 
         // Cargar PLUs
         await cargarPLUsProducto(id);
 
-        // Mostrar modal
-        const modal = new bootstrap.Modal(document.getElementById('modalEdicion'));
+        // Mostrar modal (coincidir ID del HTML)
+        const modal = new bootstrap.Modal(document.getElementById('modal-editar'));
         modal.show();
 
     } catch (error) {
@@ -578,6 +579,7 @@ async function guardarEdicion(event) {
 
         console.log('💾 Guardando cambios:', datos);
 
+        // 1) Actualizar datos base del producto
         const response = await fetch(`/api/productos/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -592,8 +594,27 @@ async function guardarEdicion(event) {
 
         console.log('✅ Producto actualizado:', resultado);
 
+        // 2) Actualizar PLUs del producto
+        if (typeof window.recopilarPLUs === 'function') {
+            const plus = window.recopilarPLUs();
+            console.log('💾 Guardando PLUs:', plus);
+
+            const respPLUs = await fetch(`/api/productos/${id}/plus`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(plus)
+            });
+
+            if (!respPLUs.ok) {
+                throw new Error('Error al guardar PLUs');
+            }
+            console.log('✅ PLUs actualizados');
+        } else {
+            console.warn('⚠️ recopilarPLUs no está disponible');
+        }
+
         cerrarModal('modal-editar');
-        mostrarMensaje('✅ Producto actualizado correctamente', 'success');
+        mostrarMensaje('✅ Producto y PLUs actualizados correctamente', 'success');
         cargarProductos(paginaActual);
 
     } catch (error) {
