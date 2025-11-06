@@ -532,14 +532,14 @@ async function editarProducto(id) {
         const producto = await response.json();
 
         // Llenar el formulario
-        document.getElementById('productoId').value = producto.id;
-        document.getElementById('codigoEan').value = producto.codigo_ean || '';
-        document.getElementById('nombreNormalizado').value = producto.nombre_normalizado || '';
-        document.getElementById('nombreComercial').value = producto.nombre_comercial || '';
-        document.getElementById('marca').value = producto.marca || '';
-        document.getElementById('categoria').value = producto.categoria || '';
-        document.getElementById('subcategoria').value = producto.subcategoria || '';
-        document.getElementById('presentacion').value = producto.presentacion || '';
+        document.getElementById('edit-id').value = producto.id;
+        document.getElementById('edit-ean').value = producto.codigo_ean || '';
+        document.getElementById('edit-nombre-norm').value = producto.nombre_normalizado || '';
+        document.getElementById('edit-nombre-com').value = producto.nombre_comercial || '';
+        document.getElementById('edit-marca').value = producto.marca || '';
+        document.getElementById('edit-categoria').value = producto.categoria || '';
+        document.getElementById('edit-subcategoria').value = producto.subcategoria || '';
+        document.getElementById('edit-presentacion').value = producto.presentacion || '';
 
         // Estadísticas
         document.getElementById('vecesComprado').value = producto.veces_comprado || '0';
