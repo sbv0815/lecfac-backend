@@ -308,7 +308,10 @@ app.add_middleware(
 )
 print("✅ CORS configurado")
 
+app.include_router(productos_v2_router)
+print("✅ productos_v2_router registrado PRIMERO")
 
+# Ahora los demás routers de productos
 app.include_router(inventario_router)
 print("✅ inventario_router registrado")
 
@@ -316,11 +319,11 @@ app.include_router(diagnostico_router)
 print("✅ diagnostico_router registrado")
 
 app.include_router(comparacion_router, tags=["comparacion"])
-print("✅ comparacion_router registrado en /api/productos/*")
+print("✅ comparacion_router registrado")
 
 try:
     app.include_router(productos_mejoras_router)
-    print("✅ productos_mejoras_router registrado en /api/productos/*")
+    print("✅ productos_mejoras_router registrado")
 except Exception as e:
     print(f"❌ Error registrando productos_mejoras_router: {e}")
     import traceback
@@ -328,9 +331,6 @@ except Exception as e:
 
 app.include_router(productos_est_router)
 print("✅ productos_establecimiento_router registrado")
-
-app.include_router(productos_v2_router)
-print("✅ productos_v2_router registrado")
 
 @app.post("/invoices/parse-video")
 async def parse_video(
@@ -409,9 +409,6 @@ async def parse_video(
 
 app.include_router(mobile_router, tags=["mobile"])
 app.include_router(establecimientos_router)
-
-
-
 
 current_dir = Path(__file__).parent
 static_path = current_dir / "static"
