@@ -164,6 +164,187 @@ def obtener_o_crear_establecimiento_id(cursor, cadena: str) -> Optional[int]:
         print(f"   ⚠️ Error con establecimiento {cadena}: {e}")
         return None
 
+# AGREGAR ESTAS FUNCIONES A ocr_processor.py
+# Colocarlas después de las importaciones y antes de la clase OCRProcessor
+
+def clasificar_codigo(codigo: str) -> Tuple[str, str]:
+    """
+    Clasifica un código como EAN o PLU basándose en su longitud
+
+    Args:
+        codigo: Código a clasificar
+
+    Returns:
+        tuple: (tipo_codigo, codigo_limpio) donde tipo es 'EAN', 'PLU' o 'DESCONOCIDO'
+    """
+    if not codigo or not isinstance(codigo, str):
+        return 'DESCONOCIDO', ''
+
+    # Limpiar código - solo dígitos
+    codigo_limpio = ''.join(filter(str.isdigit, str(codigo)))
+
+    if not codigo_limpio:
+        return 'DESCONOCIDO', ''
+
+    longitud = len(codigo_limpio)
+
+    # Clasificación por longitud
+    if longitud >= 8:
+        return 'EAN', codigo_limpio
+    elif 3 <= longitud <= 7:
+        return 'PLU', codigo_limpio
+    elif longitud < 3:
+        return 'CODIGO_MUY_CORTO', codigo_limpio
+    else:
+        return 'DESCONOCIDO', codigo_limpio
+
+
+def es_producto_fresco(nombre: str) -> bool:
+    """
+    Determina si un producto es fresco basándose en el nombre
+
+    Args:
+        nombre: Nombre del producto
+
+    Returns:
+        bool: True si es producto fresco
+    """
+    if not nombre:
+        return False
+
+    productos_frescos = [
+        # Frutas
+        'manzana', 'pera', 'naranja', 'limón', 'mandarina', 'toronja',
+        'banano', 'plátano', 'fresa', 'mora', 'uva', 'mango', 'papaya',
+        'piña', 'sandía', 'melón', 'durazno', 'ciruela', 'kiwi',
+
+        # Verduras
+        'tomate', 'cebolla', 'zanahoria', 'papa', 'yuca', 'lechuga',
+        'espinaca', 'acelga', 'repollo', 'coliflor', 'brócoli', 'apio',
+        'cilantro', 'perejil', 'albahaca', 'pimentón', 'ají', 'pepino',
+        'calabaza', 'ahuyama', 'berenjena', 'remolacha', 'rábano',
+
+        # Carnes
+        'carne', 'res', 'cerdo', 'pollo', 'pescado', 'mariscos',
+        'camarón', 'pulpo', 'calamar', 'chuleta', 'costilla', 'lomo',
+        'pechuga', 'muslo', 'alas', 'molida', 'bistec',
+
+        # Lácteos frescos
+        'leche', 'yogurt', 'yogur', 'queso', 'crema', 'mantequilla',
+        'requesón', 'cuajada', 'suero',
+
+        # Otros frescos
+        'huevo', 'pan', 'arepa', 'tortilla', 'fresco', 'fresca',
+        'verdura', 'hortaliza', 'fruta', 'orgánico', 'orgánica'
+    ]
+
+    nombre_lower = nombre.lower()
+    return any(fresco in nombre_lower for fresco in productos_frescos)
+
+
+def guardar_plu_establecimiento(cursor, conn, producto_maestro_id: int,
+                               establecimiento_id: int, codigo_plu: str,
+                               precio: int, descripcion: str = None):
+    """
+    Guarda un PLU en productos_por_establecimiento
+
+    Args:
+        cursor: Cursor de base de datos
+        conn: Conexión a base de datos
+        producto_maestro_id: ID del producto maestro
+        establecimiento_id: ID del establecimiento
+        codigo_plu: Código PLU
+        precio: Precio del producto
+        descripcion: Descripción opcional del PLU
+    """
+    try:
+        # Verificar si ya existe
+        cursor.execute("""
+            SELECT id FROM productos_por_establecimiento
+            WHERE producto_maestro_id = %s
+              AND establecimiento_id = %s
+        """, (producto_maestro_id, establecimiento_id))
+
+        existe = cursor.fetchone()
+
+        if existe:
+            # Actualizar
+            cursor.execute("""
+                UPDATE productos_por_establecimiento
+                SET codigo_plu = %s,
+                    precio_unitario = %s,
+                    descripcion_plu = %s,
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                WHERE producto_maestro_id = %s
+                  AND establecimiento_id = %s
+            """, (codigo_plu, precio, descripcion,
+                  producto_maestro_id, establecimiento_id))
+            print(f"      📝 PLU actualizado: {codigo_plu}")
+        else:
+            # Insertar nuevo
+            cursor.execute("""
+                INSERT INTO productos_por_establecimiento
+                (producto_maestro_id, establecimiento_id, codigo_plu,
+                 precio_unitario, descripcion_plu)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (producto_maestro_id, establecimiento_id,
+                  codigo_plu, precio, descripcion))
+            print(f"      ✅ PLU guardado: {codigo_plu}")
+
+    except Exception as e:
+        print(f"      ❌ Error guardando PLU: {e}")
+        # No hacer rollback para no perder el producto
+
+
+# MODIFICACIÓN NECESARIA en _save_product_to_items_factura:
+# Buscar la línea donde dice:
+#   es_plu = tipo_codigo in ['PLU', 'PLU_NORMALIZADO', 'CODIGO_CORTO']
+#
+# Y reemplazar toda esa sección por:
+
+# NUEVO CÓDIGO PARA CLASIFICAR Y GUARDAR PLUs:
+# ---------------------------------------------
+# Clasificar el código
+tipo_clasificado, codigo_limpio = clasificar_codigo(codigo_final)
+print(f"   🏷️ Clasificación: {tipo_clasificado} ({len(codigo_limpio)} dígitos)")
+
+# Determinar si debe guardarse como PLU
+debe_guardar_plu = False
+
+if tipo_clasificado == 'PLU':
+    # Es definitivamente un PLU
+    debe_guardar_plu = True
+    print(f"   📌 PLU detectado: {codigo_limpio}")
+elif tipo_clasificado == 'EAN' and cadena.upper() in ['ARA', 'D1']:
+    # Ara y D1 a veces usan EANs cortos como PLUs
+    if len(codigo_limpio) <= 10:
+        debe_guardar_plu = True
+        print(f"   📌 {cadena} usa EAN corto como PLU")
+
+# Guardar PLU si corresponde
+if debe_guardar_plu and establecimiento_id and producto_maestro_id:
+    guardar_plu_establecimiento(
+        cursor=cursor,
+        conn=conn,
+        producto_maestro_id=producto_maestro_id,
+        establecimiento_id=establecimiento_id,
+        codigo_plu=codigo_limpio,
+        precio=precio,
+        descripcion=nombre
+    )
+
+# Si es un producto fresco, marcarlo
+if es_producto_fresco(nombre):
+    try:
+        cursor.execute("""
+            UPDATE productos_maestros
+            SET es_producto_fresco = TRUE
+            WHERE id = %s
+        """, (producto_maestro_id,))
+        print(f"   🥬 Marcado como producto fresco")
+    except Exception as e:
+        print(f"   ⚠️ No se pudo marcar como fresco: {e}")
+
 
 class OCRProcessor:
     """Procesador automatico de facturas con OCR - Version 3.3 con PLUs"""
