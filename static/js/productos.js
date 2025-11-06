@@ -4,10 +4,26 @@
 console.log("🚀 Inicializando Gestión de Productos v2.1");
 
 // =============================================================
-// 🌐 Función auxiliar global para evitar errores HTTP/HTTPS
+// 🌐 Función auxiliar global para obtener la URL base de la API
+// Evita errores "Mixed Content" en Railway o Render
 // =============================================================
 function getApiBase() {
-    return window.location.origin.replace('http://', 'https://');
+    let origin = window.location.origin;
+
+    // Si el origen comienza en http:// → reemplazar por https://
+    if (origin.startsWith('http://')) {
+        origin = origin.replace('http://', 'https://');
+    }
+
+    // Si el proxy o el servidor devuelve algo raro (sin protocolo)
+    if (!origin.startsWith('https://')) {
+        origin = 'https://' + window.location.host;
+    }
+
+    // Elimina doble slash accidental (https://dominio.com//api)
+    origin = origin.replace(/\/+$/, '');
+
+    return origin;
 }
 
 // =============================================================
