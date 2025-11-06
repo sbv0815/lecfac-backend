@@ -1,18 +1,15 @@
-// funciones_plu_modal.js - Gestión de PLUs en el modal (Versión definitiva)
-console.log("🏪 Cargando funciones de PLU Modal - Versión definitiva");
+// funciones_plu_modal.js - Gestión de PLUs (Versión 4.0 HTTPS Fix)
+console.log("🏪 Inicializando funciones PLU Modal - v4.0");
 
 // Variable global para almacenar establecimientos
 let establecimientosCache = [];
 
 // =============================================================
-// Función para obtener la base de la API
+// Función para obtener la base de la API (SIEMPRE HTTPS)
 // =============================================================
 function getApiBase() {
-    let origin = window.location.origin;
-    if (origin.startsWith('http://')) {
-        origin = origin.replace('http://', 'https://');
-    }
-    return origin;
+    // SIEMPRE usar HTTPS
+    return 'https://lecfac-backend-production.up.railway.app';
 }
 
 // =============================================================
@@ -28,6 +25,8 @@ async function cargarEstablecimientosCache() {
     try {
         const apiBase = getApiBase();
         const url = `${apiBase}/api/establecimientos`;
+
+        console.log("🔗 URL establecimientos:", url);
 
         const response = await fetch(url);
 
@@ -51,7 +50,7 @@ async function cargarEstablecimientosCache() {
             { id: 4, nombre: "Carulla", nombre_normalizado: "Carulla" },
             { id: 5, nombre: "Jumbo", nombre_normalizado: "Jumbo" },
             { id: 6, nombre: "Olímpica", nombre_normalizado: "Olímpica" },
-            { id: 7, nombre: "Dolarcity", nombre_normalizado: "Dolarcity" },
+            { id: 7, nombre: "Euro", nombre_normalizado: "Euro" },
             { id: 8, nombre: "Metro", nombre_normalizado: "Metro" },
             { id: 9, nombre: "Makro", nombre_normalizado: "Makro" },
             { id: 10, nombre: "Justo & Bueno", nombre_normalizado: "Justo & Bueno" },
@@ -125,11 +124,20 @@ async function agregarPLU() {
             </div>
             <div class="form-group">
                 <label>Código PLU</label>
-                <input type="text" id="plu-codigo-${timestamp}" class="plu-codigo-input" placeholder="967509" required>
+                <input type="text"
+                       id="plu-codigo-${timestamp}"
+                       class="plu-codigo-input"
+                       placeholder="Ej: 02000000013657"
+                       required>
             </div>
             <div class="form-group">
                 <label>Precio Unitario</label>
-                <input type="number" id="plu-precio-${timestamp}" class="plu-precio-input" placeholder="5000" min="0" step="1">
+                <input type="number"
+                       id="plu-precio-${timestamp}"
+                       class="plu-precio-input"
+                       placeholder="5000"
+                       min="0"
+                       step="1">
             </div>
             <button type="button" class="btn-remove-plu" onclick="eliminarPLU(this)">❌</button>
         </div>
@@ -194,11 +202,20 @@ async function cargarPLUsProducto(productoId) {
                         </div>
                         <div class="form-group">
                             <label>Código PLU</label>
-                            <input type="text" id="plu-codigo-${timestamp}" class="plu-codigo-input" value="${plu.codigo_plu || ''}" required>
+                            <input type="text"
+                                   id="plu-codigo-${timestamp}"
+                                   class="plu-codigo-input"
+                                   value="${plu.codigo_plu || ''}"
+                                   required>
                         </div>
                         <div class="form-group">
                             <label>Precio Unitario</label>
-                            <input type="number" id="plu-precio-${timestamp}" class="plu-precio-input" value="${plu.precio_unitario || ''}" min="0" step="1">
+                            <input type="number"
+                                   id="plu-precio-${timestamp}"
+                                   class="plu-precio-input"
+                                   value="${plu.precio_unitario || ''}"
+                                   min="0"
+                                   step="1">
                         </div>
                         <button type="button" class="btn-remove-plu" onclick="eliminarPLU(this)">❌</button>
                     </div>
@@ -314,4 +331,4 @@ window.cargarPLUsProducto = cargarPLUsProducto;
 window.recopilarPLUs = recopilarPLUs;
 window.eliminarPLU = eliminarPLU;
 
-console.log("✅ Funciones PLU Modal exportadas - Versión definitiva");
+console.log("✅ Funciones PLU Modal exportadas - Versión 4.0 HTTPS");
