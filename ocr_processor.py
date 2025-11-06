@@ -1,22 +1,21 @@
 ﻿"""
 ============================================================================
 SISTEMA DE PROCESAMIENTO AUTOMATICO DE OCR PARA FACTURAS
-VERSION 3.2 - ROLLBACK A SISTEMA FUNCIONAL
+VERSION 3.3 - CON GUARDADO AUTOMATICO DE PLUs
 ============================================================================
 
 CAMBIOS EN ESTA VERSION:
-- REMOVIDO: ProductResolver (sistema de canonicos con bugs)
-- RESTAURADO: product_matcher.py (sistema probado y funcional)
-- SIMPLIFICADO: Flujo directo a producto_maestro_id
-- OPTIMIZADO: Menos pasos, mas confiabilidad
+- AGREGADO: Guardado automático de PLUs en productos_por_establecimiento
+- MEJORADO: Asociación código-establecimiento desde el OCR
+- OPTIMIZADO: Un solo escaneo = producto + PLU guardados
 
-ARQUITECTURA SIMPLIFICADA:
-- productos_maestros: Sistema principal (unico)
-- items_factura: Items con producto_maestro_id directo
-- Sin complejidad de canonicos/variantes (por ahora)
+ARQUITECTURA:
+- productos_maestros: Sistema principal
+- items_factura: Items con producto_maestro_id
+- productos_por_establecimiento: PLUs por establecimiento (NUEVO)
 
 AUTOR: LecFac Team
-ULTIMA ACTUALIZACION: 2025-11-04 (Rollback funcional)
+ULTIMA ACTUALIZACION: 2025-11-06 (Auto-guardado PLUs)
 ============================================================================
 """
 
@@ -132,8 +131,42 @@ def validar_producto(nombre: str, precio: int, codigo: str = "") -> Tuple[bool, 
     return True, None
 
 
+def obtener_o_crear_establecimiento_id(cursor, cadena: str) -> Optional[int]:
+    """
+    Obtiene el ID del establecimiento basado en la cadena detectada.
+    Si no existe, intenta crearlo.
+    """
+    try:
+        # Primero buscar si existe
+        cursor.execute("""
+            SELECT id FROM establecimientos
+            WHERE nombre_normalizado ILIKE %s
+               OR nombre ILIKE %s
+            LIMIT 1
+        """, (cadena, cadena))
+
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+
+        # Si no existe, crear uno nuevo
+        cursor.execute("""
+            INSERT INTO establecimientos (nombre, nombre_normalizado)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (cadena, cadena))
+
+        new_id = cursor.fetchone()[0]
+        print(f"   📍 Nuevo establecimiento creado: {cadena} (ID: {new_id})")
+        return new_id
+
+    except Exception as e:
+        print(f"   ⚠️ Error con establecimiento {cadena}: {e}")
+        return None
+
+
 class OCRProcessor:
-    """Procesador automatico de facturas con OCR - Version 3.2 (Rollback)"""
+    """Procesador automatico de facturas con OCR - Version 3.3 con PLUs"""
 
     def __init__(self):
         self.is_running = False
@@ -163,12 +196,13 @@ class OCRProcessor:
         print("=" * 80)
         print("🚀 PROCESADOR OCR AUTOMATICO INICIADO")
         print("=" * 80)
-        print("VERSION 3.2 - ROLLBACK A SISTEMA FUNCIONAL")
+        print("VERSION 3.3 - CON GUARDADO AUTOMATICO DE PLUs")
         print("✅ product_matcher integrado")
         print("✅ Normalizacion inteligente de codigos")
         print("✅ Deteccion automatica de duplicados")
         print("✅ Validacion robusta de productos")
         print("✅ Actualizacion automatica de inventario")
+        print("✅ NUEVO: Guardado automático de PLUs por establecimiento")
         print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica y mas")
         print("=" * 80)
 
@@ -300,6 +334,13 @@ class OCRProcessor:
         print(f"🏪 Establecimiento: {establecimiento} (Cadena: {cadena})")
         print(f"💵 Total factura: ${total_factura:,}")
 
+        # Obtener o crear el ID del establecimiento
+        establecimiento_id = obtener_o_crear_establecimiento_id(cursor, cadena)
+        if establecimiento_id:
+            print(f"   📍 Establecimiento ID: {establecimiento_id}")
+        else:
+            print(f"   ⚠️ No se pudo obtener ID del establecimiento")
+
         productos_originales = data.get("productos", [])
 
         print(f"\n{'='*70}")
@@ -362,7 +403,8 @@ class OCRProcessor:
             print(f"[{idx}/{len(productos_a_procesar)}] 🔄 Procesando: {nombre_producto}")
 
             item_id = self._save_product_to_items_factura(
-                cursor, conn, product, factura_id, user_id, establecimiento, cadena
+                cursor, conn, product, factura_id, user_id,
+                establecimiento, cadena, establecimiento_id
             )
 
             if item_id:
@@ -407,17 +449,18 @@ class OCRProcessor:
         factura_id: int,
         user_id: int,
         establecimiento: str,
-        cadena: str
+        cadena: str,
+        establecimiento_id: Optional[int] = None
     ) -> Optional[int]:
         """
-        VERSION 3.2 - Sistema simplificado con product_matching_v2
+        VERSION 3.3 - Con guardado automático de PLUs
 
-        Flujo directo:
+        Flujo mejorado:
         1. Validar producto
         2. Normalizar codigo
-        3. Buscar/crear en productos_maestros (usando product_matching_v2)
-        4. Guardar en items_factura con producto_maestro_id
-        5. Commit inmediato
+        3. Buscar/crear en productos_maestros
+        4. Guardar en items_factura
+        5. NUEVO: Guardar PLU en productos_por_establecimiento
         """
         try:
             codigo_raw = str(product.get("codigo", "")).strip()
@@ -444,7 +487,7 @@ class OCRProcessor:
             else:
                 print(f"   🔖 Codigo: {codigo or 'SIN CODIGO'} ({tipo_codigo})")
 
-            # PASO 3: Buscar/crear producto maestro usando product_matching_v2
+            # PASO 3: Buscar/crear producto maestro
             if not PRODUCT_MATCHING_AVAILABLE:
                 print(f"   ❌ product_matching_v2 no disponible")
                 return None
@@ -452,7 +495,7 @@ class OCRProcessor:
             try:
                 codigo_final = codigo if codigo else codigo_raw if codigo_raw else ""
 
-                # Llamar a product_matcher (buscar_producto_v2 es el alias)
+                # Llamar a product_matcher
                 producto_maestro_id = buscar_producto_v2(
                     codigo=codigo_final,
                     nombre=nombre,
@@ -501,8 +544,34 @@ class OCRProcessor:
 
                 item_id = cursor.fetchone()[0]
 
-                # No hacer commit aquí, product_matching_v2 ya lo hace
-                # El commit final se hace en _process_successful_ocr
+                # PASO 5: NUEVO - Guardar PLU en productos_por_establecimiento
+                if codigo_final and establecimiento_id and producto_maestro_id:
+                    try:
+                        # Determinar si es PLU o EAN
+                        es_plu = tipo_codigo in ['PLU', 'PLU_NORMALIZADO', 'CODIGO_CORTO']
+
+                        # Para Ara y Jumbo, el EAN también puede ser el PLU
+                        if cadena.upper() in ['ARA', 'JUMBO'] and tipo_codigo == 'EAN':
+                            es_plu = True
+                            print(f"   📌 {cadena} usa EAN como PLU")
+
+                        if es_plu or tipo_codigo == 'EAN':
+                            cursor.execute("""
+                                INSERT INTO productos_por_establecimiento
+                                    (producto_maestro_id, establecimiento_id, codigo_plu, precio_unitario, fecha_creacion)
+                                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                                ON CONFLICT (producto_maestro_id, establecimiento_id)
+                                DO UPDATE SET
+                                    codigo_plu = EXCLUDED.codigo_plu,
+                                    precio_unitario = EXCLUDED.precio_unitario,
+                                    fecha_actualizacion = CURRENT_TIMESTAMP
+                            """, (producto_maestro_id, establecimiento_id, codigo_final, precio))
+
+                            print(f"   📌 PLU guardado automáticamente: {codigo_final} en {cadena}")
+
+                    except Exception as e:
+                        print(f"   ⚠️ No se pudo guardar PLU automático: {e}")
+                        # No hacer rollback, el producto ya está guardado
 
                 return item_id
 
@@ -547,7 +616,7 @@ class OCRProcessor:
 
 
 print("=" * 80)
-print("🚀 OCR PROCESSOR V3.2 CARGADO - ROLLBACK FUNCIONAL")
+print("🚀 OCR PROCESSOR V3.3 CARGADO - CON GUARDADO AUTOMATICO DE PLUs")
 print("=" * 80)
 print("✅ Sistema simplificado con product_matcher")
 print("✅ Normalizacion inteligente de codigos: OK")
@@ -555,8 +624,8 @@ print("✅ Deteccion automatica de duplicados: OK" if DUPLICATE_DETECTOR_AVAILAB
 print("✅ product_matcher (sistema funcional): OK" if PRODUCT_MATCHING_AVAILABLE else "❌ product_matcher: NO")
 print("✅ Validacion robusta de precios: OK")
 print("✅ Actualizacion automatica de inventario: OK")
+print("✅ NUEVO: Guardado automático de PLUs por establecimiento")
 print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica, Carulla, y mas")
 print("=" * 80)
 
 processor = OCRProcessor()
-
