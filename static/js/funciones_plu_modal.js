@@ -4,11 +4,20 @@
 let pluCounter = 0;
 let establecimientosCache = [];
 
+// =============================================================
+// 🌐 Función auxiliar global para evitar errores HTTP/HTTPS
+// =============================================================
+function getApiBase() {
+    return window.location.origin.replace('http://', 'https://');
+}
+
+// =============================================================
 // Cargar establecimientos al iniciar
+// =============================================================
 async function cargarEstablecimientos() {
     try {
-        const response = await fetch(`${window.location.origin}/api/establecimientos`);
-
+        const apiBase = getApiBase();
+        const response = await fetch(`${apiBase}/api/establecimientos`);
 
         if (response.ok) {
             establecimientosCache = await response.json();
@@ -26,12 +35,14 @@ async function cargarEstablecimientos() {
             { id: 6, nombre_normalizado: 'Ara' },
             { id: 7, nombre_normalizado: 'Justo y Bueno' },
             { id: 8, nombre_normalizado: 'Alkosto' },
-            { id: 9, nombre_normalizado: 'OLÍMPICA' }  // El que tienes en tu BD
+            { id: 9, nombre_normalizado: 'OLÍMPICA' } // El que tienes en tu BD
         ];
     }
 }
 
+// =============================================================
 // Agregar un PLU vacío al formulario
+// =============================================================
 function agregarPLU() {
     pluCounter++;
     const contenedor = document.getElementById('contenedorPLUs');
@@ -72,7 +83,9 @@ function agregarPLU() {
     contenedor.insertAdjacentHTML('beforeend', pluHTML);
 }
 
+// =============================================================
 // Eliminar un PLU del formulario
+// =============================================================
 function eliminarPLU(id) {
     const elemento = document.getElementById(`plu-${id}`);
     if (elemento) {
@@ -80,10 +93,13 @@ function eliminarPLU(id) {
     }
 }
 
-// Cargar PLUs existentes al editar
+// =============================================================
+// Cargar PLUs existentes al editar producto
+// =============================================================
 async function cargarPLUsProducto(productoId) {
     try {
-        const response = await fetch(`/api/productos/${productoId}/plus`);
+        const apiBase = getApiBase();
+        const response = await fetch(`${apiBase}/api/productos/${productoId}/plus`);
         if (response.ok) {
             const data = await response.json();
 
@@ -108,7 +124,9 @@ async function cargarPLUsProducto(productoId) {
     }
 }
 
+// =============================================================
 // Agregar un PLU existente (con datos)
+// =============================================================
 function agregarPLUExistente(plu) {
     pluCounter++;
     const contenedor = document.getElementById('contenedorPLUs');
@@ -155,7 +173,9 @@ function agregarPLUExistente(plu) {
     contenedor.insertAdjacentHTML('beforeend', pluHTML);
 }
 
-// Recopilar PLUs del formulario
+// =============================================================
+// Recopilar PLUs del formulario antes de guardar
+// =============================================================
 function recopilarPLUs() {
     const plus = [];
 
@@ -176,10 +196,12 @@ function recopilarPLUs() {
     return plus;
 }
 
+// =============================================================
 // Guardar edición completa (producto + PLUs)
-// Nota: se renombra para evitar colisión con la función global en productos.js
+// =============================================================
 async function guardarEdicionPLUs() {
     const productoId = document.getElementById('productoId').value;
+    const apiBase = getApiBase();
 
     // 1. Guardar datos básicos del producto
     const datosProducto = {
@@ -194,11 +216,9 @@ async function guardarEdicionPLUs() {
 
     try {
         // Actualizar producto
-        const responseProducto = await fetch(`/api/productos/${productoId}`, {
+        const responseProducto = await fetch(`${apiBase}/api/productos/${productoId}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(datosProducto)
         });
 
@@ -210,11 +230,9 @@ async function guardarEdicionPLUs() {
         const plus = recopilarPLUs();
         console.log('PLUs a guardar:', plus);
 
-        const responsePLUs = await fetch(`/api/productos/${productoId}/plus`, {
+        const responsePLUs = await fetch(`${apiBase}/api/productos/${productoId}/plus`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(plus)
         });
 
@@ -238,13 +256,15 @@ async function guardarEdicionPLUs() {
     }
 }
 
-// Función para detectar duplicados corregida
+// =============================================================
+// Detección de duplicados
+// =============================================================
 async function detectarDuplicados() {
     console.log('🔍 Detectando duplicados...');
 
     try {
-        // Opción 1: Usar el endpoint GET simple
-        const response = await fetch('/api/productos/duplicados?umbral_similitud=0.8&limite=50');
+        const apiBase = getApiBase();
+        const response = await fetch(`${apiBase}/api/productos/duplicados?umbral_similitud=0.8&limite=50`);
 
         if (response.ok) {
             const data = await response.json();
@@ -256,7 +276,7 @@ async function detectarDuplicados() {
             }
         } else {
             // Si falla, intentar con configuración más simple
-            const response2 = await fetch('/api/productos/duplicados');
+            const response2 = await fetch(`${apiBase}/api/productos/duplicados`);
             if (response2.ok) {
                 const data2 = await response2.json();
                 if (data2.duplicados && data2.duplicados.length > 0) {
@@ -274,7 +294,9 @@ async function detectarDuplicados() {
     }
 }
 
-// Función para mostrar duplicados
+// =============================================================
+// Mostrar duplicados en modal
+// =============================================================
 function mostrarDuplicados(duplicados) {
     let html = '<h5>Posibles Duplicados Encontrados:</h5><ul>';
 
@@ -293,7 +315,6 @@ function mostrarDuplicados(duplicados) {
 
     html += '</ul>';
 
-    // Crear un modal o mostrar en un div
     const modalHTML = `
         <div class="modal fade" id="modalDuplicados" tabindex="-1">
             <div class="modal-dialog modal-lg">
@@ -313,27 +334,28 @@ function mostrarDuplicados(duplicados) {
         </div>
     `;
 
-    // Agregar modal al body si no existe
     if (!document.getElementById('modalDuplicados')) {
         document.body.insertAdjacentHTML('beforeend', modalHTML);
     } else {
         document.querySelector('#modalDuplicados .modal-body').innerHTML = html;
     }
 
-    // Mostrar modal
     const modal = new bootstrap.Modal(document.getElementById('modalDuplicados'));
     modal.show();
 }
 
-// Inicializar al cargar
+// =============================================================
+// Inicialización automática al cargar
+// =============================================================
 document.addEventListener('DOMContentLoaded', function () {
     cargarEstablecimientos();
 });
 
-// Exportar funciones para uso global
+// =============================================================
+// Exportar funciones globales
+// =============================================================
 window.agregarPLU = agregarPLU;
 window.eliminarPLU = eliminarPLU;
 window.cargarPLUsProducto = cargarPLUsProducto;
-// No exportar guardarEdicionPLUs para evitar colisión con productos.js
 window.detectarDuplicados = detectarDuplicados;
 window.recopilarPLUs = recopilarPLUs;
