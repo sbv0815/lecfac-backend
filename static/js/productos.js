@@ -1,5 +1,5 @@
-// ============================================================================
-// productos.js - VERSIÓN COMPLETA CON TODAS LAS FUNCIONES
+============================================================================
+// productos.js - VERSIÓN COMPLETA v2.1
 // ============================================================================
 
 console.log("✅ productos.js v2.1 cargado - Versión completa");
@@ -417,12 +417,12 @@ async function cargarDuplicados() {
         // Renderizar duplicados
         container.innerHTML = data.duplicados.map(grupo => {
             const tipoClase = grupo.tipo === 'ean' ? 'duplicado-item' :
-                grupo.tipo === 'plu' ? 'duplicado-item plu' :
-                    'duplicado-item nombre';
+                              grupo.tipo === 'plu' ? 'duplicado-item plu' :
+                              'duplicado-item nombre';
 
             const tipoLabel = grupo.tipo === 'ean' ? '🔴 Mismo EAN' :
-                grupo.tipo === 'plu' ? '🟠 Mismo PLU' :
-                    '🟡 Nombres Similares';
+                             grupo.tipo === 'plu' ? '🟠 Mismo PLU' :
+                             '🟡 Nombres Similares';
 
             return `
                 <div class="${tipoClase}">
@@ -726,7 +726,7 @@ window.recargarColores = recargarColores;
 // ============================================================================
 // INICIALIZACIÓN
 // ============================================================================
-document.addEventListener('DOMContentLoaded', async function () {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Inicializando Gestión de Productos v2.1');
 
     await cargarColoresEstablecimientos();
@@ -751,3 +751,5 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     console.log('✅ Sistema inicializado correctamente');
 });
+ENDFILE
+echo "✅ Archivo nuevo creado"
