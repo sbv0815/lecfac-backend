@@ -1,6 +1,7 @@
 """
 productos_api_v2.py - API CORREGIDA con PLUs
-Versión que SÍ devuelve los PLUs correctamente
+✅ Devuelve campo codigo_plu correctamente
+✅ Incluye endpoints de duplicados
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -9,7 +10,7 @@ from database import get_db_connection
 
 router = APIRouter(prefix="/api/productos", tags=["productos-v2"])
 
-print("✅ productos_api_v2.py cargado - Versión con PLUs corregida")
+print("✅ productos_api_v2.py cargado - Versión con PLUs CORREGIDA")
 
 
 @router.get("")
@@ -21,7 +22,7 @@ async def obtener_productos(
 ):
     """
     Obtener lista de productos con paginación
-    ✅ CORREGIDO: Incluye PLUs desde productos_por_establecimiento
+    ✅ CORREGIDO: Devuelve campo codigo_plu
     """
     try:
         conn = get_db_connection()
@@ -30,8 +31,7 @@ async def obtener_productos(
 
         offset = (pagina - 1) * limite
 
-        print(f"📦 Obteniendo productos - Página {pagina}, Límite {limite}")
-        print(f"🔍 Búsqueda: {busqueda}, Filtro: {filtro}")
+        print(f"📦 [API] Página {pagina}, Límite {limite}, Búsqueda: {busqueda}, Filtro: {filtro}")
 
         # Construir WHERE
         where_clauses = []
@@ -55,7 +55,7 @@ async def obtener_productos(
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # ✅ QUERY CORREGIDA: Con CTE para obtener PLUs
+        # ✅ QUERY CORREGIDA CON CTE PARA PLUs
         if database_type == "postgresql":
             query = f"""
                 WITH producto_plus AS (
@@ -82,7 +82,7 @@ async def obtener_productos(
                     pm.presentacion,
                     pm.total_reportes,
                     pm.precio_promedio_global,
-                    COALESCE(pp.plus_texto, '-') as codigo_plu
+                    COALESCE(pp.plus_texto, NULL) as codigo_plu
                 FROM productos_maestros pm
                 LEFT JOIN producto_plus pp ON pp.producto_maestro_id = pm.id
                 WHERE {where_sql}
@@ -90,7 +90,7 @@ async def obtener_productos(
                 LIMIT %s OFFSET %s
             """
         else:
-            # SQLite - Fallback simplificado
+            # SQLite - sin PLUs
             query = f"""
                 SELECT
                     pm.id,
@@ -103,7 +103,7 @@ async def obtener_productos(
                     pm.presentacion,
                     pm.total_reportes,
                     pm.precio_promedio_global,
-                    '-' as codigo_plu
+                    NULL as codigo_plu
                 FROM productos_maestros pm
                 WHERE {where_sql}
                 ORDER BY pm.total_reportes DESC, pm.id DESC
@@ -112,53 +112,43 @@ async def obtener_productos(
 
         params.extend([limite, offset])
 
-        print(f"🔍 Ejecutando query con {len(params)} parámetros")
         cursor.execute(query, params)
 
         productos = []
         for row in cursor.fetchall():
-            # Detectar problemas
-            problemas = []
-            if not row[1]:  # codigo_ean
-                problemas.append("sin_ean")
-            if not row[4]:  # marca
-                problemas.append("sin_marca")
-            if not row[5]:  # categoria
-                problemas.append("sin_categoria")
-
             producto = {
                 "id": row[0],
                 "codigo_ean": row[1] or None,
-                "codigo_plu": row[10] if (row[10] and row[10] != '-') else None,  # ✅ ESTE ES EL CAMPO CRÍTICO
+                "codigo_plu": row[10],  # ✅ CAMPO CRÍTICO - DEBE ESTAR AQUÍ
                 "nombre_normalizado": row[2],
                 "nombre_comercial": row[3],
-                "nombre": row[2] or row[3],  # Alias para compatibilidad
+                "nombre": row[2] or row[3],
                 "marca": row[4] or "Sin marca",
                 "categoria": row[5] or "Sin categoría",
                 "subcategoria": row[6],
                 "presentacion": row[7],
                 "total_reportes": row[8] or 0,
-                "veces_comprado": row[8] or 0,  # Alias
+                "veces_comprado": row[8] or 0,
                 "precio_promedio": float(row[9]) if row[9] else 0,
-                "problemas": problemas
             }
 
             productos.append(producto)
 
-        # Debug: Imprimir primer producto
+        # Debug: Mostrar primer producto
         if productos:
-            print(f"✅ Primer producto: ID={productos[0]['id']}, PLU={productos[0]['codigo_plu']}")
+            primer_producto = productos[0]
+            print(f"✅ [API] Primer producto: ID={primer_producto['id']}, PLU={primer_producto['codigo_plu']}")
 
         # Contar total
         count_query = f"SELECT COUNT(*) FROM productos_maestros pm WHERE {where_sql}"
-        cursor.execute(count_query, params[:-2])  # Sin LIMIT/OFFSET
+        cursor.execute(count_query, params[:-2])
         total = cursor.fetchone()[0]
 
         conn.close()
 
         total_paginas = (total + limite - 1) // limite
 
-        print(f"✅ {len(productos)} productos obtenidos, {total} total")
+        print(f"✅ [API] {len(productos)} productos, {total} total")
 
         return {
             "success": True,
@@ -172,52 +162,132 @@ async def obtener_productos(
         }
 
     except Exception as e:
-        print(f"❌ Error en obtener_productos: {e}")
+        print(f"❌ [API] Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/estadisticas/calidad")
-async def obtener_estadisticas_calidad():
-    """Estadísticas de calidad del catálogo"""
+@router.get("/duplicados")
+async def obtener_duplicados():
+    """
+    ✅ Obtener productos duplicados
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros")
-        total_productos = cursor.fetchone()[0]
+        duplicados = []
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros WHERE codigo_ean IS NOT NULL AND codigo_ean != ''")
-        con_ean = cursor.fetchone()[0]
+        # Duplicados por EAN
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT codigo_ean, COUNT(*) as total
+                FROM productos_maestros
+                WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+                GROUP BY codigo_ean
+                HAVING COUNT(*) > 1
+                LIMIT 20
+            """)
+        else:
+            cursor.execute("""
+                SELECT codigo_ean, COUNT(*) as total
+                FROM productos_maestros
+                WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+                GROUP BY codigo_ean
+                HAVING COUNT(*) > 1
+                LIMIT 20
+            """)
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros WHERE marca IS NOT NULL AND marca != ''")
-        con_marca = cursor.fetchone()[0]
+        for row in cursor.fetchall():
+            ean = row[0]
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros WHERE categoria IS NOT NULL AND categoria != ''")
-        con_categoria = cursor.fetchone()[0]
+            if database_type == "postgresql":
+                cursor.execute("""
+                    SELECT id, nombre_normalizado, codigo_ean, marca, total_reportes
+                    FROM productos_maestros
+                    WHERE codigo_ean = %s
+                    ORDER BY total_reportes DESC
+                """, (ean,))
+            else:
+                cursor.execute("""
+                    SELECT id, nombre_normalizado, codigo_ean, marca, total_reportes
+                    FROM productos_maestros
+                    WHERE codigo_ean = ?
+                    ORDER BY total_reportes DESC
+                """, (ean,))
+
+            productos_dup = []
+            for p in cursor.fetchall():
+                productos_dup.append({
+                    "id": p[0],
+                    "nombre_normalizado": p[1],
+                    "codigo_ean": p[2],
+                    "marca": p[3],
+                    "total_reportes": p[4] or 0
+                })
+
+            if len(productos_dup) > 1:
+                duplicados.append({
+                    "tipo": "ean",
+                    "valor": ean,
+                    "productos": productos_dup
+                })
 
         conn.close()
 
-        porcentaje_ean = round((con_ean / total_productos * 100), 1) if total_productos > 0 else 0
-        porcentaje_marca = round((con_marca / total_productos * 100), 1) if total_productos > 0 else 0
-        porcentaje_categoria = round((con_categoria / total_productos * 100), 1) if total_productos > 0 else 0
-
         return {
-            "total_productos": total_productos,
-            "con_ean": con_ean,
-            "porcentaje_ean": porcentaje_ean,
-            "sin_ean": total_productos - con_ean,
-            "con_marca": con_marca,
-            "porcentaje_marca": porcentaje_marca,
-            "sin_marca": total_productos - con_marca,
-            "con_categoria": con_categoria,
-            "porcentaje_categoria": porcentaje_categoria,
-            "sin_categoria": total_productos - con_categoria,
+            "success": True,
+            "duplicados": duplicados,
+            "total": len(duplicados)
         }
 
     except Exception as e:
-        print(f"❌ Error en estadisticas_calidad: {e}")
+        print(f"❌ Error en obtener_duplicados: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/duplicados/detectar")
+async def detectar_duplicados():
+    """
+    ✅ Detectar duplicados (análisis completo)
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+        # Contar duplicados por EAN
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT COUNT(DISTINCT codigo_ean)
+                FROM productos_maestros
+                WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+                GROUP BY codigo_ean
+                HAVING COUNT(*) > 1
+            """)
+        else:
+            cursor.execute("""
+                SELECT COUNT(DISTINCT codigo_ean)
+                FROM productos_maestros
+                WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+                GROUP BY codigo_ean
+                HAVING COUNT(*) > 1
+            """)
+
+        total_duplicados = len(cursor.fetchall())
+
+        conn.close()
+
+        return {
+            "success": True,
+            "total_duplicados": total_duplicados,
+            "message": f"Se encontraron {total_duplicados} grupos de duplicados"
+        }
+
+    except Exception as e:
+        print(f"❌ Error en detectar_duplicados: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -259,13 +329,12 @@ async def obtener_producto(producto_id: int):
             cursor.execute("""
                 SELECT
                     ppe.codigo_plu,
-                    e.nombre_normalizado as establecimiento,
-                    ppe.precio_actual
+                    e.nombre_normalizado as establecimiento
                 FROM productos_por_establecimiento ppe
                 JOIN establecimientos e ON ppe.establecimiento_id = e.id
                 WHERE ppe.producto_maestro_id = %s
                   AND ppe.codigo_plu IS NOT NULL
-                ORDER BY e.nombre_normalizado, ppe.codigo_plu
+                ORDER BY e.nombre_normalizado
             """, (producto_id,))
             plus = cursor.fetchall()
         else:
@@ -352,7 +421,7 @@ async def actualizar_producto(producto_id: int, data: dict):
 
 @router.get("/{producto_id}/historial")
 async def obtener_historial(producto_id: int):
-    """Obtener historial de compras de un producto"""
+    """Obtener historial de compras"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -403,4 +472,4 @@ async def obtener_historial(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ productos_api_v2.py completamente cargado con soporte PLUs")
+print("✅ productos_api_v2.py completamente cargado con PLUs y duplicados")
