@@ -521,34 +521,42 @@ async function fusionarGrupo(ids) {
 // EDICIÓN DE PRODUCTO
 // ============================================================================
 async function editarProducto(id) {
+    console.log('✏️ Editando producto:', id);
+
     try {
-        console.log('✏️ Editando producto:', id);
-
-        // Cargar datos del producto
         const response = await fetch(`/api/productos/${id}`);
-
         if (!response.ok) {
             throw new Error('Producto no encontrado');
         }
 
         const producto = await response.json();
 
-        // Llenar formulario
-        document.getElementById('edit-id').value = producto.id;
-        document.getElementById('edit-ean').value = producto.codigo_ean || '';
-        document.getElementById('edit-nombre-norm').value = producto.nombre_normalizado || '';
-        document.getElementById('edit-nombre-com').value = producto.nombre_comercial || '';
-        document.getElementById('edit-marca').value = producto.marca || '';
-        document.getElementById('edit-categoria').value = producto.categoria || '';
-        document.getElementById('edit-subcategoria').value = producto.subcategoria || '';
-        document.getElementById('edit-presentacion').value = producto.presentacion || '';
+        // Llenar el formulario
+        document.getElementById('productoId').value = producto.id;
+        document.getElementById('codigoEan').value = producto.codigo_ean || '';
+        document.getElementById('nombreNormalizado').value = producto.nombre_normalizado || '';
+        document.getElementById('nombreComercial').value = producto.nombre_comercial || '';
+        document.getElementById('marca').value = producto.marca || '';
+        document.getElementById('categoria').value = producto.categoria || '';
+        document.getElementById('subcategoria').value = producto.subcategoria || '';
+        document.getElementById('presentacion').value = producto.presentacion || '';
+
+        // Estadísticas
+        document.getElementById('vecesComprado').value = producto.veces_comprado || '0';
+        document.getElementById('precioPromedio').value = producto.precio_promedio_global ?
+            `$${producto.precio_promedio_global.toLocaleString('es-CO')}` : 'Sin datos';
+        document.getElementById('numEstablecimientos').value = producto.num_establecimientos || '0';
+
+        // Cargar PLUs
+        await cargarPLUsProducto(id);
 
         // Mostrar modal
-        document.getElementById('modal-editar').classList.add('active');
+        const modal = new bootstrap.Modal(document.getElementById('modalEdicion'));
+        modal.show();
 
     } catch (error) {
         console.error('❌ Error:', error);
-        mostrarError('Error al cargar producto: ' + error.message);
+        alert('Error al cargar producto: ' + error.message);
     }
 }
 
