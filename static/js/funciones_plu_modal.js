@@ -5,27 +5,14 @@ let pluCounter = 0;
 let establecimientosCache = [];
 
 // =============================================================
-// 🌐 Función auxiliar global para obtener la URL base de la API
-// Corrige Mixed Content y redirecciones HTTP→HTTPS
+// 🌐 Base de API (forzar HTTPS)
 // =============================================================
 function getApiBase() {
     try {
         let origin = window.location.origin;
-
-        // Si el origen empieza con http:// → forzamos https://
-        if (origin.startsWith('http://')) {
-            origin = origin.replace('http://', 'https://');
-        }
-
-        // Si el navegador o proxy devuelve algo sin protocolo, agregamos https
-        if (!origin.startsWith('https://')) {
-            origin = 'https://' + window.location.host;
-        }
-
-        // Limpieza de barras dobles finales
+        if (origin.startsWith('http://')) origin = origin.replace('http://', 'https://');
+        if (!origin.startsWith('https://')) origin = 'https://' + window.location.host;
         origin = origin.replace(/\/+$/, '');
-
-        // Fuerza HTTPS explícitamente (Railway a veces responde con http)
         return origin.replace(/^http:/, 'https:');
     } catch (e) {
         console.error('⚠️ Error determinando API base:', e);
@@ -34,12 +21,31 @@ function getApiBase() {
 }
 
 // =============================================================
+// 🧰 fetchSeguro: evita Mixed Content si el backend redirige a http
+// - Añade “/” final en la URL base de recursos
+// - Si recibe 307 a http, rehace la URL en https y reintenta
+// =============================================================
+async function fetchSeguro(url, options = {}) {
+    const resp = await fetch(url, options);
+    if (resp.status === 307) {
+        const loc = resp.headers.get('location') || '';
+        if (loc.startsWith('http://')) {
+            const httpsUrl = loc.replace('http://', 'https://');
+            return fetch(httpsUrl, options);
+        }
+    }
+    return resp;
+}
+
+// =============================================================
 // Cargar establecimientos al iniciar
 // =============================================================
 async function cargarEstablecimientos() {
     try {
         const apiBase = getApiBase();
-        const response = await fetch(`${apiBase}/api/establecimientos`);
+        // IMPORTANTE: “/” final para evitar 307 → http
+        const url = `${apiBase}/api/establecimientos/`;
+        const response = await fetchSeguro(url);
 
         if (response.ok) {
             establecimientosCache = await response.json();
@@ -49,7 +55,7 @@ async function cargarEstablecimientos() {
         }
     } catch (error) {
         console.error('❌ Error cargando establecimientos:', error);
-        // Usar establecimientos por defecto como fallback
+        // Fallback para que el modal funcione
         establecimientosCache = [
             { id: 1, nombre_normalizado: 'Éxito' },
             { id: 2, nombre_normalizado: 'Carulla' },
@@ -103,7 +109,6 @@ function agregarPLU() {
             </div>
         </div>
     `;
-
     contenedor.insertAdjacentHTML('beforeend', pluHTML);
 }
 
@@ -121,7 +126,8 @@ function eliminarPLU(id) {
 async function cargarPLUsProducto(productoId) {
     try {
         const apiBase = getApiBase();
-        const response = await fetch(`${apiBase}/api/productos/${productoId}/plus`);
+        const url = `${apiBase}/api/productos/${productoId}/plus/`; // “/” final
+        const response = await fetchSeguro(url);
         if (response.ok) {
             const data = await response.json();
 
@@ -131,10 +137,10 @@ async function cargarPLUsProducto(productoId) {
             if (data.plus && data.plus.length > 0) {
                 data.plus.forEach(plu => agregarPLUExistente(plu));
             } else {
-                agregarPLU(); // agregar uno vacío si no hay PLUs
+                agregarPLU(); // uno vacío
             }
 
-            console.log(`✅ ${data.plus.length} PLUs cargados`);
+            console.log(`✅ ${data.plus?.length || 0} PLUs cargados`);
         }
     } catch (error) {
         console.error('❌ Error cargando PLUs:', error);
@@ -186,16 +192,14 @@ function agregarPLUExistente(plu) {
             </div>
         </div>
     `;
-
     contenedor.insertAdjacentHTML('beforeend', pluHTML);
 }
 
 // =============================================================
-// Recopilar PLUs del formulario antes de guardar
+// Recopilar PLUs del formulario
 // =============================================================
 function recopilarPLUs() {
     const plus = [];
-
     document.querySelectorAll('.plu-item').forEach(item => {
         const establecimientoSelect = item.querySelector('.plu-establecimiento');
         const codigoInput = item.querySelector('.plu-codigo');
@@ -209,7 +213,6 @@ function recopilarPLUs() {
             });
         }
     });
-
     return plus;
 }
 
@@ -231,31 +234,33 @@ async function guardarEdicionPLUs() {
     };
 
     try {
-        const responseProducto = await fetch(`${apiBase}/api/productos/${productoId}`, {
+        // Producto
+        const respProducto = await fetchSeguro(`${apiBase}/api/productos/${productoId}/`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(datosProducto)
         });
+        if (!respProducto.ok) throw new Error('Error actualizando producto');
 
-        if (!responseProducto.ok) throw new Error('Error actualizando producto');
-
+        // PLUs
         const plus = recopilarPLUs();
-        console.log('PLUs a guardar:', plus);
-
-        const responsePLUs = await fetch(`${apiBase}/api/productos/${productoId}/plus`, {
+        const respPLUs = await fetchSeguro(`${apiBase}/api/productos/${productoId}/plus/`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(plus)
         });
+        if (!respPLUs.ok) throw new Error('Error actualizando PLUs');
 
-        if (!responsePLUs.ok) throw new Error('Error actualizando PLUs');
+        // Cerrar modal (si usas Bootstrap)
+        const modalEl = document.getElementById('modal-editar');
+        const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+        if (modal) modal.hide();
+        else modalEl?.classList.remove('active');
 
-        const modal = bootstrap.Modal.getInstance(document.getElementById('modal-editar'));
-        modal.hide();
+        // Recargar
+        if (typeof cargarProductos === 'function') cargarProductos();
 
-        cargarProductos();
         alert('✅ Producto actualizado correctamente');
-
     } catch (error) {
         console.error('❌ Error guardando:', error);
         alert('Error al guardar: ' + error.message);
@@ -263,29 +268,23 @@ async function guardarEdicionPLUs() {
 }
 
 // =============================================================
-// Detección de duplicados
+// Duplicados
 // =============================================================
 async function detectarDuplicados() {
     console.log('🔍 Detectando duplicados...');
     try {
         const apiBase = getApiBase();
-        const response = await fetch(`${apiBase}/api/productos/duplicados?umbral_similitud=0.8&limite=50`);
-        if (response.ok) {
-            const data = await response.json();
-            if (data.duplicados?.length > 0) mostrarDuplicados(data.duplicados);
-            else alert('No se encontraron productos duplicados');
-        } else {
-            throw new Error('Error al detectar duplicados');
-        }
+        const resp = await fetchSeguro(`${apiBase}/api/productos/duplicados/?umbral_similitud=0.8&limite=50`);
+        if (!resp.ok) throw new Error('Error al detectar duplicados');
+        const data = await resp.json();
+        if (data.duplicados?.length > 0) mostrarDuplicados(data.duplicados);
+        else alert('No se encontraron productos duplicados');
     } catch (error) {
         console.error('❌ Error:', error);
         alert('Error detectando duplicados. Verifica la consola.');
     }
 }
 
-// =============================================================
-// Mostrar duplicados en modal
-// =============================================================
 function mostrarDuplicados(duplicados) {
     let html = '<h5>Posibles Duplicados Encontrados:</h5><ul>';
     duplicados.forEach(dup => {
@@ -314,26 +313,24 @@ function mostrarDuplicados(duplicados) {
                 </div>
             </div>
         </div>`;
-
     if (!document.getElementById('modalDuplicados')) {
         document.body.insertAdjacentHTML('beforeend', modalHTML);
     } else {
         document.querySelector('#modalDuplicados .modal-body').innerHTML = html;
     }
-
     const modal = new bootstrap.Modal(document.getElementById('modalDuplicados'));
     modal.show();
 }
 
 // =============================================================
-// Inicialización automática al cargar
+// Inicialización
 // =============================================================
 document.addEventListener('DOMContentLoaded', () => {
     cargarEstablecimientos();
 });
 
 // =============================================================
-// Exportar funciones globales
+// Exportar
 // =============================================================
 window.agregarPLU = agregarPLU;
 window.eliminarPLU = eliminarPLU;
