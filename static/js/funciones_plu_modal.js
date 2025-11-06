@@ -44,22 +44,16 @@ async function cargarEstablecimientosCache() {
 
         // Fallback con establecimientos conocidos de Colombia
         establecimientosCache = [
-            { id: 1, nombre: "D1", nombre_normalizado: "D1" },
-            { id: 2, nombre: "Ara", nombre_normalizado: "Ara" },
-            { id: 3, nombre: "Éxito", nombre_normalizado: "Éxito" },
-            { id: 4, nombre: "Carulla", nombre_normalizado: "Carulla" },
-            { id: 5, nombre: "Jumbo", nombre_normalizado: "Jumbo" },
-            { id: 6, nombre: "Olímpica", nombre_normalizado: "Olímpica" },
-            { id: 7, nombre: "Euro", nombre_normalizado: "Euro" },
-            { id: 8, nombre: "Metro", nombre_normalizado: "Metro" },
-            { id: 9, nombre: "Makro", nombre_normalizado: "Makro" },
-            { id: 10, nombre: "Justo & Bueno", nombre_normalizado: "Justo & Bueno" },
-            { id: 11, nombre: "Alkosto", nombre_normalizado: "Alkosto" },
-            { id: 12, nombre: "PriceSmart", nombre_normalizado: "PriceSmart" },
-            { id: 13, nombre: "La 14", nombre_normalizado: "La 14" },
-            { id: 14, nombre: "Cencosud Colombia", nombre_normalizado: "Cencosud Colombia" }
+            { id: 1, nombre: "Carulla", nombre_normalizado: "CARULLA" },
+            { id: 2, nombre: "Éxito", nombre_normalizado: "ÉXITO" },
+            { id: 4, nombre: "Jumbo", nombre_normalizado: "JUMBO" },
+            { id: 6, nombre: "Cencosud", nombre_normalizado: "CENCOSUD COLOMBIA" },
+            { id: 8, nombre: "Farmatodo", nombre_normalizado: "FARMATODO" },
+            { id: 9, nombre: "Olímpica", nombre_normalizado: "OLÍMPICA" },
+            { id: 10, nombre: "Ara", nombre_normalizado: "JERONIMO MARTINS COLOMBIA SAS" },
+            { id: 11, nombre: "Ara", nombre_normalizado: "JERONIMO MARTINS COLOMBIA" },
+            { id: 14, nombre: "Ara", nombre_normalizado: "JERONIMO MARTINS" }
         ];
-
         console.log("⚠️ Usando establecimientos de fallback");
         return establecimientosCache;
     }
