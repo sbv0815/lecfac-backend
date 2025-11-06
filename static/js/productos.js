@@ -1,6 +1,6 @@
-// productos.js - Gestión de productos (v2.2 - Fix URLs)
+// productos.js - Gestión de productos (v2.3 - Buscador funcional)
 
-console.log("🚀 Inicializando Gestión de Productos v2.2");
+console.log("🚀 Inicializando Gestión de Productos v2.3 con buscador");
 
 // =============================================================
 // Variables globales
@@ -10,6 +10,7 @@ let limite = 50;
 let totalPaginas = 1;
 let productosCache = [];
 let coloresCache = null;
+let timeoutBusqueda = null; // Para búsqueda en tiempo real
 
 // =============================================================
 // 🌐 Base API - IMPORTANTE: Sin slash final en los endpoints
@@ -23,14 +24,36 @@ function getApiBase() {
 }
 
 // =============================================================
-// Cargar productos (sin slash final en la URL)
+// Cargar productos (AHORA CON BÚSQUEDA)
 // =============================================================
 async function cargarProductos(pagina = 1) {
     try {
         const apiBase = getApiBase();
-        // IMPORTANTE: Sin slash final aquí
-        const url = `${apiBase}/api/productos?pagina=${pagina}&limite=${limite}`;
+
+        // Obtener valores de búsqueda y filtro
+        const busqueda = document.getElementById("busqueda")?.value || "";
+        const filtro = document.getElementById("filtro")?.value || "todos";
+
+        // Construir URL con parámetros
+        let url = `${apiBase}/api/productos?pagina=${pagina}&limite=${limite}`;
+
+        // Agregar parámetro de búsqueda si existe
+        if (busqueda.trim()) {
+            url += `&busqueda=${encodeURIComponent(busqueda.trim())}`;
+        }
+
+        // Agregar filtros según el valor seleccionado
+        if (filtro === "sin_ean") {
+            url += `&con_ean=false`;
+        } else if (filtro === "sin_marca") {
+            url += `&marca=`;  // Esto buscará productos donde marca es null o vacío
+        } else if (filtro === "sin_categoria") {
+            url += `&categoria=`;  // Esto buscará productos donde categoría es null o vacío
+        }
+
         console.log(`📦 Cargando productos - Página ${pagina}`);
+        if (busqueda) console.log(`🔍 Búsqueda: "${busqueda}"`);
+        if (filtro !== "todos") console.log(`🏷️ Filtro: ${filtro}`);
         console.log("🌐 URL:", url);
 
         const response = await fetch(url);
@@ -50,27 +73,122 @@ async function cargarProductos(pagina = 1) {
             console.log("🔍 Primer producto:", productosCache[0]);
         }
 
-        mostrarProductos(productosCache);
+        // Mostrar mensaje especial si no hay resultados
+        if (productosCache.length === 0 && busqueda) {
+            mostrarSinResultados(busqueda);
+        } else {
+            mostrarProductos(productosCache);
+        }
+
         actualizarPaginacion();
         actualizarEstadisticas(data);
 
     } catch (error) {
         console.error("❌ Error cargando productos:", error);
-        // Mostrar mensaje de error en la tabla
-        const tbody = document.getElementById("productos-body");
-        if (tbody) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="11" style="text-align: center; padding: 40px; color: #dc2626;">
-                        <p>❌ Error cargando productos</p>
-                        <p style="font-size: 14px; color: #666;">${error.message}</p>
-                        <button class="btn-primary" onclick="cargarProductos(${pagina})" style="margin-top: 10px;">
-                            Reintentar
-                        </button>
-                    </td>
-                </tr>
-            `;
+        mostrarError(error);
+    }
+}
+
+// =============================================================
+// Configurar búsqueda en tiempo real
+// =============================================================
+function configurarBuscadorTiempoReal() {
+    const inputBusqueda = document.getElementById('busqueda');
+
+    if (!inputBusqueda) {
+        console.error('No se encontró el input de búsqueda');
+        return;
+    }
+
+    // Búsqueda en tiempo real con debounce
+    inputBusqueda.addEventListener('input', function (e) {
+        // Cancelar búsqueda anterior si existe
+        if (timeoutBusqueda) {
+            clearTimeout(timeoutBusqueda);
         }
+
+        // Mostrar indicador de búsqueda
+        mostrarBuscando();
+
+        // Ejecutar búsqueda después de 500ms sin escribir
+        timeoutBusqueda = setTimeout(() => {
+            console.log('🔍 Búsqueda en tiempo real:', e.target.value);
+            cargarProductos(1); // Siempre volver a página 1 al buscar
+        }, 500);
+    });
+
+    // También permitir búsqueda con Enter
+    inputBusqueda.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            clearTimeout(timeoutBusqueda);
+            console.log('🔍 Búsqueda con Enter:', e.target.value);
+            cargarProductos(1);
+        }
+    });
+
+    console.log('✅ Buscador en tiempo real configurado');
+}
+
+// =============================================================
+// Mostrar indicador de búsqueda
+// =============================================================
+function mostrarBuscando() {
+    const tbody = document.getElementById("productos-body");
+    if (tbody && tbody.children.length === 1 && tbody.children[0].children.length === 1) {
+        // Solo mostrar si actualmente hay un mensaje de carga/error
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align: center; padding: 40px;">
+                    <div class="loading"></div>
+                    <p style="margin-top: 10px;">Buscando productos...</p>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+// =============================================================
+// Mostrar mensaje sin resultados
+// =============================================================
+function mostrarSinResultados(busqueda) {
+    const tbody = document.getElementById("productos-body");
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align: center; padding: 40px;">
+                    <p style="font-size: 18px; margin-bottom: 10px;">
+                        No se encontraron productos para: <strong>"${busqueda}"</strong>
+                    </p>
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Intenta con otros términos de búsqueda
+                    </p>
+                    <button class="btn-secondary" onclick="limpiarFiltros()">
+                        🔄 Limpiar búsqueda
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+// =============================================================
+// Mostrar error
+// =============================================================
+function mostrarError(error) {
+    const tbody = document.getElementById("productos-body");
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align: center; padding: 40px; color: #dc2626;">
+                    <p>❌ Error cargando productos</p>
+                    <p style="font-size: 14px; color: #666;">${error.message}</p>
+                    <button class="btn-primary" onclick="cargarProductos(${paginaActual})" style="margin-top: 10px;">
+                        Reintentar
+                    </button>
+                </td>
+            </tr>
+        `;
     }
 }
 
@@ -198,6 +316,21 @@ function cargarPagina(num) {
 }
 
 // =============================================================
+// Limpiar filtros
+// =============================================================
+function limpiarFiltros() {
+    document.getElementById("busqueda").value = "";
+    document.getElementById("filtro").value = "todos";
+
+    // Cancelar cualquier búsqueda pendiente
+    if (timeoutBusqueda) {
+        clearTimeout(timeoutBusqueda);
+    }
+
+    cargarProductos(1);
+}
+
+// =============================================================
 // Editar producto (compatible con el modal del HTML)
 // =============================================================
 async function editarProducto(id) {
@@ -300,12 +433,6 @@ function cerrarModal(modalId) {
     document.getElementById(modalId)?.classList.remove("active");
 }
 
-function limpiarFiltros() {
-    document.getElementById("busqueda").value = "";
-    document.getElementById("filtro").value = "todos";
-    cargarProductos(1);
-}
-
 function switchTab(tabName) {
     // Ocultar todos los tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
@@ -365,8 +492,13 @@ function recargarColores() {
 // Inicialización
 // =============================================================
 document.addEventListener("DOMContentLoaded", async function () {
+    // Configurar búsqueda en tiempo real PRIMERO
+    configurarBuscadorTiempoReal();
+
+    // Luego cargar productos
     await cargarProductos(1);
-    console.log("✅ Sistema inicializado correctamente");
+
+    console.log("✅ Sistema inicializado correctamente con buscador funcional");
 });
 
 // =============================================================
