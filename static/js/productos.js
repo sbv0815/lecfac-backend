@@ -1,6 +1,6 @@
-// productos.js - Gestión de productos (v2.3 - Buscador funcional)
+// productos.js - Gestión de productos (v2.4 - Corregido y organizado)
 
-console.log("🚀 Inicializando Gestión de Productos v2.3 con buscador");
+console.log("🚀 Inicializando Gestión de Productos v2.4");
 
 // =============================================================
 // Variables globales
@@ -10,17 +10,17 @@ let limite = 50;
 let totalPaginas = 1;
 let productosCache = [];
 let coloresCache = null;
-let timeoutBusqueda = null; // Para búsqueda en tiempo real
+let timeoutBusqueda = null;
 
 // =============================================================
-// 🌐 Base API - IMPORTANTE: Sin slash final en los endpoints
+// 🌐 Base API
 // =============================================================
 function getApiBase() {
     return 'https://lecfac-backend-production.up.railway.app';
 }
 
 // =============================================================
-// Cargar productos (AHORA CON BÚSQUEDA)
+// Cargar productos (con búsqueda)
 // =============================================================
 async function cargarProductos(pagina = 1) {
     try {
@@ -42,9 +42,9 @@ async function cargarProductos(pagina = 1) {
         if (filtro === "sin_ean") {
             url += `&con_ean=false`;
         } else if (filtro === "sin_marca") {
-            url += `&marca=`;  // Esto buscará productos donde marca es null o vacío
+            url += `&marca=`;
         } else if (filtro === "sin_categoria") {
-            url += `&categoria=`;  // Esto buscará productos donde categoría es null o vacío
+            url += `&categoria=`;
         }
 
         console.log(`📦 Cargando productos - Página ${pagina}`);
@@ -65,9 +65,6 @@ async function cargarProductos(pagina = 1) {
         paginaActual = pagina;
 
         console.log(`✅ ${productosCache.length} productos recibidos`);
-        if (productosCache.length > 0) {
-            console.log("🔍 Primer producto:", productosCache[0]);
-        }
 
         // Mostrar mensaje especial si no hay resultados
         if (productosCache.length === 0 && busqueda) {
@@ -98,18 +95,15 @@ function configurarBuscadorTiempoReal() {
 
     // Búsqueda en tiempo real con debounce
     inputBusqueda.addEventListener('input', function (e) {
-        // Cancelar búsqueda anterior si existe
         if (timeoutBusqueda) {
             clearTimeout(timeoutBusqueda);
         }
 
-        // Mostrar indicador de búsqueda
         mostrarBuscando();
 
-        // Ejecutar búsqueda después de 500ms sin escribir
         timeoutBusqueda = setTimeout(() => {
             console.log('🔍 Búsqueda en tiempo real:', e.target.value);
-            cargarProductos(1); // Siempre volver a página 1 al buscar
+            cargarProductos(1);
         }, 500);
     });
 
@@ -117,7 +111,7 @@ function configurarBuscadorTiempoReal() {
     inputBusqueda.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
-            clearTimeout(timeoutBusqueda);
+            if (timeoutBusqueda) clearTimeout(timeoutBusqueda);
             console.log('🔍 Búsqueda con Enter:', e.target.value);
             cargarProductos(1);
         }
@@ -127,12 +121,11 @@ function configurarBuscadorTiempoReal() {
 }
 
 // =============================================================
-// Mostrar indicador de búsqueda
+// Mostrar estados
 // =============================================================
 function mostrarBuscando() {
     const tbody = document.getElementById("productos-body");
-    if (tbody && tbody.children.length === 1 && tbody.children[0].children.length === 1) {
-        // Solo mostrar si actualmente hay un mensaje de carga/error
+    if (tbody && tbody.children.length === 1) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="11" style="text-align: center; padding: 40px;">
@@ -144,9 +137,6 @@ function mostrarBuscando() {
     }
 }
 
-// =============================================================
-// Mostrar mensaje sin resultados
-// =============================================================
 function mostrarSinResultados(busqueda) {
     const tbody = document.getElementById("productos-body");
     if (tbody) {
@@ -168,9 +158,6 @@ function mostrarSinResultados(busqueda) {
     }
 }
 
-// =============================================================
-// Mostrar error
-// =============================================================
 function mostrarError(error) {
     const tbody = document.getElementById("productos-body");
     if (tbody) {
@@ -212,7 +199,6 @@ function mostrarProductos(productos) {
         // Renderizar PLUs si existen
         let plusHTML = '';
         if (p.codigo_plu) {
-            // Los PLUs vienen como string: "967509 (OLÍMPICA), 845123 (Éxito)"
             const plusArray = p.codigo_plu.split(', ');
             plusHTML = plusArray.map(plu => {
                 const [codigo, est] = plu.split(' (');
@@ -262,44 +248,34 @@ function mostrarProductos(productos) {
 }
 
 // =============================================================
-// Actualizar estadísticas
+// Actualizar estadísticas y paginación
 // =============================================================
 function actualizarEstadisticas(data) {
-    // Actualizar cards de estadísticas
     const stats = document.querySelectorAll('.stat-value');
     if (stats.length >= 4 && data) {
         stats[0].textContent = data.total || '0';
 
-        // Calcular productos con EAN
         const conEan = productosCache.filter(p => p.codigo_ean).length;
         stats[1].textContent = conEan;
 
-        // Calcular productos sin marca
         const sinMarca = productosCache.filter(p => !p.marca).length;
         stats[2].textContent = sinMarca;
 
-        // Por ahora, duplicados en 0 (se actualiza con el botón detectar)
         stats[3].textContent = '0';
     }
 }
 
-// =============================================================
-// Actualizar paginación
-// =============================================================
 function actualizarPaginacion() {
     const paginacion = document.getElementById("pagination");
     if (!paginacion) return;
 
     let html = '';
 
-    // Botón anterior
     html += `<button class="btn-secondary" ${paginaActual <= 1 ? "disabled" : ""}
              onclick="cargarPagina(${paginaActual - 1})">← Anterior</button>`;
 
-    // Información de página
     html += `<span style="padding: 0 20px;">Página ${paginaActual} de ${totalPaginas}</span>`;
 
-    // Botón siguiente
     html += `<button class="btn-secondary" ${paginaActual >= totalPaginas ? "disabled" : ""}
              onclick="cargarPagina(${paginaActual + 1})">Siguiente →</button>`;
 
@@ -318,7 +294,6 @@ function limpiarFiltros() {
     document.getElementById("busqueda").value = "";
     document.getElementById("filtro").value = "todos";
 
-    // Cancelar cualquier búsqueda pendiente
     if (timeoutBusqueda) {
         clearTimeout(timeoutBusqueda);
     }
@@ -327,20 +302,19 @@ function limpiarFiltros() {
 }
 
 // =============================================================
-// Editar producto (compatible con el modal del HTML)
+// EDITAR PRODUCTO (con habilitación de campos)
 // =============================================================
 async function editarProducto(id) {
     console.log("✏️ Editando producto:", id);
     const apiBase = getApiBase();
 
     try {
-        // Sin slash final
         const response = await fetch(`${apiBase}/api/productos/${id}`);
         if (!response.ok) throw new Error("Producto no encontrado");
 
         const producto = await response.json();
 
-        // Llenar el formulario con los IDs correctos del HTML
+        // Llenar el formulario
         document.getElementById("edit-id").value = producto.id;
         document.getElementById("edit-ean").value = producto.codigo_ean || "";
         document.getElementById("edit-nombre-norm").value = producto.nombre_normalizado || "";
@@ -350,13 +324,16 @@ async function editarProducto(id) {
         document.getElementById("edit-subcategoria").value = producto.subcategoria || "";
         document.getElementById("edit-presentacion").value = producto.presentacion || "";
 
-        // Estadísticas
+        // Estadísticas (solo lectura)
         document.getElementById("edit-veces-comprado").value = producto.veces_comprado || "0";
         document.getElementById("edit-precio-promedio").value = producto.precio_promedio_global ?
             `$${producto.precio_promedio_global.toLocaleString('es-CO')}` : "Sin datos";
         document.getElementById("edit-num-establecimientos").value = producto.num_establecimientos || "0";
 
-        // Cargar PLUs si la función existe
+        // IMPORTANTE: Habilitar los campos editables
+        habilitarCamposEdicion();
+
+        // Cargar PLUs
         if (typeof cargarPLUsProducto === "function") {
             await cargarPLUsProducto(id);
         }
@@ -364,10 +341,122 @@ async function editarProducto(id) {
         // Mostrar modal
         document.getElementById("modal-editar").classList.add("active");
 
+        // Agregar helper para EAN
+        agregarHelperEAN();
+
     } catch (error) {
         console.error("❌ Error:", error);
         alert("Error al cargar producto: " + error.message);
     }
+}
+
+// =============================================================
+// Habilitar campos de edición
+// =============================================================
+function habilitarCamposEdicion() {
+    // Habilitar campo EAN
+    const eanInput = document.getElementById('edit-ean');
+    if (eanInput) {
+        eanInput.removeAttribute('readonly');
+        eanInput.removeAttribute('disabled');
+        eanInput.style.background = 'white';
+        eanInput.style.cursor = 'text';
+        eanInput.setAttribute('maxlength', '14'); // Para Ara con 0 inicial
+    }
+
+    // Habilitar campo nombre
+    const nombreInput = document.getElementById('edit-nombre-norm');
+    if (nombreInput) {
+        nombreInput.removeAttribute('readonly');
+        nombreInput.removeAttribute('disabled');
+        nombreInput.style.background = 'white';
+        nombreInput.style.cursor = 'text';
+    }
+
+    // Habilitar otros campos
+    const campos = ['edit-nombre-com', 'edit-marca', 'edit-categoria', 'edit-subcategoria', 'edit-presentacion'];
+
+    campos.forEach(id => {
+        const campo = document.getElementById(id);
+        if (campo) {
+            campo.removeAttribute('readonly');
+            campo.removeAttribute('disabled');
+            campo.style.background = 'white';
+        }
+    });
+}
+
+// =============================================================
+// Helper para EAN
+// =============================================================
+function agregarHelperEAN() {
+    const eanInput = document.getElementById('edit-ean');
+    if (!eanInput) return;
+
+    // Eliminar helper anterior si existe
+    const helperAnterior = document.getElementById('ean-helper');
+    if (helperAnterior) helperAnterior.remove();
+
+    // Crear helper
+    const helper = document.createElement('div');
+    helper.id = 'ean-helper';
+    helper.style.cssText = 'margin-top: 5px; font-size: 12px; color: #666;';
+    helper.innerHTML = `
+        <span>Longitud actual: <strong id="ean-length">${eanInput.value.length}</strong> dígitos</span>
+        <span style="margin-left: 10px;">
+            <a href="#" onclick="completarEAN(); return false;" style="color: #2563eb;">
+                Completar a 13 dígitos
+            </a>
+        </span>
+    `;
+
+    eanInput.parentNode.insertBefore(helper, eanInput.nextSibling);
+
+    // Actualizar contador en tiempo real
+    eanInput.addEventListener('input', function () {
+        const lengthSpan = document.getElementById('ean-length');
+        if (lengthSpan) {
+            lengthSpan.textContent = this.value.length;
+            lengthSpan.style.color = this.value.length === 13 ? '#059669' : '#666';
+        }
+    });
+}
+
+// =============================================================
+// Completar EAN
+// =============================================================
+function completarEAN() {
+    const eanInput = document.getElementById('edit-ean');
+    if (!eanInput) return;
+
+    let ean = eanInput.value.replace(/\D/g, ''); // Solo números
+
+    if (ean.length === 12) {
+        const digito = calcularDigitoControl(ean);
+        eanInput.value = ean + digito;
+
+        const lengthSpan = document.getElementById('ean-length');
+        if (lengthSpan) {
+            lengthSpan.textContent = '13';
+            lengthSpan.style.color = '#059669';
+        }
+
+        console.log(`✅ EAN completado: ${eanInput.value}`);
+    } else if (ean.length < 12) {
+        alert(`El EAN tiene ${ean.length} dígitos. Necesita tener 12 para calcular el dígito de control.`);
+    } else {
+        alert('El EAN ya tiene 13 o más dígitos.');
+    }
+}
+
+function calcularDigitoControl(ean12) {
+    let suma = 0;
+    for (let i = 0; i < 12; i++) {
+        const digito = parseInt(ean12[i]);
+        suma += digito * (i % 2 === 0 ? 1 : 3);
+    }
+    const modulo = suma % 10;
+    return modulo === 0 ? 0 : 10 - modulo;
 }
 
 // =============================================================
@@ -390,7 +479,6 @@ async function guardarEdicion(event) {
     };
 
     try {
-        // Sin slash final
         const response = await fetch(`${apiBase}/api/productos/${productoId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -430,17 +518,14 @@ function cerrarModal(modalId) {
 }
 
 function switchTab(tabName) {
-    // Ocultar todos los tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
 
-    // Desactivar todos los botones
     document.querySelectorAll('.tab').forEach(btn => {
         btn.classList.remove('active');
     });
 
-    // Activar el tab seleccionado
     document.getElementById(`tab-${tabName}`).classList.add('active');
     event.target.classList.add('active');
 }
@@ -452,11 +537,9 @@ function toggleSelectAll() {
 }
 
 function toggleProductSelection(id) {
-    // Actualizar contador de seleccionados
     const selected = document.querySelectorAll('#productos-body input[type="checkbox"]:checked').length;
     document.getElementById('selected-count').textContent = `${selected} seleccionados`;
 
-    // Habilitar/deshabilitar botones
     document.getElementById('btn-fusionar').disabled = selected < 2;
     document.getElementById('btn-deseleccionar').disabled = selected === 0;
 }
@@ -470,17 +553,14 @@ function deseleccionarTodos() {
 }
 
 function verHistorial(id) {
-    // Implementar vista de historial
     console.log("Ver historial de producto:", id);
 }
 
 function fusionarSeleccionados() {
-    // Implementar fusión de productos
     console.log("Fusionar productos seleccionados");
 }
 
 function recargarColores() {
-    // Recargar colores de establecimientos
     console.log("Recargando colores...");
 }
 
@@ -488,10 +568,18 @@ function recargarColores() {
 // Inicialización
 // =============================================================
 document.addEventListener("DOMContentLoaded", async function () {
-    // Configurar búsqueda en tiempo real PRIMERO
+    // Configurar búsqueda en tiempo real
     configurarBuscadorTiempoReal();
 
-    // Luego cargar productos
+    // Permitir paste en el modal
+    const modal = document.getElementById('modal-editar');
+    if (modal) {
+        modal.addEventListener('paste', function (e) {
+            e.stopPropagation();
+        }, true);
+    }
+
+    // Cargar productos
     await cargarProductos(1);
 
     console.log("✅ Sistema inicializado correctamente con buscador funcional");
@@ -513,3 +601,7 @@ window.deseleccionarTodos = deseleccionarTodos;
 window.verHistorial = verHistorial;
 window.fusionarSeleccionados = fusionarSeleccionados;
 window.recargarColores = recargarColores;
+window.habilitarCamposEdicion = habilitarCamposEdicion;
+window.agregarHelperEAN = agregarHelperEAN;
+window.completarEAN = completarEAN;
+window.calcularDigitoControl = calcularDigitoControl;
