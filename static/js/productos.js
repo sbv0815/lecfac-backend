@@ -1,33 +1,30 @@
-// productos.js
-// Gestión de productos (v2.1)
+// productos.js - Gestión de productos (v2.1)
 
 console.log("🚀 Inicializando Gestión de Productos v2.1");
 
 // =============================================================
-// 🌐 Función auxiliar global para obtener la URL base de la API
-// Evita errores "Mixed Content" en Railway o Render
+// 🌐 Base API
 // =============================================================
 function getApiBase() {
     let origin = window.location.origin;
-
-    // Si el origen comienza en http:// → reemplazar por https://
-    if (origin.startsWith('http://')) {
-        origin = origin.replace('http://', 'https://');
-    }
-
-    // Si el proxy o el servidor devuelve algo raro (sin protocolo)
-    if (!origin.startsWith('https://')) {
-        origin = 'https://' + window.location.host;
-    }
-
-    // Elimina doble slash accidental (https://dominio.com//api)
-    origin = origin.replace(/\/+$/, '');
-
-    return origin;
+    if (origin.startsWith('http://')) origin = origin.replace('http://', 'https://');
+    if (!origin.startsWith('https://')) origin = 'https://' + window.location.host;
+    return origin.replace(/\/+$/, '');
 }
 
-// =============================================================
-// Variables globales
+// Reintento seguro ante 307→http
+async function fetchSeguro(url, options = {}) {
+    const resp = await fetch(url, options);
+    if (resp.status === 307) {
+        const loc = resp.headers.get('location') || '';
+        if (loc.startsWith('http://')) {
+            const httpsUrl = loc.replace('http://', 'https://');
+            return fetch(httpsUrl, options);
+        }
+    }
+    return resp;
+}
+
 // =============================================================
 let paginaActual = 1;
 let limite = 50;
@@ -36,42 +33,41 @@ let productosCache = [];
 let coloresCache = null;
 
 // =============================================================
-// Cargar colores desde cache o API
+// Colores (manejar 404 con fallback)
 // =============================================================
 async function cargarColores() {
-    if (coloresCache) {
-        console.log("✅ Usando colores desde cache");
-        return coloresCache;
-    }
-
+    if (coloresCache) return coloresCache;
     try {
         const apiBase = getApiBase();
-        const response = await fetch(`${apiBase}/api/colores`);
-        if (response.ok) {
-            coloresCache = await response.json();
+        const resp = await fetchSeguro(`${apiBase}/api/colores/`);
+        if (resp.ok) {
+            coloresCache = await resp.json();
             console.log("🎨 Colores cargados:", coloresCache.length);
+        } else {
+            console.warn("⚠️ /api/colores/ no disponible (status:", resp.status, ") usando fallback.");
+            coloresCache = [];
         }
-    } catch (error) {
-        console.error("❌ Error cargando colores:", error);
+    } catch (e) {
+        console.warn("⚠️ Error cargando colores, usando fallback:", e);
+        coloresCache = [];
     }
     return coloresCache;
 }
 
 // =============================================================
-// Cargar productos con paginación
+// Productos (paginación)
 // =============================================================
 async function cargarProductos(pagina = 1) {
     try {
         const apiBase = getApiBase();
+        const url = `${apiBase}/api/productos/?pagina=${pagina}&limite=${limite}`; // “/” final
         console.log(`📦 Cargando productos - Página ${pagina}`);
-        const response = await fetch(`${apiBase}/api/productos?pagina=${pagina}&limite=${limite}`);
-        console.log("🌐 URL:", `${apiBase}/api/productos?pagina=${pagina}&limite=${limite}`);
+        console.log("🌐 URL:", url);
 
+        const response = await fetchSeguro(url);
         if (!response.ok) throw new Error("Error al cargar productos");
 
         const data = await response.json();
-        console.log("📊 Respuesta API:", data);
-
         productosCache = data.productos || [];
         totalPaginas = data.total_paginas || 1;
 
@@ -83,15 +79,10 @@ async function cargarProductos(pagina = 1) {
     }
 }
 
-// =============================================================
-// Mostrar productos en tabla
-// =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("tablaProductosBody");
     if (!tbody) return;
-
     tbody.innerHTML = "";
-
     productos.forEach((p) => {
         const row = `
             <tr>
@@ -106,32 +97,21 @@ function mostrarProductos(productos) {
                         <i class="bi bi-pencil"></i>
                     </button>
                 </td>
-            </tr>
-        `;
+            </tr>`;
         tbody.insertAdjacentHTML("beforeend", row);
     });
 }
 
-// =============================================================
-// Actualizar botones de paginación
-// =============================================================
 function actualizarPaginacion() {
     const paginacion = document.getElementById("paginacion");
     if (!paginacion) return;
-
-    let html = `
+    paginacion.innerHTML = `
         <button class="btn btn-secondary" ${paginaActual <= 1 ? "disabled" : ""} onclick="cargarPagina(${paginaActual - 1})">Anterior</button>
         <span> Página ${paginaActual} de ${totalPaginas} </span>
         <button class="btn btn-secondary" ${paginaActual >= totalPaginas ? "disabled" : ""} onclick="cargarPagina(${paginaActual + 1})">Siguiente</button>
     `;
-
-    paginacion.innerHTML = html;
 }
-
-function cargarPagina(num) {
-    paginaActual = num;
-    cargarProductos(num);
-}
+function cargarPagina(num) { paginaActual = num; cargarProductos(num); }
 
 // =============================================================
 // Editar producto (abre modal)
@@ -141,13 +121,10 @@ async function editarProducto(id) {
     const apiBase = getApiBase();
 
     try {
-        const response = await fetch(`${apiBase}/api/productos/${id}`);
-        if (!response.ok) throw new Error("No se pudo obtener el producto");
+        const resp = await fetchSeguro(`${apiBase}/api/productos/${id}/`); // “/” final
+        if (!resp.ok) throw new Error("No se pudo obtener el producto");
 
-        const producto = await response.json();
-        console.log("🧾 Producto:", producto);
-
-        // Llenar formulario de edición
+        const producto = await resp.json();
         document.getElementById("productoId").value = producto.id;
         document.getElementById("codigoEan").value = producto.codigo_ean || "";
         document.getElementById("nombreNormalizado").value = producto.nombre_normalizado || "";
@@ -157,14 +134,14 @@ async function editarProducto(id) {
         document.getElementById("subcategoria").value = producto.subcategoria || "";
         document.getElementById("presentacion").value = producto.presentacion || "";
 
-        // Cargar PLUs del producto
+        // Cargar PLUs
         if (typeof cargarPLUsProducto === "function") {
             await cargarPLUsProducto(id);
         }
 
-        // Mostrar modal sin Bootstrap (usa tu CSS personalizado)
-        document.getElementById("modal-editar").classList.add("active");
-
+        // Mostrar modal (si usas CSS propio)
+        const modalEl = document.getElementById("modal-editar");
+        if (modalEl) modalEl.classList.add("active");
         console.log("✅ Modal abierto correctamente");
     } catch (error) {
         console.error("❌ Error al editar producto:", error);
@@ -172,7 +149,7 @@ async function editarProducto(id) {
 }
 
 // =============================================================
-// Guardar producto desde el modal
+// Guardar producto (solo campos básicos desde este archivo)
 // =============================================================
 async function guardarProducto() {
     const productoId = document.getElementById("productoId").value;
@@ -189,21 +166,21 @@ async function guardarProducto() {
     };
 
     try {
-        const response = await fetch(`${apiBase}/api/productos/${productoId}`, {
+        const resp = await fetchSeguro(`${apiBase}/api/productos/${productoId}/`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(datos),
         });
+        if (!resp.ok) throw new Error("Error al guardar producto");
 
-        if (!response.ok) throw new Error("Error al guardar producto");
-
-        console.log("✅ Producto actualizado correctamente");
         alert("✅ Producto actualizado correctamente");
 
-        // Cerrar modal (personalizado)
-        document.getElementById("modal-editar").classList.remove("active");
+        // Cerrar modal
+        const modalEl = document.getElementById("modal-editar");
+        const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+        if (modal) modal.hide();
+        else modalEl?.classList.remove("active");
 
-        // Recargar productos
         cargarProductos(paginaActual);
     } catch (error) {
         console.error("❌ Error guardando producto:", error);
@@ -211,11 +188,8 @@ async function guardarProducto() {
     }
 }
 
-// =============================================================
-// Cerrar modal manualmente
-// =============================================================
 function cerrarModal() {
-    document.getElementById("modal-editar").classList.remove("active");
+    document.getElementById("modal-editar")?.classList.remove("active");
 }
 
 // =============================================================
@@ -226,11 +200,10 @@ async function filtrarProductos() {
     const apiBase = getApiBase();
 
     try {
-        const response = await fetch(`${apiBase}/api/productos?buscar=${encodeURIComponent(termino)}`);
-        if (!response.ok) throw new Error("Error al filtrar productos");
-
-        const data = await response.json();
-        mostrarProductos(data.productos);
+        const resp = await fetchSeguro(`${apiBase}/api/productos/?buscar=${encodeURIComponent(termino)}`);
+        if (!resp.ok) throw new Error("Error al filtrar productos");
+        const data = await resp.json();
+        mostrarProductos(data.productos || []);
     } catch (error) {
         console.error("❌ Error filtrando productos:", error);
     }
@@ -246,7 +219,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 });
 
 // =============================================================
-// Exportar funciones globales
+// Exportar
 // =============================================================
 window.cargarProductos = cargarProductos;
 window.editarProducto = editarProducto;
