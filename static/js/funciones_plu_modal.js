@@ -1,5 +1,5 @@
 // funciones_plu_modal.js
-// Funciones para manejar PLUs en el modal de edición
+// Funciones para manejar PLUs en el modal de edición (v2.0 - Fix)
 
 let pluCounter = 0;
 let establecimientosCache = [];
@@ -8,33 +8,11 @@ let establecimientosCache = [];
 // 🌐 Base de API (forzar HTTPS)
 // =============================================================
 function getApiBase() {
-    try {
-        let origin = window.location.origin;
-        if (origin.startsWith('http://')) origin = origin.replace('http://', 'https://');
-        if (!origin.startsWith('https://')) origin = 'https://' + window.location.host;
-        origin = origin.replace(/\/+$/, '');
-        return origin.replace(/^http:/, 'https:');
-    } catch (e) {
-        console.error('⚠️ Error determinando API base:', e);
-        return 'https://lecfac-backend-production.up.railway.app';
+    let origin = window.location.origin;
+    if (origin.startsWith('http://')) {
+        origin = origin.replace('http://', 'https://');
     }
-}
-
-// =============================================================
-// 🧰 fetchSeguro: evita Mixed Content si el backend redirige a http
-// - Añade “/” final en la URL base de recursos
-// - Si recibe 307 a http, rehace la URL en https y reintenta
-// =============================================================
-async function fetchSeguro(url, options = {}) {
-    const resp = await fetch(url, options);
-    if (resp.status === 307) {
-        const loc = resp.headers.get('location') || '';
-        if (loc.startsWith('http://')) {
-            const httpsUrl = loc.replace('http://', 'https://');
-            return fetch(httpsUrl, options);
-        }
-    }
-    return resp;
+    return origin;
 }
 
 // =============================================================
@@ -43,31 +21,38 @@ async function fetchSeguro(url, options = {}) {
 async function cargarEstablecimientos() {
     try {
         const apiBase = getApiBase();
-        // IMPORTANTE: “/” final para evitar 307 → http
-        const url = `${apiBase}/api/establecimientos/`;
-        const response = await fetchSeguro(url);
+        // Sin slash final para evitar redirect 307
+        const urlEstablecimientos = `${apiBase}/api/establecimientos`;
+        console.log('🏪 Cargando establecimientos desde:', urlEstablecimientos);
+
+        const response = await fetch(urlEstablecimientos);
 
         if (response.ok) {
             establecimientosCache = await response.json();
             console.log('✅ Establecimientos cargados:', establecimientosCache.length);
         } else {
             console.warn('⚠️ No se pudieron cargar establecimientos (status:', response.status, ')');
+            usarEstablecimientosFallback();
         }
     } catch (error) {
         console.error('❌ Error cargando establecimientos:', error);
-        // Fallback para que el modal funcione
-        establecimientosCache = [
-            { id: 1, nombre_normalizado: 'Éxito' },
-            { id: 2, nombre_normalizado: 'Carulla' },
-            { id: 3, nombre_normalizado: 'Jumbo' },
-            { id: 4, nombre_normalizado: 'Olímpica' },
-            { id: 5, nombre_normalizado: 'D1' },
-            { id: 6, nombre_normalizado: 'Ara' },
-            { id: 7, nombre_normalizado: 'Justo y Bueno' },
-            { id: 8, nombre_normalizado: 'Alkosto' },
-            { id: 9, nombre_normalizado: 'OLÍMPICA' }
-        ];
+        usarEstablecimientosFallback();
     }
+}
+
+function usarEstablecimientosFallback() {
+    establecimientosCache = [
+        { id: 1, nombre_normalizado: 'Éxito' },
+        { id: 2, nombre_normalizado: 'Carulla' },
+        { id: 3, nombre_normalizado: 'Jumbo' },
+        { id: 4, nombre_normalizado: 'Olímpica' },
+        { id: 5, nombre_normalizado: 'D1' },
+        { id: 6, nombre_normalizado: 'Ara' },
+        { id: 7, nombre_normalizado: 'Justo y Bueno' },
+        { id: 8, nombre_normalizado: 'Alkosto' },
+        { id: 9, nombre_normalizado: 'OLÍMPICA' }
+    ];
+    console.log('📦 Usando establecimientos fallback:', establecimientosCache.length);
 }
 
 // =============================================================
@@ -76,40 +61,42 @@ async function cargarEstablecimientos() {
 function agregarPLU() {
     pluCounter++;
     const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) {
+        console.error('❌ No se encontró el contenedor de PLUs');
+        return;
+    }
 
     const pluHTML = `
         <div class="plu-item" id="plu-${pluCounter}">
-            <div class="row">
-                <div class="col-md-4">
-                    <label class="form-label">Establecimiento</label>
-                    <select class="form-select plu-establecimiento" data-plu-id="${pluCounter}">
+            <div class="plu-row">
+                <div class="form-group">
+                    <label>Establecimiento</label>
+                    <select class="form-control plu-establecimiento" data-plu-id="${pluCounter}">
                         <option value="">Seleccionar...</option>
                         ${establecimientosCache.map(e =>
         `<option value="${e.id}">${e.nombre_normalizado || 'Est. ' + e.id}</option>`
     ).join('')}
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Código PLU</label>
+                <div class="form-group">
+                    <label>Código PLU</label>
                     <input type="text" class="form-control plu-codigo"
                            data-plu-id="${pluCounter}" placeholder="Ej: 967509">
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Precio Unitario</label>
+                <div class="form-group">
+                    <label>Precio Unitario</label>
                     <input type="number" class="form-control plu-precio"
                            data-plu-id="${pluCounter}" placeholder="Ej: 5000">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <button type="button" class="btn btn-danger btn-sm d-block"
-                            onclick="eliminarPLU(${pluCounter})">
-                        <i class="bi bi-trash"></i> Eliminar
-                    </button>
-                </div>
+                <button type="button" class="btn-remove-plu"
+                        onclick="eliminarPLU(${pluCounter})">
+                    Eliminar
+                </button>
             </div>
         </div>
     `;
     contenedor.insertAdjacentHTML('beforeend', pluHTML);
+    console.log('➕ PLU agregado:', pluCounter);
 }
 
 // =============================================================
@@ -117,7 +104,10 @@ function agregarPLU() {
 // =============================================================
 function eliminarPLU(id) {
     const elemento = document.getElementById(`plu-${id}`);
-    if (elemento) elemento.remove();
+    if (elemento) {
+        elemento.remove();
+        console.log('🗑️ PLU eliminado:', id);
+    }
 }
 
 // =============================================================
@@ -126,24 +116,48 @@ function eliminarPLU(id) {
 async function cargarPLUsProducto(productoId) {
     try {
         const apiBase = getApiBase();
-        const url = `${apiBase}/api/productos/${productoId}/plus/`; // “/” final
-        const response = await fetchSeguro(url);
+        // Sin slash final
+        const urlPLUs = `${apiBase}/api/productos/${productoId}/plus`;
+        console.log('📋 Cargando PLUs del producto:', urlPLUs);
+
+        const response = await fetch(urlPLUs);
+
         if (response.ok) {
             const data = await response.json();
+            const contenedor = document.getElementById('contenedorPLUs');
 
-            document.getElementById('contenedorPLUs').innerHTML = '';
-            pluCounter = 0;
+            if (contenedor) {
+                contenedor.innerHTML = '';
+                pluCounter = 0;
 
-            if (data.plus && data.plus.length > 0) {
-                data.plus.forEach(plu => agregarPLUExistente(plu));
-            } else {
-                agregarPLU(); // uno vacío
+                if (data.plus && data.plus.length > 0) {
+                    data.plus.forEach(plu => agregarPLUExistente(plu));
+                } else {
+                    // Agregar un PLU vacío por defecto
+                    agregarPLU();
+                }
+
+                console.log(`✅ ${data.plus?.length || 0} PLUs cargados para producto ${productoId}`);
             }
-
-            console.log(`✅ ${data.plus?.length || 0} PLUs cargados`);
+        } else {
+            console.warn(`⚠️ No se pudieron cargar PLUs (status: ${response.status})`);
+            // Agregar un PLU vacío
+            const contenedor = document.getElementById('contenedorPLUs');
+            if (contenedor) {
+                contenedor.innerHTML = '';
+                pluCounter = 0;
+                agregarPLU();
+            }
         }
     } catch (error) {
         console.error('❌ Error cargando PLUs:', error);
+        // Agregar un PLU vacío en caso de error
+        const contenedor = document.getElementById('contenedorPLUs');
+        if (contenedor) {
+            contenedor.innerHTML = '';
+            pluCounter = 0;
+            agregarPLU();
+        }
     }
 }
 
@@ -153,13 +167,14 @@ async function cargarPLUsProducto(productoId) {
 function agregarPLUExistente(plu) {
     pluCounter++;
     const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) return;
 
     const pluHTML = `
         <div class="plu-item" id="plu-${pluCounter}">
-            <div class="row">
-                <div class="col-md-4">
-                    <label class="form-label">Establecimiento</label>
-                    <select class="form-select plu-establecimiento" data-plu-id="${pluCounter}">
+            <div class="plu-row">
+                <div class="form-group">
+                    <label>Establecimiento</label>
+                    <select class="form-control plu-establecimiento" data-plu-id="${pluCounter}">
                         <option value="">Seleccionar...</option>
                         ${establecimientosCache.map(e =>
         `<option value="${e.id}" ${e.id === plu.establecimiento_id ? 'selected' : ''}>
@@ -168,27 +183,24 @@ function agregarPLUExistente(plu) {
     ).join('')}
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Código PLU</label>
+                <div class="form-group">
+                    <label>Código PLU</label>
                     <input type="text" class="form-control plu-codigo"
                            data-plu-id="${pluCounter}"
                            value="${plu.codigo_plu || ''}"
                            placeholder="Ej: 967509">
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Precio Unitario</label>
+                <div class="form-group">
+                    <label>Precio Unitario</label>
                     <input type="number" class="form-control plu-precio"
                            data-plu-id="${pluCounter}"
                            value="${plu.precio_unitario || ''}"
                            placeholder="Ej: 5000">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <button type="button" class="btn btn-danger btn-sm d-block"
-                            onclick="eliminarPLU(${pluCounter})">
-                        <i class="bi bi-trash"></i> Eliminar
-                    </button>
-                </div>
+                <button type="button" class="btn-remove-plu"
+                        onclick="eliminarPLU(${pluCounter})">
+                    Eliminar
+                </button>
             </div>
         </div>
     `;
@@ -213,113 +225,106 @@ function recopilarPLUs() {
             });
         }
     });
+
+    console.log('📦 PLUs recopilados:', plus);
     return plus;
 }
 
 // =============================================================
-// Guardar edición completa (producto + PLUs)
-// =============================================================
-async function guardarEdicionPLUs() {
-    const productoId = document.getElementById('productoId').value;
-    const apiBase = getApiBase();
-
-    const datosProducto = {
-        codigo_ean: document.getElementById('codigoEan').value || null,
-        nombre_normalizado: document.getElementById('nombreNormalizado').value,
-        nombre_comercial: document.getElementById('nombreComercial').value || null,
-        marca: document.getElementById('marca').value || null,
-        categoria: document.getElementById('categoria').value || null,
-        subcategoria: document.getElementById('subcategoria').value || null,
-        presentacion: document.getElementById('presentacion').value || null
-    };
-
-    try {
-        // Producto
-        const respProducto = await fetchSeguro(`${apiBase}/api/productos/${productoId}/`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(datosProducto)
-        });
-        if (!respProducto.ok) throw new Error('Error actualizando producto');
-
-        // PLUs
-        const plus = recopilarPLUs();
-        const respPLUs = await fetchSeguro(`${apiBase}/api/productos/${productoId}/plus/`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(plus)
-        });
-        if (!respPLUs.ok) throw new Error('Error actualizando PLUs');
-
-        // Cerrar modal (si usas Bootstrap)
-        const modalEl = document.getElementById('modal-editar');
-        const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
-        if (modal) modal.hide();
-        else modalEl?.classList.remove('active');
-
-        // Recargar
-        if (typeof cargarProductos === 'function') cargarProductos();
-
-        alert('✅ Producto actualizado correctamente');
-    } catch (error) {
-        console.error('❌ Error guardando:', error);
-        alert('Error al guardar: ' + error.message);
-    }
-}
-
-// =============================================================
-// Duplicados
+// Detectar duplicados
 // =============================================================
 async function detectarDuplicados() {
     console.log('🔍 Detectando duplicados...');
     try {
         const apiBase = getApiBase();
-        const resp = await fetchSeguro(`${apiBase}/api/productos/duplicados/?umbral_similitud=0.8&limite=50`);
-        if (!resp.ok) throw new Error('Error al detectar duplicados');
-        const data = await resp.json();
-        if (data.duplicados?.length > 0) mostrarDuplicados(data.duplicados);
-        else alert('No se encontraron productos duplicados');
+        // Sin slash final
+        const urlDuplicados = `${apiBase}/api/productos/duplicados?umbral_similitud=0.8&limite=50`;
+
+        const response = await fetch(urlDuplicados);
+        if (!response.ok) {
+            throw new Error('Error al detectar duplicados');
+        }
+
+        const data = await response.json();
+
+        if (data.duplicados && data.duplicados.length > 0) {
+            mostrarDuplicadosSimple(data.duplicados);
+        } else {
+            alert('✅ No se encontraron productos duplicados');
+        }
     } catch (error) {
         console.error('❌ Error:', error);
-        alert('Error detectando duplicados. Verifica la consola.');
+        alert('Error detectando duplicados. Verifica la consola para más detalles.');
     }
 }
 
-function mostrarDuplicados(duplicados) {
-    let html = '<h5>Posibles Duplicados Encontrados:</h5><ul>';
+// =============================================================
+// Mostrar duplicados (sin Bootstrap)
+// =============================================================
+function mostrarDuplicadosSimple(duplicados) {
+    const container = document.getElementById('duplicados-container');
+    if (!container) {
+        console.error('❌ No se encontró el contenedor de duplicados');
+        return;
+    }
+
+    let html = '<h3>🔍 Posibles Duplicados Encontrados:</h3>';
+
     duplicados.forEach(dup => {
         html += `
-            <li>
-                <strong>${dup.nombre1}</strong> (ID: ${dup.id1})
-                <br>↔️<br>
-                <strong>${dup.nombre2}</strong> (ID: ${dup.id2})
-                <br>Similitud: ${(dup.similitud * 100).toFixed(1)}%
-            </li><hr>`;
-    });
-    html += '</ul>';
-
-    const modalHTML = `
-        <div class="modal fade" id="modalDuplicados" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Productos Duplicados</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">${html}</div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                    </div>
+            <div class="duplicado-item">
+                <div class="duplicado-header">
+                    <strong>${dup.nombre1}</strong> (ID: ${dup.id1})
+                </div>
+                <div style="text-align: center; padding: 10px 0;">↔️</div>
+                <div class="duplicado-header">
+                    <strong>${dup.nombre2}</strong> (ID: ${dup.id2})
+                </div>
+                <div style="margin-top: 10px; color: #666;">
+                    Similitud: ${(dup.similitud * 100).toFixed(1)}%
                 </div>
             </div>
-        </div>`;
-    if (!document.getElementById('modalDuplicados')) {
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-    } else {
-        document.querySelector('#modalDuplicados .modal-body').innerHTML = html;
+        `;
+    });
+
+    container.innerHTML = html;
+    console.log(`✅ Mostrando ${duplicados.length} duplicados`);
+}
+
+// =============================================================
+// Cargar duplicados (función alternativa)
+// =============================================================
+async function cargarDuplicados() {
+    console.log('📋 Cargando duplicados...');
+
+    try {
+        const apiBase = getApiBase();
+        const urlDuplicados = `${apiBase}/api/productos/duplicados`;
+
+        const response = await fetch(urlDuplicados);
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ Duplicados cargados:', data);
+
+        if (data.duplicados && data.duplicados.length > 0) {
+            mostrarDuplicadosSimple(data.duplicados);
+        } else {
+            const container = document.getElementById('duplicados-container');
+            if (container) {
+                container.innerHTML = '<p>No se encontraron duplicados.</p>';
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        const container = document.getElementById('duplicados-container');
+        if (container) {
+            container.innerHTML = `<p style="color: #dc2626;">Error cargando duplicados: ${error.message}</p>`;
+        }
     }
-    const modal = new bootstrap.Modal(document.getElementById('modalDuplicados'));
-    modal.show();
 }
 
 // =============================================================
@@ -327,13 +332,15 @@ function mostrarDuplicados(duplicados) {
 // =============================================================
 document.addEventListener('DOMContentLoaded', () => {
     cargarEstablecimientos();
+    console.log('✅ Sistema de PLUs inicializado');
 });
 
 // =============================================================
-// Exportar
+// Exportar funciones globales
 // =============================================================
 window.agregarPLU = agregarPLU;
 window.eliminarPLU = eliminarPLU;
 window.cargarPLUsProducto = cargarPLUsProducto;
 window.detectarDuplicados = detectarDuplicados;
 window.recopilarPLUs = recopilarPLUs;
+window.cargarDuplicados = cargarDuplicados;
