@@ -1,0 +1,256 @@
+/* estilos_productos_mejorado.css */
+/* Paleta de colores mejorada para mejor contraste */
+
+:root {
+    /* Colores principales - más oscuros para mejor contraste */
+    --color-primary: #1d4ed8;
+    /* Azul oscuro */
+    --color-success: #059669;
+    /* Verde oscuro */
+    --color-warning: #d97706;
+    /* Naranja oscuro */
+    --color-danger: #dc2626;
+    /* Rojo oscuro */
+    --color-info: #1e40af;
+    /* Azul informativo oscuro */
+    --color-secondary: #475569;
+    /* Gris oscuro */
+
+    /* Colores de fondo claros para cards */
+    --bg-primary-light: #dbeafe;
+    --bg-success-light: #d1fae5;
+    --bg-warning-light: #fed7aa;
+    --bg-danger-light: #fecaca;
+    --bg-info-light: #dbeafe;
+}
+
+/* Sobrescribir badges para mejor contraste */
+.badge {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin: 2px;
+    color: white !important;
+    /* Forzar texto blanco */
+}
+
+/* Badge de error/danger - Rojo oscuro */
+.badge-error,
+.badge-danger {
+    background: var(--color-danger) !important;
+    color: white !important;
+}
+
+/* Badge de warning - Naranja oscuro */
+.badge-warning {
+    background: var(--color-warning) !important;
+    color: white !important;
+}
+
+/* Badge de success - Verde oscuro */
+.badge-success {
+    background: var(--color-success) !important;
+    color: white !important;
+}
+
+/* Badge de info - Azul oscuro */
+.badge-info {
+    background: var(--color-info) !important;
+    color: white !important;
+}
+
+/* Badge secondary - Gris oscuro */
+.badge-secondary {
+    background: var(--color-secondary) !important;
+    color: white !important;
+}
+
+/* Badge primary - Azul principal oscuro */
+.badge-primary {
+    background: var(--color-primary) !important;
+    color: white !important;
+}
+
+/* Estilos específicos para PLUs por establecimiento */
+.plu-exito {
+    background: #16a34a !important;
+    /* Verde Éxito */
+    color: white !important;
+}
+
+.plu-carulla {
+    background: #dc2626 !important;
+    /* Rojo Carulla */
+    color: white !important;
+}
+
+.plu-jumbo {
+    background: #059669 !important;
+    /* Verde Jumbo */
+    color: white !important;
+}
+
+.plu-olimpica {
+    background: #ea580c !important;
+    /* Naranja Olímpica */
+    color: white !important;
+}
+
+.plu-d1 {
+    background: #0891b2 !important;
+    /* Azul D1 */
+    color: white !important;
+}
+
+.plu-ara {
+    background: #dc2626 !important;
+    /* Rojo Ara */
+    color: white !important;
+}
+
+.plu-alkosto {
+    background: #7c3aed !important;
+    /* Morado Alkosto */
+    color: white !important;
+}
+
+.plu-justo {
+    background: #ca8a04 !important;
+    /* Amarillo oscuro Justo y Bueno */
+    color: white !important;
+}
+
+/* Mejorar contraste en botones */
+.btn-primary {
+    background: var(--color-primary) !important;
+    color: white !important;
+}
+
+.btn-primary:hover {
+    background: #1e3a8a !important;
+}
+
+.btn-success {
+    background: var(--color-success) !important;
+    color: white !important;
+}
+
+.btn-success:hover {
+    background: #047857 !important;
+}
+
+.btn-warning {
+    background: var(--color-warning) !important;
+    color: white !important;
+}
+
+.btn-warning:hover {
+    background: #b45309 !important;
+}
+
+.btn-danger {
+    background: var(--color-danger) !important;
+    color: white !important;
+}
+
+.btn-danger:hover {
+    background: #b91c1c !important;
+}
+
+.btn-secondary {
+    background: var(--color-secondary) !important;
+    color: white !important;
+}
+
+.btn-secondary:hover {
+    background: #334155 !important;
+}
+
+/* Asegurar legibilidad en todas las alerts */
+.alert-info {
+    background: var(--bg-info-light);
+    color: var(--color-info);
+    border-left: 4px solid var(--color-info);
+}
+
+.alert-success {
+    background: var(--bg-success-light);
+    color: var(--color-success);
+    border-left: 4px solid var(--color-success);
+}
+
+.alert-warning {
+    background: var(--bg-warning-light);
+    color: var(--color-warning);
+    border-left: 4px solid var(--color-warning);
+}
+
+.alert-error,
+.alert-danger {
+    background: var(--bg-danger-light);
+    color: var(--color-danger);
+    border-left: 4px solid var(--color-danger);
+}
+
+/* Mejorar visibilidad de los stat cards */
+.stat-card .stat-value {
+    color: var(--color-primary) !important;
+}
+
+.stat-card.warning .stat-value {
+    color: var(--color-warning) !important;
+}
+
+.stat-card.danger .stat-value {
+    color: var(--color-danger) !important;
+}
+
+.stat-card.success .stat-value {
+    color: var(--color-success) !important;
+}
+
+/* Hover effects con mejor contraste */
+tr:hover {
+    background: #f1f5f9 !important;
+}
+
+td.editable:hover {
+    background: #fef3c7 !important;
+}
+
+/* Asegurar que todos los textos en badges sean legibles */
+.badge * {
+    color: white !important;
+}
+
+/* Estilos para la tabla de productos */
+.productos-table .badge {
+    display: inline-block;
+    margin: 2px;
+    padding: 5px 10px;
+    font-weight: 600;
+}
+
+/* Colores específicos para diferentes tipos de datos faltantes */
+.badge-sin-ean {
+    background: #dc2626 !important;
+    /* Rojo - más crítico */
+}
+
+.badge-sin-marca {
+    background: #ea580c !important;
+    /* Naranja oscuro */
+}
+
+.badge-sin-categoria {
+    background: #d97706 !important;
+    /* Amarillo oscuro */
+}
+
+.badge-completo {
+    background: #059669 !important;
+    /* Verde oscuro - todo OK */
+}

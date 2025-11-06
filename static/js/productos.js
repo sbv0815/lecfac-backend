@@ -103,7 +103,7 @@ function mostrarProductos(productos) {
             plusHTML = plusArray.map(plu => {
                 const [codigo, est] = plu.split(' (');
                 const establecimiento = est ? est.replace(')', '') : '';
-                return `<span class="badge badge-info">${codigo} ${establecimiento}</span>`;
+                return `<span class="badge" style="background: #1e40af; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">${codigo} ${establecimiento}</span>`;
             }).join(' ');
         }
 
@@ -114,10 +114,10 @@ function mostrarProductos(productos) {
 
         // Renderizar estado
         const estadoBadges = [];
-        if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning">Sin EAN</span>');
-        if (!p.marca) estadoBadges.push('<span class="badge badge-warning">Sin Marca</span>');
-        if (!p.categoria) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
-        const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge badge-success">Completo</span>';
+        if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
+        if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
+        if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
+        const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
 
         const row = `
             <tr>
