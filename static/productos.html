@@ -424,6 +424,63 @@
             margin-top: 20px;
         }
 
+        /* Sección PLUs en el modal */
+        .section-header {
+            background-color: #f0f0f0;
+            padding: 10px;
+            margin: 20px -10px 15px -10px;
+            font-weight: bold;
+            border-left: 4px solid #2563eb;
+        }
+
+        .plu-item {
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+        }
+
+        .plu-row {
+            display: grid;
+            grid-template-columns: 2fr 1.5fr 1.5fr auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .plu-item .form-group {
+            margin-bottom: 5px;
+        }
+
+        .btn-remove-plu {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            height: 38px;
+            margin-top: 23px;
+        }
+
+        .btn-remove-plu:hover {
+            background: #dc2626;
+        }
+
+        .btn-add-plu {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn-add-plu:hover {
+            background: #059669;
+        }
+
         /* Alerts */
         .alert {
             padding: 15px;
@@ -670,7 +727,7 @@
         </div>
     </div>
 
-    <!-- MODAL DE EDICIÓN -->
+    <!-- MODAL DE EDICIÓN MEJORADO CON PLUs -->
     <div id="modal-editar" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -680,9 +737,14 @@
             <form id="form-editar" onsubmit="guardarEdicion(event)">
                 <input type="hidden" id="edit-id">
 
+                <!-- Sección 1: Identificación Global -->
+                <div class="section-header">
+                    📦 Identificación Global
+                </div>
+
                 <div class="form-group">
                     <label>Código EAN</label>
-                    <input type="text" id="edit-ean" placeholder="7702001234567">
+                    <input type="text" id="edit-ean" placeholder="7702001234567" maxlength="13">
                 </div>
 
                 <div class="form-group">
@@ -713,6 +775,39 @@
                 <div class="form-group">
                     <label>Presentación</label>
                     <input type="text" id="edit-presentacion" placeholder="Ej: 1L">
+                </div>
+
+                <!-- Sección 2: PLUs por Establecimiento -->
+                <div class="section-header">
+                    🏪 PLUs por Establecimiento
+                </div>
+
+                <div id="contenedorPLUs">
+                    <!-- Los PLUs se cargan dinámicamente aquí -->
+                </div>
+
+                <button type="button" class="btn-add-plu" onclick="agregarPLU()">
+                    ➕ Agregar PLU
+                </button>
+
+                <!-- Sección 3: Estadísticas (solo lectura) -->
+                <div class="section-header">
+                    📊 Estadísticas
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label>Veces Comprado</label>
+                        <input type="text" id="edit-veces-comprado" readonly style="background: #f0f0f0;">
+                    </div>
+                    <div class="form-group">
+                        <label>Precio Promedio</label>
+                        <input type="text" id="edit-precio-promedio" readonly style="background: #f0f0f0;">
+                    </div>
+                    <div class="form-group">
+                        <label>Establecimientos</label>
+                        <input type="text" id="edit-num-establecimientos" readonly style="background: #f0f0f0;">
+                    </div>
                 </div>
 
                 <div class="form-actions">
@@ -771,6 +866,7 @@
     </div>
 
     <script src="/static/js/productos.js"></script>
+    <script src="/static/js/funciones_plu_modal.js"></script>
 </body>
 
 </html>
