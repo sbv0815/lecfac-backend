@@ -7,7 +7,9 @@ let establecimientosCache = [];
 // Cargar establecimientos al iniciar
 async function cargarEstablecimientos() {
     try {
-        const response = await fetch('/api/establecimientos');
+        const response = await fetch(`${window.location.origin}/api/establecimientos`);
+
+
         if (response.ok) {
             establecimientosCache = await response.json();
             console.log('✅ Establecimientos cargados:', establecimientosCache.length);
@@ -94,6 +96,9 @@ async function cargarPLUsProducto(productoId) {
                 data.plus.forEach(plu => {
                     agregarPLUExistente(plu);
                 });
+            } else {
+                // Si no hay PLUs, agregar uno vacío por defecto
+                agregarPLU();
             }
 
             console.log(`✅ ${data.plus.length} PLUs cargados`);
@@ -172,7 +177,8 @@ function recopilarPLUs() {
 }
 
 // Guardar edición completa (producto + PLUs)
-async function guardarEdicion() {
+// Nota: se renombra para evitar colisión con la función global en productos.js
+async function guardarEdicionPLUs() {
     const productoId = document.getElementById('productoId').value;
 
     // 1. Guardar datos básicos del producto
@@ -217,7 +223,7 @@ async function guardarEdicion() {
         }
 
         // Cerrar modal y recargar tabla
-        const modal = bootstrap.Modal.getInstance(document.getElementById('modalEdicion'));
+        const modal = bootstrap.Modal.getInstance(document.getElementById('modal-editar'));
         modal.hide();
 
         // Recargar productos
@@ -328,6 +334,6 @@ document.addEventListener('DOMContentLoaded', function () {
 window.agregarPLU = agregarPLU;
 window.eliminarPLU = eliminarPLU;
 window.cargarPLUsProducto = cargarPLUsProducto;
-window.guardarEdicion = guardarEdicion;
+// No exportar guardarEdicionPLUs para evitar colisión con productos.js
 window.detectarDuplicados = detectarDuplicados;
 window.recopilarPLUs = recopilarPLUs;
