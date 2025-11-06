@@ -16,11 +16,7 @@ let timeoutBusqueda = null; // Para búsqueda en tiempo real
 // 🌐 Base API - IMPORTANTE: Sin slash final en los endpoints
 // =============================================================
 function getApiBase() {
-    let origin = window.location.origin;
-    if (origin.startsWith('http://')) {
-        origin = origin.replace('http://', 'https://');
-    }
-    return origin;
+    return 'https://lecfac-backend-production.up.railway.app';
 }
 
 // =============================================================
