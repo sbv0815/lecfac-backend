@@ -7,7 +7,8 @@ import tempfile
 import traceback
 import json
 import uuid
-
+# Al inicio de main.py, donde están los imports:
+from claude_invoice import parse_invoice_with_claude as procesar_factura_con_claude
 # LIMPIEZA DE CACHÉ AL INICIO
 import shutil
 print("🧹 Limpiando caché de Python...")
