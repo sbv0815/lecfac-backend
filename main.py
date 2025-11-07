@@ -1500,7 +1500,10 @@ async def save_invoice_with_image(
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
 @app.get("/api/establecimientos")
 async def get_establecimientos():
-    """Endpoint directo para obtener establecimientos (sin redirect)"""
+    """
+    Obtener lista de establecimientos
+    Endpoint directo sin redirect para evitar problemas con HTTPS
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1518,8 +1521,8 @@ async def get_establecimientos():
                 "id": row[0],
                 "nombre_normalizado": row[1],
                 "nombre": row[1],  # Alias para compatibilidad
-                "cadena": row[2],
-                "activo": row[3]
+                "cadena": row[2] if len(row) > 2 else None,
+                "activo": row[3] if len(row) > 3 else True
             })
 
         cursor.close()
@@ -1528,9 +1531,9 @@ async def get_establecimientos():
         return establecimientos
 
     except Exception as e:
-        logger.error(f"Error obteniendo establecimientos: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-# ==========================================
+        print(f"❌ Error obteniendo establecimientos: {e}")
+        # Retornar lista vacía en lugar de error para no romper el frontend
+        return []
 # FUNCIÓN DE BACKGROUND - COMPLETA
 # ==========================================
 async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
