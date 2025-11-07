@@ -157,7 +157,29 @@ def decode_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+# ============================================
+# FUNCIONES ADICIONALES PARA COMPATIBILIDAD
+# ============================================
 
+def create_jwt_token(user_id: int, email: str, rol: str = "usuario") -> str:
+    """
+    Función de compatibilidad para crear tokens JWT
+    Usa la misma lógica que create_access_token pero con nombre legacy
+
+    Args:
+        user_id: ID del usuario
+        email: Email del usuario
+        rol: Rol del usuario (usuario, admin, auditor)
+
+    Returns:
+        Token JWT como string
+    """
+    token_data = {
+        "user_id": user_id,
+        "email": email,
+        "rol": rol
+    }
+    return create_access_token(token_data)
 # ============================================
 # DEPENDENCIAS PARA PROTEGER ENDPOINTS
 # ============================================
