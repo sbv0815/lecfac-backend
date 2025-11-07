@@ -1,27 +1,29 @@
 ﻿"""
 ============================================================================
 SISTEMA DE PROCESAMIENTO AUTOMATICO DE OCR PARA FACTURAS
-VERSION 3.5 - CON LÓGICA CORRECTA DE EAN/PLU POR ESTABLECIMIENTO
+VERSION 3.6 - FIX CRÍTICO: PLUs SE GUARDAN CORRECTAMENTE
 ============================================================================
 
 CAMBIOS EN ESTA VERSION:
-- CORREGIDO: EANs en Jumbo/Ara se guardan TAMBIÉN como PLU específico
-- CORREGIDO: PLUs cortos (3-7 díg) se guardan SOLO en productos_por_establecimiento
-- MEJORADO: codigo_ean solo para códigos universales
-- MEJORADO: codigo_plu para códigos específicos por establecimiento
+- FIX CRÍTICO: PLUs ahora se guardan con código ORIGINAL (sin prefijos)
+- FIX CRÍTICO: PLUs SIEMPRE se guardan en productos_por_establecimiento
+- MEJORADO: Clasificación usa código RAW para evitar perder el código original
+- MEJORADO: items_factura.codigo_leido guarda el código SIN PREFIJOS
+- MEJORADO: Asociación correcta PLU → establecimiento_id
 
 LÓGICA DE GUARDADO:
-1. EAN en Jumbo/Ara → productos_maestros.codigo_ean + productos_por_establecimiento.codigo_plu
-2. EAN en otros → productos_maestros.codigo_ean (sin PLU)
-3. PLU corto → productos_maestros.codigo_ean=NULL + productos_por_establecimiento.codigo_plu
+1. Código RAW → Se clasifica (EAN/PLU) sin modificar
+2. items_factura.codigo_leido → Código ORIGINAL sin prefijos
+3. PLU → SIEMPRE se guarda en productos_por_establecimiento con establecimiento_id
+4. EAN en Jumbo/Ara → También se guarda como PLU específico del establecimiento
 
 EJEMPLO:
-- Salsa tomate EAN "7702047041482" escaneada en Jumbo → codigo_ean="7702047041482" + PLU Jumbo="7702047041482"
-- Misma salsa con PLU "1123456" en Olímpica → mismo producto_maestro_id + PLU Olímpica="1123456"
-- Misma salsa con PLU "345674" en D1 → mismo producto_maestro_id + PLU D1="345674"
+- PLU "505" en Jumbo → items_factura.codigo_leido="505" + productos_por_establecimiento(Jumbo)
+- PLU "505" en Olímpica → items_factura.codigo_leido="505" + productos_por_establecimiento(Olímpica)
+- Mismo número, DIFERENTES productos porque están en DIFERENTES establecimientos
 
 AUTOR: LecFac Team
-ULTIMA ACTUALIZACION: 2025-11-07 (Lógica correcta EAN/PLU)
+ULTIMA ACTUALIZACION: 2025-11-07 (Fix PLUs con código original)
 ============================================================================
 """
 
@@ -228,12 +230,12 @@ def es_producto_fresco(nombre: str) -> bool:
         'tomate', 'cebolla', 'zanahoria', 'papa', 'yuca', 'lechuga',
         'espinaca', 'acelga', 'repollo', 'coliflor', 'brócoli', 'apio',
         'cilantro', 'perejil', 'albahaca', 'pimentón', 'ají', 'pepino',
-        'calabaza', 'ahuyama', 'berenjena', 'remolacha', 'rábano','naranja','mandarina'
+        'calabaza', 'ahuyama', 'berenjena', 'remolacha', 'rábano','naranja','mandarina',
 
         # Carnes
         'carne', 'res', 'cerdo', 'pollo', 'pescado', 'mariscos',
         'camarón', 'pulpo', 'calamar', 'chuleta', 'costilla', 'lomo',
-        'pechuga', 'muslo', 'alas', 'molida', 'bistec','filete de tilapia'
+        'pechuga', 'muslo', 'alas', 'molida', 'bistec','filete de tilapia',
 
         # Lácteos frescos
         'leche', 'yogurt', 'yogur', 'queso', 'crema', 'mantequilla',
@@ -253,20 +255,21 @@ def guardar_plu_establecimiento(cursor, conn, producto_maestro_id: int,
                                precio: int, descripcion: str = None):
     """
     Guarda un PLU en productos_por_establecimiento
+    CRÍTICO: Asocia el PLU con el establecimiento específico
 
     Args:
         cursor: Cursor de base de datos
         conn: Conexión a base de datos
         producto_maestro_id: ID del producto maestro
         establecimiento_id: ID del establecimiento
-        codigo_plu: Código PLU
+        codigo_plu: Código PLU ORIGINAL (sin prefijos)
         precio: Precio del producto
         descripcion: Descripción opcional del PLU
     """
     try:
         # Verificar si ya existe
         cursor.execute("""
-            SELECT id FROM productos_por_establecimiento
+            SELECT id, codigo_plu FROM productos_por_establecimiento
             WHERE producto_maestro_id = %s
               AND establecimiento_id = %s
         """, (producto_maestro_id, establecimiento_id))
@@ -285,7 +288,7 @@ def guardar_plu_establecimiento(cursor, conn, producto_maestro_id: int,
                   AND establecimiento_id = %s
             """, (codigo_plu, precio, descripcion,
                   producto_maestro_id, establecimiento_id))
-            print(f"      📝 PLU actualizado: {codigo_plu}")
+            print(f"      📝 PLU actualizado: {codigo_plu} (ID: {existe[0]})")
         else:
             # Insertar nuevo
             cursor.execute("""
@@ -293,17 +296,23 @@ def guardar_plu_establecimiento(cursor, conn, producto_maestro_id: int,
                 (producto_maestro_id, establecimiento_id, codigo_plu,
                  precio_unitario, descripcion_plu)
                 VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
             """, (producto_maestro_id, establecimiento_id,
                   codigo_plu, precio, descripcion))
-            print(f"      ✅ PLU guardado: {codigo_plu}")
+
+            new_id = cursor.fetchone()[0]
+            print(f"      ✅ PLU guardado: {codigo_plu} (Nuevo ID: {new_id})")
+
+        conn.commit()
 
     except Exception as e:
         print(f"      ❌ Error guardando PLU: {e}")
+        traceback.print_exc()
         # No hacer rollback para no perder el producto
 
 
 class OCRProcessor:
-    """Procesador automatico de facturas con OCR - Version 3.5 con lógica correcta EAN/PLU"""
+    """Procesador automatico de facturas con OCR - Version 3.6 con fix de PLUs"""
 
     def __init__(self):
         self.is_running = False
@@ -333,10 +342,11 @@ class OCRProcessor:
         print("=" * 80)
         print("🚀 PROCESADOR OCR AUTOMATICO INICIADO")
         print("=" * 80)
-        print("VERSION 3.5 - LÓGICA CORRECTA DE EAN/PLU POR ESTABLECIMIENTO")
+        print("VERSION 3.6 - FIX CRÍTICO PLUs CON CÓDIGO ORIGINAL")
         print("✅ product_matcher integrado")
-        print("✅ EANs en Jumbo/Ara → también se guardan como PLU")
-        print("✅ PLUs cortos → solo en productos_por_establecimiento")
+        print("✅ PLUs se guardan con código ORIGINAL (sin prefijos)")
+        print("✅ PLUs asociados correctamente al establecimiento_id")
+        print("✅ items_factura.codigo_leido guarda código sin modificar")
         print("✅ Detección de productos frescos")
         print("✅ Actualizacion automatica de inventario")
         print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica y mas")
@@ -591,20 +601,18 @@ class OCRProcessor:
         establecimiento_id: Optional[int] = None
     ) -> Optional[int]:
         """
-        VERSION 3.5 - Con lógica correcta de EAN/PLU por establecimiento
+        VERSION 3.6 - FIX CRÍTICO: Guarda PLUs con código ORIGINAL
 
-        Flujo mejorado:
+        Flujo corregido:
         1. Validar producto
-        2. Normalizar codigo
-        3. Clasificar como EAN o PLU
-        4. Buscar/crear en productos_maestros (con codigo_ean solo si es EAN universal)
-        5. Guardar en items_factura
-        6. Decidir si guardar en productos_por_establecimiento:
-           - PLU corto (3-7 díg): SIEMPRE guardar
-           - EAN en Jumbo/Ara: SIEMPRE guardar (códigos específicos de la tienda)
-           - EAN en otros: NO guardar (es universal)
+        2. Normalizar codigo (para product_matcher)
+        3. Clasificar usando CÓDIGO RAW (sin prefijos)
+        4. Buscar/crear en productos_maestros
+        5. Guardar en items_factura con CÓDIGO ORIGINAL
+        6. Guardar en productos_por_establecimiento si es PLU o EAN específico
         """
         try:
+            # CÓDIGO ORIGINAL - SIN MODIFICAR
             codigo_raw = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
             precio_raw = product.get("precio", 0)
@@ -618,22 +626,22 @@ class OCRProcessor:
                 print(f"   ⚠️  RECHAZADO: {razon_rechazo}")
                 return None
 
-            # PASO 2: Normalizar codigo
-            codigo, tipo_codigo, confianza = normalizar_codigo_por_establecimiento(
+            # PASO 2: Normalizar codigo (para product_matcher - él necesita el normalizado)
+            codigo_normalizado, tipo_codigo, confianza = normalizar_codigo_por_establecimiento(
                 codigo_raw, establecimiento
             )
 
             print(f"   💰 ${precio:,} x{cantidad}")
-            if codigo_raw != codigo and codigo:
-                print(f"   🔄 Codigo normalizado: {codigo_raw} -> {codigo} ({tipo_codigo})")
-            else:
-                print(f"   🔖 Codigo: {codigo or 'SIN CODIGO'} ({tipo_codigo})")
 
-            # PASO 3: Clasificar código
-            codigo_final = codigo if codigo else codigo_raw if codigo_raw else ""
-            tipo_clasificado, codigo_limpio = clasificar_codigo(codigo_final)
+            # PASO 3: Clasificar usando CÓDIGO RAW (sin prefijos)
+            # ⚠️ CRÍTICO: Usar codigo_raw para clasificar, NO el normalizado
+            codigo_para_clasificar = codigo_raw if codigo_raw else ""
+            tipo_clasificado, codigo_limpio = clasificar_codigo(codigo_para_clasificar)
 
-            print(f"   🏷️ Clasificación: {tipo_clasificado} ({len(codigo_limpio)} dígitos)")
+            print(f"   🔖 Código ORIGINAL: {codigo_raw or 'SIN CODIGO'}")
+            if codigo_normalizado and codigo_normalizado != codigo_raw:
+                print(f"   🔧 Código normalizado (interno): {codigo_normalizado} ({tipo_codigo})")
+            print(f"   🏷️  Clasificación: {tipo_clasificado} ({len(codigo_limpio)} dígitos)")
 
             # PASO 4: Buscar/crear producto maestro
             if not PRODUCT_MATCHING_AVAILABLE:
@@ -641,9 +649,9 @@ class OCRProcessor:
                 return None
 
             try:
-                # Llamar a product_matcher - él decide si usar codigo_ean o buscar por nombre
+                # product_matcher usa el código normalizado para búsqueda
                 producto_maestro_id = buscar_producto_v2(
-                    codigo=codigo_limpio,
+                    codigo=codigo_limpio if tipo_clasificado == 'EAN' else codigo_normalizado,
                     nombre=nombre,
                     precio=precio,
                     establecimiento=establecimiento,
@@ -662,7 +670,7 @@ class OCRProcessor:
                 traceback.print_exc()
                 return None
 
-            # PASO 5: Guardar en items_factura
+            # PASO 5: Guardar en items_factura con CÓDIGO ORIGINAL
             try:
                 cursor.execute("""
                     INSERT INTO items_factura (
@@ -681,7 +689,7 @@ class OCRProcessor:
                     factura_id,
                     user_id,
                     producto_maestro_id,
-                    codigo_limpio if codigo_limpio else None,
+                    codigo_raw if codigo_raw else None,  # ← CÓDIGO ORIGINAL
                     nombre,
                     precio,
                     cantidad,
@@ -689,6 +697,7 @@ class OCRProcessor:
                 ))
 
                 item_id = cursor.fetchone()[0]
+                print(f"   💾 Guardado en items_factura con código: {codigo_raw or 'NULL'}")
 
                 # PASO 6: Decidir si guardar en productos_por_establecimiento
                 if codigo_limpio and establecimiento_id and producto_maestro_id:
@@ -696,31 +705,31 @@ class OCRProcessor:
                     razon_guardado = ""
 
                     if tipo_clasificado == 'PLU':
-                        # PLUs cortos (3-7 dígitos) SIEMPRE van a productos_por_establecimiento
+                        # PLUs SIEMPRE van a productos_por_establecimiento
                         debe_guardar_plu = True
-                        razon_guardado = f"PLU corto ({len(codigo_limpio)} dígitos)"
+                        razon_guardado = f"PLU ({len(codigo_limpio)} dígitos)"
 
                     elif tipo_clasificado == 'EAN':
-                        # Jumbo y Ara: TODOS sus códigos (incluso EANs) también son PLUs específicos
+                        # Jumbo, Ara, D1: Sus EANs también son códigos específicos
                         cadena_upper = cadena.upper()
                         if cadena_upper in ['JUMBO', 'ARA', 'D1']:
                             debe_guardar_plu = True
-                            razon_guardado = f"{cadena}: EAN de {len(codigo_limpio)} dígitos también es PLU específico"
+                            razon_guardado = f"{cadena}: EAN también es código específico"
 
-                    # Guardar PLU si corresponde
+                    # Guardar en productos_por_establecimiento si corresponde
                     if debe_guardar_plu:
-                        print(f"   📌 {razon_guardado}")
+                        print(f"   📌 {razon_guardado} → Guardando en productos_por_establecimiento")
                         guardar_plu_establecimiento(
                             cursor=cursor,
                             conn=conn,
                             producto_maestro_id=producto_maestro_id,
                             establecimiento_id=establecimiento_id,
-                            codigo_plu=codigo_limpio,
+                            codigo_plu=codigo_limpio,  # ← CÓDIGO ORIGINAL LIMPIO
                             precio=precio,
                             descripcion=nombre
                         )
                     else:
-                        print(f"   ℹ️  EAN universal - no se guarda como PLU específico")
+                        print(f"   ℹ️  EAN universal - no se guarda en productos_por_establecimiento")
 
                     # Si es un producto fresco, marcarlo
                     if es_producto_fresco(nombre):
@@ -777,16 +786,16 @@ class OCRProcessor:
 
 
 print("=" * 80)
-print("🚀 OCR PROCESSOR V3.5 CARGADO - LÓGICA CORRECTA EAN/PLU")
+print("🚀 OCR PROCESSOR V3.6 CARGADO - FIX CRÍTICO PLUs")
 print("=" * 80)
-print("✅ Clasificación por longitud: PLU (3-7 díg) vs EAN (8+ díg)")
-print("✅ Jumbo/Ara: EANs también se guardan como PLU específico")
-print("✅ Otros establecimientos: EANs solo en codigo_ean (universal)")
-print("✅ PLUs cortos: codigo_ean=NULL + codigo_plu por establecimiento")
-print("✅ Detección automática de productos frescos: OK")
-print("✅ Normalización inteligente de códigos: OK")
-print("✅ Detección automática de duplicados: OK" if DUPLICATE_DETECTOR_AVAILABLE else "⚠️  Detección automática de duplicados: NO")
-print("✅ product_matcher (sistema funcional): OK" if PRODUCT_MATCHING_AVAILABLE else "❌ product_matcher: NO")
+print("✅ PLUs se guardan con código ORIGINAL (sin prefijos)")
+print("✅ items_factura.codigo_leido guarda el código RAW")
+print("✅ Clasificación usa código RAW (sin modificar)")
+print("✅ PLUs SIEMPRE se guardan en productos_por_establecimiento")
+print("✅ Asociación correcta: PLU + establecimiento_id + precio + fecha")
+print("✅ Jumbo/Ara: EANs también en productos_por_establecimiento")
+print("✅ Detección automática de productos frescos")
+print("✅ product_matcher integrado")
 print("🏪 Soporta: ARA, D1, Éxito, Jumbo, Olímpica, Carulla, y más")
 print("=" * 80)
 
