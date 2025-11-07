@@ -2656,6 +2656,8 @@ async def procesar_factura_v2(
         total_acumulado = 0
         fecha_factura = None
 
+        # En main.py, en el loop de procesamiento de frames:
+
         for idx, frame_path in enumerate(frames_para_ocr, 1):
             print(f"   Frame {idx}/{len(frames_para_ocr)}...")
 
@@ -2663,23 +2665,40 @@ async def procesar_factura_v2(
                 resultado = parse_invoice_with_claude(frame_path)
 
                 if resultado.get('success'):
-                    items = resultado.get('items', [])
-                    todos_los_items.extend(items)
+            # ✅ Claude retorna 'productos', no 'items'
+                    productos = resultado.get('productos', [])
 
-                    # Tomar el total y fecha del último frame que los tenga
-                    if resultado.get('total'):
-                        total_acumulado = resultado['total']
-                    if resultado.get('fecha'):
-                        fecha_factura = resultado['fecha']
+                if productos:
+                # Normalizar formato para que coincida con el resto del código
+                 for prod in productos:
+                    item_normalizado = {
+                        'descripcion': prod.get('nombre', 'PRODUCTO SIN NOMBRE'),
+                        'codigo': str(prod.get('codigo', '')) if prod.get('codigo') else None,
+                        'precio_unitario': float(prod.get('precio', 0)),
+                        'cantidad': int(prod.get('cantidad', 1)),
+                        'subtotal': float(prod.get('precio', 0)) * int(prod.get('cantidad', 1))
+                    }
+                    todos_los_items.append(item_normalizado)
 
-                    print(f"      → {len(items)} items detectados")
+                    print(f"      → {len(productos)} items detectados")
+                else:
+                    print(f"      ⚠️  Frame sin productos")
+
+            # Tomar el total y fecha del último frame que los tenga
+                if resultado.get('total'):
+                    total_acumulado = resultado['total']
+                if resultado.get('fecha'):
+                    fecha_factura = resultado['fecha']
                 else:
                     print(f"      ⚠️  Frame sin datos válidos")
 
             except Exception as e:
                 print(f"      ❌ Error procesando frame: {e}")
+        import traceback
+        traceback.print_exc()
 
-            # Eliminar frame temporal
+    # Eliminar frame temporal
+        if os.path.exists(frame_path):
             os.remove(frame_path)
 
         # Consolidar datos
