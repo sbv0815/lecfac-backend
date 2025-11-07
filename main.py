@@ -2152,10 +2152,169 @@ class ProductoCreateAuditoria(ProductoBaseAuditoria):
 class ProductoUpdateAuditoria(ProductoBaseAuditoria):
     pass
 
+class AuditoriaLoginRequest(BaseModel):
+    email: str
+    password: str
+
+# ============================================================================
+# ENDPOINT: LOGIN AUDITORÍA (SEPARADO DEL LOGIN PRINCIPAL)
+# ============================================================================
+
+@app.post("/api/auditoria/login")
+async def login_auditoria(credentials: AuditoriaLoginRequest):
+    """
+    Endpoint de login EXCLUSIVO para app de auditoría
+
+    ⚠️ IMPORTANTE:
+    - Este endpoint NO interfiere con /api/login (app principal)
+    - Solo para usuarios con rol 'auditor' o 'admin'
+    - Verifica permisos adicionales
+
+    Request body:
+    {
+        "email": "santiago@tscamp.co",
+        "password": "123456"
+    }
+
+    Response exitoso:
+    {
+        "success": true,
+        "token": "audit-token-1",
+        "user": {
+            "id": 1,
+            "email": "santiago@tscamp.co",
+            "nombre": "Santiago",
+            "rol": "admin",
+            "puede_auditar": true
+        }
+    }
+
+    Response fallido:
+    {
+        "success": false,
+        "error": "No tienes permisos de auditoría"
+    }
+    """
+
+    print(f"🔐 [AUDITORÍA] Intento de login: {credentials.email}")
+
+    conn = get_db_connection()
+    if not conn:
+        return {
+            "success": False,
+            "error": "Error de conexión a base de datos"
+        }
+
+    cursor = conn.cursor()
+    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
+
+    try:
+        # Buscar usuario por email
+        if database_type == "postgresql":
+            cursor.execute("""
+                SELECT id, email, password_hash, nombre, rol
+                FROM usuarios
+                WHERE email = %s
+            """, (credentials.email,))
+        else:
+            cursor.execute("""
+                SELECT id, email, password_hash, nombre, rol
+                FROM usuarios
+                WHERE email = ?
+            """, (credentials.email,))
+
+        user = cursor.fetchone()
+
+        if not user:
+            cursor.close()
+            conn.close()
+            print(f"⚠️ [AUDITORÍA] Usuario no encontrado: {credentials.email}")
+            return {
+                "success": False,
+                "error": "Credenciales incorrectas"
+            }
+
+        user_id = user[0]
+        email = user[1]
+        password_hash = user[2]
+        nombre = user[3] if user[3] else "Usuario"
+        rol = user[4] if len(user) > 4 else "usuario"
+
+        # Verificar contraseña
+        if not verify_password(credentials.password, password_hash):
+            cursor.close()
+            conn.close()
+            print(f"⚠️ [AUDITORÍA] Contraseña incorrecta: {credentials.email}")
+            return {
+                "success": False,
+                "error": "Credenciales incorrectas"
+            }
+
+        # ✅ VERIFICACIÓN ADICIONAL: Solo admin o auditor
+        if rol not in ['admin', 'auditor']:
+            cursor.close()
+            conn.close()
+            print(f"⚠️ [AUDITORÍA] Usuario sin permisos: {credentials.email} (rol: {rol})")
+            return {
+                "success": False,
+                "error": "No tienes permisos de auditoría"
+            }
+
+        # Actualizar último acceso
+        if database_type == "postgresql":
+            cursor.execute("""
+                UPDATE usuarios
+                SET ultimo_acceso = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (user_id,))
+        else:
+            cursor.execute("""
+                UPDATE usuarios
+                SET ultimo_acceso = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (user_id,))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Login exitoso
+        print(f"✅ [AUDITORÍA] Login exitoso: {email} (ID: {user_id}, Rol: {rol})")
+
+        return {
+            "success": True,
+            "token": f"audit-token-{user_id}",  # Prefijo diferente
+            "user": {
+                "id": user_id,
+                "email": email,
+                "nombre": nombre,
+                "rol": rol,
+                "puede_auditar": True
+            }
+        }
+
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en login: {e}")
+        import traceback
+        traceback.print_exc()
+
+        if conn:
+            cursor.close()
+            conn.close()
+
+        return {
+            "success": False,
+            "error": f"Error del servidor: {str(e)}"
+        }
+
+
+print("✅ Endpoint /api/auditoria/login agregado (independiente)")
 
 # ==========================================
 # ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
+
+
 @app.get("/api/admin/auditoria/verificar/{codigo_ean}")
 async def verificar_producto_auditoria(codigo_ean: str, current_user: dict = Depends(get_current_user)):
     """Verificar si un producto existe en la base de datos"""
