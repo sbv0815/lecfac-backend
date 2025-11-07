@@ -1,75 +1,101 @@
-"""
-Script para verificar que las tablas existan antes de migrar
-"""
-import sqlite3
+# verificar_tablas.py
+import asyncio
+import asyncpg
+import os
+from dotenv import load_dotenv
 
-def verificar_tablas():
-    print("🔍 Verificando tablas en lecfac.db...\n")
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+async def verificar_estructura():
+    """
+    Verifica que todas las tablas estén creadas correctamente
+    """
+    conn = await asyncpg.connect(DATABASE_URL)
 
     try:
-        conn = sqlite3.connect("lecfac.db")
-        cursor = conn.cursor()
+        print("="*60)
+        print("VERIFICACIÓN DE ESTRUCTURA DE BASE DE DATOS")
+        print("="*60)
 
         # Listar todas las tablas
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table'
-            ORDER BY name
+        tablas = await conn.fetch("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            ORDER BY table_name;
         """)
 
-        tablas = cursor.fetchall()
-
-        print(f"📊 Total de tablas: {len(tablas)}\n")
-
+        print("\n📋 TODAS LAS TABLAS EN LA BASE DE DATOS:")
+        print("-"*60)
         for tabla in tablas:
-            print(f"   ✓ {tabla[0]}")
+            count = await conn.fetchval(f"SELECT COUNT(*) FROM {tabla['table_name']}")
+            print(f"  {tabla['table_name']:<30} {count:>10} registros")
 
-        # Verificar específicamente 'establecimientos'
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='establecimientos'
+        # Verificar relaciones (foreign keys)
+        print("\n🔗 RELACIONES (FOREIGN KEYS):")
+        print("-"*60)
+        fks = await conn.fetch("""
+            SELECT
+                tc.table_name,
+                kcu.column_name,
+                ccu.table_name AS foreign_table_name,
+                ccu.column_name AS foreign_column_name
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+              AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name
+              AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+            AND tc.table_name IN (
+                'productos_maestros_v2',
+                'codigos_alternativos',
+                'variantes_nombres',
+                'precios_historicos_v2'
+            )
+            ORDER BY tc.table_name;
         """)
 
-        existe_establecimientos = cursor.fetchone()
+        for fk in fks:
+            print(f"  {fk['table_name']}.{fk['column_name']}")
+            print(f"    → {fk['foreign_table_name']}.{fk['foreign_column_name']}")
+
+        # Verificar índices
+        print("\n📊 ÍNDICES CREADOS:")
+        print("-"*60)
+        indices = await conn.fetch("""
+            SELECT
+                tablename,
+                indexname
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+            AND tablename IN (
+                'productos_maestros_v2',
+                'codigos_alternativos',
+                'variantes_nombres',
+                'precios_historicos_v2'
+            )
+            ORDER BY tablename, indexname;
+        """)
+
+        current_table = None
+        for idx in indices:
+            if idx['tablename'] != current_table:
+                print(f"\n  {idx['tablename']}:")
+                current_table = idx['tablename']
+            print(f"    - {idx['indexname']}")
 
         print("\n" + "="*60)
-
-        if existe_establecimientos:
-            print("✅ Tabla 'establecimientos' EXISTE")
-
-            # Ver columnas
-            cursor.execute("PRAGMA table_info(establecimientos)")
-            columnas = cursor.fetchall()
-
-            print(f"\n📋 Columnas de 'establecimientos' ({len(columnas)}):")
-            for col in columnas:
-                print(f"   - {col[1]:30} {col[2]:15} {'NULL' if col[3] == 0 else 'NOT NULL'}")
-
-            # Verificar si ya tiene color_bg
-            tiene_color_bg = any(col[1] == 'color_bg' for col in columnas)
-            tiene_color_text = any(col[1] == 'color_text' for col in columnas)
-
-            print("\n" + "="*60)
-            if tiene_color_bg and tiene_color_text:
-                print("✅ Las columnas de colores YA EXISTEN")
-                print("   No necesitas ejecutar la migración")
-            else:
-                print("⚠️  Las columnas de colores NO EXISTEN")
-                print("   ✓ Puedes ejecutar: python migrar_colores.py")
-        else:
-            print("❌ Tabla 'establecimientos' NO EXISTE")
-            print("   ✓ Ejecuta primero: python database.py")
-
-        print("="*60 + "\n")
-
-        cursor.close()
-        conn.close()
-
-        return existe_establecimientos is not None
+        print("✓ VERIFICACIÓN COMPLETADA")
+        print("="*60)
 
     except Exception as e:
-        print(f"❌ Error: {e}")
-        return False
+        print(f"\n❌ Error: {e}")
+    finally:
+        await conn.close()
+
 
 if __name__ == "__main__":
-    verificar_tablas()
+    asyncio.run(verificar_estructura())

@@ -1,0 +1,13 @@
+{
+  "fecha": "2025-11-06T16:25:00.291558",
+  "datos": {
+    "usuarios": 4,
+    "establecimientos": 15,
+    "productos_maestros": 859,
+    "productos_por_establecimiento": 53,
+    "facturas": 12,
+    "items_factura": 212,
+    "precios_productos": 134,
+    "inventario_usuario": 116
+  }
+}

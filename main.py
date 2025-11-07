@@ -120,6 +120,10 @@ from fastapi import FastAPI
 from productos_establecimiento_endpoints import router as productos_est_router
 from productos_api_v2 import router as productos_v2_router
 from establecimientos_api import router as establecimientos_router
+from consolidacion_productos import (
+    procesar_item_con_consolidacion,
+    mejorar_nombre_con_claude
+)
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -2522,6 +2526,392 @@ async def fix_rol():
             }
         }
     return {"success": False, "error": "Usuario no encontrado"}
+
+# main.py - NUEVO ENDPOINT
+@app.post("/api/v2/procesar-factura")
+async def procesar_factura_v2(
+    video: UploadFile = File(None),
+    imagen: UploadFile = File(None),
+    user_id: int = Form(...),
+    establecimiento_id: int = Form(...)
+):
+    """
+    Nuevo endpoint que usa el sistema de consolidación v2
+    con Claude para mejorar nombres automáticamente
+    """
+    print("\n" + "="*70)
+    print("🚀 PROCESAMIENTO DE FACTURA V2 (Sistema de Consolidación)")
+    print("="*70)
+
+    conn = await get_db_connection()
+
+    try:
+        # 1. Procesar video/imagen con OCR (igual que antes)
+        print("\n📹 Procesando medios...")
+
+        if video:
+            print("   ✓ Video recibido")
+            video_path = f"/tmp/{video.filename}"
+            with open(video_path, "wb") as f:
+                f.write(await video.read())
+
+            # Extraer frames
+            frames_base64 = extract_frames_from_video(video_path, max_frames=10)
+            os.remove(video_path)
+
+        elif imagen:
+            print("   ✓ Imagen recibida")
+            imagen_bytes = await imagen.read()
+            imagen_base64 = base64.b64encode(imagen_bytes).decode('utf-8')
+            frames_base64 = [imagen_base64]
+
+        else:
+            raise HTTPException(status_code=400, detail="Debe proporcionar video o imagen")
+
+        print(f"   ℹ️  {len(frames_base64)} frames para procesar")
+
+        # 2. OCR con Claude Vision (igual que antes)
+        print("\n🤖 Ejecutando OCR con Claude Vision...")
+        datos_factura = await procesar_factura_con_claude(frames_base64)
+
+        if not datos_factura:
+            raise HTTPException(status_code=400, detail="No se pudo extraer información de la factura")
+
+        print(f"   ✓ Factura procesada")
+        print(f"   • Establecimiento: {datos_factura.get('establecimiento', 'N/A')}")
+        print(f"   • Total: ${datos_factura.get('total', 0):,.0f}")
+        print(f"   • Items detectados: {len(datos_factura.get('items', []))}")
+
+        # 3. Crear registro de factura
+        print("\n💾 Creando registro de factura...")
+        factura = await conn.fetchrow(
+            """INSERT INTO facturas
+               (user_id, establecimiento_id, fecha_compra, total, procesado)
+               VALUES ($1, $2, $3, $4, TRUE)
+               RETURNING id, fecha_compra""",
+            user_id,
+            establecimiento_id,
+            datos_factura.get('fecha', datetime.now().date()),
+            datos_factura.get('total', 0)
+        )
+
+        factura_id = factura['id']
+        fecha_factura = factura['fecha_compra']
+        print(f"   ✓ Factura #{factura_id} creada")
+
+        # 4. NUEVO: Procesar items con consolidación inteligente
+        print("\n" + "="*70)
+        print("🧠 CONSOLIDACIÓN INTELIGENTE DE PRODUCTOS")
+        print("="*70)
+
+        items_procesados = []
+        errores = []
+
+        for idx, item in enumerate(datos_factura.get('items', []), 1):
+            try:
+                print(f"\n[{idx}/{len(datos_factura['items'])}]")
+
+                # Usar el nuevo sistema de consolidación
+                producto_id = await procesar_item_con_consolidacion(
+                    conn=conn,
+                    item_ocr={
+                        'nombre': item.get('descripcion', 'PRODUCTO SIN NOMBRE'),
+                        'codigo': item.get('codigo'),
+                        'precio': item.get('precio_unitario', 0),
+                        'cantidad': item.get('cantidad', 1)
+                    },
+                    factura_id=factura_id,
+                    establecimiento_id=establecimiento_id
+                )
+
+                # También guardar en items_factura (tabla antigua) para compatibilidad
+                item_id = await conn.fetchval(
+                    """INSERT INTO items_factura
+                       (factura_id, producto_id, nombre_producto, codigo_barra,
+                        cantidad, precio_unitario, subtotal)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)
+                       RETURNING id""",
+                    factura_id,
+                    producto_id,
+                    item.get('descripcion'),
+                    item.get('codigo'),
+                    item.get('cantidad', 1),
+                    item.get('precio_unitario', 0),
+                    item.get('subtotal', 0)
+                )
+
+                items_procesados.append({
+                    'item_id': item_id,
+                    'producto_id': producto_id,
+                    'nombre': item.get('descripcion'),
+                    'codigo': item.get('codigo'),
+                    'precio': item.get('precio_unitario')
+                })
+
+            except Exception as e:
+                error_msg = f"Error en item '{item.get('descripcion', 'N/A')}': {str(e)}"
+                print(f"   ❌ {error_msg}")
+                errores.append(error_msg)
+
+        print("\n" + "="*70)
+        print("📊 RESUMEN DEL PROCESAMIENTO")
+        print("="*70)
+        print(f"✓ Items procesados exitosamente: {len(items_procesados)}")
+        print(f"✗ Items con errores: {len(errores)}")
+
+        if errores:
+            print("\n⚠️  Errores encontrados:")
+            for error in errores:
+                print(f"   • {error}")
+
+        # 5. Estadísticas del sistema
+        print("\n" + "="*70)
+        print("📈 ESTADÍSTICAS DEL SISTEMA V2")
+        print("="*70)
+
+        stats = await conn.fetchrow("""
+            SELECT
+                COUNT(*) as total_productos,
+                COUNT(CASE WHEN codigo_ean IS NOT NULL THEN 1 END) as con_ean,
+                COUNT(CASE WHEN codigo_ean IS NULL THEN 1 END) as sin_ean,
+                COUNT(CASE WHEN estado = 'verificado' THEN 1 END) as verificados,
+                COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as pendientes,
+                AVG(confianza_datos) as confianza_promedio
+            FROM productos_maestros_v2
+        """)
+
+        print(f"Total productos en BD: {stats['total_productos']}")
+        print(f"  • Con EAN: {stats['con_ean']}")
+        print(f"  • Sin EAN: {stats['sin_ean']}")
+        print(f"  • Verificados: {stats['verificados']}")
+        print(f"  • Pendientes revisión: {stats['pendientes']}")
+        print(f"  • Confianza promedio: {stats['confianza_promedio']:.2%}")
+
+        total_variantes = await conn.fetchval("SELECT COUNT(*) FROM variantes_nombres")
+        total_codigos_alt = await conn.fetchval("SELECT COUNT(*) FROM codigos_alternativos")
+        total_precios = await conn.fetchval("SELECT COUNT(*) FROM precios_historicos_v2")
+
+        print(f"\nDatos complementarios:")
+        print(f"  • Variantes de nombres: {total_variantes}")
+        print(f"  • Códigos alternativos (PLU): {total_codigos_alt}")
+        print(f"  • Precios históricos: {total_precios}")
+
+        print("="*70)
+        print("✓ PROCESAMIENTO COMPLETADO")
+        print("="*70 + "\n")
+
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "items_procesados": len(items_procesados),
+            "items_con_errores": len(errores),
+            "errores": errores,
+            "items": items_procesados,
+            "estadisticas": {
+                "total_productos": stats['total_productos'],
+                "con_ean": stats['con_ean'],
+                "sin_ean": stats['sin_ean'],
+                "verificados": stats['verificados'],
+                "pendientes": stats['pendientes'],
+                "confianza_promedio": float(stats['confianza_promedio'] or 0)
+            }
+        }
+
+    except Exception as e:
+        print(f"\n❌ ERROR GENERAL: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        await conn.close()
+
+# main.py - Endpoint para ver qué está aprendiendo Claude
+@app.get("/api/v2/aprendizaje/resumen")
+async def ver_aprendizaje_claude():
+    """
+    Muestra un resumen de cómo Claude está mejorando los nombres
+    """
+    conn = await get_db_connection()
+
+    try:
+        # Últimas mejoras realizadas por Claude
+        mejoras_recientes = await conn.fetch("""
+            SELECT
+                nombre_original,
+                nombre_mejorado,
+                confianza,
+                fecha_proceso
+            FROM log_mejoras_nombres
+            ORDER BY fecha_proceso DESC
+            LIMIT 20
+        """)
+
+        # Productos que necesitan revisión (baja confianza)
+        productos_revisar = await conn.fetch("""
+            SELECT
+                id,
+                nombre_consolidado,
+                codigo_ean,
+                confianza_datos,
+                veces_visto,
+                estado
+            FROM productos_maestros_v2
+            WHERE estado = 'pendiente' AND confianza_datos < 0.80
+            ORDER BY veces_visto DESC
+            LIMIT 10
+        """)
+
+        # Variantes por producto (productos con muchas variantes de nombre)
+        productos_variantes = await conn.fetch("""
+            SELECT
+                pm.id,
+                pm.nombre_consolidado,
+                COUNT(DISTINCT vn.nombre_variante) as num_variantes,
+                array_agg(DISTINCT vn.nombre_variante) as variantes
+            FROM productos_maestros_v2 pm
+            JOIN variantes_nombres vn ON pm.id = vn.producto_maestro_id
+            GROUP BY pm.id, pm.nombre_consolidado
+            HAVING COUNT(DISTINCT vn.nombre_variante) > 2
+            ORDER BY num_variantes DESC
+            LIMIT 10
+        """)
+
+        return {
+            "mejoras_recientes": [
+                {
+                    "original": m['nombre_original'],
+                    "mejorado": m['nombre_mejorado'],
+                    "confianza": float(m['confianza']),
+                    "fecha": m['fecha_proceso'].isoformat()
+                }
+                for m in mejoras_recientes
+            ],
+            "productos_revisar": [
+                {
+                    "id": p['id'],
+                    "nombre": p['nombre_consolidado'],
+                    "ean": p['codigo_ean'],
+                    "confianza": float(p['confianza_datos']),
+                    "veces_visto": p['veces_visto']
+                }
+                for p in productos_revisar
+            ],
+            "productos_multiples_variantes": [
+                {
+                    "id": p['id'],
+                    "nombre_consolidado": p['nombre_consolidado'],
+                    "num_variantes": p['num_variantes'],
+                    "variantes": p['variantes']
+                }
+                for p in productos_variantes
+            ]
+        }
+
+    finally:
+        await conn.close()
+
+
+@app.get("/api/v2/productos/pendientes")
+async def productos_pendientes_revision(limite: int = 50):
+    """
+    Lista productos que necesitan revisión humana
+    Ordenados por frecuencia (los más escaneados primero)
+    """
+    conn = await get_db_connection()
+
+    try:
+        productos = await conn.fetch("""
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.confianza_datos,
+                pm.veces_visto,
+                pm.estado,
+                COUNT(DISTINCT ph.factura_id) as num_facturas,
+                array_agg(DISTINCT vn.nombre_variante) as variantes_nombres,
+                array_agg(DISTINCT e.nombre) as establecimientos
+            FROM productos_maestros_v2 pm
+            LEFT JOIN precios_historicos_v2 ph ON pm.id = ph.producto_maestro_id
+            LEFT JOIN variantes_nombres vn ON pm.id = vn.producto_maestro_id
+            LEFT JOIN establecimientos e ON ph.establecimiento_id = e.id
+            WHERE pm.estado IN ('pendiente', 'conflicto')
+            GROUP BY pm.id
+            ORDER BY pm.veces_visto DESC, pm.confianza_datos ASC
+            LIMIT $1
+        """, limite)
+
+        return {
+            "total": len(productos),
+            "productos": [
+                {
+                    "id": p['id'],
+                    "ean": p['codigo_ean'],
+                    "nombre": p['nombre_consolidado'],
+                    "marca": p['marca'],
+                    "confianza": float(p['confianza_datos']),
+                    "veces_visto": p['veces_visto'],
+                    "num_facturas": p['num_facturas'],
+                    "estado": p['estado'],
+                    "variantes": p['variantes_nombres'],
+                    "establecimientos": p['establecimientos']
+                }
+                for p in productos
+            ]
+        }
+
+    finally:
+        await conn.close()
+
+
+@app.post("/api/v2/productos/{producto_id}/verificar")
+async def verificar_producto_manualmente(
+    producto_id: int,
+    nombre_correcto: str,
+    codigo_ean: str = None,
+    marca: str = None
+):
+    """
+    Permite verificar/corregir un producto manualmente
+    Esto entrena al sistema para futuras consolidaciones
+    """
+    conn = await get_db_connection()
+
+    try:
+        # Actualizar producto
+        await conn.execute("""
+            UPDATE productos_maestros_v2
+            SET nombre_consolidado = $1,
+                codigo_ean = $2,
+                marca = $3,
+                estado = 'verificado',
+                confianza_datos = 1.0,
+                fecha_ultima_actualizacion = NOW()
+            WHERE id = $4
+        """, nombre_correcto, codigo_ean, marca, producto_id)
+
+        # Si ahora tiene EAN, agregarlo a productos_referencia
+        if codigo_ean:
+            await conn.execute("""
+                INSERT INTO productos_referencia
+                (codigo_ean, nombre_oficial, marca, verificado, fuente)
+                VALUES ($1, $2, $3, TRUE, 'manual')
+                ON CONFLICT (codigo_ean)
+                DO UPDATE SET
+                    nombre_oficial = $2,
+                    marca = $3,
+                    fecha_actualizacion = NOW()
+            """, codigo_ean, nombre_correcto, marca)
+
+        return {
+            "success": True,
+            "mensaje": "Producto verificado correctamente"
+        }
+
+    finally:
+        await conn.close()
 
 # ==========================================
 # ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
