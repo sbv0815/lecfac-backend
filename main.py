@@ -2580,6 +2580,34 @@ async def actualizar_producto_referencia(
     finally:
         conn.close()
 
+@app.get("/fix-rol")
+async def fix_rol():
+    """Endpoint temporal para arreglar rol del usuario"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE usuarios
+        SET rol = 'admin'
+        WHERE email = 'santiago@tscamp.co'
+        RETURNING id, email, rol
+    """, )
+
+    user = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    if user:
+        return {
+            "success": True,
+            "user": {
+                "id": user[0],
+                "email": user[1],
+                "rol": user[2]
+            }
+        }
+    return {"success": False, "error": "Usuario no encontrado"}
+
 # ==========================================
 # ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
