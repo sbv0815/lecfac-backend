@@ -124,6 +124,7 @@ from consolidacion_productos import (
     procesar_item_con_consolidacion,
     mejorar_nombre_con_claude
 )
+from video_processor import extract_frames_from_video
 
 # ==========================================
 # MODELOS PYDANTIC
