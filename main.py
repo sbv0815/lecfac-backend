@@ -2160,155 +2160,107 @@ class AuditoriaLoginRequest(BaseModel):
 # ENDPOINT: LOGIN AUDITORÍA (SEPARADO DEL LOGIN PRINCIPAL)
 # ============================================================================
 
+# ============================================================
+# ENDPOINT: Login de Auditoría (Separado del login principal)
+# ============================================================
+
 @app.post("/api/auditoria/login")
-async def login_auditoria(credentials: AuditoriaLoginRequest):
+async def auditoria_login(request: Request):
     """
-    Endpoint de login EXCLUSIVO para app de auditoría
-
-    ⚠️ IMPORTANTE:
-    - Este endpoint NO interfiere con /api/login (app principal)
-    - Solo para usuarios con rol 'auditor' o 'admin'
-    - Verifica permisos adicionales
-
-    Request body:
-    {
-        "email": "santiago@tscamp.co",
-        "password": "123456"
-    }
-
-    Response exitoso:
-    {
-        "success": true,
-        "token": "audit-token-1",
-        "user": {
-            "id": 1,
-            "email": "santiago@tscamp.co",
-            "nombre": "Santiago",
-            "rol": "admin",
-            "puede_auditar": true
-        }
-    }
-
-    Response fallido:
-    {
-        "success": false,
-        "error": "No tienes permisos de auditoría"
-    }
+    Login exclusivo para auditores y administradores
     """
-
-    print(f"🔐 [AUDITORÍA] Intento de login: {credentials.email}")
-
-    conn = get_db_connection()
-    if not conn:
-        return {
-            "success": False,
-            "error": "Error de conexión a base de datos"
-        }
-
-    cursor = conn.cursor()
-    database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
-
     try:
-        # Buscar usuario por email
-        if database_type == "postgresql":
-            cursor.execute("""
-                SELECT id, email, password_hash, nombre, rol
-                FROM usuarios
-                WHERE email = %s
-            """, (credentials.email,))
-        else:
-            cursor.execute("""
-                SELECT id, email, password_hash, nombre, rol
-                FROM usuarios
-                WHERE email = ?
-            """, (credentials.email,))
+        body = await request.json()
+        email = body.get("email")
+        password = body.get("password")
 
-        user = cursor.fetchone()
+        print(f"🔐 [AUDITORÍA] Intento de login: {email}")
 
-        if not user:
-            cursor.close()
-            conn.close()
-            print(f"⚠️ [AUDITORÍA] Usuario no encontrado: {credentials.email}")
-            return {
-                "success": False,
-                "error": "Credenciales incorrectas"
-            }
+        if not email or not password:
+            raise HTTPException(status_code=400, detail="Email y contraseña requeridos")
 
-        user_id = user[0]
-        email = user[1]
-        password_hash = user[2]
-        nombre = user[3] if user[3] else "Usuario"
-        rol = user[4] if len(user) > 4 else "usuario"
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-        # Verificar contraseña
-        if not verify_password(credentials.password, password_hash):
-            cursor.close()
-            conn.close()
-            print(f"⚠️ [AUDITORÍA] Contraseña incorrecta: {credentials.email}")
-            return {
-                "success": False,
-                "error": "Credenciales incorrectas"
-            }
+        # Buscar usuario
+        cursor.execute("""
+            SELECT id, email, password_hash, nombre, rol
+            FROM usuarios
+            WHERE email = %s
+        """, (email,))
 
-        # ✅ VERIFICACIÓN ADICIONAL: Solo admin o auditor
-        if rol not in ['admin', 'auditor']:
-            cursor.close()
-            conn.close()
-            print(f"⚠️ [AUDITORÍA] Usuario sin permisos: {credentials.email} (rol: {rol})")
-            return {
-                "success": False,
-                "error": "No tienes permisos de auditoría"
-            }
-
-        # Actualizar último acceso
-        if database_type == "postgresql":
-            cursor.execute("""
-                UPDATE usuarios
-                SET ultimo_acceso = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """, (user_id,))
-        else:
-            cursor.execute("""
-                UPDATE usuarios
-                SET ultimo_acceso = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (user_id,))
-
-        conn.commit()
-        cursor.close()
+        usuario = cursor.fetchone()
         conn.close()
 
-        # Login exitoso
-        print(f"✅ [AUDITORÍA] Login exitoso: {email} (ID: {user_id}, Rol: {rol})")
+        if not usuario:
+            print(f"⚠️ [AUDITORÍA] Usuario no encontrado: {email}")
+            raise HTTPException(status_code=401, detail="Usuario no encontrado")
+
+        user_id, user_email, password_hash, nombre, rol = usuario
+
+        # Verificar contraseña
+        from database import verify_password
+        if not verify_password(password, password_hash):
+            print(f"⚠️ [AUDITORÍA] Contraseña incorrecta: {email}")
+            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+
+        # Verificar rol (debe ser admin o auditor)
+        if rol not in ['admin', 'auditor']:
+            print(f"⚠️ [AUDITORÍA] Usuario sin permisos: {email} (rol: {rol})")
+            raise HTTPException(
+                status_code=403,
+                detail=f"Sin permisos de auditoría. Tu rol es: {rol}. Contacta al administrador."
+            )
+
+        # Generar token JWT
+        from auth import create_jwt_token
+        token = create_jwt_token(user_id, user_email, rol)
+
+        print(f"✅ [AUDITORÍA] Login exitoso: {email} (rol: {rol})")
 
         return {
             "success": True,
-            "token": f"audit-token-{user_id}",  # Prefijo diferente
+            "message": "Login exitoso",
+            "token": token,
             "user": {
                 "id": user_id,
-                "email": email,
+                "email": user_email,
                 "nombre": nombre,
-                "rol": rol,
-                "puede_auditar": True
+                "rol": rol
             }
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ [AUDITORÍA] Error en login: {e}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-        if conn:
-            cursor.close()
-            conn.close()
+@app.get("/fix-mi-rol")
+async def fix_mi_rol():
+    """Endpoint temporal para cambiar rol a admin"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
+    cursor.execute("""
+        UPDATE usuarios
+        SET rol = 'admin'
+        WHERE email = 'santiago@tscamp.co'
+        RETURNING id, email, rol
+    """)
+
+    user = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    if user:
         return {
-            "success": False,
-            "error": f"Error del servidor: {str(e)}"
+            "success": True,
+            "mensaje": f"Usuario actualizado: {user[1]} → rol: {user[2]}"
         }
-
-
-print("✅ Endpoint /api/auditoria/login agregado (independiente)")
+    return {"success": False, "error": "Usuario no encontrado"}
 
 @app.post("/setup/make-admin")
 async def make_admin(email: str = "santiago@tscamp.co"):
