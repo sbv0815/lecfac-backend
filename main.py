@@ -126,6 +126,39 @@ from consolidacion_productos import (
 )
 from video_processor import extract_frames_from_video
 
+def extract_frames_from_video(video_path: str, max_frames: int = 10) -> List[str]:
+    """Extrae frames de un video"""
+    import cv2
+    frames_base64 = []
+
+    try:
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        interval = max(1, total_frames // max_frames)
+
+        frame_count = 0
+        extracted = 0
+
+        while cap.isOpened() and extracted < max_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            if frame_count % interval == 0:
+                _, buffer = cv2.imencode('.jpg', frame)
+                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                frames_base64.append(frame_base64)
+                extracted += 1
+
+            frame_count += 1
+
+        cap.release()
+        return frames_base64
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return []
+
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
