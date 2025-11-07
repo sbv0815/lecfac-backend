@@ -73,6 +73,31 @@ print("✅ product_matcher configurado")
 
 from admin_dashboard import router as admin_dashboard_router
 from auth import router as auth_router
+
+def verify_jwt_token(token: str):
+    """
+    Verifica y decodifica un token JWT
+    Retorna el payload si es válido, None si es inválido
+    """
+    try:
+        import jwt
+        from auth import SECRET_KEY  # Importar la clave secreta
+
+        # Decodificar con verificación de signature
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+
+        print(f"✅ Token válido - Usuario: {payload.get('user_id')}, Rol: {payload.get('rol')}")
+        return payload
+
+    except jwt.ExpiredSignatureError:
+        print("⚠️ Token expirado")
+        return None
+    except jwt.InvalidTokenError as e:
+        print(f"⚠️ Token inválido: {e}")
+        return None
+    except Exception as e:
+        print(f"❌ Error verificando token: {e}")
+        return None
 from image_handlers import router as image_handlers_router
 from duplicados_routes import router as duplicados_router
 from diagnostico_routes import router as diagnostico_router
@@ -2132,7 +2157,7 @@ print("✅ Sistema de auditoría cargado")
 # ==========================================
 # INICIALIZACIÓN DEL SERVIDOR
 # ==========================================
-from pydantic import BaseModel
+
 from typing import Optional
 
 print("=" * 80)
@@ -2164,103 +2189,7 @@ class AuditoriaLoginRequest(BaseModel):
 # ENDPOINT: Login de Auditoría (Separado del login principal)
 # ============================================================
 
-@app.post("/api/auditoria/login")
-async def auditoria_login(request: Request):
-    """
-    Login exclusivo para auditores y administradores
-    """
-    try:
-        body = await request.json()
-        email = body.get("email")
-        password = body.get("password")
 
-        print(f"🔐 [AUDITORÍA] Intento de login: {email}")
-
-        if not email or not password:
-            raise HTTPException(status_code=400, detail="Email y contraseña requeridos")
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Buscar usuario
-        cursor.execute("""
-            SELECT id, email, password_hash, nombre, rol
-            FROM usuarios
-            WHERE email = %s
-        """, (email,))
-
-        usuario = cursor.fetchone()
-        conn.close()
-
-        if not usuario:
-            print(f"⚠️ [AUDITORÍA] Usuario no encontrado: {email}")
-            raise HTTPException(status_code=401, detail="Usuario no encontrado")
-
-        user_id, user_email, password_hash, nombre, rol = usuario
-
-        # Verificar contraseña
-        from database import verify_password
-        if not verify_password(password, password_hash):
-            print(f"⚠️ [AUDITORÍA] Contraseña incorrecta: {email}")
-            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
-
-        # Verificar rol (debe ser admin o auditor)
-        if rol not in ['admin', 'auditor']:
-            print(f"⚠️ [AUDITORÍA] Usuario sin permisos: {email} (rol: {rol})")
-            raise HTTPException(
-                status_code=403,
-                detail=f"Sin permisos de auditoría. Tu rol es: {rol}. Contacta al administrador."
-            )
-
-        # Generar token JWT
-        from auth import create_jwt_token
-        token = create_jwt_token(user_id, user_email, rol)
-
-        print(f"✅ [AUDITORÍA] Login exitoso: {email} (rol: {rol})")
-
-        return {
-            "success": True,
-            "message": "Login exitoso",
-            "token": token,
-            "user": {
-                "id": user_id,
-                "email": user_email,
-                "nombre": nombre,
-                "rol": rol
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ [AUDITORÍA] Error en login: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/fix-mi-rol")
-async def fix_mi_rol():
-    """Endpoint temporal para cambiar rol a admin"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE usuarios
-        SET rol = 'admin'
-        WHERE email = 'santiago@tscamp.co'
-        RETURNING id, email, rol
-    """)
-
-    user = cursor.fetchone()
-    conn.commit()
-    conn.close()
-
-    if user:
-        return {
-            "success": True,
-            "mensaje": f"Usuario actualizado: {user[1]} → rol: {user[2]}"
-        }
-    return {"success": False, "error": "Usuario no encontrado"}
 
 @app.post("/setup/make-admin")
 async def make_admin(email: str = "santiago@tscamp.co"):
@@ -3121,6 +3050,109 @@ async def debug_inventario(usuario_id: int):
 print("✅ Endpoints de mantenimiento agregados:")
 print("   GET /admin/force-update-inventario/{factura_id}/{usuario_id}")
 print("   GET /admin/debug-inventario/{usuario_id}")
+
+
+@app.post("/api/auditoria/login")
+async def auditoria_login(request: Request):
+    """
+    Login exclusivo para auditores y administradores
+    """
+    try:
+        body = await request.json()
+        email = body.get("email")
+        password = body.get("password")
+
+        print(f"🔐 [AUDITORÍA] Intento de login: {email}")
+
+        if not email or not password:
+            raise HTTPException(status_code=400, detail="Email y contraseña requeridos")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Buscar usuario
+        cursor.execute("""
+            SELECT id, email, password_hash, nombre, rol
+            FROM usuarios
+            WHERE email = %s
+        """, (email,))
+
+        usuario = cursor.fetchone()
+        conn.close()
+
+        if not usuario:
+            print(f"⚠️ [AUDITORÍA] Usuario no encontrado: {email}")
+            raise HTTPException(status_code=401, detail="Usuario no encontrado")
+
+        user_id, user_email, password_hash, nombre, rol = usuario
+
+        # Verificar contraseña
+        from database import verify_password
+        if not verify_password(password, password_hash):
+            print(f"⚠️ [AUDITORÍA] Contraseña incorrecta: {email}")
+            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+
+        # Verificar rol (debe ser admin o auditor)
+        if rol not in ['admin', 'auditor']:
+            print(f"⚠️ [AUDITORÍA] Usuario sin permisos: {email} (rol: {rol})")
+            raise HTTPException(
+                status_code=403,
+                detail=f"Sin permisos de auditoría. Tu rol es: {rol}. Contacta al administrador."
+            )
+
+        # Generar token JWT
+        from auth import create_jwt_token
+        token = create_jwt_token(user_id, user_email, rol)
+
+        print(f"✅ [AUDITORÍA] Login exitoso: {email} (rol: {rol})")
+
+        return {
+            "success": True,
+            "message": "Login exitoso",
+            "token": token,
+            "user": {
+                "id": user_id,
+                "email": user_email,
+                "nombre": nombre,
+                "rol": rol
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error en login: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/fix-mi-rol")
+async def fix_mi_rol():
+    """Endpoint temporal para cambiar rol a admin"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE usuarios
+        SET rol = 'admin'
+        WHERE email = 'santiago@tscamp.co'
+        RETURNING id, email, rol
+    """)
+
+    user = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    if user:
+        return {
+            "success": True,
+            "mensaje": f"Usuario actualizado: {user[1]} → rol: {user[2]}"
+        }
+    return {"success": False, "error": "Usuario no encontrado"}
+
+
+
+
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
@@ -4025,11 +4057,4 @@ async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
 
 print("✅ Todos los endpoints administrativos y de debug cargados")
 
-# ==========================================
-# ENDPOINTS DE AUDITORÍA DE PRODUCTOS
-# Agregar este código en main.py ANTES del bloque if __name__ == "__main__":
-# ==========================================
 
-from pydantic import BaseModel
-
-# Force redeploy 11/02/2025 11:47:09
