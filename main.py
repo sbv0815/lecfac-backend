@@ -1,4 +1,5 @@
 import os
+import base64
 print("=" * 80)
 print("🚀 LECFAC BACKEND - VERSION 2025-10-30-21:00 - REBUILD FORZADO")
 print("=" * 80)
@@ -40,11 +41,6 @@ from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-
-
-# ==========================================
-# IMPORTACIONES LOCALES
-# ==========================================
 from database import (
     create_tables,
     get_db_connection,
@@ -124,7 +120,6 @@ from consolidacion_productos import (
     procesar_item_con_consolidacion,
     mejorar_nombre_con_claude
 )
-from video_processor import extract_frames_from_video
 
 def extract_frames_from_video(video_path: str, max_frames: int = 10) -> List[str]:
     """Extrae frames de un video"""
@@ -158,7 +153,6 @@ def extract_frames_from_video(video_path: str, max_frames: int = 10) -> List[str
     except Exception as e:
         print(f"❌ Error: {e}")
         return []
-
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
