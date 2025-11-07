@@ -1030,9 +1030,9 @@ def create_postgresql_tables():
 # 3.6. HISTORIAL DE CAMBIOS EN PRODUCTOS
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS historial_cambios_productos (
-            id SERIAL PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
 
-             -- Qué se cambió
+                -- Qué se cambió
                 producto_maestro_id INTEGER REFERENCES productos_maestros(id),
                 tabla_afectada VARCHAR(100) NOT NULL,
 
@@ -1051,27 +1051,58 @@ def create_postgresql_tables():
                 -- Metadata
                 origen VARCHAR(50) DEFAULT 'admin',
                 ip_address VARCHAR(45)
-    )
-                """)
+            )
+        """)
         print("✓ Tabla 'historial_cambios_productos' creada")
 
-        # Índices
+        # Índices de historial_cambios_productos
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_historial_producto ON historial_cambios_productos(producto_maestro_id)",
-                "historial_cambios_productos.producto"
-            )
+            "historial_cambios_productos.producto"
+        )
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_historial_fecha ON historial_cambios_productos(fecha_cambio)",
-                "historial_cambios_productos.fecha"
+            "historial_cambios_productos.fecha"
+        )
+
+        # ============================================
+        # TABLA PRODUCTOS_REFERENCIA (PARA AUDITORÍA)
+        # ============================================
+        print("🏷️ Creando tabla productos_referencia (sistema de auditoría)...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS productos_referencia (
+                id SERIAL PRIMARY KEY,
+                codigo_ean VARCHAR(50) UNIQUE NOT NULL,
+                nombre VARCHAR(500) NOT NULL,
+                marca VARCHAR(200),
+                categoria VARCHAR(200),
+                presentacion VARCHAR(200),
+                unidad_medida VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                CHECK (LENGTH(nombre) >= 2),
+                CHECK (LENGTH(codigo_ean) >= 8)
             )
+        """)
+        print("✓ Tabla 'productos_referencia' creada")
+
+        # Índices para productos_referencia
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_prod_ref_ean ON productos_referencia(codigo_ean)",
+            "productos_referencia.codigo_ean"
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_prod_ref_nombre ON productos_referencia(nombre)",
+            "productos_referencia.nombre"
+        )
 
         # ============================================
         # TABLAS LEGACY (mantener para migración)
         # ============================================
         print("📦 Manteniendo tablas legacy...")
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS productos (
                 id SERIAL PRIMARY KEY,
                 factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
@@ -1079,11 +1110,9 @@ def create_postgresql_tables():
                 nombre VARCHAR(100),
                 valor INTEGER
             )
-        """
-        )
+        """)
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS productos_maestro (
                 id SERIAL PRIMARY KEY,
                 codigo_ean VARCHAR(13) UNIQUE NOT NULL,
@@ -1097,11 +1126,9 @@ def create_postgresql_tables():
                 ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CHECK (LENGTH(codigo_ean) >= 3)
             )
-        """
-        )
+        """)
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS productos_catalogo (
                 id SERIAL PRIMARY KEY,
                 codigo_ean VARCHAR(13) UNIQUE,
@@ -1111,11 +1138,9 @@ def create_postgresql_tables():
                 total_reportes INTEGER DEFAULT 1,
                 ultimo_reporte TIMESTAMP
             )
-        """
-        )
+        """)
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS precios_historicos (
                 id SERIAL PRIMARY KEY,
                 producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
@@ -1129,11 +1154,9 @@ def create_postgresql_tables():
                 outlier BOOLEAN DEFAULT FALSE,
                 CHECK (precio > 0)
             )
-        """
-        )
+        """)
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS historial_compras_usuario (
                 id SERIAL PRIMARY KEY,
                 usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -1144,11 +1167,9 @@ def create_postgresql_tables():
                 cadena VARCHAR(50),
                 factura_id INTEGER REFERENCES facturas(id)
             )
-        """
-        )
+        """)
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS ocr_logs (
                 id SERIAL PRIMARY KEY,
                 factura_id INTEGER REFERENCES facturas(id),
@@ -1157,8 +1178,7 @@ def create_postgresql_tables():
                 details TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
+        """)
 
         print("✓ Tablas legacy creadas")
 
