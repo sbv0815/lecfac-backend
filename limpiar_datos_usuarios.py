@@ -238,6 +238,6 @@ if __name__ == "__main__":
         print("\n✅ Puedes empezar a escanear facturas nuevamente")
         print("   Los 3 usuarios pueden loguearse con sus credenciales")
         print("   Todas las mejoras están activas:")
-        print("      - Detección automática de duplicados ✅")
+        print("   - Detección automática de duplicados ✅")
         print("      - Normalización de códigos ✅")
         print("      - Matching inteligente ✅")
