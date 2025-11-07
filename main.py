@@ -2527,7 +2527,11 @@ async def fix_rol():
         }
     return {"success": False, "error": "Usuario no encontrado"}
 
-# main.py - NUEVO ENDPOINT
+# main.py - Cambiar de async a sync
+
+from consolidacion_productos import procesar_item_con_consolidacion
+import psycopg2.extras
+
 @app.post("/api/v2/procesar-factura")
 async def procesar_factura_v2(
     video: UploadFile = File(None),
@@ -2536,17 +2540,18 @@ async def procesar_factura_v2(
     establecimiento_id: int = Form(...)
 ):
     """
-    Nuevo endpoint que usa el sistema de consolidación v2
-    con Claude para mejorar nombres automáticamente
+    Nuevo endpoint v2 - ADAPTADO PARA PSYCOPG2
     """
     print("\n" + "="*70)
     print("🚀 PROCESAMIENTO DE FACTURA V2 (Sistema de Consolidación)")
     print("="*70)
 
-    conn = await get_db_connection()
+    # ✅ Conexión síncrona
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # 1. Procesar video/imagen con OCR (igual que antes)
+        # 1. Procesar medios
         print("\n📹 Procesando medios...")
 
         if video:
@@ -2555,7 +2560,6 @@ async def procesar_factura_v2(
             with open(video_path, "wb") as f:
                 f.write(await video.read())
 
-            # Extraer frames
             frames_base64 = extract_frames_from_video(video_path, max_frames=10)
             os.remove(video_path)
 
@@ -2564,13 +2568,12 @@ async def procesar_factura_v2(
             imagen_bytes = await imagen.read()
             imagen_base64 = base64.b64encode(imagen_bytes).decode('utf-8')
             frames_base64 = [imagen_base64]
-
         else:
             raise HTTPException(status_code=400, detail="Debe proporcionar video o imagen")
 
         print(f"   ℹ️  {len(frames_base64)} frames para procesar")
 
-        # 2. OCR con Claude Vision (igual que antes)
+        # 2. OCR
         print("\n🤖 Ejecutando OCR con Claude Vision...")
         datos_factura = await procesar_factura_con_claude(frames_base64)
 
@@ -2578,28 +2581,23 @@ async def procesar_factura_v2(
             raise HTTPException(status_code=400, detail="No se pudo extraer información de la factura")
 
         print(f"   ✓ Factura procesada")
-        print(f"   • Establecimiento: {datos_factura.get('establecimiento', 'N/A')}")
         print(f"   • Total: ${datos_factura.get('total', 0):,.0f}")
         print(f"   • Items detectados: {len(datos_factura.get('items', []))}")
 
-        # 3. Crear registro de factura
+        # 3. Crear factura
         print("\n💾 Creando registro de factura...")
-        factura = await conn.fetchrow(
+        cursor.execute(
             """INSERT INTO facturas
                (user_id, establecimiento_id, fecha_compra, total, procesado)
-               VALUES ($1, $2, $3, $4, TRUE)
+               VALUES (%s, %s, %s, %s, TRUE)
                RETURNING id, fecha_compra""",
-            user_id,
-            establecimiento_id,
-            datos_factura.get('fecha', datetime.now().date()),
-            datos_factura.get('total', 0)
+            (user_id, establecimiento_id, datos_factura.get('fecha', datetime.now().date()), datos_factura.get('total', 0))
         )
-
+        factura = cursor.fetchone()
         factura_id = factura['id']
-        fecha_factura = factura['fecha_compra']
         print(f"   ✓ Factura #{factura_id} creada")
 
-        # 4. NUEVO: Procesar items con consolidación inteligente
+        # 4. Consolidación inteligente
         print("\n" + "="*70)
         print("🧠 CONSOLIDACIÓN INTELIGENTE DE PRODUCTOS")
         print("="*70)
@@ -2611,9 +2609,9 @@ async def procesar_factura_v2(
             try:
                 print(f"\n[{idx}/{len(datos_factura['items'])}]")
 
-                # Usar el nuevo sistema de consolidación
-                producto_id = await procesar_item_con_consolidacion(
-                    conn=conn,
+                # ✅ Usar función síncrona
+                producto_id = procesar_item_con_consolidacion(
+                    cursor=cursor,
                     item_ocr={
                         'nombre': item.get('descripcion', 'PRODUCTO SIN NOMBRE'),
                         'codigo': item.get('codigo'),
@@ -2624,27 +2622,22 @@ async def procesar_factura_v2(
                     establecimiento_id=establecimiento_id
                 )
 
-                # También guardar en items_factura (tabla antigua) para compatibilidad
-                item_id = await conn.fetchval(
+                # Guardar en items_factura (compatibilidad)
+                cursor.execute(
                     """INSERT INTO items_factura
                        (factura_id, producto_id, nombre_producto, codigo_barra,
                         cantidad, precio_unitario, subtotal)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
-                    factura_id,
-                    producto_id,
-                    item.get('descripcion'),
-                    item.get('codigo'),
-                    item.get('cantidad', 1),
-                    item.get('precio_unitario', 0),
-                    item.get('subtotal', 0)
+                    (factura_id, producto_id, item.get('descripcion'), item.get('codigo'),
+                     item.get('cantidad', 1), item.get('precio_unitario', 0), item.get('subtotal', 0))
                 )
+                item_id = cursor.fetchone()['id']
 
                 items_procesados.append({
                     'item_id': item_id,
                     'producto_id': producto_id,
                     'nombre': item.get('descripcion'),
-                    'codigo': item.get('codigo'),
                     'precio': item.get('precio_unitario')
                 })
 
@@ -2653,23 +2646,12 @@ async def procesar_factura_v2(
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
 
-        print("\n" + "="*70)
-        print("📊 RESUMEN DEL PROCESAMIENTO")
-        print("="*70)
-        print(f"✓ Items procesados exitosamente: {len(items_procesados)}")
-        print(f"✗ Items con errores: {len(errores)}")
-
-        if errores:
-            print("\n⚠️  Errores encontrados:")
-            for error in errores:
-                print(f"   • {error}")
-
-        # 5. Estadísticas del sistema
+        # 5. Estadísticas
         print("\n" + "="*70)
         print("📈 ESTADÍSTICAS DEL SISTEMA V2")
         print("="*70)
 
-        stats = await conn.fetchrow("""
+        cursor.execute("""
             SELECT
                 COUNT(*) as total_productos,
                 COUNT(CASE WHEN codigo_ean IS NOT NULL THEN 1 END) as con_ean,
@@ -2679,22 +2661,17 @@ async def procesar_factura_v2(
                 AVG(confianza_datos) as confianza_promedio
             FROM productos_maestros_v2
         """)
+        stats = cursor.fetchone()
 
         print(f"Total productos en BD: {stats['total_productos']}")
         print(f"  • Con EAN: {stats['con_ean']}")
         print(f"  • Sin EAN: {stats['sin_ean']}")
         print(f"  • Verificados: {stats['verificados']}")
-        print(f"  • Pendientes revisión: {stats['pendientes']}")
-        print(f"  • Confianza promedio: {stats['confianza_promedio']:.2%}")
+        print(f"  • Pendientes: {stats['pendientes']}")
+        print(f"  • Confianza: {stats['confianza_promedio']:.2%}")
 
-        total_variantes = await conn.fetchval("SELECT COUNT(*) FROM variantes_nombres")
-        total_codigos_alt = await conn.fetchval("SELECT COUNT(*) FROM codigos_alternativos")
-        total_precios = await conn.fetchval("SELECT COUNT(*) FROM precios_historicos_v2")
-
-        print(f"\nDatos complementarios:")
-        print(f"  • Variantes de nombres: {total_variantes}")
-        print(f"  • Códigos alternativos (PLU): {total_codigos_alt}")
-        print(f"  • Precios históricos: {total_precios}")
+        # Commit
+        conn.commit()
 
         print("="*70)
         print("✓ PROCESAMIENTO COMPLETADO")
@@ -2718,13 +2695,15 @@ async def procesar_factura_v2(
         }
 
     except Exception as e:
+        conn.rollback()
         print(f"\n❌ ERROR GENERAL: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        await conn.close()
+        cursor.close()
+        conn.close()
 
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
