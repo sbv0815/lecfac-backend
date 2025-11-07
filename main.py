@@ -2569,45 +2569,55 @@ async def procesar_factura_v2(
     establecimiento_id: int = Form(...)
 ):
     """
-    Nuevo endpoint v2 - ADAPTADO PARA PSYCOPG2
+    Nuevo endpoint v2 - VERSIÓN CORREGIDA
     """
     print("\n" + "="*70)
     print("🚀 PROCESAMIENTO DE FACTURA V2 (Sistema de Consolidación)")
     print("="*70)
 
-    # ✅ Conexión síncrona
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # 1. Procesar medios
+        # 1. Guardar archivo temporalmente
         print("\n📹 Procesando medios...")
+
+        temp_file_path = None
 
         if video:
             print("   ✓ Video recibido")
-            video_path = f"/tmp/{video.filename}"
-            with open(video_path, "wb") as f:
+            # Guardar video temporalmente
+            temp_file_path = f"/tmp/video_{user_id}_{datetime.now().timestamp()}.mp4"
+            with open(temp_file_path, "wb") as f:
                 f.write(await video.read())
-
-            frames_base64 = extract_frames_from_video(video_path, max_frames=10)
-            os.remove(video_path)
 
         elif imagen:
             print("   ✓ Imagen recibida")
-            imagen_bytes = await imagen.read()
-            imagen_base64 = base64.b64encode(imagen_bytes).decode('utf-8')
-            frames_base64 = [imagen_base64]
+            # Guardar imagen temporalmente
+            temp_file_path = f"/tmp/imagen_{user_id}_{datetime.now().timestamp()}.jpg"
+            with open(temp_file_path, "wb") as f:
+                f.write(await imagen.read())
         else:
             raise HTTPException(status_code=400, detail="Debe proporcionar video o imagen")
 
-        print(f"   ℹ️  {len(frames_base64)} frames para procesar")
+        print(f"   ℹ️  Archivo guardado en: {temp_file_path}")
 
-        # 2. OCR
+        # 2. OCR con Claude (usando la función existente que SÍ funciona)
         print("\n🤖 Ejecutando OCR con Claude Vision...")
-        datos_factura = await procesar_factura_con_claude(frames_base64)
 
-        if not datos_factura:
-            raise HTTPException(status_code=400, detail="No se pudo extraer información de la factura")
+        # ✅ parse_invoice_with_claude NO es async, no uses await
+        datos_factura = parse_invoice_with_claude(temp_file_path)
+
+        # Eliminar archivo temporal
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+            print(f"   🗑️  Archivo temporal eliminado")
+
+        if not datos_factura or not datos_factura.get('success'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se pudo extraer información de la factura: {datos_factura.get('error', 'Error desconocido')}"
+            )
 
         print(f"   ✓ Factura procesada")
         print(f"   • Total: ${datos_factura.get('total', 0):,.0f}")
@@ -2620,7 +2630,12 @@ async def procesar_factura_v2(
                (user_id, establecimiento_id, fecha_compra, total, procesado)
                VALUES (%s, %s, %s, %s, TRUE)
                RETURNING id, fecha_compra""",
-            (user_id, establecimiento_id, datos_factura.get('fecha', datetime.now().date()), datos_factura.get('total', 0))
+            (
+                user_id,
+                establecimiento_id,
+                datos_factura.get('fecha', datetime.now().date()),
+                datos_factura.get('total', 0)
+            )
         )
         factura = cursor.fetchone()
         factura_id = factura['id']
@@ -2638,7 +2653,7 @@ async def procesar_factura_v2(
             try:
                 print(f"\n[{idx}/{len(datos_factura['items'])}]")
 
-                # ✅ Usar función síncrona
+                # Usar función síncrona de consolidación
                 producto_id = procesar_item_con_consolidacion(
                     cursor=cursor,
                     item_ocr={
@@ -2658,8 +2673,15 @@ async def procesar_factura_v2(
                         cantidad, precio_unitario, subtotal)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
-                    (factura_id, producto_id, item.get('descripcion'), item.get('codigo'),
-                     item.get('cantidad', 1), item.get('precio_unitario', 0), item.get('subtotal', 0))
+                    (
+                        factura_id,
+                        producto_id,
+                        item.get('descripcion'),
+                        item.get('codigo'),
+                        item.get('cantidad', 1),
+                        item.get('precio_unitario', 0),
+                        item.get('subtotal', 0)
+                    )
                 )
                 item_id = cursor.fetchone()['id']
 
@@ -2674,6 +2696,8 @@ async def procesar_factura_v2(
                 error_msg = f"Error en item '{item.get('descripcion', 'N/A')}': {str(e)}"
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
+                import traceback
+                traceback.print_exc()
 
         # 5. Estadísticas
         print("\n" + "="*70)
@@ -2687,7 +2711,7 @@ async def procesar_factura_v2(
                 COUNT(CASE WHEN codigo_ean IS NULL THEN 1 END) as sin_ean,
                 COUNT(CASE WHEN estado = 'verificado' THEN 1 END) as verificados,
                 COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as pendientes,
-                AVG(confianza_datos) as confianza_promedio
+                COALESCE(AVG(confianza_datos), 0) as confianza_promedio
             FROM productos_maestros_v2
         """)
         stats = cursor.fetchone()
@@ -2697,7 +2721,8 @@ async def procesar_factura_v2(
         print(f"  • Sin EAN: {stats['sin_ean']}")
         print(f"  • Verificados: {stats['verificados']}")
         print(f"  • Pendientes: {stats['pendientes']}")
-        print(f"  • Confianza: {stats['confianza_promedio']:.2%}")
+        if stats['confianza_promedio']:
+            print(f"  • Confianza: {float(stats['confianza_promedio']):.2%}")
 
         # Commit
         conn.commit()
@@ -2714,11 +2739,11 @@ async def procesar_factura_v2(
             "errores": errores,
             "items": items_procesados,
             "estadisticas": {
-                "total_productos": stats['total_productos'],
-                "con_ean": stats['con_ean'],
-                "sin_ean": stats['sin_ean'],
-                "verificados": stats['verificados'],
-                "pendientes": stats['pendientes'],
+                "total_productos": int(stats['total_productos']),
+                "con_ean": int(stats['con_ean']),
+                "sin_ean": int(stats['sin_ean']),
+                "verificados": int(stats['verificados']),
+                "pendientes": int(stats['pendientes']),
                 "confianza_promedio": float(stats['confianza_promedio'] or 0)
             }
         }
@@ -2733,7 +2758,6 @@ async def procesar_factura_v2(
     finally:
         cursor.close()
         conn.close()
-
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
 async def ver_aprendizaje_claude():
