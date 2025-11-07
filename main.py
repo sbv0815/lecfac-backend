@@ -2569,7 +2569,7 @@ async def procesar_factura_v2(
     establecimiento_id: int = Form(...)
 ):
     """
-    Nuevo endpoint v2 - VERSIÓN CORREGIDA
+    Nuevo endpoint v2 - CON EXTRACCIÓN DE FRAMES
     """
     print("\n" + "="*70)
     print("🚀 PROCESAMIENTO DE FACTURA V2 (Sistema de Consolidación)")
@@ -2579,49 +2579,125 @@ async def procesar_factura_v2(
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # 1. Guardar archivo temporalmente
+        # 1. Procesar archivo
         print("\n📹 Procesando medios...")
 
-        temp_file_path = None
+        frames_para_ocr = []
 
         if video:
             print("   ✓ Video recibido")
+
             # Guardar video temporalmente
-            temp_file_path = f"/tmp/video_{user_id}_{datetime.now().timestamp()}.mp4"
-            with open(temp_file_path, "wb") as f:
+            temp_video_path = f"/tmp/video_{user_id}_{datetime.now().timestamp()}.mp4"
+            with open(temp_video_path, "wb") as f:
                 f.write(await video.read())
+
+            video_size_mb = os.path.getsize(temp_video_path) / (1024 * 1024)
+            print(f"   ℹ️  Tamaño: {video_size_mb:.2f} MB")
+
+            # ✅ EXTRAER FRAMES (esto resuelve el problema de 5 MB)
+            print("   📸 Extrayendo frames del video...")
+            frames_base64 = extract_frames_from_video(temp_video_path, max_frames=10)
+
+            # Eliminar video temporal
+            os.remove(temp_video_path)
+
+            if not frames_base64:
+                raise HTTPException(status_code=400, detail="No se pudieron extraer frames del video")
+
+            print(f"   ✓ {len(frames_base64)} frames extraídos")
+
+            # Guardar frames como imágenes temporales para Claude
+            for idx, frame_b64 in enumerate(frames_base64):
+                frame_path = f"/tmp/frame_{user_id}_{idx}_{datetime.now().timestamp()}.jpg"
+
+                # Decodificar base64 y guardar
+                with open(frame_path, "wb") as f:
+                    f.write(base64.b64decode(frame_b64))
+
+                # Verificar tamaño del frame
+                frame_size_mb = os.path.getsize(frame_path) / (1024 * 1024)
+
+                if frame_size_mb < 5:  # Solo frames menores a 5 MB
+                    frames_para_ocr.append(frame_path)
+                else:
+                    print(f"   ⚠️  Frame {idx} muy grande ({frame_size_mb:.2f} MB), omitiendo")
+                    os.remove(frame_path)
+
+            print(f"   ✓ {len(frames_para_ocr)} frames listos para OCR")
 
         elif imagen:
             print("   ✓ Imagen recibida")
+
             # Guardar imagen temporalmente
-            temp_file_path = f"/tmp/imagen_{user_id}_{datetime.now().timestamp()}.jpg"
-            with open(temp_file_path, "wb") as f:
+            temp_img_path = f"/tmp/imagen_{user_id}_{datetime.now().timestamp()}.jpg"
+            with open(temp_img_path, "wb") as f:
                 f.write(await imagen.read())
+
+            img_size_mb = os.path.getsize(temp_img_path) / (1024 * 1024)
+            print(f"   ℹ️  Tamaño: {img_size_mb:.2f} MB")
+
+            if img_size_mb > 5:
+                os.remove(temp_img_path)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Imagen muy grande ({img_size_mb:.2f} MB). Máximo 5 MB"
+                )
+
+            frames_para_ocr = [temp_img_path]
+
         else:
             raise HTTPException(status_code=400, detail="Debe proporcionar video o imagen")
 
-        print(f"   ℹ️  Archivo guardado en: {temp_file_path}")
+        # 2. OCR - Procesar cada frame y consolidar resultados
+        print(f"\n🤖 Ejecutando OCR con Claude Vision ({len(frames_para_ocr)} frames)...")
 
-        # 2. OCR con Claude (usando la función existente que SÍ funciona)
-        print("\n🤖 Ejecutando OCR con Claude Vision...")
+        todos_los_items = []
+        total_acumulado = 0
+        fecha_factura = None
 
-        # ✅ parse_invoice_with_claude NO es async, no uses await
-        datos_factura = parse_invoice_with_claude(temp_file_path)
+        for idx, frame_path in enumerate(frames_para_ocr, 1):
+            print(f"   Frame {idx}/{len(frames_para_ocr)}...")
 
-        # Eliminar archivo temporal
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-            print(f"   🗑️  Archivo temporal eliminado")
+            try:
+                resultado = parse_invoice_with_claude(frame_path)
 
-        if not datos_factura or not datos_factura.get('success'):
+                if resultado.get('success'):
+                    items = resultado.get('items', [])
+                    todos_los_items.extend(items)
+
+                    # Tomar el total y fecha del último frame que los tenga
+                    if resultado.get('total'):
+                        total_acumulado = resultado['total']
+                    if resultado.get('fecha'):
+                        fecha_factura = resultado['fecha']
+
+                    print(f"      → {len(items)} items detectados")
+                else:
+                    print(f"      ⚠️  Frame sin datos válidos")
+
+            except Exception as e:
+                print(f"      ❌ Error procesando frame: {e}")
+
+            # Eliminar frame temporal
+            os.remove(frame_path)
+
+        # Consolidar datos
+        datos_factura = {
+            'success': True,
+            'items': todos_los_items,
+            'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
+            'fecha': fecha_factura or datetime.now().date()
+        }
+
+        print(f"   ✓ Total de items detectados: {len(todos_los_items)}")
+        print(f"   • Total: ${datos_factura['total']:,.0f}")
+
+        if not datos_factura['items']:
             raise HTTPException(
                 status_code=400,
-                detail=f"No se pudo extraer información de la factura: {datos_factura.get('error', 'Error desconocido')}"
+                detail="No se detectaron productos en la factura"
             )
-
-        print(f"   ✓ Factura procesada")
-        print(f"   • Total: ${datos_factura.get('total', 0):,.0f}")
-        print(f"   • Items detectados: {len(datos_factura.get('items', []))}")
 
         # 3. Crear factura
         print("\n💾 Creando registro de factura...")
@@ -2633,15 +2709,15 @@ async def procesar_factura_v2(
             (
                 user_id,
                 establecimiento_id,
-                datos_factura.get('fecha', datetime.now().date()),
-                datos_factura.get('total', 0)
+                datos_factura['fecha'],
+                datos_factura['total']
             )
         )
         factura = cursor.fetchone()
         factura_id = factura['id']
         print(f"   ✓ Factura #{factura_id} creada")
 
-        # 4. Consolidación inteligente
+        # 4. Consolidación inteligente (resto del código igual...)
         print("\n" + "="*70)
         print("🧠 CONSOLIDACIÓN INTELIGENTE DE PRODUCTOS")
         print("="*70)
@@ -2649,11 +2725,10 @@ async def procesar_factura_v2(
         items_procesados = []
         errores = []
 
-        for idx, item in enumerate(datos_factura.get('items', []), 1):
+        for idx, item in enumerate(datos_factura['items'], 1):
             try:
                 print(f"\n[{idx}/{len(datos_factura['items'])}]")
 
-                # Usar función síncrona de consolidación
                 producto_id = procesar_item_con_consolidacion(
                     cursor=cursor,
                     item_ocr={
@@ -2666,7 +2741,6 @@ async def procesar_factura_v2(
                     establecimiento_id=establecimiento_id
                 )
 
-                # Guardar en items_factura (compatibilidad)
                 cursor.execute(
                     """INSERT INTO items_factura
                        (factura_id, producto_id, nombre_producto, codigo_barra,
@@ -2674,13 +2748,9 @@ async def procesar_factura_v2(
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (
-                        factura_id,
-                        producto_id,
-                        item.get('descripcion'),
-                        item.get('codigo'),
-                        item.get('cantidad', 1),
-                        item.get('precio_unitario', 0),
-                        item.get('subtotal', 0)
+                        factura_id, producto_id, item.get('descripcion'),
+                        item.get('codigo'), item.get('cantidad', 1),
+                        item.get('precio_unitario', 0), item.get('subtotal', 0)
                     )
                 )
                 item_id = cursor.fetchone()['id']
@@ -2696,14 +2766,8 @@ async def procesar_factura_v2(
                 error_msg = f"Error en item '{item.get('descripcion', 'N/A')}': {str(e)}"
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
-                import traceback
-                traceback.print_exc()
 
         # 5. Estadísticas
-        print("\n" + "="*70)
-        print("📈 ESTADÍSTICAS DEL SISTEMA V2")
-        print("="*70)
-
         cursor.execute("""
             SELECT
                 COUNT(*) as total_productos,
@@ -2716,15 +2780,14 @@ async def procesar_factura_v2(
         """)
         stats = cursor.fetchone()
 
-        print(f"Total productos en BD: {stats['total_productos']}")
+        print("\n" + "="*70)
+        print("📈 ESTADÍSTICAS DEL SISTEMA V2")
+        print("="*70)
+        print(f"Total productos: {stats['total_productos']}")
         print(f"  • Con EAN: {stats['con_ean']}")
-        print(f"  • Sin EAN: {stats['sin_ean']}")
         print(f"  • Verificados: {stats['verificados']}")
         print(f"  • Pendientes: {stats['pendientes']}")
-        if stats['confianza_promedio']:
-            print(f"  • Confianza: {float(stats['confianza_promedio']):.2%}")
 
-        # Commit
         conn.commit()
 
         print("="*70)
@@ -2744,13 +2807,13 @@ async def procesar_factura_v2(
                 "sin_ean": int(stats['sin_ean']),
                 "verificados": int(stats['verificados']),
                 "pendientes": int(stats['pendientes']),
-                "confianza_promedio": float(stats['confianza_promedio'] or 0)
+                "confianza_promedio": float(stats['confianza_promedio'])
             }
         }
 
     except Exception as e:
         conn.rollback()
-        print(f"\n❌ ERROR GENERAL: {e}")
+        print(f"\n❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -2758,6 +2821,8 @@ async def procesar_factura_v2(
     finally:
         cursor.close()
         conn.close()
+
+
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
 async def ver_aprendizaje_claude():
