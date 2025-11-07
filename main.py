@@ -2310,6 +2310,276 @@ async def login_auditoria(credentials: AuditoriaLoginRequest):
 
 print("✅ Endpoint /api/auditoria/login agregado (independiente)")
 
+@app.post("/setup/make-admin")
+async def make_admin(email: str = "santiago@tscamp.co"):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE usuarios
+        SET rol = 'admin'
+        WHERE email = %s
+        RETURNING id, email, rol
+    """, (email,))
+    user = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    if user:
+        return {"success": True, "user": {"id": user[0], "email": user[1], "rol": user[2]}}
+    return {"success": False, "error": "Usuario no encontrado"}
+
+# ============================================================
+# ENDPOINTS AUDITORÍA - PRODUCTOS REFERENCIA
+# ============================================================
+
+@app.get("/api/productos-referencia/{codigo_ean}")
+async def get_producto_referencia(
+    codigo_ean: str,
+    authorization: str = Header(None)
+):
+    """Obtener producto de referencia por código EAN"""
+    print(f"🔍 [AUDITORÍA] Buscando producto referencia: {codigo_ean}")
+
+    # Validar token JWT
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+
+    token = authorization.replace('Bearer ', '')
+    user_data = verify_jwt_token(token)
+
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    # Validar rol de auditor/admin
+    if user_data.get('rol') not in ['admin', 'auditor']:
+        raise HTTPException(status_code=403, detail="Sin permisos de auditoría")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                id,
+                codigo_ean,
+                nombre,
+                marca,
+                categoria,
+                presentacion,
+                unidad_medida,
+                created_at,
+                updated_at
+            FROM productos_referencia
+            WHERE codigo_ean = %s
+        """, (codigo_ean,))
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        print(f"✅ [AUDITORÍA] Producto encontrado: {producto[2]}")
+
+        return {
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre": producto[2],
+            "marca": producto[3],
+            "categoria": producto[4],
+            "presentacion": producto[5],
+            "unidad_medida": producto[6],
+            "created_at": producto[7].isoformat() if producto[7] else None,
+            "updated_at": producto[8].isoformat() if producto[8] else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error al buscar producto: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/productos-referencia")
+async def crear_producto_referencia(
+    request: Request,
+    authorization: str = Header(None)
+):
+    """Crear nuevo producto de referencia"""
+    print(f"📝 [AUDITORÍA] Creando nuevo producto referencia")
+
+    # Validar token JWT
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+
+    token = authorization.replace('Bearer ', '')
+    user_data = verify_jwt_token(token)
+
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    # Validar rol de auditor/admin
+    if user_data.get('rol') not in ['admin', 'auditor']:
+        raise HTTPException(status_code=403, detail="Sin permisos de auditoría")
+
+    # Obtener datos del body
+    body = await request.json()
+
+    codigo_ean = body.get('codigo_ean')
+    nombre = body.get('nombre')
+    marca = body.get('marca', '')
+    categoria = body.get('categoria', '')
+    presentacion = body.get('presentacion', '')
+    unidad_medida = body.get('unidad_medida', '')
+
+    if not codigo_ean or not nombre:
+        raise HTTPException(status_code=400, detail="Código EAN y nombre son requeridos")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar si ya existe
+        cursor.execute("""
+            SELECT id FROM productos_referencia
+            WHERE codigo_ean = %s
+        """, (codigo_ean,))
+
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="Producto ya existe")
+
+        # Insertar nuevo producto
+        cursor.execute("""
+            INSERT INTO productos_referencia
+            (codigo_ean, nombre, marca, categoria, presentacion, unidad_medida)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, codigo_ean, nombre, created_at
+        """, (codigo_ean, nombre, marca, categoria, presentacion, unidad_medida))
+
+        producto = cursor.fetchone()
+        conn.commit()
+
+        print(f"✅ [AUDITORÍA] Producto creado: {producto[2]} (ID: {producto[0]})")
+
+        return {
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre": producto[2],
+            "marca": marca,
+            "categoria": categoria,
+            "presentacion": presentacion,
+            "unidad_medida": unidad_medida,
+            "created_at": producto[3].isoformat() if producto[3] else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error al crear producto: {str(e)}")
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/api/productos-referencia/{codigo_ean}")
+async def actualizar_producto_referencia(
+    codigo_ean: str,
+    request: Request,
+    authorization: str = Header(None)
+):
+    """Actualizar producto de referencia existente"""
+    print(f"✏️ [AUDITORÍA] Actualizando producto: {codigo_ean}")
+
+    # Validar token JWT
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+
+    token = authorization.replace('Bearer ', '')
+    user_data = verify_jwt_token(token)
+
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    # Validar rol de auditor/admin
+    if user_data.get('rol') not in ['admin', 'auditor']:
+        raise HTTPException(status_code=403, detail="Sin permisos de auditoría")
+
+    body = await request.json()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar si existe
+        cursor.execute("""
+            SELECT id FROM productos_referencia
+            WHERE codigo_ean = %s
+        """, (codigo_ean,))
+
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Actualizar campos proporcionados
+        updates = []
+        params = []
+
+        if 'nombre' in body:
+            updates.append("nombre = %s")
+            params.append(body['nombre'])
+        if 'marca' in body:
+            updates.append("marca = %s")
+            params.append(body['marca'])
+        if 'categoria' in body:
+            updates.append("categoria = %s")
+            params.append(body['categoria'])
+        if 'presentacion' in body:
+            updates.append("presentacion = %s")
+            params.append(body['presentacion'])
+        if 'unidad_medida' in body:
+            updates.append("unidad_medida = %s")
+            params.append(body['unidad_medida'])
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(codigo_ean)
+
+        query = f"""
+            UPDATE productos_referencia
+            SET {', '.join(updates)}
+            WHERE codigo_ean = %s
+            RETURNING id, codigo_ean, nombre, marca, categoria, presentacion, unidad_medida, updated_at
+        """
+
+        cursor.execute(query, params)
+        producto = cursor.fetchone()
+        conn.commit()
+
+        print(f"✅ [AUDITORÍA] Producto actualizado: {producto[2]}")
+
+        return {
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre": producto[2],
+            "marca": producto[3],
+            "categoria": producto[4],
+            "presentacion": producto[5],
+            "unidad_medida": producto[6],
+            "updated_at": producto[7].isoformat() if producto[7] else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error al actualizar producto: {str(e)}")
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
 # ==========================================
 # ENDPOINT 1: VERIFICAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
