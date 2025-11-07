@@ -1,6 +1,11 @@
 """
-product_matcher.py - VERSIÓN MEJORADA
+product_matcher.py - VERSIÓN MEJORADA V2
 Sistema de matching y normalización de productos
+
+CAMBIOS V2:
+- Busca PLUs cortos por nombre (no por código)
+- Soporte para productos con múltiples PLUs por establecimiento
+- Lógica: 1 producto maestro → N códigos PLU (uno por establecimiento)
 """
 
 import re
@@ -125,6 +130,33 @@ def calcular_similitud(nombre1: str, nombre2: str) -> float:
     return similitud_jaccard
 
 
+def clasificar_codigo_tipo(codigo: str) -> str:
+    """
+    Clasifica el tipo de código basándose en su longitud
+
+    Returns:
+        'EAN' para códigos de 8+ dígitos
+        'PLU' para códigos de 3-7 dígitos
+        'DESCONOCIDO' para otros casos
+    """
+    if not codigo or not isinstance(codigo, str):
+        return 'DESCONOCIDO'
+
+    codigo_limpio = ''.join(filter(str.isdigit, str(codigo)))
+
+    if not codigo_limpio:
+        return 'DESCONOCIDO'
+
+    longitud = len(codigo_limpio)
+
+    if longitud >= 8:
+        return 'EAN'
+    elif 3 <= longitud <= 7:
+        return 'PLU'
+    else:
+        return 'DESCONOCIDO'
+
+
 def buscar_o_crear_producto_inteligente(
     codigo: str,
     nombre: str,
@@ -136,10 +168,17 @@ def buscar_o_crear_producto_inteligente(
     """
     Busca un producto existente o crea uno nuevo
 
-    LÓGICA MEJORADA:
-    1. Si tiene código EAN válido (8+ dígitos), buscar por código
-    2. Si no tiene código, buscar por similitud de nombre (>80%)
-    3. Si no encuentra nada, crear producto nuevo
+    LÓGICA V2 MEJORADA:
+    1. Clasificar código como EAN o PLU
+    2. Si es EAN (8+ dígitos):
+       - Buscar por codigo_ean en productos_maestros
+       - Si no existe, crear nuevo con ese codigo_ean
+    3. Si es PLU (3-7 dígitos):
+       - Buscar por similitud de nombre (>85%)
+       - Si no existe, crear nuevo SIN codigo_ean (será NULL)
+    4. Si no tiene código:
+       - Buscar por similitud de nombre
+       - Si no existe, crear nuevo SIN codigo_ean
 
     Returns:
         int: producto_maestro_id
@@ -147,15 +186,19 @@ def buscar_o_crear_producto_inteligente(
     import os
 
     nombre_normalizado = normalizar_nombre_producto(nombre)
+    tipo_codigo = clasificar_codigo_tipo(codigo)
 
     print(f"🔍 buscar_o_crear_producto_inteligente()")
-    print(f"   Código: {codigo}")
+    print(f"   Código: {codigo} → Tipo: {tipo_codigo}")
     print(f"   Nombre original: {nombre}")
     print(f"   Nombre normalizado: {nombre_normalizado}")
     print(f"   Precio: ${precio:,}")
+    print(f"   Establecimiento: {establecimiento}")
 
-    # PASO 1: Buscar por código EAN si existe
-    if codigo and len(codigo) >= 8 and codigo.isdigit():
+    # =================================================================
+    # CASO 1: CÓDIGO EAN (8+ dígitos) - Buscar por codigo_ean
+    # =================================================================
+    if tipo_codigo == 'EAN':
         print(f"   🔍 Buscando por código EAN: {codigo}")
 
         if os.environ.get("DATABASE_TYPE") == "postgresql":
@@ -176,47 +219,86 @@ def buscar_o_crear_producto_inteligente(
         row = cursor.fetchone()
         if row:
             producto_id = row[0]
+            nombre_existente = row[1]
             print(f"   ✅ Producto encontrado por EAN: ID {producto_id}")
+            print(f"      Nombre en BD: {nombre_existente}")
 
             # Actualizar precio promedio
             actualizar_precio_promedio(producto_id, precio, cursor, conn)
 
             return producto_id
 
-    # PASO 2: Buscar por similitud de nombre
-    print(f"   🔍 Buscando por similitud de nombre...")
+        # No existe, crear nuevo producto con este EAN
+        print(f"   ➕ Creando producto nuevo con EAN: {codigo}")
 
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute("""
+                INSERT INTO productos_maestros (
+                    codigo_ean,
+                    nombre_normalizado,
+                    precio_promedio_global,
+                    total_reportes,
+                    primera_vez_reportado,
+                    ultima_actualizacion
+                ) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            """, (codigo, nombre_normalizado, precio))
+            producto_id = cursor.fetchone()[0]
+        else:
+            cursor.execute("""
+                INSERT INTO productos_maestros (
+                    codigo_ean,
+                    nombre_normalizado,
+                    precio_promedio_global,
+                    total_reportes,
+                    primera_vez_reportado,
+                    ultima_actualizacion
+                ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (codigo, nombre_normalizado, precio))
+            producto_id = cursor.lastrowid
+
+        conn.commit()
+        print(f"   ✅ Producto creado con EAN: ID {producto_id}")
+        return producto_id
+
+    # =================================================================
+    # CASO 2: CÓDIGO PLU (3-7 dígitos) o SIN CÓDIGO - Buscar por nombre
+    # =================================================================
+    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre...")
+
+    # Buscar productos similares por nombre
     if os.environ.get("DATABASE_TYPE") == "postgresql":
         cursor.execute("""
             SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
             FROM productos_maestros
             WHERE nombre_normalizado ILIKE %s
-            LIMIT 10
-        """, (f"%{nombre_normalizado[:20]}%",))
+            LIMIT 20
+        """, (f"%{nombre_normalizado[:30]}%",))
     else:
         cursor.execute("""
             SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
             FROM productos_maestros
             WHERE nombre_normalizado LIKE ?
-            LIMIT 10
-        """, (f"%{nombre_normalizado[:20]}%",))
+            LIMIT 20
+        """, (f"%{nombre_normalizado[:30]}%",))
 
     candidatos = cursor.fetchall()
 
     mejor_match = None
     mejor_similitud = 0.0
+    umbral_similitud = 0.85  # 85% de similitud mínima
 
     for row in candidatos:
         producto_id, nombre_db, codigo_db, precio_db = row
 
         similitud = calcular_similitud(nombre_normalizado, nombre_db)
 
-        print(f"   📊 Similitud con '{nombre_db}': {similitud:.2f}")
+        if similitud > umbral_similitud:
+            print(f"   📊 Similitud con '{nombre_db}': {similitud:.2f} (ID: {producto_id})")
 
-        # Si la similitud es muy alta (>85%), considerar match
-        if similitud > 0.85 and similitud > mejor_similitud:
-            mejor_similitud = similitud
-            mejor_match = producto_id
+            if similitud > mejor_similitud:
+                mejor_similitud = similitud
+                mejor_match = producto_id
 
     if mejor_match:
         print(f"   ✅ Producto similar encontrado: ID {mejor_match} (similitud: {mejor_similitud:.2f})")
@@ -226,8 +308,8 @@ def buscar_o_crear_producto_inteligente(
 
         return mejor_match
 
-    # PASO 3: Crear producto nuevo
-    print(f"   ➕ Creando producto nuevo...")
+    # No se encontró producto similar, crear uno nuevo SIN codigo_ean
+    print(f"   ➕ Creando producto nuevo SIN código EAN (será PLU específico por establecimiento)")
 
     if os.environ.get("DATABASE_TYPE") == "postgresql":
         cursor.execute("""
@@ -238,10 +320,9 @@ def buscar_o_crear_producto_inteligente(
                 total_reportes,
                 primera_vez_reportado,
                 ultima_actualizacion
-            ) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (NULL, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-        """, (codigo or None, nombre_normalizado, precio))
-
+        """, (nombre_normalizado, precio))
         producto_id = cursor.fetchone()[0]
     else:
         cursor.execute("""
@@ -252,14 +333,13 @@ def buscar_o_crear_producto_inteligente(
                 total_reportes,
                 primera_vez_reportado,
                 ultima_actualizacion
-            ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """, (codigo or None, nombre_normalizado, precio))
-
+            ) VALUES (NULL, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """, (nombre_normalizado, precio))
         producto_id = cursor.lastrowid
 
     conn.commit()
-
-    print(f"   ✅ Producto creado: ID {producto_id}")
+    print(f"   ✅ Producto creado sin EAN: ID {producto_id}")
+    print(f"      (Los códigos PLU se guardarán en productos_por_establecimiento)")
 
     return producto_id
 
