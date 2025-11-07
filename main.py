@@ -1498,7 +1498,38 @@ async def save_invoice_with_image(
                 pass
 
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
+@app.get("/api/establecimientos")
+async def get_establecimientos():
+    """Endpoint directo para obtener establecimientos (sin redirect)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
+        cursor.execute("""
+            SELECT id, nombre_normalizado, cadena, activo
+            FROM establecimientos
+            WHERE activo = TRUE
+            ORDER BY nombre_normalizado
+        """)
+
+        establecimientos = []
+        for row in cursor.fetchall():
+            establecimientos.append({
+                "id": row[0],
+                "nombre_normalizado": row[1],
+                "nombre": row[1],  # Alias para compatibilidad
+                "cadena": row[2],
+                "activo": row[3]
+            })
+
+        cursor.close()
+        conn.close()
+
+        return establecimientos
+
+    except Exception as e:
+        logger.error(f"Error obteniendo establecimientos: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 # ==========================================
 # FUNCIÓN DE BACKGROUND - COMPLETA
 # ==========================================
