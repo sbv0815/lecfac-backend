@@ -2656,8 +2656,7 @@ async def procesar_factura_v2(
         total_acumulado = 0
         fecha_factura = None
 
-        # En main.py, en el loop de procesamiento de frames:
-
+        # ✅ LOOP DE PROCESAMIENTO DE FRAMES
         for idx, frame_path in enumerate(frames_para_ocr, 1):
             print(f"   Frame {idx}/{len(frames_para_ocr)}...")
 
@@ -2665,43 +2664,44 @@ async def procesar_factura_v2(
                 resultado = parse_invoice_with_claude(frame_path)
 
                 if resultado.get('success'):
-            # ✅ Claude retorna 'productos', no 'items'
-                    productos = resultado.get('productos', [])
+                    # ✅ CORRECCIÓN: Los productos están en resultado['data']['productos']
+                    data = resultado.get('data', {})
+                    productos = data.get('productos', [])
 
-                if productos:
-                # Normalizar formato para que coincida con el resto del código
-                 for prod in productos:
-                    item_normalizado = {
-                        'descripcion': prod.get('nombre', 'PRODUCTO SIN NOMBRE'),
-                        'codigo': str(prod.get('codigo', '')) if prod.get('codigo') else None,
-                        'precio_unitario': float(prod.get('precio', 0)),
-                        'cantidad': int(prod.get('cantidad', 1)),
-                        'subtotal': float(prod.get('precio', 0)) * int(prod.get('cantidad', 1))
-                    }
-                    todos_los_items.append(item_normalizado)
+                    if productos:
+                        # Normalizar formato para que coincida con el resto del código
+                        for prod in productos:
+                            item_normalizado = {
+                                'descripcion': prod.get('nombre', 'PRODUCTO SIN NOMBRE'),
+                                'codigo': str(prod.get('codigo', '')) if prod.get('codigo') else None,
+                                'precio_unitario': float(prod.get('precio', 0)),
+                                'cantidad': int(prod.get('cantidad', 1)),
+                                'subtotal': float(prod.get('precio', 0)) * int(prod.get('cantidad', 1))
+                            }
+                            todos_los_items.append(item_normalizado)
 
-                    print(f"      → {len(productos)} items detectados")
-                else:
-                    print(f"      ⚠️  Frame sin productos")
+                        print(f"      → {len(productos)} items detectados")
+                    else:
+                        print(f"      ⚠️  Frame sin productos")
 
-            # Tomar el total y fecha del último frame que los tenga
-                if resultado.get('total'):
-                    total_acumulado = resultado['total']
-                if resultado.get('fecha'):
-                    fecha_factura = resultado['fecha']
+                    # Tomar el total y fecha del último frame que los tenga
+                    if data.get('total'):
+                        total_acumulado = data['total']
+                    if data.get('fecha'):
+                        fecha_factura = data['fecha']
                 else:
                     print(f"      ⚠️  Frame sin datos válidos")
 
             except Exception as e:
                 print(f"      ❌ Error procesando frame: {e}")
-        import traceback
-        traceback.print_exc()
+                import traceback
+                traceback.print_exc()
 
-    # Eliminar frame temporal
-        if os.path.exists(frame_path):
-            os.remove(frame_path)
+            # Eliminar frame temporal
+            if os.path.exists(frame_path):
+                os.remove(frame_path)
 
-        # Consolidar datos
+        # ✅ FUERA DEL LOOP - Consolidar datos
         datos_factura = {
             'success': True,
             'items': todos_los_items,
@@ -2736,7 +2736,7 @@ async def procesar_factura_v2(
         factura_id = factura['id']
         print(f"   ✓ Factura #{factura_id} creada")
 
-        # 4. Consolidación inteligente (resto del código igual...)
+        # 4. Consolidación inteligente
         print("\n" + "="*70)
         print("🧠 CONSOLIDACIÓN INTELIGENTE DE PRODUCTOS")
         print("="*70)
@@ -2840,7 +2840,6 @@ async def procesar_factura_v2(
     finally:
         cursor.close()
         conn.close()
-
 
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
