@@ -18,7 +18,7 @@ for root, dirs, files in os.walk('.'):
         print(f"   ✓ Eliminado: {os.path.join(root, '__pycache__')}")
 print("✅ Caché limpiado - Iniciando servidor...")
 
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from typing import List, Optional
 from contextlib import asynccontextmanager
@@ -2707,11 +2707,12 @@ async def procesar_factura_v2(
             'success': True,
             'items': todos_los_items,
             'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
-            'fecha': fecha_factura or datetime.now().date()
+            'fecha': normalizar_fecha(fecha_factura)
         }
 
         print(f"   ✓ Total de items detectados: {len(todos_los_items)}")
         print(f"   • Total: ${datos_factura['total']:,.0f}")
+        print(f"   • Fecha: {datos_factura['fecha']}")
 
         if not datos_factura['items']:
             raise HTTPException(
@@ -2719,23 +2720,62 @@ async def procesar_factura_v2(
                 detail="No se detectaron productos en la factura"
             )
 
+        # ✅ Validar que el establecimiento existe
+        print("\n🏪 Validando establecimiento...")
+
+        cursor.execute(
+            "SELECT id, nombre, nombre_normalizado, cadena FROM establecimientos WHERE id = %s",
+            (establecimiento_id,)
+        )
+        establecimiento_db = cursor.fetchone()
+
+        if not establecimiento_db:
+            print(f"   ❌ Establecimiento ID {establecimiento_id} no existe")
+
+            # Obtener el nombre detectado por OCR para ayudar al usuario
+            establecimiento_detectado = "Desconocido"
+            for idx, frame_path in enumerate(frames_para_ocr):
+                if os.path.exists(frame_path):
+                    try:
+                        resultado_temp = parse_invoice_with_claude(frame_path)
+                        if resultado_temp.get('success'):
+                            data_temp = resultado_temp.get('data', {})
+                            establecimiento_temp = data_temp.get('establecimiento', '')
+                            if establecimiento_temp and establecimiento_temp.lower() not in ['desconocido', 'no identificado']:
+                                establecimiento_detectado = establecimiento_temp
+                                break
+                    except:
+                        continue
+
+            raise HTTPException(
+                status_code=400,
+                detail=f"Establecimiento no encontrado. Claude detectó: '{establecimiento_detectado}'. Por favor, créalo primero desde la app."
+            )
+
+        print(f"   ✅ Establecimiento válido:")
+        print(f"      • ID: {establecimiento_db['id']}")
+        print(f"      • Nombre: {establecimiento_db['nombre']}")
+        print(f"      • Cadena: {establecimiento_db['cadena']}")
+
         # 3. Crear factura
         print("\n💾 Creando registro de factura...")
         cursor.execute(
             """INSERT INTO facturas
-               (usuario_id, establecimiento_id, fecha_factura, total_factura, estado_validacion)
-               VALUES (%s, %s, %s, %s, 'procesado')
+               (usuario_id, establecimiento_id, fecha_factura, total_factura, estado_validacion, establecimiento, cadena)
+               VALUES (%s, %s, %s, %s, 'procesado', %s, %s)
                RETURNING id, fecha_factura""",
             (
                 user_id,
                 establecimiento_id,
                 datos_factura['fecha'],
-                datos_factura['total']
+                datos_factura['total'],
+                establecimiento_db['nombre'],
+                establecimiento_db['cadena']
             )
         )
         factura = cursor.fetchone()
         factura_id = factura['id']
-        print(f"   ✓ Factura #{factura_id} creada")
+        print(f"   ✅ Factura #{factura_id} creada exitosamente")
 
         # 4. Consolidación inteligente
         print("\n" + "="*70)
@@ -2856,6 +2896,11 @@ async def procesar_factura_v2(
 # ✅ FUERA DEL LOOP - Consolidar datos
 
         # Función auxiliar para normalizar fechas
+# Eliminar frame temporal
+        if os.path.exists(frame_path):
+            os.remove(frame_path)
+
+# ✅ AGREGAR ESTA FUNCIÓN AQUÍ (entre el loop y datos_factura)
 def normalizar_fecha(fecha_str):
     """
     Convierte fecha de cualquier formato a YYYY-MM-DD para PostgreSQL
@@ -2896,13 +2941,12 @@ def normalizar_fecha(fecha_str):
         try:
             fecha_parseada = datetime.strptime(fecha_str, formato).date()
 
-            # Validar que la fecha tenga sentido (no en el futuro, no muy antigua)
+            # Validar que la fecha tenga sentido
             hoy = datetime.now().date()
             if fecha_parseada > hoy:
                 print(f"⚠️ Fecha en el futuro: {fecha_parseada}, usando fecha actual")
                 return hoy
 
-            # No permitir fechas muy antiguas (antes del año 2000)
             if fecha_parseada.year < 2000:
                 print(f"⚠️ Fecha muy antigua: {fecha_parseada}, usando fecha actual")
                 return hoy
@@ -2914,6 +2958,14 @@ def normalizar_fecha(fecha_str):
     # Si ningún formato funcionó
     print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
     return datetime.now().date()
+
+
+datos_factura = {
+    'success': True,
+    'items': todos_los_items,
+    'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
+    'fecha': normalizar_fecha(fecha_factura)  # ← Ya está usando la función
+}
 
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
