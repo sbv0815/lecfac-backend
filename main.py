@@ -2856,70 +2856,64 @@ async def procesar_factura_v2(
 # ✅ FUERA DEL LOOP - Consolidar datos
 
         # Función auxiliar para normalizar fechas
-        def normalizar_fecha(fecha_str):
-            """Convierte fecha de cualquier formato a YYYY-MM-DD para PostgreSQL"""
-            if not fecha_str:
-                return datetime.now().date()
+def normalizar_fecha(fecha_str):
+    """
+    Convierte fecha de cualquier formato a YYYY-MM-DD para PostgreSQL
+    Maneja casos especiales como 'No legible', None, strings vacíos, etc.
+    """
+    # Casos especiales que NO son fechas válidas
+    if not fecha_str or fecha_str in ['No legible', 'Desconocido', 'N/A', '', 'null', 'None']:
+        print(f"⚠️ Fecha no válida o no legible, usando fecha actual")
+        return datetime.now().date()
 
-            if isinstance(fecha_str, datetime):
-                return fecha_str.date()
-            if isinstance(fecha_str, date):
-                return fecha_str
+    # Si ya es un objeto date o datetime
+    if isinstance(fecha_str, datetime):
+        return fecha_str.date()
+    if isinstance(fecha_str, date):
+        return fecha_str
 
-            fecha_str = str(fecha_str).strip()
+    # Convertir a string y limpiar
+    fecha_str = str(fecha_str).strip()
 
-            formatos = [
-                '%d/%m/%Y',    # 16/11/2016
-                '%d-%m-%Y',    # 16-11-2016
-                '%Y-%m-%d',    # 2016-11-16
-                '%Y/%m/%d',    # 2016/11/16
-                '%d/%m/%y',    # 16/11/16
-                '%d-%m-%y',    # 16-11-16
-            ]
+    # Verificar si contiene palabras que indican fecha inválida
+    palabras_invalidas = ['legible', 'desconocido', 'no', 'n/a', 'ninguno', 'error']
+    if any(palabra in fecha_str.lower() for palabra in palabras_invalidas):
+        print(f"⚠️ Fecha inválida detectada: '{fecha_str}', usando fecha actual")
+        return datetime.now().date()
 
-            for formato in formatos:
-                try:
-                    return datetime.strptime(fecha_str, formato).date()
-                except ValueError:
-                    continue
+    # Intentar diferentes formatos comunes
+    formatos = [
+        '%d/%m/%Y',    # 16/11/2016
+        '%d-%m-%Y',    # 16-11-2016
+        '%Y-%m-%d',    # 2016-11-16
+        '%Y/%m/%d',    # 2016/11/16
+        '%d/%m/%y',    # 16/11/16
+        '%d-%m-%y',    # 16-11-16
+        '%Y%m%d',      # 20161116
+    ]
 
-            print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
-            return datetime.now().date()
+    for formato in formatos:
+        try:
+            fecha_parseada = datetime.strptime(fecha_str, formato).date()
 
-        datos_factura = {
-            'success': True,
-            'items': todos_los_items,
-            'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
-            'fecha': normalizar_fecha(fecha_factura)
-        }
+            # Validar que la fecha tenga sentido (no en el futuro, no muy antigua)
+            hoy = datetime.now().date()
+            if fecha_parseada > hoy:
+                print(f"⚠️ Fecha en el futuro: {fecha_parseada}, usando fecha actual")
+                return hoy
 
-        print(f"   ✓ Total de items detectados: {len(todos_los_items)}")
-        print(f"   • Total: ${datos_factura['total']:,.0f}")
-        print(f"   • Fecha: {datos_factura['fecha']}")
+            # No permitir fechas muy antiguas (antes del año 2000)
+            if fecha_parseada.year < 2000:
+                print(f"⚠️ Fecha muy antigua: {fecha_parseada}, usando fecha actual")
+                return hoy
 
-        if not datos_factura['items']:
-            raise HTTPException(
-                status_code=400,
-                detail="No se detectaron productos en la factura"
-            )
+            return fecha_parseada
+        except ValueError:
+            continue
 
-        # 3. Crear factura
-        print("\n💾 Creando registro de factura...")
-        cursor.execute(
-            """INSERT INTO facturas
-               (usuario_id, establecimiento_id, fecha_factura, total_factura, estado_validacion)
-               VALUES (%s, %s, %s, %s, 'procesado')
-               RETURNING id, fecha_factura""",
-            (
-                user_id,
-                establecimiento_id,
-                datos_factura['fecha'],
-                datos_factura['total']
-            )
-        )
-        factura = cursor.fetchone()
-        factura_id = factura['id']
-        print(f"   ✓ Factura #{factura_id} creada")
+    # Si ningún formato funcionó
+    print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
+    return datetime.now().date()
 
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
