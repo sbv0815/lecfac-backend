@@ -2556,7 +2556,7 @@ async def fix_rol():
         }
     return {"success": False, "error": "Usuario no encontrado"}
 
-# main.py - Cambiar de async a sync
+
 
 from consolidacion_productos import procesar_item_con_consolidacion
 import psycopg2.extras
@@ -2853,6 +2853,73 @@ async def procesar_factura_v2(
     finally:
         cursor.close()
         conn.close()
+# ✅ FUERA DEL LOOP - Consolidar datos
+
+        # Función auxiliar para normalizar fechas
+        def normalizar_fecha(fecha_str):
+            """Convierte fecha de cualquier formato a YYYY-MM-DD para PostgreSQL"""
+            if not fecha_str:
+                return datetime.now().date()
+
+            if isinstance(fecha_str, datetime):
+                return fecha_str.date()
+            if isinstance(fecha_str, date):
+                return fecha_str
+
+            fecha_str = str(fecha_str).strip()
+
+            formatos = [
+                '%d/%m/%Y',    # 16/11/2016
+                '%d-%m-%Y',    # 16-11-2016
+                '%Y-%m-%d',    # 2016-11-16
+                '%Y/%m/%d',    # 2016/11/16
+                '%d/%m/%y',    # 16/11/16
+                '%d-%m-%y',    # 16-11-16
+            ]
+
+            for formato in formatos:
+                try:
+                    return datetime.strptime(fecha_str, formato).date()
+                except ValueError:
+                    continue
+
+            print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
+            return datetime.now().date()
+
+        datos_factura = {
+            'success': True,
+            'items': todos_los_items,
+            'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
+            'fecha': normalizar_fecha(fecha_factura)
+        }
+
+        print(f"   ✓ Total de items detectados: {len(todos_los_items)}")
+        print(f"   • Total: ${datos_factura['total']:,.0f}")
+        print(f"   • Fecha: {datos_factura['fecha']}")
+
+        if not datos_factura['items']:
+            raise HTTPException(
+                status_code=400,
+                detail="No se detectaron productos en la factura"
+            )
+
+        # 3. Crear factura
+        print("\n💾 Creando registro de factura...")
+        cursor.execute(
+            """INSERT INTO facturas
+               (usuario_id, establecimiento_id, fecha_factura, total_factura, estado_validacion)
+               VALUES (%s, %s, %s, %s, 'procesado')
+               RETURNING id, fecha_factura""",
+            (
+                user_id,
+                establecimiento_id,
+                datos_factura['fecha'],
+                datos_factura['total']
+            )
+        )
+        factura = cursor.fetchone()
+        factura_id = factura['id']
+        print(f"   ✓ Factura #{factura_id} creada")
 
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
