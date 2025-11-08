@@ -287,6 +287,72 @@ def get_user_id_from_token(authorization: str) -> int:
         traceback.print_exc()
         return 2
 
+# ==========================================
+# FUNCIONES AUXILIARES
+# ==========================================
+
+def normalizar_fecha(fecha_str):
+    """
+    Convierte fecha de cualquier formato a YYYY-MM-DD para PostgreSQL
+    Maneja casos especiales como 'No legible', None, strings vacíos, etc.
+    """
+    from datetime import datetime, date
+
+    # Casos especiales que NO son fechas válidas
+    if not fecha_str or fecha_str in ['No legible', 'Desconocido', 'N/A', '', 'null', 'None']:
+        print(f"⚠️ Fecha no válida o no legible, usando fecha actual")
+        return datetime.now().date()
+
+    # Si ya es un objeto date o datetime
+    if isinstance(fecha_str, datetime):
+        return fecha_str.date()
+    if isinstance(fecha_str, date):
+        return fecha_str
+
+    # Convertir a string y limpiar
+    fecha_str = str(fecha_str).strip()
+
+    # Verificar si contiene palabras que indican fecha inválida
+    palabras_invalidas = ['legible', 'desconocido', 'no', 'n/a', 'ninguno', 'error']
+    if any(palabra in fecha_str.lower() for palabra in palabras_invalidas):
+        print(f"⚠️ Fecha inválida detectada: '{fecha_str}', usando fecha actual")
+        return datetime.now().date()
+
+    # Intentar diferentes formatos comunes
+    formatos = [
+        '%d/%m/%Y',    # 16/11/2016
+        '%d-%m-%Y',    # 16-11-2016
+        '%Y-%m-%d',    # 2016-11-16
+        '%Y/%m/%d',    # 2016/11/16
+        '%d/%m/%y',    # 16/11/16
+        '%d-%m-%y',    # 16-11-16
+        '%Y%m%d',      # 20161116
+    ]
+
+    for formato in formatos:
+        try:
+            fecha_parseada = datetime.strptime(fecha_str, formato).date()
+
+            # Validar que la fecha tenga sentido
+            hoy = datetime.now().date()
+            if fecha_parseada > hoy:
+                print(f"⚠️ Fecha en el futuro: {fecha_parseada}, usando fecha actual")
+                return hoy
+
+            if fecha_parseada.year < 2000:
+                print(f"⚠️ Fecha muy antigua: {fecha_parseada}, usando fecha actual")
+                return hoy
+
+            return fecha_parseada
+        except ValueError:
+            continue
+
+    # Si ningún formato funcionó
+    print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
+    return datetime.now().date()
+
+
+
 
 def normalizar_precio_unitario(valor_ocr: float, cantidad: int) -> int:
     """Normaliza el precio unitario desde el valor del OCR"""
@@ -2701,8 +2767,6 @@ async def procesar_factura_v2(
             if os.path.exists(frame_path):
                 os.remove(frame_path)
 
-        # ✅ FUERA DEL LOOP - Consolidar datos
-        # ✅ FUERA DEL LOOP - Consolidar datos
         datos_factura = {
             'success': True,
             'items': todos_los_items,
@@ -2895,77 +2959,7 @@ async def procesar_factura_v2(
         conn.close()
 # ✅ FUERA DEL LOOP - Consolidar datos
 
-        # Función auxiliar para normalizar fechas
-# Eliminar frame temporal
-        if os.path.exists(frame_path):
-            os.remove(frame_path)
 
-# ✅ AGREGAR ESTA FUNCIÓN AQUÍ (entre el loop y datos_factura)
-def normalizar_fecha(fecha_str):
-    """
-    Convierte fecha de cualquier formato a YYYY-MM-DD para PostgreSQL
-    Maneja casos especiales como 'No legible', None, strings vacíos, etc.
-    """
-    # Casos especiales que NO son fechas válidas
-    if not fecha_str or fecha_str in ['No legible', 'Desconocido', 'N/A', '', 'null', 'None']:
-        print(f"⚠️ Fecha no válida o no legible, usando fecha actual")
-        return datetime.now().date()
-
-    # Si ya es un objeto date o datetime
-    if isinstance(fecha_str, datetime):
-        return fecha_str.date()
-    if isinstance(fecha_str, date):
-        return fecha_str
-
-    # Convertir a string y limpiar
-    fecha_str = str(fecha_str).strip()
-
-    # Verificar si contiene palabras que indican fecha inválida
-    palabras_invalidas = ['legible', 'desconocido', 'no', 'n/a', 'ninguno', 'error']
-    if any(palabra in fecha_str.lower() for palabra in palabras_invalidas):
-        print(f"⚠️ Fecha inválida detectada: '{fecha_str}', usando fecha actual")
-        return datetime.now().date()
-
-    # Intentar diferentes formatos comunes
-    formatos = [
-        '%d/%m/%Y',    # 16/11/2016
-        '%d-%m-%Y',    # 16-11-2016
-        '%Y-%m-%d',    # 2016-11-16
-        '%Y/%m/%d',    # 2016/11/16
-        '%d/%m/%y',    # 16/11/16
-        '%d-%m-%y',    # 16-11-16
-        '%Y%m%d',      # 20161116
-    ]
-
-    for formato in formatos:
-        try:
-            fecha_parseada = datetime.strptime(fecha_str, formato).date()
-
-            # Validar que la fecha tenga sentido
-            hoy = datetime.now().date()
-            if fecha_parseada > hoy:
-                print(f"⚠️ Fecha en el futuro: {fecha_parseada}, usando fecha actual")
-                return hoy
-
-            if fecha_parseada.year < 2000:
-                print(f"⚠️ Fecha muy antigua: {fecha_parseada}, usando fecha actual")
-                return hoy
-
-            return fecha_parseada
-        except ValueError:
-            continue
-
-    # Si ningún formato funcionó
-    print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
-    return datetime.now().date()
-
-
-datos_factura = {
-    'success': True,
-    'items': todos_los_items,
-    'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
-    'fecha': normalizar_fecha(fecha_factura)  # ← Ya está usando la función
-}
 
 # main.py - Endpoint para ver qué está aprendiendo Claude
 @app.get("/api/v2/aprendizaje/resumen")
