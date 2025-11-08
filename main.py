@@ -2702,6 +2702,7 @@ async def procesar_factura_v2(
                 os.remove(frame_path)
 
         # ✅ FUERA DEL LOOP - Consolidar datos
+        # ✅ FUERA DEL LOOP - Consolidar datos
         datos_factura = {
             'success': True,
             'items': todos_los_items,
@@ -2722,9 +2723,9 @@ async def procesar_factura_v2(
         print("\n💾 Creando registro de factura...")
         cursor.execute(
             """INSERT INTO facturas
-               (user_id, establecimiento_id, fecha_compra, total, procesado)
-               VALUES (%s, %s, %s, %s, TRUE)
-               RETURNING id, fecha_compra""",
+               (usuario_id, establecimiento_id, fecha_factura, total_factura, estado_validacion)
+               VALUES (%s, %s, %s, %s, 'procesado')
+               RETURNING id, fecha_factura""",
             (
                 user_id,
                 establecimiento_id,
@@ -2762,14 +2763,18 @@ async def procesar_factura_v2(
 
                 cursor.execute(
                     """INSERT INTO items_factura
-                       (factura_id, producto_id, nombre_producto, codigo_barra,
-                        cantidad, precio_unitario, subtotal)
+                       (factura_id, usuario_id, producto_maestro_id, nombre_leido, codigo_leido,
+                        cantidad, precio_pagado)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (
-                        factura_id, producto_id, item.get('descripcion'),
-                        item.get('codigo'), item.get('cantidad', 1),
-                        item.get('precio_unitario', 0), item.get('subtotal', 0)
+                        factura_id,
+                        user_id,
+                        producto_id,
+                        item.get('descripcion'),
+                        item.get('codigo'),
+                        item.get('cantidad', 1),
+                        item.get('precio_unitario', 0)
                     )
                 )
                 item_id = cursor.fetchone()['id']
@@ -2786,7 +2791,15 @@ async def procesar_factura_v2(
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
 
-        # 5. Estadísticas
+        # 5. Actualizar productos_guardados en factura
+        cursor.execute(
+            """UPDATE facturas
+               SET productos_guardados = %s
+               WHERE id = %s""",
+            (len(items_procesados), factura_id)
+        )
+
+        # 6. Estadísticas
         cursor.execute("""
             SELECT
                 COUNT(*) as total_productos,
