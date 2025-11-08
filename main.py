@@ -1633,6 +1633,87 @@ async def get_establecimientos():
         print(f"❌ Error obteniendo establecimientos: {e}")
         # Retornar lista vacía en lugar de error para no romper el frontend
         return []
+
+@app.post("/api/establecimientos")
+async def crear_establecimiento(request: Request):
+    """
+    Crear un nuevo establecimiento
+    """
+    try:
+        data = await request.json()
+        nombre = data.get("nombre", "").strip()
+
+        if not nombre:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "Nombre es requerido"}
+            )
+
+        # Normalizar nombre (convertir a mayúsculas)
+        nombre_normalizado = nombre.upper()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar si ya existe
+        cursor.execute(
+            "SELECT id FROM establecimientos WHERE UPPER(nombre_normalizado) = %s",
+            (nombre_normalizado,)
+        )
+
+        existente = cursor.fetchone()
+
+        if existente:
+            cursor.close()
+            conn.close()
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": f"El establecimiento '{nombre}' ya existe"
+                }
+            )
+
+        # Insertar nuevo establecimiento
+        cursor.execute(
+            """
+            INSERT INTO establecimientos (nombre_normalizado, cadena, activo)
+            VALUES (%s, %s, TRUE)
+            RETURNING id
+            """,
+            (nombre_normalizado, None)
+        )
+
+        nuevo_id = cursor.fetchone()[0]
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Establecimiento creado: {nombre_normalizado} (ID: {nuevo_id})")
+
+        return {
+            "success": True,
+            "establecimiento": {
+                "id": nuevo_id,
+                "nombre": nombre_normalizado,
+                "nombre_normalizado": nombre_normalizado,
+                "cadena": None,
+                "activo": True
+            }
+        }
+
+    except Exception as e:
+        print(f"❌ Error creando establecimiento: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Error al crear establecimiento: {str(e)}"
+            }
+        )
 # FUNCIÓN DE BACKGROUND - COMPLETA
 # ==========================================
 async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
