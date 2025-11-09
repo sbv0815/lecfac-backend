@@ -3067,11 +3067,16 @@ def comparar_precios_establecimientos(
 # Sistema de códigos por establecimiento
 # ============================================================================
 
-def crear_tabla_codigos_establecimiento(conn):
+# ============================================================================
+# CÓDIGO CORREGIDO PARA database.py
+# ============================================================================
+
+def crear_tabla_codigos_establecimiento():
     """
     Crear tabla codigos_establecimiento y funciones relacionadas
-    Maneja códigos PLU locales por supermercado
+    ✅ CORREGIDO: Crea su propia conexión
     """
+    conn = get_db_connection()  # ✅ CREAR CONEXIÓN AQUÍ
     cursor = conn.cursor()
 
     try:
@@ -3096,25 +3101,10 @@ def crear_tabla_codigos_establecimiento(conn):
         print("   ✅ Tabla codigos_establecimiento creada")
 
         # 2. Crear índices
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_codigos_est_producto
-            ON codigos_establecimiento(producto_maestro_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_codigos_est_establecimiento
-            ON codigos_establecimiento(establecimiento_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_codigos_est_codigo
-            ON codigos_establecimiento(codigo_local)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_codigos_est_tipo
-            ON codigos_establecimiento(tipo_codigo)
-        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_codigos_est_producto ON codigos_establecimiento(producto_maestro_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_codigos_est_establecimiento ON codigos_establecimiento(establecimiento_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_codigos_est_codigo ON codigos_establecimiento(codigo_local)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_codigos_est_tipo ON codigos_establecimiento(tipo_codigo)")
         print("   ✅ Índices creados")
 
         # 3. Crear función identificar_tipo_codigo
@@ -3122,29 +3112,24 @@ def crear_tabla_codigos_establecimiento(conn):
             CREATE OR REPLACE FUNCTION identificar_tipo_codigo(codigo TEXT)
             RETURNS TEXT AS $$
             BEGIN
-                -- Validar que no sea NULL o vacío
                 IF codigo IS NULL OR LENGTH(codigo) < 4 THEN
                     RETURN 'invalido';
                 END IF;
 
-                -- EAN: 8, 13, 14 dígitos
                 IF LENGTH(codigo) IN (8, 13, 14) AND codigo ~ '^[0-9]+$' THEN
                     RETURN 'ean';
                 END IF;
 
-                -- PLU estándar: 4-5 dígitos en rango 3000-4999
                 IF LENGTH(codigo) IN (4, 5) AND codigo ~ '^[0-9]+$' THEN
                     IF codigo::INTEGER BETWEEN 3000 AND 4999 THEN
                         RETURN 'plu_estandar';
                     END IF;
                 END IF;
 
-                -- Código local/interno: 6+ dígitos o fuera de rango PLU
                 IF codigo ~ '^[0-9]+$' THEN
                     RETURN 'plu_local';
                 END IF;
 
-                -- Otros códigos alfanuméricos
                 RETURN 'otro';
             END;
             $$ LANGUAGE plpgsql IMMUTABLE;
@@ -3163,15 +3148,12 @@ def crear_tabla_codigos_establecimiento(conn):
                 v_codigo_id INTEGER;
                 v_tipo_codigo TEXT;
             BEGIN
-                -- Identificar tipo de código
                 v_tipo_codigo := identificar_tipo_codigo(p_codigo);
 
-                -- Si es inválido, no guardar
                 IF v_tipo_codigo = 'invalido' THEN
                     RETURN NULL;
                 END IF;
 
-                -- Insertar o actualizar
                 INSERT INTO codigos_establecimiento
                     (producto_maestro_id, establecimiento_id, codigo_local, tipo_codigo, veces_visto)
                 VALUES
@@ -3189,7 +3171,7 @@ def crear_tabla_codigos_establecimiento(conn):
         """)
         print("   ✅ Función registrar_codigo_establecimiento() creada")
 
-        # 5. Crear vista para consultas fáciles
+        # 5. Crear vista
         cursor.execute("""
             CREATE OR REPLACE VIEW v_codigos_producto AS
             SELECT
@@ -3214,22 +3196,27 @@ def crear_tabla_codigos_establecimiento(conn):
         print("   ✅ Vista v_codigos_producto creada")
 
         conn.commit()
+        cursor.close()
+        conn.close()
         print("✅ Sistema de códigos por establecimiento configurado correctamente")
         return True
 
     except Exception as e:
         print(f"❌ Error creando tabla codigos_establecimiento: {e}")
         conn.rollback()
+        cursor.close()
+        conn.close()
         import traceback
         traceback.print_exc()
         return False
 
 
-def migrar_codigos_existentes(conn):
+def migrar_codigos_existentes():
     """
     Migrar códigos PLU de items_factura a codigos_establecimiento
-    Solo para datos existentes
+    ✅ CORREGIDO: Crea su propia conexión
     """
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
@@ -3245,9 +3232,11 @@ def migrar_codigos_existentes(conn):
 
         if not cursor.fetchone()[0]:
             print("   ⚠️  Tabla codigos_establecimiento no existe, saltando migración")
+            cursor.close()
+            conn.close()
             return False
 
-        # Migrar códigos de items_factura
+        # Migrar códigos
         cursor.execute("""
             INSERT INTO codigos_establecimiento
                 (producto_maestro_id, establecimiento_id, codigo_local, tipo_codigo, veces_visto)
@@ -3273,47 +3262,26 @@ def migrar_codigos_existentes(conn):
 
         migrados = cursor.rowcount
         conn.commit()
+        cursor.close()
+        conn.close()
 
         print(f"   ✅ {migrados} códigos migrados desde items_factura")
         return True
 
     except Exception as e:
-        print(f"   ⚠️  Error en migración (es normal si no hay datos): {e}")
+        print(f"   ⚠️  Error en migración: {e}")
         conn.rollback()
+        cursor.close()
+        conn.close()
         return False
 
 
 # ============================================================================
-# ACTUALIZAR LA FUNCIÓN create_tables() EXISTENTE
-# ============================================================================
-
-# BUSCAR la función create_tables() en database.py y AGREGAR al final:
-
-def create_tables():
-    """Crear todas las tablas del sistema"""
-    # ... [código existente de create_tables] ...
-
-    # ✅ AGREGAR AL FINAL (antes del conn.close()):
-
-    # Sistema de códigos por establecimiento
-    crear_tabla_codigos_establecimiento(conn)
-
-    # Migrar datos existentes (solo la primera vez)
-    migrar_codigos_existentes(conn)
-
-    conn.close()
-    print("✅ Todas las tablas creadas correctamente")
-
-
-# ============================================================================
-# FUNCIONES AUXILIARES PARA USAR EN EL CÓDIGO
+# FUNCIONES AUXILIARES
 # ============================================================================
 
 def registrar_codigo_producto(producto_id: int, establecimiento_id: int, codigo: str) -> bool:
-    """
-    Registrar un código local para un producto en un establecimiento
-    Uso: registrar_codigo_producto(217, 3, "1191286")
-    """
+    """Registrar un código local para un producto"""
     if not codigo or len(codigo) < 4:
         return False
 
@@ -3341,10 +3309,7 @@ def registrar_codigo_producto(producto_id: int, establecimiento_id: int, codigo:
 
 
 def obtener_codigos_producto(producto_id: int) -> list:
-    """
-    Obtener todos los códigos de un producto en diferentes establecimientos
-    Retorna: [{"codigo": "1191286", "tipo": "plu_local", "establecimiento": "EXITO", ...}, ...]
-    """
+    """Obtener todos los códigos de un producto"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -3380,22 +3345,19 @@ def obtener_codigos_producto(producto_id: int) -> list:
         return codigos
 
     except Exception as e:
-        print(f"❌ Error obteniendo códigos: {e}")
+        print(f"❌ Error: {e}")
         cursor.close()
         conn.close()
         return []
 
 
 def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> dict:
-    """
-    Buscar producto por cualquier código (EAN o PLU local)
-    Retorna: {"producto_id": 217, "nombre": "LECHE UHT ALQUERIA", "tipo_codigo": "plu_local"}
-    """
+    """Buscar producto por cualquier código"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        # Buscar por EAN primero (universal)
+        # Buscar por EAN
         cursor.execute("""
             SELECT id, nombre_consolidado, codigo_ean
             FROM productos_maestros_v2
@@ -3452,13 +3414,18 @@ def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> d
         return {"encontrado": False}
 
     except Exception as e:
-        print(f"❌ Error buscando producto: {e}")
+        print(f"❌ Error: {e}")
         cursor.close()
         conn.close()
         return {"encontrado": False, "error": str(e)}
 
 
 print("✅ Módulo de códigos por establecimiento cargado")
+
+# ============================================================================
+# ACTUALIZAR create_tables() - AGREGAR AL FINAL
+# ============================================================================
+
 if __name__ == "__main__":
     print("=" * 80)
     print("🔧 LECFAC - Inicializando sistema de base de datos UNIFICADO")
