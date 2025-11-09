@@ -2890,40 +2890,6 @@ async def procesar_factura_v2(
         print(f"   ℹ️  El establecimiento seleccionado por el usuario tiene prioridad")
         print(f"   ℹ️  Cualquier establecimiento detectado por OCR será IGNORADO")
 
-        cursor.execute(
-            "SELECT id, nombre, nombre_normalizado, cadena FROM establecimientos WHERE id = %s",
-            (establecimiento_id,)
-        )
-        establecimiento_db = cursor.fetchone()
-
-        if not establecimiento_db:
-            print(f"   ❌ Establecimiento ID {establecimiento_id} no existe")
-
-            # Obtener el nombre detectado por OCR para ayudar al usuario
-            establecimiento_detectado = "Desconocido"
-            for idx, frame_path in enumerate(frames_para_ocr):
-                if os.path.exists(frame_path):
-                    try:
-                        resultado_temp = parse_invoice_with_claude(frame_path)
-                        if resultado_temp.get('success'):
-                            data_temp = resultado_temp.get('data', {})
-                            establecimiento_temp = data_temp.get('establecimiento', '')
-                            if establecimiento_temp and establecimiento_temp.lower() not in ['desconocido', 'no identificado']:
-                                establecimiento_detectado = establecimiento_temp
-                                break
-                    except:
-                        continue
-
-            raise HTTPException(
-                status_code=400,
-                detail=f"Establecimiento no encontrado. Claude detectó: '{establecimiento_detectado}'. Por favor, créalo primero desde la app."
-            )
-
-        print(f"   ✅ Establecimiento válido:")
-        print(f"      • ID: {establecimiento_db['id']}")
-        print(f"      • Nombre: {establecimiento_db['nombre_normalizado']}")
-        print(f"      • Cadena: {establecimiento_db['cadena']}")
-
         # 3. Crear factura
         print("\n💾 Creando registro de factura...")
         cursor.execute(
