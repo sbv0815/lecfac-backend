@@ -2910,10 +2910,12 @@ async def procesar_factura_v2(
         factura_id = factura['id']
         print(f"   ✅ Factura #{factura_id} creada exitosamente")
 
+        # ✅ CRÍTICO: Hacer commit AQUÍ para que la factura exista en la BD
+        # Esto permite que procesar_item_con_consolidacion pueda insertar en precios_historicos_v2
+        conn.commit()
+        print(f"   ✅ Factura confirmada en BD (permite foreign keys)")
+
         # 4. Consolidación inteligente
-        print("\n" + "="*70)
-# 4. Consolidación inteligente
-# 4. Consolidación inteligente
         print("\n" + "="*70)
         print("🧠 CONSOLIDACIÓN INTELIGENTE DE PRODUCTOS")
         print("="*70)
@@ -2976,7 +2978,6 @@ async def procesar_factura_v2(
 
                 # Continuar con el siguiente item
                 continue
-
         # ✅ FUERA DEL FOR LOOP - Después de procesar TODOS los items
         # 5. Actualizar productos_guardados en factura
         cursor.execute(
