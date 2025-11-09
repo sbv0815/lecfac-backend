@@ -2890,7 +2890,12 @@ async def procesar_factura_v2(
         print(f"   ℹ️  El establecimiento seleccionado por el usuario tiene prioridad")
         print(f"   ℹ️  Cualquier establecimiento detectado por OCR será IGNORADO")
 
-# 3. Crear factura
+# ============================================================================
+# ENDPOINT V2 SIMPLIFICADO - USA FUNCIONES DE database.py
+# Reemplazar en main.py desde "# 3. Crear factura" hasta el final del endpoint
+# ============================================================================
+
+        # 3. Crear factura
         print("\n💾 Creando registro de factura...")
         cursor.execute(
             """INSERT INTO facturas
@@ -2902,18 +2907,18 @@ async def procesar_factura_v2(
                 establecimiento_id,
                 datos_factura['fecha'],
                 datos_factura['total'],
-                establecimiento_db['nombre_normalizado'],  # ✅ Nombre del establecimiento
+                establecimiento_db['nombre_normalizado'],
                 establecimiento_db['cadena']
             )
         )
         factura = cursor.fetchone()
         factura_id = factura['id']
-        print(f"   ✅ Factura #{factura_id} creada exitosamente")
+        print(f"   ✅ Factura #{factura_id} creada")
         print(f"   📍 Establecimiento: {establecimiento_db['nombre_normalizado']}")
 
-        # ✅ CRÍTICO: Hacer commit AQUÍ para que la factura exista en la BD
+        # ✅ COMMIT: Factura debe existir antes de procesar items
         conn.commit()
-        print(f"   ✅ Factura confirmada en BD (permite foreign keys)")
+        print(f"   ✅ Factura confirmada en BD")
 
         # 4. Consolidación inteligente
         print("\n" + "="*70)
@@ -2926,12 +2931,18 @@ async def procesar_factura_v2(
         for idx, item in enumerate(datos_factura['items'], 1):
             try:
                 print(f"\n[{idx}/{len(datos_factura['items'])}]")
+                print(f"📦 Procesando: {item.get('descripcion', 'Sin nombre')}")
 
+                codigo_ocr = item.get('codigo', '')
+                if codigo_ocr:
+                    print(f"   📟 Código: {codigo_ocr}")
+
+                # Procesar con consolidación inteligente
                 producto_id = procesar_item_con_consolidacion(
                     cursor=cursor,
                     item_ocr={
                         'nombre': item.get('descripcion', 'PRODUCTO SIN NOMBRE'),
-                        'codigo': item.get('codigo'),
+                        'codigo': codigo_ocr,
                         'precio': item.get('precio_unitario', 0),
                         'cantidad': item.get('cantidad', 1)
                     },
@@ -2939,22 +2950,15 @@ async def procesar_factura_v2(
                     establecimiento_id=establecimiento_id
                 )
 
-                # ✅ PARCHE CRÍTICO: Sincronizar productos_maestros_v2 → productos_maestros
+                # ✅ Sincronizar a productos_maestros (tabla legacy)
                 try:
-                    cursor.execute("""
-                        SELECT id FROM productos_maestros WHERE id = %s
-                    """, (producto_id,))
+                    cursor.execute("SELECT id FROM productos_maestros WHERE id = %s", (producto_id,))
 
                     if not cursor.fetchone():
-                        print(f"   🔄 Sincronizando producto {producto_id} a productos_maestros...")
+                        print(f"   🔄 Sincronizando producto {producto_id}...")
 
-                        # ✅ CORRECCIÓN: Incluir código PLU
                         cursor.execute("""
-                            SELECT
-                                nombre_consolidado,
-                                codigo_ean,
-                                codigo_plu,
-                                marca
+                            SELECT nombre_consolidado, codigo_ean, marca
                             FROM productos_maestros_v2
                             WHERE id = %s
                         """, (producto_id,))
@@ -2964,32 +2968,48 @@ async def procesar_factura_v2(
                         if producto_v2:
                             cursor.execute("""
                                 INSERT INTO productos_maestros
-                                (id, nombre_normalizado, codigo_ean, codigo_plu, marca, auditado_manualmente, validaciones_manuales)
-                                VALUES (%s, %s, %s, %s, %s, FALSE, 0)
+                                (id, nombre_normalizado, codigo_ean, marca, auditado_manualmente, validaciones_manuales)
+                                VALUES (%s, %s, %s, %s, FALSE, 0)
                                 ON CONFLICT (id) DO UPDATE SET
                                     nombre_normalizado = EXCLUDED.nombre_normalizado,
                                     codigo_ean = EXCLUDED.codigo_ean,
-                                    codigo_plu = EXCLUDED.codigo_plu,
                                     marca = EXCLUDED.marca
                             """, (
                                 producto_id,
                                 producto_v2['nombre_consolidado'],
                                 producto_v2['codigo_ean'],
-                                producto_v2['codigo_plu'],
                                 producto_v2['marca']
                             ))
-                            print(f"   ✅ Producto sincronizado (EAN: {producto_v2['codigo_ean'] or 'N/A'}, PLU: {producto_v2['codigo_plu'] or 'N/A'})")
-                        else:
-                            print(f"   ⚠️  Producto {producto_id} no encontrado en productos_maestros_v2")
+                            print(f"   ✅ Sincronizado a productos_maestros")
                 except Exception as sync_error:
-                    print(f"   ⚠️  Error sincronizando producto: {sync_error}")
-                    import traceback
-                    traceback.print_exc()
+                    print(f"   ⚠️  Error sync: {sync_error}")
 
-                # ✅ Commit después de sincronizar
+                # ✅ NUEVO: Registrar código usando función de database.py
+                if codigo_ocr and len(codigo_ocr) >= 4:
+                    from database import registrar_codigo_producto
+
+                    if registrar_codigo_producto(producto_id, establecimiento_id, codigo_ocr):
+                        # Obtener tipo de código
+                        cursor.execute("""
+                            SELECT tipo_codigo
+                            FROM codigos_establecimiento
+                            WHERE producto_maestro_id = %s
+                              AND establecimiento_id = %s
+                              AND codigo_local = %s
+                            LIMIT 1
+                        """, (producto_id, establecimiento_id, codigo_ocr))
+
+                        tipo = cursor.fetchone()
+                        if tipo:
+                            print(f"   ✅ Código registrado: {codigo_ocr} (tipo: {tipo[0]})")
+                    else:
+                        print(f"   ℹ️  Código {codigo_ocr} no registrado (inválido)")
+
+                # ✅ COMMIT después de registrar producto y código
                 conn.commit()
-                print(f"   ✅ Producto maestro ID {producto_id} confirmado en BD")
+                print(f"   ✅ Producto ID {producto_id} confirmado")
 
+                # Insertar item en factura
                 cursor.execute(
                     """INSERT INTO items_factura
                        (factura_id, usuario_id, producto_maestro_id, nombre_leido, codigo_leido,
@@ -3001,14 +3021,14 @@ async def procesar_factura_v2(
                         user_id,
                         producto_id,
                         item.get('descripcion'),
-                        item.get('codigo'),
+                        codigo_ocr,
                         item.get('cantidad', 1),
                         item.get('precio_unitario', 0)
                     )
                 )
                 item_id = cursor.fetchone()['id']
 
-                # ✅ Commit después de insertar el item
+                # ✅ COMMIT después de insertar item
                 conn.commit()
                 print(f"   ✅ Item #{item_id} guardado")
 
@@ -3016,6 +3036,7 @@ async def procesar_factura_v2(
                     'item_id': item_id,
                     'producto_id': producto_id,
                     'nombre': item.get('descripcion'),
+                    'codigo': codigo_ocr,
                     'precio': item.get('precio_unitario')
                 })
 
@@ -3029,11 +3050,9 @@ async def procesar_factura_v2(
                 errores.append(error_msg)
                 continue
 
-        # 5. Actualizar productos_guardados en factura
+        # 5. Actualizar contador
         cursor.execute(
-            """UPDATE facturas
-               SET productos_guardados = %s
-               WHERE id = %s""",
+            "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
             (len(items_procesados), factura_id)
         )
 
@@ -3042,7 +3061,6 @@ async def procesar_factura_v2(
             SELECT
                 COUNT(*) as total_productos,
                 COUNT(CASE WHEN codigo_ean IS NOT NULL THEN 1 END) as con_ean,
-                COUNT(CASE WHEN codigo_ean IS NULL THEN 1 END) as sin_ean,
                 COUNT(CASE WHEN estado = 'verificado' THEN 1 END) as verificados,
                 COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as pendientes,
                 COALESCE(AVG(confianza_datos), 0) as confianza_promedio
@@ -3050,30 +3068,47 @@ async def procesar_factura_v2(
         """)
         stats = cursor.fetchone()
 
+        # Estadísticas de códigos
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_codigos,
+                COUNT(DISTINCT producto_maestro_id) as productos_con_codigos,
+                COUNT(CASE WHEN tipo_codigo = 'plu_local' THEN 1 END) as plu_locales,
+                COUNT(CASE WHEN tipo_codigo = 'plu_estandar' THEN 1 END) as plu_estandares,
+                COUNT(CASE WHEN tipo_codigo = 'ean' THEN 1 END) as eans
+            FROM codigos_establecimiento
+            WHERE establecimiento_id = %s AND activo = TRUE
+        """, (establecimiento_id,))
+        stats_codigos = cursor.fetchone()
+
         print("\n" + "="*70)
-        print("📈 ESTADÍSTICAS DEL SISTEMA V2")
+        print("📈 ESTADÍSTICAS")
         print("="*70)
-        print(f"Total productos: {stats['total_productos']}")
+        print(f"Productos maestros: {stats['total_productos']}")
         print(f"  • Con EAN: {stats['con_ean']}")
         print(f"  • Verificados: {stats['verificados']}")
-        print(f"  • Pendientes: {stats['pendientes']}")
+        print(f"\nCódigos en {establecimiento_db['nombre_normalizado']}:")
+        print(f"  • Total: {stats_codigos['total_codigos']}")
+        print(f"  • PLU locales: {stats_codigos['plu_locales']}")
+        print(f"  • PLU estándar: {stats_codigos['plu_estandares']}")
+        print(f"  • EANs: {stats_codigos['eans']}")
 
-        # ✅ Commit final
+        # ✅ COMMIT final
         conn.commit()
 
-        # ✅ CRÍTICO: Actualizar inventario del usuario
+        # 7. ✅ CRÍTICO: Actualizar inventario
         print(f"\n📦 Actualizando inventario del usuario {user_id}...")
         try:
             from database import actualizar_inventario_desde_factura
             actualizar_inventario_desde_factura(factura_id, user_id)
-            print(f"✅ Inventario actualizado correctamente")
+            print(f"✅ Inventario actualizado")
         except Exception as e:
-            print(f"⚠️ Error actualizando inventario: {e}")
+            print(f"⚠️  Error inventario: {e}")
             import traceback
             traceback.print_exc()
 
         print("="*70)
-        print("✓ PROCESAMIENTO COMPLETADO")
+        print("✅ PROCESAMIENTO COMPLETADO")
         print("="*70 + "\n")
 
         return {
@@ -3086,10 +3121,16 @@ async def procesar_factura_v2(
             "estadisticas": {
                 "total_productos": int(stats['total_productos']),
                 "con_ean": int(stats['con_ean']),
-                "sin_ean": int(stats['sin_ean']),
                 "verificados": int(stats['verificados']),
                 "pendientes": int(stats['pendientes']),
-                "confianza_promedio": float(stats['confianza_promedio'])
+                "confianza_promedio": float(stats['confianza_promedio']),
+                "codigos": {
+                    "total": int(stats_codigos['total_codigos']),
+                    "productos_con_codigos": int(stats_codigos['productos_con_codigos']),
+                    "plu_locales": int(stats_codigos['plu_locales']),
+                    "plu_estandares": int(stats_codigos['plu_estandares']),
+                    "eans": int(stats_codigos['eans'])
+                }
             }
         }
 
@@ -3867,7 +3908,245 @@ async def fix_mi_rol():
     return {"success": False, "error": "Usuario no encontrado"}
 
 
+# ============================================================================
+# ENDPOINTS PARA CONSULTAR CÓDIGOS POR ESTABLECIMIENTO
+# Agregar a main.py
+# ============================================================================
 
+@app.get("/api/v2/productos/{producto_id}/codigos")
+async def get_codigos_producto(producto_id: int):
+    """
+    Obtener todos los códigos de un producto en diferentes establecimientos
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                ce.id,
+                ce.codigo_local,
+                ce.tipo_codigo,
+                e.nombre_normalizado as establecimiento,
+                ce.veces_visto,
+                ce.primera_vez_visto,
+                ce.ultima_vez_visto
+            FROM codigos_establecimiento ce
+            JOIN establecimientos e ON ce.establecimiento_id = e.id
+            WHERE ce.producto_maestro_id = %s
+              AND ce.activo = TRUE
+            ORDER BY ce.veces_visto DESC
+        """, (producto_id,))
+
+        codigos = []
+        for row in cursor.fetchall():
+            codigos.append({
+                "id": row[0],
+                "codigo": row[1],
+                "tipo": row[2],
+                "establecimiento": row[3],
+                "veces_visto": row[4],
+                "primera_vez": row[5].isoformat() if row[5] else None,
+                "ultima_vez": row[6].isoformat() if row[6] else None
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "producto_id": producto_id,
+            "codigos": codigos,
+            "total": len(codigos)
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/establecimientos/{establecimiento_id}/codigos")
+async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100):
+    """
+    Obtener todos los códigos locales de un establecimiento
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Info del establecimiento
+        cursor.execute("""
+            SELECT nombre_normalizado, cadena
+            FROM establecimientos
+            WHERE id = %s
+        """, (establecimiento_id,))
+
+        establecimiento = cursor.fetchone()
+        if not establecimiento:
+            raise HTTPException(status_code=404, detail="Establecimiento no encontrado")
+
+        # Códigos del establecimiento
+        cursor.execute("""
+            SELECT
+                ce.codigo_local,
+                ce.tipo_codigo,
+                pm.nombre_consolidado as producto,
+                pm.codigo_ean,
+                ce.veces_visto,
+                ce.ultima_vez_visto
+            FROM codigos_establecimiento ce
+            JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
+            WHERE ce.establecimiento_id = %s
+              AND ce.activo = TRUE
+            ORDER BY ce.veces_visto DESC
+            LIMIT %s
+        """, (establecimiento_id, limite))
+
+        codigos = []
+        for row in cursor.fetchall():
+            codigos.append({
+                "codigo_local": row[0],
+                "tipo": row[1],
+                "producto": row[2],
+                "codigo_ean": row[3] or "N/A",
+                "veces_visto": row[4],
+                "ultima_vez": row[5].isoformat() if row[5] else None
+            })
+
+        # Estadísticas
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(CASE WHEN tipo_codigo = 'plu_local' THEN 1 END) as plu_locales,
+                COUNT(CASE WHEN tipo_codigo = 'plu_estandar' THEN 1 END) as plu_estandares,
+                COUNT(CASE WHEN tipo_codigo = 'ean' THEN 1 END) as eans
+            FROM codigos_establecimiento
+            WHERE establecimiento_id = %s AND activo = TRUE
+        """, (establecimiento_id,))
+
+        stats = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "establecimiento": {
+                "id": establecimiento_id,
+                "nombre": establecimiento[0],
+                "cadena": establecimiento[1]
+            },
+            "codigos": codigos,
+            "estadisticas": {
+                "total_codigos": stats[0],
+                "plu_locales": stats[1],
+                "plu_estandares": stats[2],
+                "eans": stats[3]
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/productos/buscar-por-codigo/{codigo}")
+async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None):
+    """
+    Buscar producto por cualquier código (EAN o PLU local)
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Buscar por EAN primero (universal)
+        cursor.execute("""
+            SELECT id, nombre_consolidado, codigo_ean, marca
+            FROM productos_maestros_v2
+            WHERE codigo_ean = %s
+            LIMIT 1
+        """, (codigo,))
+
+        producto = cursor.fetchone()
+
+        if producto:
+            cursor.close()
+            conn.close()
+            return {
+                "success": True,
+                "encontrado": True,
+                "tipo_busqueda": "ean",
+                "producto": {
+                    "id": producto[0],
+                    "nombre": producto[1],
+                    "codigo_ean": producto[2],
+                    "marca": producto[3]
+                }
+            }
+
+        # Buscar por código local
+        if establecimiento_id:
+            cursor.execute("""
+                SELECT
+                    pm.id,
+                    pm.nombre_consolidado,
+                    pm.codigo_ean,
+                    pm.marca,
+                    ce.tipo_codigo
+                FROM codigos_establecimiento ce
+                JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
+                WHERE ce.codigo_local = %s
+                  AND ce.establecimiento_id = %s
+                  AND ce.activo = TRUE
+                LIMIT 1
+            """, (codigo, establecimiento_id))
+        else:
+            cursor.execute("""
+                SELECT
+                    pm.id,
+                    pm.nombre_consolidado,
+                    pm.codigo_ean,
+                    pm.marca,
+                    ce.tipo_codigo
+                FROM codigos_establecimiento ce
+                JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
+                WHERE ce.codigo_local = %s
+                  AND ce.activo = TRUE
+                LIMIT 1
+            """, (codigo,))
+
+        producto = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if producto:
+            return {
+                "success": True,
+                "encontrado": True,
+                "tipo_busqueda": "codigo_local",
+                "producto": {
+                    "id": producto[0],
+                    "nombre": producto[1],
+                    "codigo_ean": producto[2] or "N/A",
+                    "marca": producto[3],
+                    "tipo_codigo": producto[4]
+                }
+            }
+
+        return {
+            "success": True,
+            "encontrado": False,
+            "mensaje": f"No se encontró producto con código {codigo}"
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints de códigos por establecimiento registrados")
 
 
 if __name__ == "__main__":  # ← AGREGAR :
