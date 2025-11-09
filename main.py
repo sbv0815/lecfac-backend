@@ -2866,41 +2866,26 @@ async def procesar_factura_v2(
             )
 
         # ✅ Validar que el establecimiento existe
+        # ✅ Validar que el establecimiento existe
         print("\n🏪 Validando establecimiento...")
 
         cursor.execute(
-            "SELECT id, nombre, nombre_normalizado, cadena FROM establecimientos WHERE id = %s",
+            "SELECT id, nombre_normalizado, cadena FROM establecimientos WHERE id = %s",
             (establecimiento_id,)
-        )
+            )
         establecimiento_db = cursor.fetchone()
 
         if not establecimiento_db:
             print(f"   ❌ Establecimiento ID {establecimiento_id} no existe")
 
-            # Obtener el nombre detectado por OCR para ayudar al usuario
-            establecimiento_detectado = "Desconocido"
-            for idx, frame_path in enumerate(frames_para_ocr):
-                if os.path.exists(frame_path):
-                    try:
-                        resultado_temp = parse_invoice_with_claude(frame_path)
-                        if resultado_temp.get('success'):
-                            data_temp = resultado_temp.get('data', {})
-                            establecimiento_temp = data_temp.get('establecimiento', '')
-                            if establecimiento_temp and establecimiento_temp.lower() not in ['desconocido', 'no identificado']:
-                                establecimiento_detectado = establecimiento_temp
-                                break
-                    except:
-                        continue
-
             raise HTTPException(
                 status_code=400,
-                detail=f"Establecimiento no encontrado. Claude detectó: '{establecimiento_detectado}'. Por favor, créalo primero desde la app."
+        detail=f"Establecimiento ID {establecimiento_id} no encontrado. Por favor, créalo primero desde la app."
             )
 
-        # ✅ AHORA SÍ podemos usar establecimiento_db porque ya existe
         print(f"   ✅ Establecimiento válido:")
         print(f"      • ID: {establecimiento_db['id']}")
-        print(f"      • Nombre: {establecimiento_db['nombre']}")
+        print(f"      • Nombre: {establecimiento_db['nombre_normalizado']}")
         print(f"      • Cadena: {establecimiento_db['cadena']}")
         print(f"   ℹ️  El establecimiento seleccionado por el usuario tiene prioridad")
         print(f"   ℹ️  Cualquier establecimiento detectado por OCR será IGNORADO")
@@ -2936,7 +2921,7 @@ async def procesar_factura_v2(
 
         print(f"   ✅ Establecimiento válido:")
         print(f"      • ID: {establecimiento_db['id']}")
-        print(f"      • Nombre: {establecimiento_db['nombre']}")
+        print(f"      • Nombre: {establecimiento_db['nombre_normalizado']}")
         print(f"      • Cadena: {establecimiento_db['cadena']}")
 
         # 3. Crear factura
@@ -2951,7 +2936,7 @@ async def procesar_factura_v2(
                 establecimiento_id,
                 datos_factura['fecha'],
                 datos_factura['total'],
-                establecimiento_db['nombre'],
+                establecimiento_db['nombre_normalizado'],
                 establecimiento_db['cadena']
             )
         )
