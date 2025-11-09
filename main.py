@@ -2949,11 +2949,16 @@ async def procesar_factura_v2(
                     if not cursor.fetchone():
                         print(f"   🔄 Sincronizando producto {producto_id} a productos_maestros...")
 
-                        # Obtener datos de productos_maestros_v2
+                        # ✅ CORRECCIÓN: productos_maestros_v2 usa categoria_id, no categoria
                         cursor.execute("""
-                            SELECT nombre_consolidado, codigo_ean, marca, categoria
-                            FROM productos_maestros_v2
-                            WHERE id = %s
+                            SELECT
+                                pm.nombre_consolidado,
+                                pm.codigo_ean,
+                                pm.marca,
+                                c.nombre as categoria_nombre
+                            FROM productos_maestros_v2 pm
+                            LEFT JOIN categorias c ON pm.categoria_id = c.id
+                            WHERE pm.id = %s
                         """, (producto_id,))
 
                         producto_v2 = cursor.fetchone()
@@ -2974,7 +2979,7 @@ async def procesar_factura_v2(
                                 producto_v2['nombre_consolidado'],
                                 producto_v2['codigo_ean'],
                                 producto_v2['marca'],
-                                producto_v2['categoria']
+                                producto_v2['categoria_nombre']
                             ))
                             print(f"   ✅ Producto sincronizado a productos_maestros")
                         else:
