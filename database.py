@@ -3076,6 +3076,11 @@ def comparar_precios_establecimientos(
 # Reemplazar las funciones anteriores con estas
 # ============================================================================
 
+# ============================================================================
+# VERSIÓN FINAL ROBUSTA - database.py
+# Reemplazar las funciones anteriores con estas
+# ============================================================================
+
 def crear_tabla_codigos_establecimiento():
     """
     Crear tabla codigos_establecimiento y funciones relacionadas

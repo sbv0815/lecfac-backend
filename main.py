@@ -4148,6 +4148,78 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
 
 print("✅ Endpoints de códigos por establecimiento registrados")
 
+# ============================================================================
+# ENDPOINT TEMPORAL PARA FORZAR CREACIÓN
+# Agregar a main.py temporalmente
+# ============================================================================
+
+@app.get("/admin/setup-codigos-establecimiento")
+async def setup_codigos_establecimiento():
+    """
+    Endpoint de emergencia para crear el sistema de códigos
+    Ejecutar visitando: https://tu-app.railway.app/admin/setup-codigos-establecimiento
+    """
+    try:
+        print("\n" + "="*70)
+        print("🔧 FORZANDO CREACIÓN DE SISTEMA DE CÓDIGOS")
+        print("="*70)
+
+        from database import crear_tabla_codigos_establecimiento, verificar_sistema_codigos
+
+        # Intentar crear
+        resultado = crear_tabla_codigos_establecimiento()
+
+        if resultado:
+            print("✅ Creación exitosa, verificando...")
+            verificacion = verificar_sistema_codigos()
+
+            return {
+                "success": True,
+                "mensaje": "Sistema de códigos instalado correctamente",
+                "verificacion": verificacion
+            }
+        else:
+            return {
+                "success": False,
+                "error": "No se pudo crear el sistema (ver logs del servidor)"
+            }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/admin/verificar-codigos")
+async def verificar_codigos():
+    """
+    Verificar estado del sistema de códigos
+    """
+    try:
+        from database import verificar_sistema_codigos
+
+        existe = verificar_sistema_codigos()
+
+        return {
+            "success": True,
+            "sistema_instalado": existe,
+            "mensaje": "Sistema instalado correctamente" if existe else "Sistema NO instalado"
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+print("✅ Endpoints de setup agregados")
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
