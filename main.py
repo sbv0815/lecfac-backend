@@ -2939,8 +2939,52 @@ async def procesar_factura_v2(
                     establecimiento_id=establecimiento_id
                 )
 
-                # ✅ CRÍTICO: Commit INMEDIATAMENTE después de crear el producto maestro
-                # Esto asegura que el producto exista en BD antes de usarlo en items_factura
+                # ✅ PARCHE CRÍTICO: Sincronizar productos_maestros_v2 → productos_maestros
+                # items_factura tiene FK a productos_maestros (tabla vieja), no a productos_maestros_v2
+                try:
+                    cursor.execute("""
+                        SELECT id FROM productos_maestros WHERE id = %s
+                    """, (producto_id,))
+
+                    if not cursor.fetchone():
+                        print(f"   🔄 Sincronizando producto {producto_id} a productos_maestros...")
+
+                        # Obtener datos de productos_maestros_v2
+                        cursor.execute("""
+                            SELECT nombre_consolidado, codigo_ean, marca, categoria
+                            FROM productos_maestros_v2
+                            WHERE id = %s
+                        """, (producto_id,))
+
+                        producto_v2 = cursor.fetchone()
+
+                        if producto_v2:
+                            cursor.execute("""
+                                INSERT INTO productos_maestros
+                                (id, nombre_normalizado, codigo_ean, marca, categoria,
+                                 auditado_manualmente, validaciones_manuales)
+                                VALUES (%s, %s, %s, %s, %s, FALSE, 0)
+                                ON CONFLICT (id) DO UPDATE SET
+                                    nombre_normalizado = EXCLUDED.nombre_normalizado,
+                                    codigo_ean = EXCLUDED.codigo_ean,
+                                    marca = EXCLUDED.marca,
+                                    categoria = EXCLUDED.categoria
+                            """, (
+                                producto_id,
+                                producto_v2['nombre_consolidado'],
+                                producto_v2['codigo_ean'],
+                                producto_v2['marca'],
+                                producto_v2['categoria']
+                            ))
+                            print(f"   ✅ Producto sincronizado a productos_maestros")
+                        else:
+                            print(f"   ⚠️  Producto {producto_id} no encontrado en productos_maestros_v2")
+                except Exception as sync_error:
+                    print(f"   ⚠️  Error sincronizando producto: {sync_error}")
+                    import traceback
+                    traceback.print_exc()
+
+                # ✅ Commit después de sincronizar
                 conn.commit()
                 print(f"   ✅ Producto maestro ID {producto_id} confirmado en BD")
 
@@ -2962,7 +3006,7 @@ async def procesar_factura_v2(
                 )
                 item_id = cursor.fetchone()['id']
 
-                # ✅ Commit después de insertar el item también
+                # ✅ Commit después de insertar el item
                 conn.commit()
                 print(f"   ✅ Item #{item_id} guardado")
 
