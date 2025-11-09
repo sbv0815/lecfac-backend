@@ -3062,7 +3062,403 @@ def comparar_precios_establecimientos(
             conn.close()
         return {'error': str(e)}
 
+# ============================================================================
+# AGREGAR AL FINAL DE database.py (antes del if __name__ == "__main__")
+# Sistema de códigos por establecimiento
+# ============================================================================
 
+def crear_tabla_codigos_establecimiento(conn):
+    """
+    Crear tabla codigos_establecimiento y funciones relacionadas
+    Maneja códigos PLU locales por supermercado
+    """
+    cursor = conn.cursor()
+
+    try:
+        print("📦 Creando tabla codigos_establecimiento...")
+
+        # 1. Crear tabla principal
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS codigos_establecimiento (
+                id SERIAL PRIMARY KEY,
+                producto_maestro_id INTEGER NOT NULL REFERENCES productos_maestros_v2(id) ON DELETE CASCADE,
+                establecimiento_id INTEGER NOT NULL REFERENCES establecimientos(id) ON DELETE CASCADE,
+                codigo_local VARCHAR(50) NOT NULL,
+                tipo_codigo VARCHAR(20) NOT NULL,
+                primera_vez_visto TIMESTAMP DEFAULT NOW(),
+                ultima_vez_visto TIMESTAMP DEFAULT NOW(),
+                veces_visto INTEGER DEFAULT 1,
+                activo BOOLEAN DEFAULT TRUE,
+                notas TEXT,
+                UNIQUE(producto_maestro_id, establecimiento_id, codigo_local)
+            )
+        """)
+        print("   ✅ Tabla codigos_establecimiento creada")
+
+        # 2. Crear índices
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_codigos_est_producto
+            ON codigos_establecimiento(producto_maestro_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_codigos_est_establecimiento
+            ON codigos_establecimiento(establecimiento_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_codigos_est_codigo
+            ON codigos_establecimiento(codigo_local)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_codigos_est_tipo
+            ON codigos_establecimiento(tipo_codigo)
+        """)
+        print("   ✅ Índices creados")
+
+        # 3. Crear función identificar_tipo_codigo
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION identificar_tipo_codigo(codigo TEXT)
+            RETURNS TEXT AS $$
+            BEGIN
+                -- Validar que no sea NULL o vacío
+                IF codigo IS NULL OR LENGTH(codigo) < 4 THEN
+                    RETURN 'invalido';
+                END IF;
+
+                -- EAN: 8, 13, 14 dígitos
+                IF LENGTH(codigo) IN (8, 13, 14) AND codigo ~ '^[0-9]+$' THEN
+                    RETURN 'ean';
+                END IF;
+
+                -- PLU estándar: 4-5 dígitos en rango 3000-4999
+                IF LENGTH(codigo) IN (4, 5) AND codigo ~ '^[0-9]+$' THEN
+                    IF codigo::INTEGER BETWEEN 3000 AND 4999 THEN
+                        RETURN 'plu_estandar';
+                    END IF;
+                END IF;
+
+                -- Código local/interno: 6+ dígitos o fuera de rango PLU
+                IF codigo ~ '^[0-9]+$' THEN
+                    RETURN 'plu_local';
+                END IF;
+
+                -- Otros códigos alfanuméricos
+                RETURN 'otro';
+            END;
+            $$ LANGUAGE plpgsql IMMUTABLE;
+        """)
+        print("   ✅ Función identificar_tipo_codigo() creada")
+
+        # 4. Crear función registrar_codigo_establecimiento
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION registrar_codigo_establecimiento(
+                p_producto_id INTEGER,
+                p_establecimiento_id INTEGER,
+                p_codigo TEXT
+            )
+            RETURNS INTEGER AS $$
+            DECLARE
+                v_codigo_id INTEGER;
+                v_tipo_codigo TEXT;
+            BEGIN
+                -- Identificar tipo de código
+                v_tipo_codigo := identificar_tipo_codigo(p_codigo);
+
+                -- Si es inválido, no guardar
+                IF v_tipo_codigo = 'invalido' THEN
+                    RETURN NULL;
+                END IF;
+
+                -- Insertar o actualizar
+                INSERT INTO codigos_establecimiento
+                    (producto_maestro_id, establecimiento_id, codigo_local, tipo_codigo, veces_visto)
+                VALUES
+                    (p_producto_id, p_establecimiento_id, p_codigo, v_tipo_codigo, 1)
+                ON CONFLICT (producto_maestro_id, establecimiento_id, codigo_local)
+                DO UPDATE SET
+                    ultima_vez_visto = NOW(),
+                    veces_visto = codigos_establecimiento.veces_visto + 1,
+                    activo = TRUE
+                RETURNING id INTO v_codigo_id;
+
+                RETURN v_codigo_id;
+            END;
+            $$ LANGUAGE plpgsql;
+        """)
+        print("   ✅ Función registrar_codigo_establecimiento() creada")
+
+        # 5. Crear vista para consultas fáciles
+        cursor.execute("""
+            CREATE OR REPLACE VIEW v_codigos_producto AS
+            SELECT
+                ce.id,
+                ce.producto_maestro_id,
+                pm.nombre_consolidado as producto_nombre,
+                pm.codigo_ean,
+                ce.establecimiento_id,
+                e.nombre_normalizado as establecimiento_nombre,
+                ce.codigo_local,
+                ce.tipo_codigo,
+                ce.primera_vez_visto,
+                ce.ultima_vez_visto,
+                ce.veces_visto,
+                ce.activo
+            FROM codigos_establecimiento ce
+            JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
+            JOIN establecimientos e ON ce.establecimiento_id = e.id
+            WHERE ce.activo = TRUE
+            ORDER BY ce.veces_visto DESC
+        """)
+        print("   ✅ Vista v_codigos_producto creada")
+
+        conn.commit()
+        print("✅ Sistema de códigos por establecimiento configurado correctamente")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error creando tabla codigos_establecimiento: {e}")
+        conn.rollback()
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def migrar_codigos_existentes(conn):
+    """
+    Migrar códigos PLU de items_factura a codigos_establecimiento
+    Solo para datos existentes
+    """
+    cursor = conn.cursor()
+
+    try:
+        print("🔄 Migrando códigos existentes...")
+
+        # Verificar si la tabla existe
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'codigos_establecimiento'
+            )
+        """)
+
+        if not cursor.fetchone()[0]:
+            print("   ⚠️  Tabla codigos_establecimiento no existe, saltando migración")
+            return False
+
+        # Migrar códigos de items_factura
+        cursor.execute("""
+            INSERT INTO codigos_establecimiento
+                (producto_maestro_id, establecimiento_id, codigo_local, tipo_codigo, veces_visto)
+            SELECT
+                ite.producto_maestro_id,
+                f.establecimiento_id,
+                ite.codigo_leido,
+                identificar_tipo_codigo(ite.codigo_leido),
+                COUNT(*) as veces_visto
+            FROM items_factura ite
+            JOIN facturas f ON ite.factura_id = f.id
+            WHERE ite.codigo_leido IS NOT NULL
+              AND ite.codigo_leido != ''
+              AND ite.producto_maestro_id IS NOT NULL
+              AND LENGTH(ite.codigo_leido) >= 4
+              AND identificar_tipo_codigo(ite.codigo_leido) IN ('plu_local', 'plu_estandar', 'otro')
+            GROUP BY ite.producto_maestro_id, f.establecimiento_id, ite.codigo_leido
+            ON CONFLICT (producto_maestro_id, establecimiento_id, codigo_local)
+            DO UPDATE SET
+                veces_visto = EXCLUDED.veces_visto,
+                ultima_vez_visto = NOW()
+        """)
+
+        migrados = cursor.rowcount
+        conn.commit()
+
+        print(f"   ✅ {migrados} códigos migrados desde items_factura")
+        return True
+
+    except Exception as e:
+        print(f"   ⚠️  Error en migración (es normal si no hay datos): {e}")
+        conn.rollback()
+        return False
+
+
+# ============================================================================
+# ACTUALIZAR LA FUNCIÓN create_tables() EXISTENTE
+# ============================================================================
+
+# BUSCAR la función create_tables() en database.py y AGREGAR al final:
+
+def create_tables():
+    """Crear todas las tablas del sistema"""
+    # ... [código existente de create_tables] ...
+
+    # ✅ AGREGAR AL FINAL (antes del conn.close()):
+
+    # Sistema de códigos por establecimiento
+    crear_tabla_codigos_establecimiento(conn)
+
+    # Migrar datos existentes (solo la primera vez)
+    migrar_codigos_existentes(conn)
+
+    conn.close()
+    print("✅ Todas las tablas creadas correctamente")
+
+
+# ============================================================================
+# FUNCIONES AUXILIARES PARA USAR EN EL CÓDIGO
+# ============================================================================
+
+def registrar_codigo_producto(producto_id: int, establecimiento_id: int, codigo: str) -> bool:
+    """
+    Registrar un código local para un producto en un establecimiento
+    Uso: registrar_codigo_producto(217, 3, "1191286")
+    """
+    if not codigo or len(codigo) < 4:
+        return False
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT registrar_codigo_establecimiento(%s, %s, %s)
+        """, (producto_id, establecimiento_id, codigo))
+
+        codigo_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return codigo_id is not None
+
+    except Exception as e:
+        print(f"❌ Error registrando código: {e}")
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return False
+
+
+def obtener_codigos_producto(producto_id: int) -> list:
+    """
+    Obtener todos los códigos de un producto en diferentes establecimientos
+    Retorna: [{"codigo": "1191286", "tipo": "plu_local", "establecimiento": "EXITO", ...}, ...]
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                ce.codigo_local,
+                ce.tipo_codigo,
+                e.nombre_normalizado as establecimiento,
+                ce.veces_visto,
+                ce.primera_vez_visto,
+                ce.ultima_vez_visto
+            FROM codigos_establecimiento ce
+            JOIN establecimientos e ON ce.establecimiento_id = e.id
+            WHERE ce.producto_maestro_id = %s
+              AND ce.activo = TRUE
+            ORDER BY ce.veces_visto DESC
+        """, (producto_id,))
+
+        codigos = []
+        for row in cursor.fetchall():
+            codigos.append({
+                "codigo": row[0],
+                "tipo": row[1],
+                "establecimiento": row[2],
+                "veces_visto": row[3],
+                "primera_vez": row[4],
+                "ultima_vez": row[5]
+            })
+
+        cursor.close()
+        conn.close()
+        return codigos
+
+    except Exception as e:
+        print(f"❌ Error obteniendo códigos: {e}")
+        cursor.close()
+        conn.close()
+        return []
+
+
+def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> dict:
+    """
+    Buscar producto por cualquier código (EAN o PLU local)
+    Retorna: {"producto_id": 217, "nombre": "LECHE UHT ALQUERIA", "tipo_codigo": "plu_local"}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Buscar por EAN primero (universal)
+        cursor.execute("""
+            SELECT id, nombre_consolidado, codigo_ean
+            FROM productos_maestros_v2
+            WHERE codigo_ean = %s
+            LIMIT 1
+        """, (codigo,))
+
+        producto = cursor.fetchone()
+        if producto:
+            cursor.close()
+            conn.close()
+            return {
+                "encontrado": True,
+                "producto_id": producto[0],
+                "nombre": producto[1],
+                "codigo_ean": producto[2],
+                "tipo_busqueda": "ean"
+            }
+
+        # Buscar por código local
+        if establecimiento_id:
+            cursor.execute("""
+                SELECT pm.id, pm.nombre_consolidado, ce.tipo_codigo
+                FROM codigos_establecimiento ce
+                JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
+                WHERE ce.codigo_local = %s
+                  AND ce.establecimiento_id = %s
+                  AND ce.activo = TRUE
+                LIMIT 1
+            """, (codigo, establecimiento_id))
+        else:
+            cursor.execute("""
+                SELECT pm.id, pm.nombre_consolidado, ce.tipo_codigo
+                FROM codigos_establecimiento ce
+                JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
+                WHERE ce.codigo_local = %s
+                  AND ce.activo = TRUE
+                LIMIT 1
+            """, (codigo,))
+
+        producto = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if producto:
+            return {
+                "encontrado": True,
+                "producto_id": producto[0],
+                "nombre": producto[1],
+                "tipo_codigo": producto[2],
+                "tipo_busqueda": "codigo_local"
+            }
+
+        return {"encontrado": False}
+
+    except Exception as e:
+        print(f"❌ Error buscando producto: {e}")
+        cursor.close()
+        conn.close()
+        return {"encontrado": False, "error": str(e)}
+
+
+print("✅ Módulo de códigos por establecimiento cargado")
 if __name__ == "__main__":
     print("=" * 80)
     print("🔧 LECFAC - Inicializando sistema de base de datos UNIFICADO")
