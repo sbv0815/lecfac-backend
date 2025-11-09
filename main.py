@@ -2902,13 +2902,14 @@ async def procesar_factura_v2(
                 establecimiento_id,
                 datos_factura['fecha'],
                 datos_factura['total'],
-                establecimiento_db['nombre_normalizado'],
+                establecimiento_db['nombre_normalizado'],  # ✅ Nombre del establecimiento
                 establecimiento_db['cadena']
             )
         )
         factura = cursor.fetchone()
         factura_id = factura['id']
         print(f"   ✅ Factura #{factura_id} creada exitosamente")
+        print(f"   📍 Establecimiento: {establecimiento_db['nombre_normalizado']}")
 
         # ✅ CRÍTICO: Hacer commit AQUÍ para que la factura exista en la BD
         conn.commit()
@@ -2947,11 +2948,12 @@ async def procesar_factura_v2(
                     if not cursor.fetchone():
                         print(f"   🔄 Sincronizando producto {producto_id} a productos_maestros...")
 
-                        # ✅ SIMPLIFICADO: Sin categorías
+                        # ✅ CORRECCIÓN: Incluir código PLU
                         cursor.execute("""
                             SELECT
                                 nombre_consolidado,
                                 codigo_ean,
+                                codigo_plu,
                                 marca
                             FROM productos_maestros_v2
                             WHERE id = %s
@@ -2962,19 +2964,21 @@ async def procesar_factura_v2(
                         if producto_v2:
                             cursor.execute("""
                                 INSERT INTO productos_maestros
-                                (id, nombre_normalizado, codigo_ean, marca, auditado_manualmente, validaciones_manuales)
-                                VALUES (%s, %s, %s, %s, FALSE, 0)
+                                (id, nombre_normalizado, codigo_ean, codigo_plu, marca, auditado_manualmente, validaciones_manuales)
+                                VALUES (%s, %s, %s, %s, %s, FALSE, 0)
                                 ON CONFLICT (id) DO UPDATE SET
                                     nombre_normalizado = EXCLUDED.nombre_normalizado,
                                     codigo_ean = EXCLUDED.codigo_ean,
+                                    codigo_plu = EXCLUDED.codigo_plu,
                                     marca = EXCLUDED.marca
                             """, (
                                 producto_id,
                                 producto_v2['nombre_consolidado'],
                                 producto_v2['codigo_ean'],
+                                producto_v2['codigo_plu'],
                                 producto_v2['marca']
                             ))
-                            print(f"   ✅ Producto sincronizado a productos_maestros")
+                            print(f"   ✅ Producto sincronizado (EAN: {producto_v2['codigo_ean'] or 'N/A'}, PLU: {producto_v2['codigo_plu'] or 'N/A'})")
                         else:
                             print(f"   ⚠️  Producto {producto_id} no encontrado en productos_maestros_v2")
                 except Exception as sync_error:
@@ -3016,17 +3020,13 @@ async def procesar_factura_v2(
                 })
 
             except Exception as e:
-                # ✅ Hacer rollback SOLO del item fallido
                 conn.rollback()
-
-                # ✅ Recrear cursor después del rollback
                 cursor.close()
                 cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
                 error_msg = f"Error en item '{item.get('descripcion', 'N/A')}': {str(e)}"
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
-
                 continue
 
         # 5. Actualizar productos_guardados en factura
@@ -3060,6 +3060,17 @@ async def procesar_factura_v2(
 
         # ✅ Commit final
         conn.commit()
+
+        # ✅ CRÍTICO: Actualizar inventario del usuario
+        print(f"\n📦 Actualizando inventario del usuario {user_id}...")
+        try:
+            from database import actualizar_inventario_desde_factura
+            actualizar_inventario_desde_factura(factura_id, user_id)
+            print(f"✅ Inventario actualizado correctamente")
+        except Exception as e:
+            print(f"⚠️ Error actualizando inventario: {e}")
+            import traceback
+            traceback.print_exc()
 
         print("="*70)
         print("✓ PROCESAMIENTO COMPLETADO")
