@@ -2911,7 +2911,6 @@ async def procesar_factura_v2(
         print(f"   ✅ Factura #{factura_id} creada exitosamente")
 
         # ✅ CRÍTICO: Hacer commit AQUÍ para que la factura exista en la BD
-        # Esto permite que procesar_item_con_consolidacion pueda insertar en precios_historicos_v2
         conn.commit()
         print(f"   ✅ Factura confirmada en BD (permite foreign keys)")
 
@@ -2940,7 +2939,6 @@ async def procesar_factura_v2(
                 )
 
                 # ✅ PARCHE CRÍTICO: Sincronizar productos_maestros_v2 → productos_maestros
-                # items_factura tiene FK a productos_maestros (tabla vieja), no a productos_maestros_v2
                 try:
                     cursor.execute("""
                         SELECT id FROM productos_maestros WHERE id = %s
@@ -2949,16 +2947,14 @@ async def procesar_factura_v2(
                     if not cursor.fetchone():
                         print(f"   🔄 Sincronizando producto {producto_id} a productos_maestros...")
 
-                        # ✅ CORRECCIÓN: productos_maestros_v2 usa categoria_id, no categoria
+                        # ✅ SIMPLIFICADO: Sin categorías
                         cursor.execute("""
                             SELECT
-                                pm.nombre_consolidado,
-                                pm.codigo_ean,
-                                pm.marca,
-                                c.nombre as categoria_nombre
-                            FROM productos_maestros_v2 pm
-                            LEFT JOIN categorias c ON pm.categoria_id = c.id
-                            WHERE pm.id = %s
+                                nombre_consolidado,
+                                codigo_ean,
+                                marca
+                            FROM productos_maestros_v2
+                            WHERE id = %s
                         """, (producto_id,))
 
                         producto_v2 = cursor.fetchone()
@@ -2966,20 +2962,17 @@ async def procesar_factura_v2(
                         if producto_v2:
                             cursor.execute("""
                                 INSERT INTO productos_maestros
-                                (id, nombre_normalizado, codigo_ean, marca, categoria,
-                                 auditado_manualmente, validaciones_manuales)
-                                VALUES (%s, %s, %s, %s, %s, FALSE, 0)
+                                (id, nombre_normalizado, codigo_ean, marca, auditado_manualmente, validaciones_manuales)
+                                VALUES (%s, %s, %s, %s, FALSE, 0)
                                 ON CONFLICT (id) DO UPDATE SET
                                     nombre_normalizado = EXCLUDED.nombre_normalizado,
                                     codigo_ean = EXCLUDED.codigo_ean,
-                                    marca = EXCLUDED.marca,
-                                    categoria = EXCLUDED.categoria
+                                    marca = EXCLUDED.marca
                             """, (
                                 producto_id,
                                 producto_v2['nombre_consolidado'],
                                 producto_v2['codigo_ean'],
-                                producto_v2['marca'],
-                                producto_v2['categoria_nombre']
+                                producto_v2['marca']
                             ))
                             print(f"   ✅ Producto sincronizado a productos_maestros")
                         else:
@@ -3023,8 +3016,7 @@ async def procesar_factura_v2(
                 })
 
             except Exception as e:
-                # ✅ CRÍTICO: Hacer rollback SOLO del item fallido
-                # La factura y los productos anteriores ya están confirmados con commit
+                # ✅ Hacer rollback SOLO del item fallido
                 conn.rollback()
 
                 # ✅ Recrear cursor después del rollback
@@ -3035,10 +3027,8 @@ async def procesar_factura_v2(
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
 
-                # Continuar con el siguiente item
                 continue
 
-        # ✅ FUERA DEL FOR LOOP - Después de procesar TODOS los items
         # 5. Actualizar productos_guardados en factura
         cursor.execute(
             """UPDATE facturas
@@ -3068,7 +3058,7 @@ async def procesar_factura_v2(
         print(f"  • Verificados: {stats['verificados']}")
         print(f"  • Pendientes: {stats['pendientes']}")
 
-        # ✅ Commit final para las estadísticas
+        # ✅ Commit final
         conn.commit()
 
         print("="*70)
