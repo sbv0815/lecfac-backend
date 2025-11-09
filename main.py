@@ -2802,6 +2802,8 @@ async def procesar_factura_v2(
         todos_los_items = []
         total_acumulado = 0
         fecha_factura = None
+        print(f"🏪 Establecimiento seleccionado por usuario: {establecimiento_db['nombre']} (ID: {establecimiento_id})")
+        print(f"   → Cualquier establecimiento detectado por OCR será IGNORADO")
 
         # ✅ LOOP DE PROCESAMIENTO DE FRAMES
         for idx, frame_path in enumerate(frames_para_ocr, 1):
