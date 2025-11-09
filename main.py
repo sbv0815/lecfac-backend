@@ -2890,7 +2890,7 @@ async def procesar_factura_v2(
         print(f"   ℹ️  El establecimiento seleccionado por el usuario tiene prioridad")
         print(f"   ℹ️  Cualquier establecimiento detectado por OCR será IGNORADO")
 
-        # 3. Crear factura
+# 3. Crear factura
         print("\n💾 Creando registro de factura...")
         cursor.execute(
             """INSERT INTO facturas
@@ -2939,6 +2939,11 @@ async def procesar_factura_v2(
                     establecimiento_id=establecimiento_id
                 )
 
+                # ✅ CRÍTICO: Commit INMEDIATAMENTE después de crear el producto maestro
+                # Esto asegura que el producto exista en BD antes de usarlo en items_factura
+                conn.commit()
+                print(f"   ✅ Producto maestro ID {producto_id} confirmado en BD")
+
                 cursor.execute(
                     """INSERT INTO items_factura
                        (factura_id, usuario_id, producto_maestro_id, nombre_leido, codigo_leido,
@@ -2957,6 +2962,10 @@ async def procesar_factura_v2(
                 )
                 item_id = cursor.fetchone()['id']
 
+                # ✅ Commit después de insertar el item también
+                conn.commit()
+                print(f"   ✅ Item #{item_id} guardado")
+
                 items_procesados.append({
                     'item_id': item_id,
                     'producto_id': producto_id,
@@ -2965,7 +2974,8 @@ async def procesar_factura_v2(
                 })
 
             except Exception as e:
-                # ✅ CRÍTICO: Hacer rollback para que el siguiente INSERT funcione
+                # ✅ CRÍTICO: Hacer rollback SOLO del item fallido
+                # La factura y los productos anteriores ya están confirmados con commit
                 conn.rollback()
 
                 # ✅ Recrear cursor después del rollback
@@ -2978,6 +2988,7 @@ async def procesar_factura_v2(
 
                 # Continuar con el siguiente item
                 continue
+
         # ✅ FUERA DEL FOR LOOP - Después de procesar TODOS los items
         # 5. Actualizar productos_guardados en factura
         cursor.execute(
@@ -3008,6 +3019,7 @@ async def procesar_factura_v2(
         print(f"  • Verificados: {stats['verificados']}")
         print(f"  • Pendientes: {stats['pendientes']}")
 
+        # ✅ Commit final para las estadísticas
         conn.commit()
 
         print("="*70)
@@ -3041,7 +3053,6 @@ async def procesar_factura_v2(
     finally:
         cursor.close()
         conn.close()
-
 
 @app.get("/api/v2/productos/pendientes")
 async def productos_pendientes_revision(limite: int = 50):
