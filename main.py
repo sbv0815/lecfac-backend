@@ -2912,6 +2912,9 @@ async def procesar_factura_v2(
 
         # 4. Consolidación inteligente
         print("\n" + "="*70)
+# 4. Consolidación inteligente
+# 4. Consolidación inteligente
+        print("\n" + "="*70)
         print("🧠 CONSOLIDACIÓN INTELIGENTE DE PRODUCTOS")
         print("="*70)
 
@@ -2960,10 +2963,21 @@ async def procesar_factura_v2(
                 })
 
             except Exception as e:
+                # ✅ CRÍTICO: Hacer rollback para que el siguiente INSERT funcione
+                conn.rollback()
+
+                # ✅ Recrear cursor después del rollback
+                cursor.close()
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
                 error_msg = f"Error en item '{item.get('descripcion', 'N/A')}': {str(e)}"
                 print(f"   ❌ {error_msg}")
                 errores.append(error_msg)
 
+                # Continuar con el siguiente item
+                continue
+
+        # ✅ FUERA DEL FOR LOOP - Después de procesar TODOS los items
         # 5. Actualizar productos_guardados en factura
         cursor.execute(
             """UPDATE facturas
@@ -3026,94 +3040,6 @@ async def procesar_factura_v2(
     finally:
         cursor.close()
         conn.close()
-# ✅ FUERA DEL LOOP - Consolidar datos
-
-
-
-# main.py - Endpoint para ver qué está aprendiendo Claude
-@app.get("/api/v2/aprendizaje/resumen")
-async def ver_aprendizaje_claude():
-    """
-    Muestra un resumen de cómo Claude está mejorando los nombres
-    """
-    conn = await get_db_connection()
-
-    try:
-        # Últimas mejoras realizadas por Claude
-        mejoras_recientes = await conn.fetch("""
-            SELECT
-                nombre_original,
-                nombre_mejorado,
-                confianza,
-                fecha_proceso
-            FROM log_mejoras_nombres
-            ORDER BY fecha_proceso DESC
-            LIMIT 20
-        """)
-
-        # Productos que necesitan revisión (baja confianza)
-        productos_revisar = await conn.fetch("""
-            SELECT
-                id,
-                nombre_consolidado,
-                codigo_ean,
-                confianza_datos,
-                veces_visto,
-                estado
-            FROM productos_maestros_v2
-            WHERE estado = 'pendiente' AND confianza_datos < 0.80
-            ORDER BY veces_visto DESC
-            LIMIT 10
-        """)
-
-        # Variantes por producto (productos con muchas variantes de nombre)
-        productos_variantes = await conn.fetch("""
-            SELECT
-                pm.id,
-                pm.nombre_consolidado,
-                COUNT(DISTINCT vn.nombre_variante) as num_variantes,
-                array_agg(DISTINCT vn.nombre_variante) as variantes
-            FROM productos_maestros_v2 pm
-            JOIN variantes_nombres vn ON pm.id = vn.producto_maestro_id
-            GROUP BY pm.id, pm.nombre_consolidado
-            HAVING COUNT(DISTINCT vn.nombre_variante) > 2
-            ORDER BY num_variantes DESC
-            LIMIT 10
-        """)
-
-        return {
-            "mejoras_recientes": [
-                {
-                    "original": m['nombre_original'],
-                    "mejorado": m['nombre_mejorado'],
-                    "confianza": float(m['confianza']),
-                    "fecha": m['fecha_proceso'].isoformat()
-                }
-                for m in mejoras_recientes
-            ],
-            "productos_revisar": [
-                {
-                    "id": p['id'],
-                    "nombre": p['nombre_consolidado'],
-                    "ean": p['codigo_ean'],
-                    "confianza": float(p['confianza_datos']),
-                    "veces_visto": p['veces_visto']
-                }
-                for p in productos_revisar
-            ],
-            "productos_multiples_variantes": [
-                {
-                    "id": p['id'],
-                    "nombre_consolidado": p['nombre_consolidado'],
-                    "num_variantes": p['num_variantes'],
-                    "variantes": p['variantes']
-                }
-                for p in productos_variantes
-            ]
-        }
-
-    finally:
-        await conn.close()
 
 
 @app.get("/api/v2/productos/pendientes")
