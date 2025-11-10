@@ -177,13 +177,13 @@ def crear_producto_en_ambas_tablas(
         conn: Conexión a BD
 
     Returns:
-        int: ID del producto en productos_maestros_v2
+        int: ID del producto en productos_maestros (LEGACY) ⬅️ CAMBIO CRÍTICO
     """
     import os
 
     is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
 
-    # PASO 1: Crear en productos_maestros (legacy)
+    # PASO 1: Crear en productos_maestros (legacy) ⬅️ PRIMERO
     if is_postgresql:
         cursor.execute("""
             INSERT INTO productos_maestros (
@@ -236,10 +236,10 @@ def crear_producto_en_ambas_tablas(
     conn.commit()
 
     print(f"   ✅ Producto creado en AMBAS tablas:")
-    print(f"      - productos_maestros (legacy): ID {producto_legacy_id}")
+    print(f"      - productos_maestros (legacy): ID {producto_legacy_id} ⬅️ Este se retorna")
     print(f"      - productos_maestros_v2: ID {producto_v2_id}")
 
-    return producto_v2_id
+    return producto_legacy_id  # ⬅️ RETORNAR ID LEGACY, NO V2
 
 
 def buscar_o_crear_producto_inteligente(
@@ -256,7 +256,7 @@ def buscar_o_crear_producto_inteligente(
     LÓGICA V3 MEJORADA:
     1. Clasificar código como EAN o PLU
     2. Si es EAN (8+ dígitos):
-       - Buscar por codigo_ean en productos_maestros_v2
+       - Buscar por codigo_ean en productos_maestros (LEGACY)
        - Si no existe, crear en AMBAS tablas
     3. Si es PLU (3-7 dígitos):
        - Buscar por similitud de nombre (>85%)
@@ -266,7 +266,7 @@ def buscar_o_crear_producto_inteligente(
        - Si no existe, crear en AMBAS tablas SIN codigo_ean
 
     Returns:
-        int: producto_maestro_id de productos_maestros_v2
+        int: producto_maestro_id de productos_maestros (LEGACY) ⬅️ CAMBIO CRÍTICO
     """
     import os
 
@@ -286,19 +286,19 @@ def buscar_o_crear_producto_inteligente(
     # CASO 1: CÓDIGO EAN (8+ dígitos) - Buscar por codigo_ean
     # =================================================================
     if tipo_codigo == 'EAN':
-        print(f"   🔍 Buscando por código EAN en productos_maestros_v2: {codigo}")
+        print(f"   🔍 Buscando por código EAN en productos_maestros (legacy): {codigo}")
 
         if is_postgresql:
             cursor.execute("""
-                SELECT id, nombre_consolidado
-                FROM productos_maestros_v2
+                SELECT id, nombre_normalizado, precio_promedio_global
+                FROM productos_maestros
                 WHERE codigo_ean = %s
                 LIMIT 1
             """, (codigo,))
         else:
             cursor.execute("""
-                SELECT id, nombre_consolidado
-                FROM productos_maestros_v2
+                SELECT id, nombre_normalizado, precio_promedio_global
+                FROM productos_maestros
                 WHERE codigo_ean = ?
                 LIMIT 1
             """, (codigo,))
@@ -307,11 +307,14 @@ def buscar_o_crear_producto_inteligente(
         if row:
             producto_id = row[0]
             nombre_existente = row[1]
-            print(f"   ✅ Producto encontrado por EAN: ID {producto_id}")
+            print(f"   ✅ Producto encontrado por EAN: ID {producto_id} (legacy)")
             print(f"      Nombre en BD: {nombre_existente}")
 
-            # Actualizar precio promedio en tabla legacy
+            # Actualizar precio promedio
             actualizar_precio_promedio_legacy(codigo, precio, cursor, conn)
+
+            # Asegurar que existe en productos_maestros_v2
+            sincronizar_a_v2(producto_id, codigo, nombre_normalizado, cursor, conn)
 
             return producto_id
 
@@ -330,21 +333,21 @@ def buscar_o_crear_producto_inteligente(
     # =================================================================
     # CASO 2: CÓDIGO PLU (3-7 dígitos) o SIN CÓDIGO - Buscar por nombre
     # =================================================================
-    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre en productos_maestros_v2...")
+    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre en productos_maestros (legacy)...")
 
     # Buscar productos similares por nombre
     if is_postgresql:
         cursor.execute("""
-            SELECT id, nombre_consolidado, codigo_ean
-            FROM productos_maestros_v2
-            WHERE nombre_consolidado ILIKE %s
+            SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
+            FROM productos_maestros
+            WHERE nombre_normalizado ILIKE %s
             LIMIT 20
         """, (f"%{nombre_normalizado[:30]}%",))
     else:
         cursor.execute("""
-            SELECT id, nombre_consolidado, codigo_ean
-            FROM productos_maestros_v2
-            WHERE nombre_consolidado LIKE ?
+            SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
+            FROM productos_maestros
+            WHERE nombre_normalizado LIKE ?
             LIMIT 20
         """, (f"%{nombre_normalizado[:30]}%",))
 
@@ -355,7 +358,7 @@ def buscar_o_crear_producto_inteligente(
     umbral_similitud = 0.85  # 85% de similitud mínima
 
     for row in candidatos:
-        producto_id, nombre_db, codigo_db = row
+        producto_id, nombre_db, codigo_db, precio_db = row
 
         similitud = calcular_similitud(nombre_normalizado, nombre_db)
 
@@ -367,10 +370,13 @@ def buscar_o_crear_producto_inteligente(
                 mejor_match = producto_id
 
     if mejor_match:
-        print(f"   ✅ Producto similar encontrado: ID {mejor_match} (similitud: {mejor_similitud:.2f})")
+        print(f"   ✅ Producto similar encontrado: ID {mejor_match} (legacy, similitud: {mejor_similitud:.2f})")
 
-        # Actualizar precio promedio en tabla legacy
+        # Actualizar precio promedio
         actualizar_precio_promedio_legacy(None, precio, cursor, conn, nombre_normalizado)
+
+        # Asegurar que existe en productos_maestros_v2
+        sincronizar_a_v2(mejor_match, None, nombre_normalizado, cursor, conn)
 
         return mejor_match
 
@@ -388,6 +394,77 @@ def buscar_o_crear_producto_inteligente(
     print(f"      (Los códigos PLU se guardarán en productos_por_establecimiento)")
 
     return producto_id
+
+
+def sincronizar_a_v2(producto_legacy_id: int, codigo_ean: str, nombre: str, cursor, conn):
+    """
+    Asegura que un producto de productos_maestros también exista en productos_maestros_v2
+
+    Args:
+        producto_legacy_id: ID en productos_maestros
+        codigo_ean: Código EAN (puede ser None)
+        nombre: Nombre del producto
+        cursor: Cursor de BD
+        conn: Conexión a BD
+    """
+    import os
+
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+
+    # Verificar si ya existe en v2
+    if is_postgresql:
+        if codigo_ean:
+            cursor.execute("""
+                SELECT id FROM productos_maestros_v2
+                WHERE codigo_ean = %s
+                LIMIT 1
+            """, (codigo_ean,))
+        else:
+            cursor.execute("""
+                SELECT id FROM productos_maestros_v2
+                WHERE nombre_consolidado ILIKE %s
+                LIMIT 1
+            """, (nombre,))
+    else:
+        if codigo_ean:
+            cursor.execute("""
+                SELECT id FROM productos_maestros_v2
+                WHERE codigo_ean = ?
+                LIMIT 1
+            """, (codigo_ean,))
+        else:
+            cursor.execute("""
+                SELECT id FROM productos_maestros_v2
+                WHERE nombre_consolidado LIKE ?
+                LIMIT 1
+            """, (nombre,))
+
+    if cursor.fetchone():
+        # Ya existe en v2
+        return
+
+    # No existe, crear en v2
+    if is_postgresql:
+        cursor.execute("""
+            INSERT INTO productos_maestros_v2 (
+                codigo_ean,
+                nombre_consolidado,
+                marca,
+                categoria_id
+            ) VALUES (%s, %s, NULL, NULL)
+        """, (codigo_ean, nombre))
+    else:
+        cursor.execute("""
+            INSERT INTO productos_maestros_v2 (
+                codigo_ean,
+                nombre_consolidado,
+                marca,
+                categoria_id
+            ) VALUES (?, ?, NULL, NULL)
+        """, (codigo_ean, nombre))
+
+    conn.commit()
+    print(f"   🔄 Sincronizado a productos_maestros_v2 (legacy ID: {producto_legacy_id})")
 
 
 def actualizar_precio_promedio_legacy(codigo_ean: str, nuevo_precio: int, cursor, conn, nombre: str = None):
