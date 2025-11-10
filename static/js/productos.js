@@ -1,6 +1,6 @@
-// productos.js - Gestión de productos (v2.4 - Corregido y organizado)
+// productos.js - Gestión de productos (v2.5 - Con establecimientos por PLU)
 
-console.log("🚀 Inicializando Gestión de Productos v2.4");
+console.log("🚀 Inicializando Gestión de Productos v2.5 - Con Establecimientos");
 
 // =============================================================
 // Variables globales
@@ -20,7 +20,7 @@ function getApiBase() {
 }
 
 // =============================================================
-// Cargar productos (con búsqueda)
+// Cargar productos (⭐ ACTUALIZADO CON NUEVO ENDPOINT)
 // =============================================================
 async function cargarProductos(pagina = 1) {
     try {
@@ -30,21 +30,17 @@ async function cargarProductos(pagina = 1) {
         const busqueda = document.getElementById("busqueda")?.value || "";
         const filtro = document.getElementById("filtro")?.value || "todos";
 
-        // Construir URL con parámetros
-        let url = `${apiBase}/api/productos?pagina=${pagina}&limite=${limite}`;
+        // ⭐ CAMBIO: Usar el nuevo endpoint /api/v2/productos
+        let url = `${apiBase}/api/v2/productos?skip=${(pagina - 1) * limite}&limit=${limite}`;
 
         // Agregar parámetro de búsqueda si existe
         if (busqueda.trim()) {
             url += `&busqueda=${encodeURIComponent(busqueda.trim())}`;
         }
 
-        // Agregar filtros según el valor seleccionado
-        if (filtro === "sin_ean") {
-            url += `&con_ean=false`;
-        } else if (filtro === "sin_marca") {
-            url += `&marca=`;
-        } else if (filtro === "sin_categoria") {
-            url += `&categoria=`;
+        // Agregar filtros
+        if (filtro !== "todos") {
+            url += `&filtro=${filtro}`;
         }
 
         console.log(`📦 Cargando productos - Página ${pagina}`);
@@ -61,7 +57,7 @@ async function cargarProductos(pagina = 1) {
         console.log("📊 Respuesta API:", data);
 
         productosCache = data.productos || [];
-        totalPaginas = data.total_paginas || 1;
+        totalPaginas = Math.ceil(data.total / limite) || 1;
         paginaActual = pagina;
 
         console.log(`✅ ${productosCache.length} productos recibidos`);
@@ -128,7 +124,7 @@ function mostrarBuscando() {
     if (tbody && tbody.children.length === 1) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="11" style="text-align: center; padding: 40px;">
+                <td colspan="12" style="text-align: center; padding: 40px;">
                     <div class="loading"></div>
                     <p style="margin-top: 10px;">Buscando productos...</p>
                 </td>
@@ -142,7 +138,7 @@ function mostrarSinResultados(busqueda) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="11" style="text-align: center; padding: 40px;">
+                <td colspan="12" style="text-align: center; padding: 40px;">
                     <p style="font-size: 18px; margin-bottom: 10px;">
                         No se encontraron productos para: <strong>"${busqueda}"</strong>
                     </p>
@@ -163,7 +159,7 @@ function mostrarError(error) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="11" style="text-align: center; padding: 40px; color: #dc2626;">
+                <td colspan="12" style="text-align: center; padding: 40px; color: #dc2626;">
                     <p>❌ Error cargando productos</p>
                     <p style="font-size: 14px; color: #666;">${error.message}</p>
                     <button class="btn-primary" onclick="cargarProductos(${paginaActual})" style="margin-top: 10px;">
@@ -176,7 +172,7 @@ function mostrarError(error) {
 }
 
 // =============================================================
-// Mostrar productos en la tabla
+// ⭐ MOSTRAR PRODUCTOS (ACTUALIZADO CON ESTABLECIMIENTOS)
 // =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
@@ -187,7 +183,7 @@ function mostrarProductos(productos) {
     if (!productos || productos.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="11" style="text-align: center; padding: 40px;">
+                <td colspan="12" style="text-align: center; padding: 40px;">
                     No hay productos para mostrar
                 </td>
             </tr>
@@ -196,54 +192,104 @@ function mostrarProductos(productos) {
     }
 
     productos.forEach((p) => {
-        // Renderizar PLUs si existen
-        let plusHTML = '';
-        if (p.codigo_plu) {
-            const plusArray = p.codigo_plu.split(', ');
-            plusHTML = plusArray.map(plu => {
-                const [codigo, est] = plu.split(' (');
-                const establecimiento = est ? est.replace(')', '') : '';
-                return `<span class="badge" style="background: #1e40af; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">${codigo} ${establecimiento}</span>`;
-            }).join(' ');
+        // Si el producto tiene PLUs, mostrar una fila por cada PLU
+        if (p.plus && p.plus.length > 0) {
+            p.plus.forEach((plu, index) => {
+                const esPrimeraFila = index === 0;
+                const numFilas = p.plus.length;
+
+                // Renderizar precio
+                const precioHTML = plu.precio ?
+                    `$${parseInt(plu.precio).toLocaleString('es-CO')}` :
+                    (p.precio_promedio ?
+                        `$${p.precio_promedio.toLocaleString('es-CO')}` :
+                        '<span style="color: #999;">-</span>');
+
+                // Renderizar estado (solo en primera fila)
+                let estadoHTML = '';
+                if (esPrimeraFila) {
+                    const estadoBadges = [];
+                    if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
+                    if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
+                    if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
+                    estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
+                }
+
+                const row = `
+                    <tr>
+                        ${esPrimeraFila ? `
+                            <td class="checkbox-cell" rowspan="${numFilas}">
+                                <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
+                            </td>
+                            <td rowspan="${numFilas}">${p.id}</td>
+                            <td rowspan="${numFilas}">${p.codigo_ean || '-'}</td>
+                        ` : ''}
+
+                        <td><span class="badge" style="background: #1e40af; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">${plu.codigo_plu}</span></td>
+                        <td><span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">🏪 ${plu.establecimiento}</span></td>
+
+                        ${esPrimeraFila ? `
+                            <td rowspan="${numFilas}">${p.nombre || '-'}</td>
+                            <td rowspan="${numFilas}">${p.marca || '-'}</td>
+                            <td rowspan="${numFilas}">${p.categoria || '-'}</td>
+                        ` : ''}
+
+                        <td>${precioHTML}</td>
+
+                        ${esPrimeraFila ? `
+                            <td rowspan="${numFilas}">${p.veces_comprado || 0}</td>
+                            <td rowspan="${numFilas}">${estadoHTML}</td>
+                            <td rowspan="${numFilas}">
+                                <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
+                                    ✏️
+                                </button>
+                                <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
+                                    🗑️
+                                </button>
+                            </td>
+                        ` : ''}
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML("beforeend", row);
+            });
+        } else {
+            // Producto sin PLUs - mostrar fila normal
+            const precioHTML = p.precio_promedio ?
+                `$${p.precio_promedio.toLocaleString('es-CO')}` :
+                '<span style="color: #999;">-</span>';
+
+            const estadoBadges = [];
+            if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
+            if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
+            if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
+            const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
+
+            const row = `
+                <tr>
+                    <td class="checkbox-cell">
+                        <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
+                    </td>
+                    <td>${p.id}</td>
+                    <td>${p.codigo_ean || '-'}</td>
+                    <td colspan="2" style="color: #999; font-style: italic; text-align: center;">Sin PLUs registrados</td>
+                    <td>${p.nombre || '-'}</td>
+                    <td>${p.marca || '-'}</td>
+                    <td>${p.categoria || '-'}</td>
+                    <td>${precioHTML}</td>
+                    <td>${p.veces_comprado || 0}</td>
+                    <td>${estadoHTML}</td>
+                    <td>
+                        <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
+                            ✏️
+                        </button>
+                        <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
+                            🗑️
+                        </button>
+                    </td>
+                </tr>
+            `;
+            tbody.insertAdjacentHTML("beforeend", row);
         }
-
-        // Renderizar precio
-        const precioHTML = p.precio_promedio_global ?
-            `$${p.precio_promedio_global.toLocaleString('es-CO')}` :
-            '<span style="color: #999;">-</span>';
-
-        // Renderizar estado
-        const estadoBadges = [];
-        if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
-        if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
-        if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
-        const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
-
-        const row = `
-            <tr>
-                <td class="checkbox-cell">
-                    <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
-                </td>
-                <td>${p.id}</td>
-                <td>${p.codigo_ean || '-'}</td>
-                <td>${plusHTML || '-'}</td>
-                <td>${p.nombre_normalizado || p.nombre_comercial || '-'}</td>
-                <td>${p.marca || '-'}</td>
-                <td>${p.categoria || '-'}</td>
-                <td>${precioHTML}</td>
-                <td>${p.total_reportes || 0}</td>
-                <td>${estadoHTML}</td>
-                <td>
-            <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
-        ✏️
-            </button>
-            <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre_normalizado || '').replace(/'/g, "\\'")}');" title="Eliminar">
-        🗑️
-            </button>
-            </td>
-            </tr>
-        `;
-        tbody.insertAdjacentHTML("beforeend", row);
     });
 }
 
@@ -309,7 +355,7 @@ async function editarProducto(id) {
     const apiBase = getApiBase();
 
     try {
-        const response = await fetch(`${apiBase}/api/productos/${id}`);
+        const response = await fetch(`${apiBase}/api/v2/productos/${id}`);
         if (!response.ok) throw new Error("Producto no encontrado");
 
         const producto = await response.json();
@@ -326,8 +372,8 @@ async function editarProducto(id) {
 
         // Estadísticas (solo lectura)
         document.getElementById("edit-veces-comprado").value = producto.veces_comprado || "0";
-        document.getElementById("edit-precio-promedio").value = producto.precio_promedio_global ?
-            `$${producto.precio_promedio_global.toLocaleString('es-CO')}` : "Sin datos";
+        document.getElementById("edit-precio-promedio").value = producto.precio_promedio ?
+            `$${producto.precio_promedio.toLocaleString('es-CO')}` : "Sin datos";
         document.getElementById("edit-num-establecimientos").value = producto.num_establecimientos || "0";
 
         // IMPORTANTE: Habilitar los campos editables
@@ -470,7 +516,7 @@ async function guardarEdicion(event) {
 
     const datos = {
         codigo_ean: document.getElementById("edit-ean").value || null,
-        nombre_normalizado: document.getElementById("edit-nombre-norm").value,
+        nombre_consolidado: document.getElementById("edit-nombre-norm").value,
         nombre_comercial: document.getElementById("edit-nombre-com").value || null,
         marca: document.getElementById("edit-marca").value || null,
         categoria: document.getElementById("edit-categoria").value || null,
@@ -479,7 +525,7 @@ async function guardarEdicion(event) {
     };
 
     try {
-        const response = await fetch(`${apiBase}/api/productos/${productoId}`, {
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(datos)
@@ -490,11 +536,14 @@ async function guardarEdicion(event) {
         // Guardar PLUs si la función existe
         if (typeof recopilarPLUs === "function") {
             const plus = recopilarPLUs();
-            const responsePLUs = await fetch(`${apiBase}/api/productos/${productoId}/plus`, {
+            const datosConPLUs = { ...datos, plus };
+
+            const responsePLUs = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(plus)
+                body: JSON.stringify(datosConPLUs)
             });
+
             if (!responsePLUs.ok) {
                 console.warn("Advertencia: Error actualizando PLUs");
             }
@@ -563,9 +612,6 @@ function fusionarSeleccionados() {
 function recargarColores() {
     console.log("Recargando colores...");
 }
-// =============================================================
-// AGREGAR AL FINAL DE productos.js (después de recargarColores)
-// =============================================================
 
 // =============================================================
 // ELIMINAR PRODUCTO
@@ -841,7 +887,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Cargar productos
     await cargarProductos(1);
 
-    console.log("✅ Sistema inicializado correctamente con buscador funcional");
+    console.log("✅ Sistema inicializado correctamente con establecimientos por PLU");
 });
 
 // =============================================================

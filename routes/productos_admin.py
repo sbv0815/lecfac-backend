@@ -1,6 +1,7 @@
 # ============================================================================
 # routes/productos_admin.py - ENDPOINTS PARA GESTIÓN DE PRODUCTOS
 # ✅ COMPATIBLE CON PSYCOPG2
+# ✅ ACTUALIZADO: Incluye información de establecimientos en el listado
 # ============================================================================
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -374,7 +375,7 @@ async def limpiar_duplicados(db = Depends(get_db)):
 
 
 # ============================================================================
-# ENDPOINTS - LISTAR
+# ENDPOINTS - LISTAR (⭐ ACTUALIZADO CON ESTABLECIMIENTOS)
 # ============================================================================
 
 @router.get("/")
@@ -385,7 +386,7 @@ async def listar_productos(
     busqueda: str = "",
     db = Depends(get_db)
 ):
-    """Lista productos con filtros"""
+    """Lista productos con filtros e información de establecimientos"""
 
     cursor = db.cursor()
 
@@ -449,6 +450,31 @@ async def listar_productos(
 
         productos = []
         for row in cursor.fetchall():
+            producto_id = row['id']
+
+            # ⭐ OBTENER PLUs CON ESTABLECIMIENTOS Y PRECIOS
+            cursor.execute("""
+                SELECT
+                    pe.codigo_plu,
+                    e.nombre_normalizado as establecimiento,
+                    pe.precio_unitario,
+                    pe.ultima_compra
+                FROM productos_por_establecimiento pe
+                JOIN establecimientos e ON pe.establecimiento_id = e.id
+                WHERE pe.producto_maestro_id = %s
+                  AND pe.codigo_plu IS NOT NULL
+                ORDER BY pe.veces_comprado DESC
+            """, (producto_id,))
+
+            plus_info = []
+            for plu_row in cursor.fetchall():
+                plus_info.append({
+                    "codigo_plu": plu_row['codigo_plu'],
+                    "establecimiento": plu_row['establecimiento'],
+                    "precio": plu_row['precio_unitario'],
+                    "ultima_compra": str(plu_row['ultima_compra']) if plu_row['ultima_compra'] else None
+                })
+
             productos.append({
                 "id": row['id'],
                 "codigo_ean": row['codigo_ean'],
@@ -457,6 +483,7 @@ async def listar_productos(
                 "categoria": row['categoria'],
                 "veces_comprado": row['veces_visto'],
                 "num_plus": row['num_plus'],
+                "plus": plus_info,  # ⭐ ARRAY CON DETALLES DE PLUs Y ESTABLECIMIENTOS
                 "precio_promedio": row['precio_promedio'],
                 "num_establecimientos": row['num_establecimientos'],
                 "estado": []
@@ -490,3 +517,4 @@ async def listar_productos(
 
 
 print("✅ Endpoints de administración de productos cargados (psycopg2)")
+print("✅ Incluye información de establecimientos en listado de productos")
