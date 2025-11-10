@@ -2713,6 +2713,11 @@ import psycopg2.extras
 # Buscar desde @app.post("/api/v2/procesar-factura") hasta el siguiente @app
 # ============================================================================
 
+# ============================================================================
+# ENDPOINT V2 CON AUTENTICACIÓN JWT CORREGIDA
+# Reemplazar en main.py desde @app.post("/api/v2/procesar-factura")
+# ============================================================================
+
 @app.post("/api/v2/procesar-factura")
 async def procesar_factura_v2(
     request: Request,
@@ -2721,27 +2726,34 @@ async def procesar_factura_v2(
 ):
     """
     Endpoint V2 con sistema completo de códigos por establecimiento
-    VERSIÓN CORREGIDA - 2025-11-10
+    ✅ AUTENTICACIÓN JWT CORREGIDA
     """
     conn = None
     cursor = None
 
     try:
-        # 1. Obtener user_id del token
+        # 1. ✅ AUTENTICACIÓN JWT CORREGIDA
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
             raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Decodificar JWT
+        import jwt
+        from auth import SECRET_KEY
 
-        cursor.execute("SELECT id FROM usuarios WHERE session_token = %s", (token,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=401, detail="Token inválido")
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get('user_id')
 
-        user_id = user['id']
-        print(f"\n👤 Usuario autenticado: ID {user_id}")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Token inválido - sin user_id")
+
+            print(f"\n👤 Usuario autenticado: ID {user_id}")
+
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Token expirado")
+        except jwt.InvalidTokenError as e:
+            raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")
 
         # 2. Parsear datos JSON
         if not datos_json:
@@ -2753,17 +2765,24 @@ async def procesar_factura_v2(
             raise HTTPException(status_code=400, detail="No hay items en la factura")
 
         print(f"📦 Items recibidos: {len(datos_factura['items'])}")
-        print(f"🏪 Establecimiento detectado: {datos_factura.get('establecimiento', 'N/A')}")
+        print(f"🏪 Establecimiento: {datos_factura.get('establecimiento', 'N/A')}")
+
+        # Conectar a BD DESPUÉS de validar token
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         # Obtener o crear establecimiento
-        establecimiento_db = obtener_o_crear_establecimiento(datos_factura.get('establecimiento', 'SUPERMERCADO'))
+        establecimiento_db = obtener_o_crear_establecimiento(
+            datos_factura.get('establecimiento', 'SUPERMERCADO')
+        )
         establecimiento_id = establecimiento_db['id']
 
         # 3. Crear factura
         print("\n💾 Creando registro de factura...")
         cursor.execute(
             """INSERT INTO facturas
-               (usuario_id, establecimiento_id, fecha_factura, total_factura, estado_validacion, establecimiento, cadena)
+               (usuario_id, establecimiento_id, fecha_factura, total_factura,
+                estado_validacion, establecimiento, cadena)
                VALUES (%s, %s, %s, %s, 'procesado', %s, %s)
                RETURNING id, fecha_factura""",
             (
@@ -2790,7 +2809,6 @@ async def procesar_factura_v2(
         items_procesados = []
         errores = []
 
-        # Import correcto FUERA del loop
         from consolidacion_productos import procesar_item_con_consolidacion
 
         for idx, item in enumerate(datos_factura['items'], 1):
@@ -2836,7 +2854,8 @@ async def procesar_factura_v2(
                         if producto_v2:
                             cursor.execute("""
                                 INSERT INTO productos_maestros
-                                (id, nombre_normalizado, codigo_ean, marca, auditado_manualmente, validaciones_manuales)
+                                (id, nombre_normalizado, codigo_ean, marca,
+                                 auditado_manualmente, validaciones_manuales)
                                 VALUES (%s, %s, %s, %s, FALSE, 0)
                                 ON CONFLICT (id) DO UPDATE SET
                                     nombre_normalizado = EXCLUDED.nombre_normalizado,
@@ -2851,7 +2870,7 @@ async def procesar_factura_v2(
                 except Exception as sync_error:
                     print(f"   ⚠️  Error sync: {sync_error}")
 
-                # ✅ REGISTRAR CÓDIGO EN codigos_establecimiento
+                # Registrar código en codigos_establecimiento
                 if codigo_ocr and len(codigo_ocr) >= 4:
                     try:
                         cursor.execute("""
@@ -2860,7 +2879,6 @@ async def procesar_factura_v2(
 
                         result = cursor.fetchone()
                         if result and result[0]:
-                            # Obtener tipo de código
                             cursor.execute("""
                                 SELECT tipo_codigo
                                 FROM codigos_establecimiento
@@ -2883,8 +2901,8 @@ async def procesar_factura_v2(
                 # Insertar item en factura
                 cursor.execute(
                     """INSERT INTO items_factura
-                       (factura_id, usuario_id, producto_maestro_id, nombre_leido, codigo_leido,
-                        cantidad, precio_pagado)
+                       (factura_id, usuario_id, producto_maestro_id, nombre_leido,
+                        codigo_leido, cantidad, precio_pagado)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (
@@ -2963,11 +2981,22 @@ async def procesar_factura_v2(
             print(f"  • PLU estándar: {stats_codigos['plu_estandares']}")
             print(f"  • EANs: {stats_codigos['eans']}")
         except Exception as stats_error:
-            print(f"⚠️  Error obteniendo estadísticas: {stats_error}")
-            stats = {'total_productos': 0, 'con_ean': 0, 'verificados': 0, 'confianza_promedio': 0}
-            stats_codigos = {'total_codigos': 0, 'productos_con_codigos': 0, 'plu_locales': 0, 'plu_estandares': 0, 'eans': 0}
+            print(f"⚠️  Error estadísticas: {stats_error}")
+            stats = {
+                'total_productos': 0,
+                'con_ean': 0,
+                'verificados': 0,
+                'confianza_promedio': 0
+            }
+            stats_codigos = {
+                'total_codigos': 0,
+                'productos_con_codigos': 0,
+                'plu_locales': 0,
+                'plu_estandares': 0,
+                'eans': 0
+            }
 
-        # 7. ✅ ACTUALIZAR INVENTARIO
+        # 7. Actualizar inventario
         print(f"\n📦 Actualizando inventario del usuario {user_id}...")
         try:
             actualizar_inventario_desde_factura(factura_id, user_id)
@@ -3003,6 +3032,8 @@ async def procesar_factura_v2(
             }
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         if conn:
             conn.rollback()
@@ -3016,8 +3047,6 @@ async def procesar_factura_v2(
             cursor.close()
         if conn:
             conn.close()
-
-
 
 @app.get("/api/v2/productos/pendientes")
 async def productos_pendientes_revision(limite: int = 50):
