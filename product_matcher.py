@@ -1,8 +1,10 @@
 """
-product_matcher.py - VERSIÓN MEJORADA V2
+product_matcher.py - VERSIÓN MEJORADA V3
 Sistema de matching y normalización de productos
 
-CAMBIOS V2:
+CAMBIOS V3:
+- ✅ GUARDA EN AMBAS TABLAS: productos_maestros (legacy) y productos_maestros_v2 (nueva)
+- ✅ Sincronización automática entre tablas
 - Busca PLUs cortos por nombre (no por código)
 - Soporte para productos con múltiples PLUs por establecimiento
 - Lógica: 1 producto maestro → N códigos PLU (uno por establecimiento)
@@ -157,6 +159,89 @@ def clasificar_codigo_tipo(codigo: str) -> str:
         return 'DESCONOCIDO'
 
 
+def crear_producto_en_ambas_tablas(
+    codigo_ean: str,
+    nombre_normalizado: str,
+    precio: int,
+    cursor,
+    conn
+) -> int:
+    """
+    ✅ NUEVO: Crea producto en AMBAS tablas simultáneamente
+
+    Args:
+        codigo_ean: Código EAN (puede ser None para PLUs)
+        nombre_normalizado: Nombre normalizado del producto
+        precio: Precio inicial
+        cursor: Cursor de BD
+        conn: Conexión a BD
+
+    Returns:
+        int: ID del producto en productos_maestros_v2
+    """
+    import os
+
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+
+    # PASO 1: Crear en productos_maestros (legacy)
+    if is_postgresql:
+        cursor.execute("""
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                precio_promedio_global,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+        """, (codigo_ean, nombre_normalizado, precio))
+        producto_legacy_id = cursor.fetchone()[0]
+    else:
+        cursor.execute("""
+            INSERT INTO productos_maestros (
+                codigo_ean,
+                nombre_normalizado,
+                precio_promedio_global,
+                total_reportes,
+                primera_vez_reportado,
+                ultima_actualizacion
+            ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """, (codigo_ean, nombre_normalizado, precio))
+        producto_legacy_id = cursor.lastrowid
+
+    # PASO 2: Crear en productos_maestros_v2 (nueva tabla)
+    if is_postgresql:
+        cursor.execute("""
+            INSERT INTO productos_maestros_v2 (
+                codigo_ean,
+                nombre_consolidado,
+                marca,
+                categoria_id
+            ) VALUES (%s, %s, NULL, NULL)
+            RETURNING id
+        """, (codigo_ean, nombre_normalizado))
+        producto_v2_id = cursor.fetchone()[0]
+    else:
+        cursor.execute("""
+            INSERT INTO productos_maestros_v2 (
+                codigo_ean,
+                nombre_consolidado,
+                marca,
+                categoria_id
+            ) VALUES (?, ?, NULL, NULL)
+        """, (codigo_ean, nombre_normalizado))
+        producto_v2_id = cursor.lastrowid
+
+    conn.commit()
+
+    print(f"   ✅ Producto creado en AMBAS tablas:")
+    print(f"      - productos_maestros (legacy): ID {producto_legacy_id}")
+    print(f"      - productos_maestros_v2: ID {producto_v2_id}")
+
+    return producto_v2_id
+
+
 def buscar_o_crear_producto_inteligente(
     codigo: str,
     nombre: str,
@@ -166,52 +251,54 @@ def buscar_o_crear_producto_inteligente(
     conn
 ) -> int:
     """
-    Busca un producto existente o crea uno nuevo
+    Busca un producto existente o crea uno nuevo EN AMBAS TABLAS
 
-    LÓGICA V2 MEJORADA:
+    LÓGICA V3 MEJORADA:
     1. Clasificar código como EAN o PLU
     2. Si es EAN (8+ dígitos):
-       - Buscar por codigo_ean en productos_maestros
-       - Si no existe, crear nuevo con ese codigo_ean
+       - Buscar por codigo_ean en productos_maestros_v2
+       - Si no existe, crear en AMBAS tablas
     3. Si es PLU (3-7 dígitos):
        - Buscar por similitud de nombre (>85%)
-       - Si no existe, crear nuevo SIN codigo_ean (será NULL)
+       - Si no existe, crear en AMBAS tablas SIN codigo_ean
     4. Si no tiene código:
        - Buscar por similitud de nombre
-       - Si no existe, crear nuevo SIN codigo_ean
+       - Si no existe, crear en AMBAS tablas SIN codigo_ean
 
     Returns:
-        int: producto_maestro_id
+        int: producto_maestro_id de productos_maestros_v2
     """
     import os
 
     nombre_normalizado = normalizar_nombre_producto(nombre)
     tipo_codigo = clasificar_codigo_tipo(codigo)
 
-    print(f"🔍 buscar_o_crear_producto_inteligente()")
+    print(f"🔍 buscar_o_crear_producto_inteligente() V3")
     print(f"   Código: {codigo} → Tipo: {tipo_codigo}")
     print(f"   Nombre original: {nombre}")
     print(f"   Nombre normalizado: {nombre_normalizado}")
     print(f"   Precio: ${precio:,}")
     print(f"   Establecimiento: {establecimiento}")
 
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+
     # =================================================================
     # CASO 1: CÓDIGO EAN (8+ dígitos) - Buscar por codigo_ean
     # =================================================================
     if tipo_codigo == 'EAN':
-        print(f"   🔍 Buscando por código EAN: {codigo}")
+        print(f"   🔍 Buscando por código EAN en productos_maestros_v2: {codigo}")
 
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
+        if is_postgresql:
             cursor.execute("""
-                SELECT id, nombre_normalizado, precio_promedio_global
-                FROM productos_maestros
+                SELECT id, nombre_consolidado
+                FROM productos_maestros_v2
                 WHERE codigo_ean = %s
                 LIMIT 1
             """, (codigo,))
         else:
             cursor.execute("""
-                SELECT id, nombre_normalizado, precio_promedio_global
-                FROM productos_maestros
+                SELECT id, nombre_consolidado
+                FROM productos_maestros_v2
                 WHERE codigo_ean = ?
                 LIMIT 1
             """, (codigo,))
@@ -223,62 +310,41 @@ def buscar_o_crear_producto_inteligente(
             print(f"   ✅ Producto encontrado por EAN: ID {producto_id}")
             print(f"      Nombre en BD: {nombre_existente}")
 
-            # Actualizar precio promedio
-            actualizar_precio_promedio(producto_id, precio, cursor, conn)
+            # Actualizar precio promedio en tabla legacy
+            actualizar_precio_promedio_legacy(codigo, precio, cursor, conn)
 
             return producto_id
 
-        # No existe, crear nuevo producto con este EAN
+        # No existe, crear nuevo producto con este EAN EN AMBAS TABLAS
         print(f"   ➕ Creando producto nuevo con EAN: {codigo}")
+        producto_id = crear_producto_en_ambas_tablas(
+            codigo_ean=codigo,
+            nombre_normalizado=nombre_normalizado,
+            precio=precio,
+            cursor=cursor,
+            conn=conn
+        )
 
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                INSERT INTO productos_maestros (
-                    codigo_ean,
-                    nombre_normalizado,
-                    precio_promedio_global,
-                    total_reportes,
-                    primera_vez_reportado,
-                    ultima_actualizacion
-                ) VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id
-            """, (codigo, nombre_normalizado, precio))
-            producto_id = cursor.fetchone()[0]
-        else:
-            cursor.execute("""
-                INSERT INTO productos_maestros (
-                    codigo_ean,
-                    nombre_normalizado,
-                    precio_promedio_global,
-                    total_reportes,
-                    primera_vez_reportado,
-                    ultima_actualizacion
-                ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (codigo, nombre_normalizado, precio))
-            producto_id = cursor.lastrowid
-
-        conn.commit()
-        print(f"   ✅ Producto creado con EAN: ID {producto_id}")
         return producto_id
 
     # =================================================================
     # CASO 2: CÓDIGO PLU (3-7 dígitos) o SIN CÓDIGO - Buscar por nombre
     # =================================================================
-    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre...")
+    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre en productos_maestros_v2...")
 
     # Buscar productos similares por nombre
-    if os.environ.get("DATABASE_TYPE") == "postgresql":
+    if is_postgresql:
         cursor.execute("""
-            SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
-            FROM productos_maestros
-            WHERE nombre_normalizado ILIKE %s
+            SELECT id, nombre_consolidado, codigo_ean
+            FROM productos_maestros_v2
+            WHERE nombre_consolidado ILIKE %s
             LIMIT 20
         """, (f"%{nombre_normalizado[:30]}%",))
     else:
         cursor.execute("""
-            SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
-            FROM productos_maestros
-            WHERE nombre_normalizado LIKE ?
+            SELECT id, nombre_consolidado, codigo_ean
+            FROM productos_maestros_v2
+            WHERE nombre_consolidado LIKE ?
             LIMIT 20
         """, (f"%{nombre_normalizado[:30]}%",))
 
@@ -289,7 +355,7 @@ def buscar_o_crear_producto_inteligente(
     umbral_similitud = 0.85  # 85% de similitud mínima
 
     for row in candidatos:
-        producto_id, nombre_db, codigo_db, precio_db = row
+        producto_id, nombre_db, codigo_db = row
 
         similitud = calcular_similitud(nombre_normalizado, nombre_db)
 
@@ -303,54 +369,72 @@ def buscar_o_crear_producto_inteligente(
     if mejor_match:
         print(f"   ✅ Producto similar encontrado: ID {mejor_match} (similitud: {mejor_similitud:.2f})")
 
-        # Actualizar precio promedio
-        actualizar_precio_promedio(mejor_match, precio, cursor, conn)
+        # Actualizar precio promedio en tabla legacy
+        actualizar_precio_promedio_legacy(None, precio, cursor, conn, nombre_normalizado)
 
         return mejor_match
 
-    # No se encontró producto similar, crear uno nuevo SIN codigo_ean
+    # No se encontró producto similar, crear uno nuevo SIN codigo_ean EN AMBAS TABLAS
     print(f"   ➕ Creando producto nuevo SIN código EAN (será PLU específico por establecimiento)")
 
-    if os.environ.get("DATABASE_TYPE") == "postgresql":
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-                codigo_ean,
-                nombre_normalizado,
-                precio_promedio_global,
-                total_reportes,
-                primera_vez_reportado,
-                ultima_actualizacion
-            ) VALUES (NULL, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-        """, (nombre_normalizado, precio))
-        producto_id = cursor.fetchone()[0]
-    else:
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-                codigo_ean,
-                nombre_normalizado,
-                precio_promedio_global,
-                total_reportes,
-                primera_vez_reportado,
-                ultima_actualizacion
-            ) VALUES (NULL, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """, (nombre_normalizado, precio))
-        producto_id = cursor.lastrowid
+    producto_id = crear_producto_en_ambas_tablas(
+        codigo_ean=None,
+        nombre_normalizado=nombre_normalizado,
+        precio=precio,
+        cursor=cursor,
+        conn=conn
+    )
 
-    conn.commit()
-    print(f"   ✅ Producto creado sin EAN: ID {producto_id}")
     print(f"      (Los códigos PLU se guardarán en productos_por_establecimiento)")
 
     return producto_id
 
 
-def actualizar_precio_promedio(producto_id: int, nuevo_precio: int, cursor, conn):
+def actualizar_precio_promedio_legacy(codigo_ean: str, nuevo_precio: int, cursor, conn, nombre: str = None):
     """
-    Actualiza el precio promedio de un producto
+    Actualiza el precio promedio en la tabla legacy (productos_maestros)
     """
     import os
 
-    if os.environ.get("DATABASE_TYPE") == "postgresql":
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+
+    # Buscar en tabla legacy
+    if codigo_ean:
+        if is_postgresql:
+            cursor.execute("""
+                SELECT id FROM productos_maestros
+                WHERE codigo_ean = %s
+                LIMIT 1
+            """, (codigo_ean,))
+        else:
+            cursor.execute("""
+                SELECT id FROM productos_maestros
+                WHERE codigo_ean = ?
+                LIMIT 1
+            """, (codigo_ean,))
+    elif nombre:
+        if is_postgresql:
+            cursor.execute("""
+                SELECT id FROM productos_maestros
+                WHERE nombre_normalizado ILIKE %s
+                LIMIT 1
+            """, (nombre,))
+        else:
+            cursor.execute("""
+                SELECT id FROM productos_maestros
+                WHERE nombre_normalizado LIKE ?
+                LIMIT 1
+            """, (nombre,))
+    else:
+        return
+
+    row = cursor.fetchone()
+    if not row:
+        return
+
+    producto_legacy_id = row[0]
+
+    if is_postgresql:
         cursor.execute("""
             UPDATE productos_maestros
             SET precio_promedio_global = (
@@ -359,7 +443,7 @@ def actualizar_precio_promedio(producto_id: int, nuevo_precio: int, cursor, conn
             total_reportes = total_reportes + 1,
             ultima_actualizacion = CURRENT_TIMESTAMP
             WHERE id = %s
-        """, (nuevo_precio, producto_id))
+        """, (nuevo_precio, producto_legacy_id))
     else:
         cursor.execute("""
             UPDATE productos_maestros
@@ -369,10 +453,17 @@ def actualizar_precio_promedio(producto_id: int, nuevo_precio: int, cursor, conn
             total_reportes = total_reportes + 1,
             ultima_actualizacion = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (nuevo_precio, producto_id))
+        """, (nuevo_precio, producto_legacy_id))
 
     conn.commit()
-    print(f"   💰 Precio promedio actualizado para producto {producto_id}")
+    print(f"   💰 Precio promedio actualizado en tabla legacy: ID {producto_legacy_id}")
+
+
+def actualizar_precio_promedio(producto_id: int, nuevo_precio: int, cursor, conn):
+    """
+    LEGACY: Mantiene compatibilidad con código antiguo
+    """
+    actualizar_precio_promedio_legacy(None, nuevo_precio, cursor, conn)
 
 
 # ==========================================
@@ -477,3 +568,13 @@ def detectar_duplicados_por_similitud(cursor, umbral: float = 0.90) -> list:
     print(f"   ✅ {len(duplicados)} duplicados detectados")
 
     return duplicados
+
+
+print("=" * 80)
+print("✅ product_matcher.py V3 CARGADO")
+print("=" * 80)
+print("🔄 GUARDA EN AMBAS TABLAS:")
+print("   • productos_maestros (legacy)")
+print("   • productos_maestros_v2 (nueva)")
+print("✅ Sincronización automática entre tablas")
+print("=" * 80)
