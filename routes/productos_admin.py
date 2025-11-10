@@ -78,19 +78,20 @@ async def obtener_producto(producto_id: int, db = Depends(get_db)):
         # Obtener producto base
         cursor.execute("""
             SELECT
-                id,
-                codigo_ean,
-                nombre_consolidado,
-                nombre_comercial,
-                marca,
-                categoria,
-                subcategoria,
-                presentacion,
-                veces_visto,
-                fecha_creacion,
-                fecha_ultima_actualizacion
-            FROM productos_maestros_v2
-            WHERE id = %s
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.nombre_comercial,
+                pm.marca,
+                COALESCE(c.nombre, 'Sin categoría') as categoria,
+                pm.subcategoria,
+                pm.presentacion,
+                pm.veces_visto,
+                pm.fecha_creacion,
+                pm.fecha_ultima_actualizacion
+            FROM productos_maestros_v2 pm
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
+            WHERE pm.id = %s
         """, (producto_id,))
 
         producto = cursor.fetchone()
@@ -420,7 +421,7 @@ async def listar_productos(
                 pm.codigo_ean,
                 pm.nombre_consolidado,
                 pm.marca,
-                pm.categoria,
+                COALESCE(c.nombre, 'Sin categoría') as categoria,
                 pm.veces_visto,
                 (
                     SELECT COUNT(*)
@@ -440,6 +441,7 @@ async def listar_productos(
                     WHERE i.producto_maestro_id = pm.id
                 ) as num_establecimientos
             FROM productos_maestros_v2 pm
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
             WHERE {where_sql}
             ORDER BY pm.veces_visto DESC, pm.id DESC
             LIMIT %s OFFSET %s
