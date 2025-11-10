@@ -67,7 +67,7 @@ async def listar_productos_v2(
         for producto in productos:
             producto_id = producto[0]
 
-            # Obtener PLUs por establecimiento
+            # Obtener PLUs por establecimiento (incluyendo productos sin PLU)
             cursor.execute("""
                 SELECT
                     pe.codigo_plu,
@@ -77,8 +77,7 @@ async def listar_productos_v2(
                 FROM productos_por_establecimiento pe
                 JOIN establecimientos e ON pe.establecimiento_id = e.id
                 WHERE pe.producto_maestro_id = %s
-                  AND pe.codigo_plu IS NOT NULL
-                ORDER BY pe.total_reportes DESC
+                ORDER BY pe.ultima_actualizacion DESC
             """, (producto_id,))
 
             plus = cursor.fetchall()
