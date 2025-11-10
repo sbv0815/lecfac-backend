@@ -1,17 +1,53 @@
+# claude_invoice.py - VERSIÓN MEJORADA CON MEJOR DETECCIÓN DE PLUs
+
 import anthropic
 import base64
 import os
 import json
 import re
+import unicodedata
 from typing import Dict
 
 
 # ==============================================================================
-# DICCIONARIO DE CORRECCIONES OCR - NOMBRES DE PRODUCTOS
+# NORMALIZACIÓN DE NOMBRES (NUEVO)
+# ==============================================================================
+
+def normalizar_nombre_producto(nombre: str) -> str:
+    """
+    Normaliza nombres: MAYÚSCULAS, sin tildes, sin espacios extras
+    """
+    if not nombre or not nombre.strip():
+        return "PRODUCTO SIN NOMBRE"
+
+    # Convertir a mayúsculas
+    nombre = nombre.upper().strip()
+
+    # Quitar tildes
+    nombre = ''.join(
+        c for c in unicodedata.normalize('NFD', nombre)
+        if unicodedata.category(c) != 'Mn'
+    )
+
+    # Reemplazar caracteres especiales por espacios
+    for char in ['-', '_', '.', ',', '/', '\\', '|']:
+        nombre = nombre.replace(char, ' ')
+
+    # Quitar espacios múltiples
+    nombre = ' '.join(nombre.split())
+
+    # Quitar caracteres no alfanuméricos (excepto espacios)
+    nombre = ''.join(c for c in nombre if c.isalnum() or c.isspace())
+
+    return nombre
+
+
+# ==============================================================================
+# DICCIONARIO DE CORRECCIONES OCR - AMPLIADO
 # ==============================================================================
 
 CORRECCIONES_OCR = {
-    # Errores comunes de OCR detectados en facturas colombianas
+    # Errores comunes detectados
     "QSO": "QUESO",
     "FRANC": "FRANCES",
     "BCO": "BLANCO",
@@ -25,16 +61,30 @@ CORRECCIONES_OCR = {
     "MEDAL": "MEDALLA",
     "MERMEL": "MERMELADA",
     "ESPARCIB": "ESPARCIR",
+
+    # ✅ NUEVO: Errores específicos de lácteos
     "CREM": "CREMA",
+    "CREMA": "CREMA",
+    "VECHE": "LECHE",
+    "VEC": "LECHE",
+    "LECH": "LECHE",
+    "LEC": "LECHE",
+    "SEMI": "SEMIDESCREMADA",
+
+    # Marcas comunes
     "ALQUERI": "ALQUERIA",
+    "ALQUER": "ALQUERIA",
+    "ALPNA": "ALPINA",
+    "ALPIN": "ALPINA",
+    "COLANT": "COLANTA",
+
+    # Otros productos
     "ARE": "AREQUIPE",
     "IMPORT": "IMPORTADO",
     "BOLO": "BOLOÑESA",
     "UND": "UNIDAD",
-    "LEC": "LECHE",
     "CMAPAN": "COMAPAN",
     "MZRLL": "MOZARELLA",
-    "COLANT": "COLANTA",
     "CAS": "CASA",
     "VERD": "VERDE",
     "SUAVIZANT": "SUAVIZANTE",
@@ -66,53 +116,39 @@ CORRECCIONES_OCR = {
     "INSTACREM 1D": "INSTACREM",
     "LECA KIFER I": "LACA KLEER",
     "LECA KLEER I": "LACA KLEER",
-
-
 }
 
 
 def corregir_nombre_producto(nombre: str) -> str:
     """
-    Corrige errores comunes de OCR en nombres de productos.
-
-    Aplica correcciones palabra por palabra manteniendo el formato original.
-    Es case-insensitive pero preserva mayúsculas/minúsculas del resultado.
-
-    Args:
-        nombre: Nombre del producto con posibles errores de OCR
-
-    Returns:
-        str: Nombre corregido
-
-    Examples:
-        >>> corregir_nombre_producto("QSO FRANCES BCO")
-        "QUESO FRANCES BLANCO"
-        >>> corregir_nombre_producto("PONQ CHOCOLATINA")
-        "PONQUE CHOCOLATINA"
+    Corrige errores OCR palabra por palabra
+    ✅ MEJORADO: Más agresivo con correcciones
     """
     if not nombre or len(nombre.strip()) < 2:
         return nombre
 
-    nombre_original = nombre
     nombre_upper = nombre.upper()
 
-    # Primero buscar coincidencias de frases completas (multi-palabra)
+    # Primero buscar frases completas
     for clave, correccion in CORRECCIONES_OCR.items():
-        if " " in clave:  # Es una frase
-            if clave in nombre_upper:
-                nombre = nombre_upper.replace(clave, correccion)
-                if nombre != nombre_original:
-                    return nombre
+        if " " in clave and clave in nombre_upper:
+            return nombre_upper.replace(clave, correccion)
 
-    # Luego corregir palabra por palabra
-    palabras = nombre.split()
+    # Luego palabra por palabra
+    palabras = nombre_upper.split()
     palabras_corregidas = []
 
     for palabra in palabras:
-        palabra_upper = palabra.upper()
-
-        if palabra_upper in CORRECCIONES_OCR:
-            palabras_corregidas.append(CORRECCIONES_OCR[palabra_upper])
+        # Corrección directa
+        if palabra in CORRECCIONES_OCR:
+            palabras_corregidas.append(CORRECCIONES_OCR[palabra])
+        # Correcciones parciales comunes
+        elif "CREMA" in palabra and "VECHE" in palabra:
+            palabras_corregidas.append("CREMA DE LECHE")
+        elif palabra.startswith("LEC") and len(palabra) <= 5:
+            palabras_corregidas.append("LECHE")
+        elif palabra.startswith("CREM") and len(palabra) <= 5:
+            palabras_corregidas.append("CREMA")
         else:
             palabras_corregidas.append(palabra)
 
@@ -120,250 +156,211 @@ def corregir_nombre_producto(nombre: str) -> str:
 
 
 # ==============================================================================
-# FUNCIÓN PARA LIMPIAR PRECIOS COLOMBIANOS
+# LIMPIEZA DE PRECIOS
 # ==============================================================================
 
 def limpiar_precio_colombiano(precio_str):
     """
-    Convierte precio colombiano a entero (sin decimales).
-
-    CRÍTICO: Maneja tanto strings como números que vienen de Claude API.
-
-    En Colombia NO se usan decimales/centavos, solo pesos enteros.
-    Las facturas muestran separadores de miles con comas o puntos.
-
-    Args:
-        precio_str: Precio en cualquier formato (string, int, float)
-
-    Returns:
-        int: Precio en pesos enteros
-
-    Examples:
-        >>> limpiar_precio_colombiano("15,540")
-        15540
-        >>> limpiar_precio_colombiano("15.540")
-        15540
-        >>> limpiar_precio_colombiano(39.45)  # Claude devuelve float
-        3945
-        >>> limpiar_precio_colombiano(15540)
-        15540
+    Convierte precio colombiano a entero (sin decimales)
     """
-    # Caso 1: None o vacío
     if precio_str is None or precio_str == "":
         return 0
 
-    # Caso 2: Ya es un entero
     if isinstance(precio_str, int):
         return precio_str
 
-    # Caso 3: Es un float (puede venir de Claude API)
     if isinstance(precio_str, float):
-        # Si tiene decimales pequeños (ej: 15540.0), es solo formateo
         if precio_str == int(precio_str):
             return int(precio_str)
-        # Si tiene decimales significativos, puede ser error de OCR
-        # Ej: 39.45 probablemente significa 3945 pesos (faltó un cero)
-        # Multiplicamos por 100 para corregir
         return int(precio_str * 100)
 
-    # Caso 4: Es string - procesar
     precio_str = str(precio_str).strip()
-
-    # Eliminar espacios
     precio_str = precio_str.replace(" ", "")
-
-    # Eliminar símbolos de moneda
-    precio_str = precio_str.replace("$", "")
-    precio_str = precio_str.replace("COP", "")
-    precio_str = precio_str.replace("cop", "")
+    precio_str = precio_str.replace("$", "").replace("COP", "").replace("cop", "")
     precio_str = precio_str.strip()
 
-    # CRÍTICO: Determinar si usa punto o coma como separador
-    # En Colombia, ambos pueden usarse para separar miles
-
-    # Caso 4A: Tiene múltiples puntos o comas (separador de miles)
-    # Ej: "1.234.567" o "1,234,567"
     if precio_str.count('.') > 1 or precio_str.count(',') > 1:
-        # Eliminar TODOS los separadores
         precio_str = precio_str.replace(",", "").replace(".", "")
-
-    # Caso 4B: Tiene un solo punto o coma
-    # Ej: "15.540" o "15,540"
     elif '.' in precio_str or ',' in precio_str:
-        # Verificar cantidad de dígitos después del separador
         if '.' in precio_str:
             partes = precio_str.split('.')
         else:
             partes = precio_str.split(',')
 
-        # Si hay 3 dígitos después, es separador de miles
         if len(partes) == 2 and len(partes[1]) == 3:
             precio_str = precio_str.replace(",", "").replace(".", "")
-        # Si hay 1-2 dígitos, puede ser decimal mal leído
         elif len(partes) == 2 and len(partes[1]) <= 2:
-            # En Colombia NO hay decimales, así que eliminamos el separador
             precio_str = precio_str.replace(",", "").replace(".", "")
         else:
-            # Caso raro, eliminar todos
             precio_str = precio_str.replace(",", "").replace(".", "")
 
-    # Convertir a entero
     try:
         precio = int(float(precio_str))
-
-        # Validación de sanidad
         if precio < 0:
-            print(f"   ⚠️ Precio negativo detectado: {precio}, retornando 0")
+            print(f"   ⚠️ Precio negativo: {precio}, retornando 0")
             return 0
-
         return precio
-
     except (ValueError, TypeError) as e:
-        print(f"   ⚠️ No se pudo convertir precio '{precio_str}': {e}")
+        print(f"   ⚠️ Error convirtiendo precio '{precio_str}': {e}")
         return 0
 
 
 # ==============================================================================
-# FUNCIÓN PRINCIPAL DE PROCESAMIENTO
+# PROCESAMIENTO PRINCIPAL - PROMPT MEJORADO
 # ==============================================================================
 
 def parse_invoice_with_claude(image_path: str) -> Dict:
     """
     Procesa factura con Claude Vision API
-    Sistema de 3 Niveles de Confianza + Limpieza Automática + Corrección OCR
+    ✅ VERSIÓN MEJORADA: Mejor detección de PLUs y nombres completos
     """
     try:
-        print("=" * 70)
-        print("🤖 PROCESANDO CON CLAUDE HAIKU 3.5 - Sistema Multi-Establecimiento")
-        print("=" * 70)
+        print("=" * 80)
+        print("🤖 PROCESANDO CON CLAUDE HAIKU 3.5 - VERSIÓN MEJORADA PLU")
+        print("=" * 80)
 
         # Leer imagen
         with open(image_path, "rb") as f:
             image_data = base64.b64encode(f.read()).decode("utf-8")
 
-        # Tipo MIME
-        media_type = (
-            "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
-        )
+        media_type = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
 
-        # Cliente Anthropic
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY no configurada")
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT GENERALIZADO MULTI-ESTABLECIMIENTO ==========
-        prompt = """Eres un experto en facturas de supermercados COLOMBIANOS.
+        # ========== PROMPT MEJORADO - ÉNFASIS EN PLUs ==========
+        prompt = """Eres un experto en facturas de supermercados COLOMBIANOS. Tu misión es extraer CADA producto que el cliente compró.
 
-🎯 OBJETIVO: Extraer SOLO los productos que el cliente COMPRÓ y PAGÓ.
+# 🎯 ESTRUCTURA DE FACTURAS COLOMBIANAS
 
-# 📋 ESTRUCTURA COMÚN DE FACTURAS COLOMBIANAS
-
-Todas las facturas tienen COLUMNAS organizadas así:
+Todas las facturas tienen esta estructura de COLUMNAS:
 ```
-CÓDIGO/PLU    DESCRIPCIÓN/DETALLE          PRECIO/VALOR
-123456        Producto X                   12,500
-789012        Producto Y                   8,900
+PLU/CÓDIGO    DESCRIPCIÓN COMPLETA DEL PRODUCTO          PRECIO
+1234          Crema de Leche Alqueria                    5,240
+5678          Huevo Rojo AA                              11,450
 ```
 
-# ✅ REGLAS UNIVERSALES (Todos los establecimientos)
+# ⚠️ REGLA CRÍTICA: CÓDIGOS PLU
 
-## 1. IDENTIFICAR COLUMNAS CORRECTAMENTE
-
-**Columna IZQUIERDA - CÓDIGO:**
-- Números de 4-13 dígitos
-- Etiquetas: PLU, CODIGO, COD, EAN
-- ⚠️ NO es código: "1/u", "2/u", "0.750/KGM"
-
-**Columna CENTRO - NOMBRE:**
-- Descripción del producto
-- ⚠️ **IMPORTANTE**: El nombre TERMINA antes de:
-  - "V.Ahorro", "V. Ahorro", "Ahorro"
-  - "/KGM", "/KG", "/U", "x 0.750"
-  - "Descuento", "Dto", "Khorro" (error OCR)
-- **Ejemplo:**
-  - ✅ Correcto: "Mango"
-  - ❌ Incorrecto: "Mango V.Ahorro 0"
-
-**Columna DERECHA - PRECIO:**
-- Precio final pagado
-- Formatos: 12.500 o 12,500 o 12500
-- ⚠️ NO es precio: "V.Ahorro 1.500"
-
-## 2. DETECTAR LÍNEAS QUE NO SON PRODUCTOS
-
-**Líneas de descuento/peso (IGNORAR):**
+**Los PLUs son números de 4-6 dígitos que aparecen ANTES del nombre:**
 ```
-1 1/u x 26.900 V.Ahorro 4.035        ← DESCUENTO
-0.750/KGM x 8.800 V.Ahorro 1.320     ← PESO/UNIDAD
-2x1 Descuento                         ← PROMOCIÓN
+1220  Mango                      ← PLU: 1220
+      V.Ahorro 0                 ← IGNORAR (no es producto)
+3323  Brownie Mini               ← PLU: 3323
 ```
 
-**Características:**
-- Contienen "x" seguido de precio
-- Tienen "V.Ahorro", "Ahorro", "Descuento"
-- Formato de peso: "0.XXX/KGM", "1.5/KG"
-- NO tienen código PLU válido
+**IMPORTANTE:**
+- Si ves un número de 4-6 dígitos al inicio de línea → ES EL PLU
+- Captúralo SIEMPRE en el campo "codigo"
+- Los PLUs suelen estar en columna izquierda
 
-## 3. USAR "Total Item" COMO VALIDACIÓN
+**Ejemplos de PLUs válidos:**
+- 1220, 2534, 4567 (4 dígitos)
+- 12345, 54321 (5 dígitos)
+- 123456 (6 dígitos)
 
-Si dice "Total Item: 5", tu respuesta debe tener EXACTAMENTE 5 productos.
+**NO son PLUs:**
+- "1/u", "2/u" → Son cantidades
+- "0.750/KGM" → Es peso
+- "V.Ahorro" → Es descuento
 
-# 🔍 ALGORITMO DE EXTRACCIÓN
+# 📝 REGLA CRÍTICA: NOMBRES COMPLETOS
 
-Para cada línea:
+**Extrae el nombre COMPLETO del producto:**
 
-**PASO 1: ¿Es producto o descuento?**
+❌ MAL: "Crema"
+✅ BIEN: "Crema de Leche Semidescremada"
+
+❌ MAL: "Huevo"
+✅ BIEN: "Huevo Rojo AA"
+
+**El nombre TERMINA cuando aparece:**
+- "V.Ahorro", "Ahorro"
+- "/KGM", "/KG", "/U"
+- "x 0.750", "x 1.5"
+- "Descuento", "Dto"
+
+**Ejemplo correcto:**
 ```
-¿Formato "X.XXX/KG x PRECIO"? → IGNORAR
-¿Tiene "V.Ahorro" sin código? → IGNORAR
-¿Solo "Ahorro"/"Descuento"? → IGNORAR
-```
-
-**PASO 2: Extraer datos del producto:**
-```
-Columna 1 → codigo (solo dígitos)
-Columna 2 → nombre (SOLO hasta antes de "V.Ahorro"/"KGM")
-Columna 3 → precio (número final)
-```
-
-**PASO 3: Limpiar nombre:**
-- Eliminar todo después de "V.Ahorro"
-- Eliminar todo después de "/KGM" o "/KG"
-- Eliminar todo después de " x "
-
-# 📝 EJEMPLOS MULTI-ESTABLECIMIENTO
-
-**ÉXITO:**
-```
-PLU      DETALLE                     PRECIO
-1220     Mango                       6.280
-         V.Ahorro 0                  ← IGNORAR esta línea
-3323923  Brownie Mini Are            14.800
+PLU    NOMBRE COMPLETO                          PRECIO
+2534   Crema de Leche Semidescremada           5,240
+       V.Ahorro 0.250                            ← IGNORAR
 ```
 
-**JUMBO:**
-```
-CODIGO   DESCRIPCION                 VALOR
-4756821  LECHE ALPINA 1L             4,200
-         Descuento 2x1: -2,100       ← IGNORAR
-9182736  PAN TAJADO                  3,500
-```
-
-**D1:**
-```
-COD      PRODUCTO                    PRECIO
-123      ARROZ DIANA 500G            2,800
-456      ACEITE GIRASOL 1L           8,900
+Resultado JSON:
+```json
+{
+  "codigo": "2534",
+  "nombre": "Crema de Leche Semidescremada",
+  "precio": 5240
+}
 ```
 
-**Salida JSON (para todos):**
+# 🚫 LÍNEAS QUE DEBES IGNORAR
+
+**NO son productos:**
+```
+1 1/u x 26.900 V.Ahorro 4.035        ← Descuento
+0.750/KGM x 8.800                     ← Peso/unidad
+2x1 Descuento                         ← Promoción
+V.Ahorro                              ← Solo ahorro
+Subtotal                              ← Total parcial
+```
+
+**Características de líneas basura:**
+- Tienen "x" seguido de precio
+- Solo dicen "V.Ahorro" o "Ahorro"
+- Formato "0.XXX/KG"
+- NO tienen PLU al inicio
+
+# 🔍 ALGORITMO PASO A PASO
+
+Para cada línea de la factura:
+
+**PASO 1: ¿Es un producto?**
+```
+¿Tiene formato "X.XXX/KG x PRECIO"? → NO ES PRODUCTO
+¿Solo dice "V.Ahorro"? → NO ES PRODUCTO
+¿Empieza con PLU (4-6 dígitos)? → PROBABLEMENTE SÍ
+```
+
+**PASO 2: Extraer datos**
+```
+Columna 1 → codigo (PLU de 4-6 dígitos)
+Columna 2 → nombre (COMPLETO, hasta antes de "V.Ahorro")
+Columna 3 → precio (última columna con números)
+```
+
+**PASO 3: Limpiar nombre**
+```
+❌ "Crema de Leche V.Ahorro 0"
+✅ "Crema de Leche"
+
+❌ "Huevo Rojo 0.750/KGM"
+✅ "Huevo Rojo"
+```
+
+# 📋 EJEMPLOS REALES
+
+**Factura del ÉXITO:**
+```
+PLU      DETALLE                              PRECIO
+1220     Mango                                6,280
+         V.Ahorro 0                           ← IGNORAR
+2534     Crema de Leche Semidescremada        5,240
+         V.Ahorro 0.250                       ← IGNORAR
+3323     Brownie Mini Are                     14,800
+```
+
+**Salida JSON correcta:**
 ```json
 {
   "establecimiento": "ÉXITO",
-  "fecha": "2016-11-16",
-  "total": 288486,
+  "fecha": "2024-11-10",
+  "total": 26320,
   "productos": [
     {
       "codigo": "1220",
@@ -372,7 +369,13 @@ COD      PRODUCTO                    PRECIO
       "precio": 6280
     },
     {
-      "codigo": "3323923",
+      "codigo": "2534",
+      "nombre": "Crema de Leche Semidescremada",
+      "cantidad": 1,
+      "precio": 5240
+    },
+    {
+      "codigo": "3323",
       "nombre": "Brownie Mini Are",
       "cantidad": 1,
       "precio": 14800
@@ -381,26 +384,23 @@ COD      PRODUCTO                    PRECIO
 }
 ```
 
-# 🚨 VALIDACIÓN FINAL
+# ✅ VALIDACIÓN FINAL
 
-Antes de responder:
-1. ✅ ¿Número productos = "Total Item"?
-2. ✅ ¿Ningún nombre contiene "V.Ahorro", "KGM", "Descuento"?
-3. ✅ ¿Códigos son 4-13 dígitos numéricos?
-4. ✅ ¿Suma precios ≈ SUBTOTAL?
+Antes de responder, verifica:
+1. ✅ Cada producto tiene su PLU (si estaba visible)
+2. ✅ Los nombres están COMPLETOS (no truncados)
+3. ✅ NO hay líneas con "V.Ahorro", "Descuento", "/KGM"
+4. ✅ La suma de precios ≈ SUBTOTAL
 
-Si hay inconsistencias, elimina líneas sospechosas.
+# 🏪 ESTABLECIMIENTOS COLOMBIANOS
 
-# 🎯 ESTABLECIMIENTOS COLOMBIANOS
-
-Para identificar:
 - Grupo Éxito: ÉXITO, Carulla, Surtimax
 - Cencosud: JUMBO, Metro
-- Otros: Olímpica, D1, ARA, Alkosto, Makro, PriceSmart
+- Otros: Olímpica, D1, ARA, Alkosto, PriceSmart
 
-ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
+**ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin markdown):**"""
 
-        # Llamada con HAIKU 3.5
+        # Llamada a Claude
         message = client.messages.create(
             model="claude-3-5-haiku-20241022",
             max_tokens=8000,
@@ -423,9 +423,8 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
             ],
         )
 
-        # Parsear respuesta
         response_text = message.content[0].text
-        print(f"📄 Respuesta Claude (primeros 200 chars): {response_text[:200]}...")
+        print(f"📄 Respuesta Claude (primeros 300 chars):\n{response_text[:300]}...\n")
 
         # Extraer JSON
         json_str = response_text
@@ -441,71 +440,18 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                 json_str = response_text[start:end]
 
         json_str = json_str.strip()
-
-        # Parsear JSON
         data = json.loads(json_str)
 
-        # ========== FILTRADO INTELIGENTE DE BASURA ==========
+        # ========== FILTRADO DE BASURA ==========
         if "productos" in data and data["productos"]:
             productos_originales = len(data["productos"])
 
-            # Lista AMPLIADA de basura obvia
             palabras_basura = [
-                "ahorro",
-                "descuento",
-                "desc",
-                "dto",
-                "rebaja",
-                "promocion",
-                "promo",
-                "iva",
-                "impuesto",
-                "subtotal",
-                "total",
-                "cambio",
-                "efectivo",
-                "tarjeta",
-                "redeban",
-                "credito",
-                "debito",
-                "gracias",
-                "vuelva",
-                "resolucion",
-                "dian",
-                "nit",
-                "autoretenedor",
-                "mastercard",
-                "visa",
-                "american express",
-                "amex",
-                "diners",
-                "pse",
-                "nequi",
-                "daviplata",
-                "bancolombia",
-                "davivienda",
-                "transferencia",
-                "datafono",
-                "pos",
-                "terminal",
-                "precio final",
-                "gran total",
-                "valor total",
-                "items comprados",
-                "cajero",
-                "caja",
-                "factura",
-                "ticket",
-                "recibo",
-                "pago",
-                "autoriza",
-                "aprobado",
-                "comprobante",
-                "cufe",
-                "qr",
-                "codigo qr",
-                "fecha",
-                "hora",
+                "ahorro", "descuento", "desc", "dto", "rebaja", "promocion",
+                "iva", "impuesto", "subtotal", "total", "cambio", "efectivo",
+                "tarjeta", "credito", "debito", "gracias", "vuelva",
+                "resolucion", "dian", "nit", "factura", "ticket", "recibo",
+                "pago", "autoriza", "aprobado", "cufe", "qr", "fecha", "hora",
             ]
 
             productos_filtrados = []
@@ -514,40 +460,14 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
             for prod in data["productos"]:
                 nombre = str(prod.get("nombre", "")).lower().strip()
 
-                # ❌ FILTROS DE BASURA
                 es_basura = any(palabra in nombre for palabra in palabras_basura)
                 solo_numeros = not re.search(r"[A-Za-zÀ-ÿ]", nombre)
-                es_unidad = nombre in [
-                    "kg",
-                    "kgm",
-                    "/kgm",
-                    "/kg",
-                    "und",
-                    "/u",
-                    "x",
-                    "un",
-                ]
-                es_peso = bool(re.match(r"^\d+\.?\d*\s*/\s*kg[hm]?$", nombre))
-                es_numeracion = bool(re.match(r"^\d{1,2}\s*(un|/u)\b", nombre))
-                es_simbolo = nombre in ["%", "$", "-", "=", "*", "+"]
+                es_unidad = nombre in ["kg", "kgm", "/kgm", "/kg", "und", "/u", "x"]
                 muy_corto = len(nombre) < 3
                 precio = prod.get("precio", 0)
                 precio_invalido = precio < 50
-                patron_repetitivo = bool(re.match(r"^\d+\s+\d+/u", nombre))
 
-                # Aplicar filtros
-                if (
-                    es_basura
-                    or solo_numeros
-                    or es_unidad
-                    or es_peso
-                    or es_numeracion
-                    or es_simbolo
-                    or muy_corto
-                    or (precio_invalido and not nombre)
-                    or patron_repetitivo
-                ):
-
+                if es_basura or solo_numeros or es_unidad or muy_corto or (precio_invalido and not nombre):
                     basura_eliminada += 1
                     print(f"   🗑️ Basura: '{prod.get('nombre', 'N/A')[:40]}'")
                 else:
@@ -556,20 +476,19 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
             data["productos"] = productos_filtrados
 
             if basura_eliminada > 0:
-                print(f"✅ {basura_eliminada} líneas de basura eliminadas")
-                print(f"📦 {len(productos_filtrados)} productos pre-limpieza")
+                print(f"✅ {basura_eliminada} líneas basura eliminadas")
+                print(f"📦 {len(productos_filtrados)} productos válidos\n")
 
-        # ========== POST-PROCESAMIENTO: LIMPIEZA DE NOMBRES ==========
+        # ========== LIMPIEZA DE NOMBRES ==========
         if "productos" in data and data["productos"]:
             productos_limpios = []
-
-            print(f"\n🧹 LIMPIANDO NOMBRES DE PRODUCTOS...")
+            print(f"🧹 LIMPIANDO NOMBRES...")
 
             for prod in data["productos"]:
                 nombre_original = str(prod.get("nombre", "")).strip()
                 nombre_limpio = nombre_original
 
-                # 🧹 Patrones a eliminar del FINAL del nombre
+                # Eliminar sufijos de error
                 sufijos_error = [
                     r"\s+V\.?\s*Ahorro.*$",
                     r"\s+Ahorro.*$",
@@ -577,36 +496,29 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                     r"\s+\d+\.?\d*/KG[MH]?.*$",
                     r"\s+x\s+\d+\.?\d+.*$",
                     r"\s+Khorro.*$",
-                    r"\s+y\s+Khorro.*$",
                 ]
 
                 for patron in sufijos_error:
-                    nombre_limpio = re.sub(
-                        patron, "", nombre_limpio, flags=re.IGNORECASE
-                    )
+                    nombre_limpio = re.sub(patron, "", nombre_limpio, flags=re.IGNORECASE)
 
                 nombre_limpio = nombre_limpio.strip()
 
-                # Log de cambios
                 if nombre_limpio != nombre_original:
-                    print(f"   🧹 '{nombre_original[:40]}' → '{nombre_limpio}'")
+                    print(f"   🧹 '{nombre_original[:50]}' → '{nombre_limpio}'")
 
-                # Solo agregar si tiene contenido válido
                 if len(nombre_limpio) >= 3:
                     prod["nombre"] = nombre_limpio
                     productos_limpios.append(prod)
                 else:
-                    print(f"   🗑️ Nombre muy corto descartado: '{nombre_limpio}'")
+                    print(f"   🗑️ Muy corto: '{nombre_limpio}'")
 
             data["productos"] = productos_limpios
-            print(
-                f"✅ Productos finales después de limpieza: {len(productos_limpios)}\n"
-            )
+            print(f"✅ {len(productos_limpios)} productos finales\n")
 
-        # ========== CORRECCIÓN DE ERRORES OCR ==========
+        # ========== CORRECCIÓN OCR ==========
         if "productos" in data and data["productos"]:
-            print(f"🔧 CORRIGIENDO ERRORES DE OCR...")
-            correcciones_aplicadas = 0
+            print(f"🔧 CORRIGIENDO ERRORES OCR...")
+            correcciones = 0
 
             for prod in data["productos"]:
                 nombre_original = prod.get("nombre", "")
@@ -615,14 +527,24 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                 if nombre_corregido != nombre_original:
                     print(f"   🔧 '{nombre_original}' → '{nombre_corregido}'")
                     prod["nombre"] = nombre_corregido
-                    correcciones_aplicadas += 1
+                    correcciones += 1
 
-            if correcciones_aplicadas > 0:
-                print(f"✅ {correcciones_aplicadas} correcciones OCR aplicadas\n")
-            else:
-                print(f"✅ No se requirieron correcciones OCR\n")
+            if correcciones > 0:
+                print(f"✅ {correcciones} correcciones OCR\n")
 
-        # ========== NORMALIZACIÓN Y NIVEL DE CONFIANZA ==========
+        # ========== NORMALIZACIÓN ==========
+        if "productos" in data and data["productos"]:
+            print(f"📝 NORMALIZANDO NOMBRES...")
+
+            for prod in data["productos"]:
+                nombre_original = prod.get("nombre", "")
+                nombre_normalizado = normalizar_nombre_producto(nombre_original)
+
+                if nombre_normalizado != nombre_original:
+                    print(f"   📝 '{nombre_original}' → '{nombre_normalizado}'")
+                    prod["nombre"] = nombre_normalizado
+
+        # ========== PROCESAMIENTO FINAL ==========
         productos_procesados = 0
         nivel_1 = 0  # Código + Nombre + Precio
         nivel_2 = 0  # Nombre + Precio
@@ -631,7 +553,7 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
         for prod in data.get("productos", []):
             productos_procesados += 1
 
-            # ✅ CORRECCIÓN CRÍTICA: Usar función mejorada de limpieza de precios
+            # Limpiar precio
             if "precio" in prod:
                 prod["precio"] = limpiar_precio_colombiano(prod["precio"])
             else:
@@ -648,12 +570,12 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
                 except:
                     prod["cantidad"] = 1
 
-            # Validar y limpiar código
+            # Validar código (PLU o EAN)
             if "codigo" in prod and prod["codigo"]:
                 codigo_limpio = str(prod["codigo"]).strip()
 
-                # ✅ Acepta códigos de 1-13 dígitos
-                if codigo_limpio.isdigit() and 1 <= len(codigo_limpio) <= 13:
+                # ✅ Acepta códigos de 3-13 dígitos
+                if codigo_limpio.isdigit() and 3 <= len(codigo_limpio) <= 13:
                     prod["codigo"] = codigo_limpio
                 else:
                     prod["codigo"] = ""
@@ -664,9 +586,9 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
             nombre = str(prod.get("nombre", "")).strip()
             prod["nombre"] = nombre
 
-            # ✅ Calcular nivel de confianza
+            # Calcular nivel de confianza
             tiene_codigo = bool(prod["codigo"])
-            tiene_nombre = bool(nombre and len(nombre) >= 2)
+            tiene_nombre = bool(nombre and len(nombre) >= 3)
             tiene_precio = bool(prod["precio"] >= 50)
 
             if tiene_codigo and tiene_nombre and tiene_precio:
@@ -675,42 +597,42 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
             elif tiene_nombre and tiene_precio:
                 prod["nivel_confianza"] = 2
                 nivel_2 += 1
-            elif tiene_nombre or (tiene_codigo and prod["precio"] > 0):
-                prod["nivel_confianza"] = 3
-                nivel_3 += 1
             else:
                 prod["nivel_confianza"] = 3
                 nivel_3 += 1
 
         # Normalizar establecimiento
-        establecimiento_raw = data.get("establecimiento", "Desconocido")
-        data["establecimiento"] = normalizar_establecimiento(establecimiento_raw)
+        data["establecimiento"] = normalizar_establecimiento(
+            data.get("establecimiento", "Desconocido")
+        )
 
-        # Asegurar total
+        # Total
         if "total" not in data or not data["total"]:
-            suma_productos = sum(
+            suma = sum(
                 p.get("precio", 0) * p.get("cantidad", 1)
                 for p in data.get("productos", [])
             )
-            data["total"] = suma_productos
+            data["total"] = suma
 
-        # ========== LOG DE RESULTADOS ==========
-        print(f"📊 Establecimiento: {data.get('establecimiento', 'N/A')}")
-        print(f"💰 Total: ${data.get('total', 0):,}")
-        print(f"📦 Productos procesados: {productos_procesados}")
+        # ========== LOGS ==========
+        print(f"=" * 80)
+        print(f"📊 RESULTADOS:")
+        print(f"   🏪 Establecimiento: {data.get('establecimiento', 'N/A')}")
+        print(f"   💰 Total: ${data.get('total', 0):,}")
+        print(f"   📦 Productos: {productos_procesados}")
         print(f"")
-        print(f"📊 POR NIVEL DE CONFIANZA:")
+        print(f"📊 POR NIVEL:")
         print(f"   ✅ NIVEL 1 (Código+Nombre+Precio): {nivel_1}")
         print(f"   ⚠️  NIVEL 2 (Nombre+Precio): {nivel_2}")
         print(f"   ⚡ NIVEL 3 (Parcial): {nivel_3}")
-        print("=" * 70)
+        print(f"=" * 80)
 
         return {
             "success": True,
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-multi-establecimiento",
+                    "metodo": "claude-vision-mejorado-plu",
                     "modelo": "claude-3-5-haiku-20241022",
                     "productos_detectados": productos_procesados,
                     "nivel_1": nivel_1,
@@ -722,21 +644,20 @@ ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin comas en precios):"""
 
     except json.JSONDecodeError as e:
         print(f"❌ Error JSON: {e}")
-        print(f"Respuesta recibida: {response_text[:500]}")
+        print(f"Respuesta: {response_text[:500]}")
         return {
             "success": False,
-            "error": "Error parseando respuesta de Claude. Imagen más clara.",
+            "error": "Error parseando respuesta. Imagen más clara.",
         }
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
-
         traceback.print_exc()
-        return {"success": False, "error": f"Error procesando imagen: {str(e)}"}
+        return {"success": False, "error": f"Error: {str(e)}"}
 
 
 def normalizar_establecimiento(nombre_raw: str) -> str:
-    """Normaliza nombre del establecimiento a formato estándar"""
+    """Normaliza nombre del establecimiento"""
     if not nombre_raw:
         return "Desconocido"
 
@@ -754,30 +675,26 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         "alkosto": "ALKOSTO",
         "makro": "MAKRO",
         "pricesmart": "PRICESMART",
-        "dolarcity": "DOLARCITY",
         "surtimax": "SURTIMAX",
         "metro": "METRO",
-        "la 14": "LA 14",
-        "camacho": "CAMACHO",
         "cruz verde": "CRUZ VERDE",
         "cafam": "CAFAM",
         "colsubsidio": "COLSUBSIDIO",
-        "Jeronimo Martins Colombias SAS": "ARA",
+        "jeronimo martins": "ARA",
     }
 
     for clave, normalizado in establecimientos.items():
         if clave in nombre_lower:
             return normalizado
 
-    # Si no coincide, devolver capitalizado
     return nombre_raw.strip().upper()[:50]
 
 
 # ==============================================================================
 # INICIALIZACIÓN
 # ==============================================================================
-print("✅ claude_invoice.py cargado - VERSIÓN CON CORRECCIÓN OCR")
-print("   📌 Versión: 2025-11-05")
-print("   💰 Precios: Manejo correcto de strings, integers y floats")
-print("   🔧 Correcciones OCR: 52 patrones detectados")
-print("   🔧 Compatible con: Claude API Haiku 3.5")
+print("✅ claude_invoice.py MEJORADO - v2025-11-10")
+print("   🔧 Mejor detección de PLUs (4-6 dígitos)")
+print("   📝 Normalización completa (MAYÚSCULAS, sin tildes)")
+print("   🧹 Correcciones OCR ampliadas")
+print("   💰 Manejo robusto de precios colombianos")
