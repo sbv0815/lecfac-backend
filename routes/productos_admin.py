@@ -104,7 +104,7 @@ async def obtener_producto(producto_id: int, db = Depends(get_db)):
             SELECT
                 pe.codigo_plu,
                 e.nombre_normalizado,
-                pe.ultima_compra,
+                pe.ultima_fecha as ultima_compra,
                 pe.veces_comprado,
                 pe.precio_unitario
             FROM productos_por_establecimiento pe
@@ -460,7 +460,7 @@ async def listar_productos(
                     pe.codigo_plu,
                     e.nombre_normalizado as establecimiento,
                     pe.precio_unitario,
-                    pe.ultima_compra
+                    pe.ultima_fecha as ultima_compra
                 FROM productos_por_establecimiento pe
                 JOIN establecimientos e ON pe.establecimiento_id = e.id
                 WHERE pe.producto_maestro_id = %s
