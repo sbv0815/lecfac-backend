@@ -3787,15 +3787,20 @@ print("✅ Endpoints de setup agregados")
 # AGREGAR A main.py - Endpoint para crear tabla categorias
 # ============================================================================
 
+# ============================================================================
+# AGREGAR A main.py - VERSIÓN CORREGIDA
+# Reemplazar el endpoint anterior con este
+# ============================================================================
+
 @app.get("/admin/setup-categorias")
 async def setup_categorias():
     """
-    Endpoint para crear tabla categorias y migrar datos existentes
-    Ejecutar visitando: https://tu-app.railway.app/admin/setup-categorias
+    Endpoint para crear tabla categorias (VERSIÓN CORREGIDA)
+    Para tablas que YA TIENEN categoria_id pero la tabla categorias no existe
     """
     try:
         print("\n" + "="*70)
-        print("🏗️ CREANDO TABLA CATEGORIAS")
+        print("🏗️ CREANDO TABLA CATEGORIAS (Versión Simple)")
         print("="*70)
 
         from database import get_db_connection
@@ -3857,7 +3862,7 @@ async def setup_categorias():
         conn.commit()
         print(f"   ✅ {insertadas} categorías insertadas")
 
-        # 3. Verificar si existe columna categoria_id
+        # 3. Verificar columna categoria_id (ya debe existir)
         print("3️⃣ Verificando columna categoria_id...")
         cursor.execute("""
             SELECT column_name
@@ -3866,7 +3871,9 @@ async def setup_categorias():
               AND column_name = 'categoria_id'
         """)
 
-        if not cursor.fetchone():
+        if cursor.fetchone():
+            print("   ✓ Columna categoria_id ya existe")
+        else:
             print("   ➕ Agregando columna categoria_id...")
             cursor.execute("""
                 ALTER TABLE productos_maestros_v2
@@ -3874,40 +3881,9 @@ async def setup_categorias():
             """)
             conn.commit()
             print("   ✅ Columna agregada")
-        else:
-            print("   ✓ Columna ya existe")
 
-        # 4. Migrar categorías existentes
-        print("4️⃣ Migrando categorías de texto a IDs...")
-
-        # Insertar categorías únicas que ya existen
-        cursor.execute("""
-            INSERT INTO categorias (nombre)
-            SELECT DISTINCT categoria
-            FROM productos_maestros_v2
-            WHERE categoria IS NOT NULL
-              AND categoria != ''
-              AND categoria NOT IN (SELECT nombre FROM categorias)
-            ORDER BY categoria
-        """)
-        categorias_migradas = cursor.rowcount
-        conn.commit()
-        print(f"   ✅ {categorias_migradas} categorías nuevas migradas")
-
-        # Actualizar productos con categoria_id
-        cursor.execute("""
-            UPDATE productos_maestros_v2 pm
-            SET categoria_id = c.id
-            FROM categorias c
-            WHERE pm.categoria = c.nombre
-              AND pm.categoria_id IS NULL
-        """)
-        productos_actualizados = cursor.rowcount
-        conn.commit()
-        print(f"   ✅ {productos_actualizados} productos actualizados con categoria_id")
-
-        # 5. Crear índice
-        print("5️⃣ Creando índices...")
+        # 4. Crear índice
+        print("4️⃣ Creando índices...")
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_productos_v2_categoria
             ON productos_maestros_v2(categoria_id)
@@ -3915,8 +3891,8 @@ async def setup_categorias():
         conn.commit()
         print("   ✅ Índice creado")
 
-        # 6. Crear vista
-        print("6️⃣ Creando vista v_productos_con_categoria...")
+        # 5. Crear vista
+        print("5️⃣ Creando vista v_productos_con_categoria...")
         cursor.execute("""
             CREATE OR REPLACE VIEW v_productos_con_categoria AS
             SELECT
@@ -3935,7 +3911,7 @@ async def setup_categorias():
         conn.commit()
         print("   ✅ Vista creada")
 
-        # 7. Obtener estadísticas
+        # 6. Obtener estadísticas
         cursor.execute("SELECT COUNT(*) FROM categorias WHERE activo = TRUE")
         total_categorias = cursor.fetchone()[0]
 
@@ -3949,19 +3925,18 @@ async def setup_categorias():
         conn.close()
 
         print("\n" + "="*70)
-        print("✅ MIGRACIÓN COMPLETADA")
+        print("✅ SETUP COMPLETADO")
         print("="*70)
 
         return {
             "success": True,
-            "mensaje": "Tabla categorias creada y datos migrados correctamente",
+            "mensaje": "Tabla categorias creada correctamente",
+            "nota": "Tu tabla ya tenía categoria_id, solo se creó el catálogo de categorías",
             "estadisticas": {
                 "total_categorias": total_categorias,
                 "productos_con_categoria": productos_con_categoria,
                 "productos_sin_categoria": productos_sin_categoria,
-                "categorias_insertadas": insertadas,
-                "categorias_migradas": categorias_migradas,
-                "productos_actualizados": productos_actualizados
+                "categorias_insertadas": insertadas
             }
         }
 
@@ -3976,6 +3951,8 @@ async def setup_categorias():
             "traceback": traceback.format_exc()
         }
 
+
+print("✅ Endpoint de categorías corregido (para tablas con categoria_id existente)")
 
 @app.get("/admin/verificar-categorias")
 async def verificar_categorias():
