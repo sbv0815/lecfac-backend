@@ -1,93 +1,210 @@
-# consolidacion_productos.py - VERSIÓN SÍNCRONA PARA PSYCOPG2
+# consolidacion_productos.py - VERSIÓN MEJORADA CON NORMALIZACIÓN Y MEJOR MATCHING
 
 import anthropic
 import os
 from typing import Optional, Dict, List
+import unicodedata
 from datetime import datetime
 from difflib import SequenceMatcher
 
 # Cliente de Anthropic
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+
+# ============================================================================
+# NORMALIZACIÓN DE NOMBRES
+# ============================================================================
+
+def normalizar_nombre_producto(nombre: str) -> str:
+    """
+    Normaliza nombres de productos:
+    - Todo MAYÚSCULAS
+    - Sin tildes
+    - Sin espacios extras
+    - Sin caracteres especiales
+
+    Ejemplos:
+    "crema de leché" → "CREMA DE LECHE"
+    "  Jugo    Hit  " → "JUGO HIT"
+    "Arroz-Diana" → "ARROZ DIANA"
+    """
+    if not nombre or not nombre.strip():
+        return "PRODUCTO SIN NOMBRE"
+
+    # Convertir a mayúsculas y limpiar espacios
+    nombre = nombre.upper().strip()
+
+    # Quitar tildes y diacríticos
+    nombre = ''.join(
+        c for c in unicodedata.normalize('NFD', nombre)
+        if unicodedata.category(c) != 'Mn'
+    )
+
+    # Reemplazar caracteres especiales por espacios
+    caracteres_especiales = ['-', '_', '.', ',', '/', '\\', '|']
+    for char in caracteres_especiales:
+        nombre = nombre.replace(char, ' ')
+
+    # Quitar espacios múltiples
+    nombre = ' '.join(nombre.split())
+
+    # Quitar caracteres no alfanuméricos (excepto espacios)
+    nombre = ''.join(c for c in nombre if c.isalnum() or c.isspace())
+
+    return nombre
+
+
+def calcular_similitud_mejorada(nombre1: str, nombre2: str) -> float:
+    """
+    Calcula similitud entre dos nombres de productos
+    Detecta que "crema veche" es similar a "crema de leche"
+
+    Returns: float entre 0.0 y 1.0
+    """
+    # Normalizar ambos nombres
+    n1 = normalizar_nombre_producto(nombre1)
+    n2 = normalizar_nombre_producto(nombre2)
+
+    # Si son idénticos
+    if n1 == n2:
+        return 1.0
+
+    # Si uno contiene completamente al otro (substring)
+    if len(n1) > len(n2):
+        if n2 in n1:
+            # Calcular qué tan grande es el match
+            ratio = len(n2) / len(n1)
+            return 0.80 + (ratio * 0.15)  # Entre 0.80 y 0.95
+    else:
+        if n1 in n2:
+            ratio = len(n1) / len(n2)
+            return 0.80 + (ratio * 0.15)
+
+    # Similitud por palabras en común
+    palabras1 = set(n1.split())
+    palabras2 = set(n2.split())
+
+    if palabras1 and palabras2:
+        palabras_comunes = palabras1.intersection(palabras2)
+        total_palabras = len(palabras1.union(palabras2))
+
+        if palabras_comunes:
+            similitud_palabras = len(palabras_comunes) / total_palabras
+
+            # Si tienen >70% palabras en común, considerar muy similares
+            if similitud_palabras > 0.7:
+                return 0.75 + (similitud_palabras * 0.25)
+
+    # Similitud de caracteres (fallback)
+    return SequenceMatcher(None, n1, n2).ratio()
+
+
+# ============================================================================
+# MEJORA CON CLAUDE
+# ============================================================================
+
 def mejorar_nombre_con_claude(nombre_ocr: str, codigo_ean: Optional[str] = None) -> Dict:
     """
     Usa Claude para limpiar, corregir y estandarizar nombres de productos
-    VERSIÓN SÍNCRONA
+    VERSIÓN MEJORADA - Devuelve nombres normalizados
     """
-    prompt = f"""Eres un experto en productos de supermercados colombianos. Tu tarea es analizar y mejorar este nombre de producto escaneado de un recibo.
+    # Pre-normalizar el input
+    nombre_normalizado = normalizar_nombre_producto(nombre_ocr)
 
-NOMBRE DEL RECIBO: "{nombre_ocr}"
+    prompt = f"""Eres un experto en productos de supermercados colombianos. Analiza y mejora este nombre de producto.
+
+NOMBRE DEL RECIBO: "{nombre_normalizado}"
 {f"CÓDIGO EAN: {codigo_ean}" if codigo_ean else "NO TIENE CÓDIGO EAN"}
 
-INSTRUCCIONES:
-1. Corrige errores comunes de OCR:
-   - ALQUERI → ALQUERIA
-   - ALPNA → ALPINA
+INSTRUCCIONES CRÍTICAS:
+1. Corrige errores típicos de OCR:
+   - VECHE/VEC/LECH → LECHE
+   - ALQUERI/ALQUER → ALQUERIA
+   - ALPNA/ALPIN → ALPINA
    - COLANT → COLANTA
-   - CREM → CREMA
-   - LEC → LECHE
-   - YOGUR → YOGURT
-   - Palabras cortadas o incompletas
+   - CREM/CRM → CREMA
+   - YOGUR/YOGU → YOGURT
+   - SEMI → SEMI (semidescremada)
+   - Palabras cortadas: completa basándote en productos comunes
 
-2. Completa palabras truncadas basándote en productos comunes colombianos
+2. COMPLETA nombres truncados:
+   - "CREMA SEMI" → "CREMA DE LECHE SEMI"
+   - "ARROZ DIANA X" → "ARROZ DIANA"
+   - "JUGO HIT MOR" → "JUGO HIT MORA"
 
-3. Estandariza el formato:
+3. FORMATO OBLIGATORIO:
    - Todo en MAYÚSCULAS
-   - Sin tildes
-   - Espacios simples entre palabras
+   - Sin tildes ni caracteres especiales
+   - Un solo espacio entre palabras
+   - NO incluir precios ni códigos
 
-4. Extrae información:
-   - Marca (si existe)
-   - Peso/volumen con unidad (ej: 500, unidad: "G")
-   - Si no puedes determinar algo, déjalo en null
+4. EXTRAE:
+   - Marca (si existe claramente)
+   - Peso/volumen (número + unidad)
+   - Si no estás seguro, pon null
 
-5. Mantén SOLO información relevante: marca, tipo de producto, peso/volumen
+5. Productos colombianos comunes:
+   - CREMA DE LECHE ALQUERIA/ALPINA/COLANTA
+   - LECHE ENTERA/SEMI/DESLACTOSADA
+   - ARROZ DIANA/FLORHUILA
+   - PANELA DOÑA PANELA
+   - HUEVOS SANTA REYES/KIKES
 
-EJEMPLOS:
-- "CREMA DE LEC ALQUERI" → "CREMA DE LECHE ALQUERIA"
-- "ARROZ DIANA X 500" → "ARROZ DIANA 500G"
-- "JUGO HIT MORA 200ML" → "JUGO HIT MORA 200ML"
-
-Responde ÚNICAMENTE con un JSON en este formato exacto (sin markdown, sin explicaciones):
+Responde SOLO con JSON (sin markdown, sin explicaciones):
 {{
-  "nombre_mejorado": "NOMBRE CORREGIDO Y COMPLETO",
+  "nombre_mejorado": "NOMBRE COMPLETO Y CORREGIDO",
   "marca": "MARCA o null",
   "peso_neto": numero_o_null,
   "unidad_medida": "G/ML/KG/L/UNIDADES o null",
   "confianza": 0.95
 }}
 
-El campo confianza debe ser:
-- 0.95-1.0 si todo está claro y correcto
-- 0.80-0.94 si hiciste correcciones menores
-- 0.60-0.79 si tuviste que adivinar o completar bastante
-- 0.40-0.59 si hay mucha incertidumbre"""
+Confianza:
+- 0.95-1.0: Todo claro, producto conocido
+- 0.80-0.94: Correcciones menores
+- 0.60-0.79: Adivinaste o completaste bastante
+- 0.40-0.59: Mucha incertidumbre"""
 
     try:
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=200,
-            temperature=0.3,
+            max_tokens=250,
+            temperature=0.2,  # Más bajo = más consistente
             messages=[{"role": "user", "content": prompt}]
         )
 
         respuesta = message.content[0].text.strip()
 
+        # Limpiar markdown si Claude lo agregó
+        if respuesta.startswith('```'):
+            respuesta = respuesta.split('```')[1]
+            if respuesta.startswith('json'):
+                respuesta = respuesta[4:]
+            respuesta = respuesta.strip()
+
         import json
         datos = json.loads(respuesta)
+
+        # CRÍTICO: Normalizar el nombre mejorado también
+        datos['nombre_mejorado'] = normalizar_nombre_producto(datos['nombre_mejorado'])
 
         return datos
 
     except Exception as e:
-        print(f"Error al mejorar nombre con Claude: {e}")
+        print(f"⚠️ Error al mejorar con Claude: {e}")
+        # Fallback: devolver nombre normalizado
         return {
-            "nombre_mejorado": nombre_ocr.upper(),
+            "nombre_mejorado": nombre_normalizado,
             "marca": None,
             "peso_neto": None,
             "unidad_medida": None,
             "confianza": 0.3
         }
 
+
+# ============================================================================
+# CONSOLIDACIÓN POR EAN
+# ============================================================================
 
 def consolidar_por_ean(
     cursor,
@@ -97,9 +214,11 @@ def consolidar_por_ean(
 ) -> int:
     """
     Consolida un producto que tiene código EAN
-    VERSIÓN SÍNCRONA con psycopg2
-    Returns: producto_maestro_id
+    ✅ Usa nombres normalizados
     """
+    # Normalizar nombre de entrada
+    nombre_normalizado = normalizar_nombre_producto(nombre_ocr)
+
     # 1. Buscar en productos_maestros_v2
     cursor.execute(
         "SELECT * FROM productos_maestros_v2 WHERE codigo_ean = %s",
@@ -108,7 +227,7 @@ def consolidar_por_ean(
     producto = cursor.fetchone()
 
     if producto:
-        # Producto ya existe - actualizar contador
+        # Producto existe - actualizar contador
         cursor.execute(
             """UPDATE productos_maestros_v2
                SET veces_visto = veces_visto + 1,
@@ -118,6 +237,7 @@ def consolidar_por_ean(
         )
 
         producto_id = producto['id']
+        print(f"   ✓ Producto existente: {producto['nombre_consolidado']}")
 
     else:
         # Producto nuevo - buscar en productos_referencia
@@ -128,30 +248,33 @@ def consolidar_por_ean(
         referencia = cursor.fetchone()
 
         if referencia:
-            nombre_final = referencia['nombre_oficial']
+            nombre_final = normalizar_nombre_producto(referencia['nombre_oficial'])
             marca = referencia['marca']
             confianza = 1.0
             estado = 'verificado'
             print(f"   ℹ️  Usando referencia: {nombre_final}")
         else:
             # Usar Claude para mejorar el nombre
-            print(f"   🤖 Mejorando con Claude: {nombre_ocr}")
-            mejora = mejorar_nombre_con_claude(nombre_ocr, ean)
+            print(f"   🤖 Mejorando con Claude: {nombre_normalizado}")
+            mejora = mejorar_nombre_con_claude(nombre_normalizado, ean)
 
-            nombre_final = mejora['nombre_mejorado']
+            nombre_final = mejora['nombre_mejorado']  # Ya viene normalizado
             marca = mejora['marca']
             confianza = mejora['confianza']
             estado = 'verificado' if confianza >= 0.85 else 'pendiente'
 
-            # Log de la mejora
-            cursor.execute(
-                """INSERT INTO log_mejoras_nombres
-                   (nombre_original, nombre_mejorado, metodo, confianza)
-                   VALUES (%s, %s, %s, %s)""",
-                (nombre_ocr, nombre_final, 'claude', confianza)
-            )
-
             print(f"      → {nombre_final} (confianza: {confianza:.2f})")
+
+            # Log de la mejora
+            try:
+                cursor.execute(
+                    """INSERT INTO log_mejoras_nombres
+                       (nombre_original, nombre_mejorado, metodo, confianza)
+                       VALUES (%s, %s, %s, %s)""",
+                    (nombre_normalizado, nombre_final, 'claude', confianza)
+                )
+            except Exception as e:
+                print(f"   ⚠️ Error guardando log: {e}")
 
         # Crear nuevo producto maestro
         cursor.execute(
@@ -165,10 +288,14 @@ def consolidar_por_ean(
         producto_id = cursor.fetchone()['id']
 
     # Registrar variante de nombre
-    registrar_variante_nombre(cursor, producto_id, nombre_ocr, establecimiento_id)
+    registrar_variante_nombre(cursor, producto_id, nombre_normalizado, establecimiento_id)
 
     return producto_id
 
+
+# ============================================================================
+# CONSOLIDACIÓN POR PLU
+# ============================================================================
 
 def consolidar_por_plu(
     cursor,
@@ -178,8 +305,10 @@ def consolidar_por_plu(
 ) -> int:
     """
     Consolida un producto que tiene código PLU (sin EAN)
-    VERSIÓN SÍNCRONA
+    ✅ Mejorado con normalización y mejor matching
     """
+    nombre_normalizado = normalizar_nombre_producto(nombre_ocr)
+
     # Buscar si ya conocemos este PLU
     cursor.execute(
         """SELECT ca.*, pm.*
@@ -192,6 +321,7 @@ def consolidar_por_plu(
 
     if codigo_alt:
         producto_id = codigo_alt['producto_maestro_id']
+        print(f"   ✓ PLU conocido: {codigo_alt['nombre_consolidado']}")
 
         cursor.execute(
             """UPDATE codigos_alternativos
@@ -210,29 +340,39 @@ def consolidar_por_plu(
         )
     else:
         # PLU nuevo
-        print(f"   🤖 Nuevo PLU {plu} - Mejorando con Claude: {nombre_ocr}")
-        mejora = mejorar_nombre_con_claude(nombre_ocr, None)
+        print(f"   🤖 Nuevo PLU {plu} - Mejorando: {nombre_normalizado}")
+        mejora = mejorar_nombre_con_claude(nombre_normalizado, None)
 
         nombre_mejorado = mejora['nombre_mejorado']
         marca = mejora['marca']
         confianza = mejora['confianza']
 
-        # Buscar producto similar
+        # Buscar producto similar por NOMBRE (no por PLU)
         cursor.execute(
             """SELECT pm.id, pm.nombre_consolidado
                FROM productos_maestros_v2 pm
                LEFT JOIN codigos_alternativos ca ON pm.id = ca.producto_maestro_id
                WHERE ca.establecimiento_id = %s
                AND pm.codigo_ean IS NULL
-               AND pm.nombre_consolidado = %s
-               LIMIT 1""",
-            (establecimiento_id, nombre_mejorado)
+               LIMIT 50""",  # Buscar en más productos
+            (establecimiento_id,)
         )
-        similar = cursor.fetchone()
+        productos_existentes = cursor.fetchall()
 
-        if similar:
-            producto_id = similar['id']
-            print(f"      → Vinculando a producto existente: {similar['nombre_consolidado']}")
+        mejor_match = None
+        mejor_similitud = 0
+
+        for prod in productos_existentes:
+            similitud = calcular_similitud_mejorada(nombre_mejorado, prod['nombre_consolidado'])
+
+            if similitud > mejor_similitud:
+                mejor_similitud = similitud
+                mejor_match = prod
+
+        # Si hay match > 85%, usar ese producto
+        if mejor_match and mejor_similitud >= 0.85:
+            producto_id = mejor_match['id']
+            print(f"      → Match encontrado: {mejor_match['nombre_consolidado']} ({mejor_similitud:.2f})")
         else:
             # Crear nuevo producto
             cursor.execute(
@@ -243,7 +383,7 @@ def consolidar_por_plu(
                 (nombre_mejorado, marca, confianza, 'pendiente')
             )
             producto_id = cursor.fetchone()['id']
-            print(f"      → Nuevo producto: {nombre_mejorado} (confianza: {confianza:.2f})")
+            print(f"      → Nuevo producto: {nombre_mejorado} (conf: {confianza:.2f})")
 
         # Registrar el PLU
         cursor.execute(
@@ -254,17 +394,24 @@ def consolidar_por_plu(
         )
 
         # Log
-        cursor.execute(
-            """INSERT INTO log_mejoras_nombres
-               (producto_maestro_id, nombre_original, nombre_mejorado, metodo, confianza)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (producto_id, nombre_ocr, nombre_mejorado, 'claude', confianza)
-        )
+        try:
+            cursor.execute(
+                """INSERT INTO log_mejoras_nombres
+                   (producto_maestro_id, nombre_original, nombre_mejorado, metodo, confianza)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (producto_id, nombre_normalizado, nombre_mejorado, 'claude', confianza)
+            )
+        except Exception as e:
+            print(f"   ⚠️ Error guardando log: {e}")
 
-    registrar_variante_nombre(cursor, producto_id, nombre_ocr, establecimiento_id)
+    registrar_variante_nombre(cursor, producto_id, nombre_normalizado, establecimiento_id)
 
     return producto_id
 
+
+# ============================================================================
+# CONSOLIDACIÓN SIN CÓDIGO
+# ============================================================================
 
 def consolidar_sin_codigo(
     cursor,
@@ -273,21 +420,23 @@ def consolidar_sin_codigo(
 ) -> int:
     """
     Consolida un producto SIN código
-    VERSIÓN SÍNCRONA
+    ✅ Mejorado con mejor matching
     """
-    print(f"   ⚠️  Producto sin código - Solo nombre: {nombre_ocr}")
+    nombre_normalizado = normalizar_nombre_producto(nombre_ocr)
+    print(f"   ⚠️ Sin código - Buscando por nombre: {nombre_normalizado}")
 
-    mejora = mejorar_nombre_con_claude(nombre_ocr, None)
+    mejora = mejorar_nombre_con_claude(nombre_normalizado, None)
 
     nombre_mejorado = mejora['nombre_mejorado']
     marca = mejora['marca']
-    confianza = mejora['confianza'] * 0.8
+    confianza = mejora['confianza'] * 0.8  # Penalizar por no tener código
 
+    # Buscar productos similares
     similar = buscar_producto_similar(cursor, nombre_mejorado, establecimiento_id)
 
     if similar and similar['confianza'] >= 0.90:
         producto_id = similar['producto_id']
-        print(f"      → Match encontrado: {similar['nombre']} (conf: {similar['confianza']:.2f})")
+        print(f"      → Match: {similar['nombre']} (conf: {similar['confianza']:.2f})")
 
         cursor.execute(
             """UPDATE productos_maestros_v2
@@ -297,6 +446,7 @@ def consolidar_sin_codigo(
             (producto_id,)
         )
     else:
+        # Crear nuevo producto (estado 'conflicto' por falta de código)
         cursor.execute(
             """INSERT INTO productos_maestros_v2
                (nombre_consolidado, marca, confianza_datos, estado, veces_visto)
@@ -305,28 +455,35 @@ def consolidar_sin_codigo(
             (nombre_mejorado, marca, confianza)
         )
         producto_id = cursor.fetchone()['id']
-        print(f"      → Nuevo producto (sin código): {nombre_mejorado}")
+        print(f"      → Nuevo (sin código): {nombre_mejorado}")
 
-    cursor.execute(
-        """INSERT INTO log_mejoras_nombres
-           (producto_maestro_id, nombre_original, nombre_mejorado, metodo, confianza)
-           VALUES (%s, %s, %s, %s, %s)""",
-        (producto_id, nombre_ocr, nombre_mejorado, 'claude_sin_codigo', confianza)
-    )
+    try:
+        cursor.execute(
+            """INSERT INTO log_mejoras_nombres
+               (producto_maestro_id, nombre_original, nombre_mejorado, metodo, confianza)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (producto_id, nombre_normalizado, nombre_mejorado, 'claude_sin_codigo', confianza)
+        )
+    except Exception as e:
+        print(f"   ⚠️ Error guardando log: {e}")
 
-    registrar_variante_nombre(cursor, producto_id, nombre_ocr, establecimiento_id)
+    registrar_variante_nombre(cursor, producto_id, nombre_normalizado, establecimiento_id)
 
     return producto_id
 
 
 def buscar_producto_similar(cursor, nombre: str, establecimiento_id: int) -> Optional[Dict]:
-    """Busca productos similares - VERSIÓN SÍNCRONA"""
+    """
+    Busca productos similares
+    ✅ Usa similitud mejorada
+    """
     cursor.execute(
         """SELECT DISTINCT pm.id, pm.nombre_consolidado
            FROM productos_maestros_v2 pm
            LEFT JOIN variantes_nombres vn ON pm.id = vn.producto_maestro_id
            WHERE (vn.establecimiento_id = %s OR pm.codigo_ean IS NOT NULL)
-           AND pm.codigo_ean IS NULL""",
+           AND pm.codigo_ean IS NULL
+           LIMIT 100""",  # Buscar en más productos
         (establecimiento_id,)
     )
     productos = cursor.fetchall()
@@ -335,7 +492,7 @@ def buscar_producto_similar(cursor, nombre: str, establecimiento_id: int) -> Opt
     mejor_score = 0
 
     for p in productos:
-        score = SequenceMatcher(None, nombre.upper(), p['nombre_consolidado'].upper()).ratio()
+        score = calcular_similitud_mejorada(nombre, p['nombre_consolidado'])
 
         if score > mejor_score:
             mejor_score = score
@@ -348,18 +505,27 @@ def buscar_producto_similar(cursor, nombre: str, establecimiento_id: int) -> Opt
     return mejor_match if mejor_score > 0.85 else None
 
 
+# ============================================================================
+# FUNCIONES AUXILIARES
+# ============================================================================
+
 def registrar_variante_nombre(cursor, producto_id: int, nombre: str, establecimiento_id: int):
-    """Registra variante de nombre - VERSIÓN SÍNCRONA"""
-    cursor.execute(
-        """INSERT INTO variantes_nombres
-           (producto_maestro_id, nombre_variante, establecimiento_id, veces_visto, fecha_ultima_vez)
-           VALUES (%s, %s, %s, 1, NOW())
-           ON CONFLICT (nombre_variante, establecimiento_id, producto_maestro_id)
-           DO UPDATE SET
-               veces_visto = variantes_nombres.veces_visto + 1,
-               fecha_ultima_vez = NOW()""",
-        (producto_id, nombre, establecimiento_id)
-    )
+    """Registra variante de nombre - Normalizado"""
+    nombre_normalizado = normalizar_nombre_producto(nombre)
+
+    try:
+        cursor.execute(
+            """INSERT INTO variantes_nombres
+               (producto_maestro_id, nombre_variante, establecimiento_id, veces_visto, fecha_ultima_vez)
+               VALUES (%s, %s, %s, 1, NOW())
+               ON CONFLICT (nombre_variante, establecimiento_id, producto_maestro_id)
+               DO UPDATE SET
+                   veces_visto = variantes_nombres.veces_visto + 1,
+                   fecha_ultima_vez = NOW()""",
+            (producto_id, nombre_normalizado, establecimiento_id)
+        )
+    except Exception as e:
+        print(f"   ⚠️ Error registrando variante: {e}")
 
 
 def registrar_precio(
@@ -371,14 +537,21 @@ def registrar_precio(
     factura_id: int,
     item_factura_id: Optional[int] = None
 ):
-    """Registra precio - VERSIÓN SÍNCRONA"""
-    cursor.execute(
-        """INSERT INTO precios_historicos_v2
-           (producto_maestro_id, establecimiento_id, precio, fecha_factura, factura_id, item_factura_id)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
-        (producto_id, establecimiento_id, precio, fecha_factura, factura_id, item_factura_id)
-    )
+    """Registra precio histórico"""
+    try:
+        cursor.execute(
+            """INSERT INTO precios_historicos_v2
+               (producto_maestro_id, establecimiento_id, precio, fecha_factura, factura_id, item_factura_id)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (producto_id, establecimiento_id, precio, fecha_factura, factura_id, item_factura_id)
+        )
+    except Exception as e:
+        print(f"   ⚠️ Error registrando precio: {e}")
 
+
+# ============================================================================
+# FUNCIÓN PRINCIPAL
+# ============================================================================
 
 def procesar_item_con_consolidacion(
     cursor,
@@ -387,30 +560,47 @@ def procesar_item_con_consolidacion(
     establecimiento_id: int
 ) -> int:
     """
-    Función principal - VERSIÓN SÍNCRONA
+    Función principal de consolidación
+    ✅ VERSIÓN MEJORADA con normalización completa
+
+    Args:
+        cursor: Cursor de psycopg2
+        item_ocr: {'nombre': str, 'codigo': str, 'precio': float, 'cantidad': int}
+        factura_id: ID de la factura
+        establecimiento_id: ID del establecimiento
+
+    Returns:
+        producto_maestro_id: ID del producto consolidado
     """
-    nombre = item_ocr['nombre']
-    codigo = item_ocr.get('codigo')
-    precio = item_ocr['precio']
+    # Normalizar nombre ANTES de todo
+    nombre_original = item_ocr.get('nombre', 'PRODUCTO SIN NOMBRE')
+    nombre = normalizar_nombre_producto(nombre_original)
 
-    print(f"\n📦 Procesando: {nombre[:50]}")
+    codigo = item_ocr.get('codigo', '').strip() if item_ocr.get('codigo') else None
+    precio = item_ocr.get('precio', 0)
 
+    print(f"\n📦 Procesando: {nombre[:60]}")
+    if codigo:
+        print(f"   📟 Código: {codigo}")
+
+    # Detectar tipo de código
     es_ean = codigo and len(str(codigo)) == 13 and str(codigo).isdigit()
-    es_plu = codigo and len(str(codigo)) <= 6 and str(codigo).isdigit()
+    es_plu = codigo and 3 <= len(str(codigo)) <= 6 and str(codigo).isdigit()
 
     if es_ean:
-        print(f"   ✓ EAN detectado: {codigo}")
+        print(f"   ✓ EAN detectado")
         producto_id = consolidar_por_ean(cursor, str(codigo), nombre, establecimiento_id)
     elif es_plu:
-        print(f"   ✓ PLU detectado: {codigo}")
+        print(f"   ✓ PLU detectado")
         producto_id = consolidar_por_plu(cursor, str(codigo), nombre, establecimiento_id)
     elif codigo:
-        print(f"   ℹ️  Código no estándar: {codigo}")
+        print(f"   ℹ️ Código no estándar")
         producto_id = consolidar_por_plu(cursor, str(codigo), nombre, establecimiento_id)
     else:
-        print(f"   ⚠️  Sin código")
+        print(f"   ⚠️ Sin código")
         producto_id = consolidar_sin_codigo(cursor, nombre, establecimiento_id)
 
+    # Registrar precio
     registrar_precio(
         cursor,
         producto_id,
