@@ -83,7 +83,7 @@ async def obtener_producto(producto_id: int, db = Depends(get_db)):
                 pm.nombre_consolidado,
                 pm.nombre_comercial,
                 pm.marca,
-                COALESCE(c.nombre, 'Sin categoría') as categoria,
+                COALESCE(c.nombre, pm.categoria, 'Sin categoría') as categoria,
                 pm.subcategoria,
                 pm.presentacion,
                 pm.veces_visto,
