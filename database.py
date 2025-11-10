@@ -3531,6 +3531,485 @@ def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> d
 
 print("✅ Módulo de códigos por establecimiento cargado")
 
+# ============================================
+# SISTEMA DE CONFIGURACIÓN DE CADENAS
+# ============================================
+
+def crear_tabla_configuracion_cadenas():
+    """
+    Crear tabla de configuración de cadenas comerciales
+    Define manualmente qué tipo de código usa cada establecimiento conocido
+
+    ⚠️ NOTA: Esta función se ejecuta automáticamente en create_postgresql_tables()
+    Solo úsala si necesitas recrear la configuración manualmente
+    """
+    conn = get_db_connection()
+    if not conn:
+        return False
+
+    cursor = conn.cursor()
+
+    try:
+        print("🏪 Verificando tabla configuracion_cadenas...")
+
+        # Verificar si ya existe
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'configuracion_cadenas'
+            )
+        """)
+
+        if cursor.fetchone()[0]:
+            print("   ✓ Tabla configuracion_cadenas ya existe")
+
+            # Verificar si tiene datos
+            cursor.execute("SELECT COUNT(*) FROM configuracion_cadenas")
+            count = cursor.fetchone()[0]
+
+            if count > 0:
+                print(f"   ✓ {count} cadenas ya configuradas")
+                cursor.close()
+                conn.close()
+                return True
+
+        # Si llegamos aquí, la tabla existe pero está vacía, o no existe
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS configuracion_cadenas (
+                id SERIAL PRIMARY KEY,
+                cadena VARCHAR(100) UNIQUE NOT NULL,
+                tipo_codigo_principal VARCHAR(20) NOT NULL
+                    CHECK (tipo_codigo_principal IN ('ean', 'plu_local', 'plu_estandar', 'mixto')),
+                patron_validacion VARCHAR(200),
+                descripcion TEXT,
+                prioridad_deteccion INTEGER DEFAULT 5,
+                activo BOOLEAN DEFAULT TRUE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        print("   ✅ Tabla configuracion_cadenas verificada/creada")
+
+        # Insertar configuración de cadenas conocidas
+        cadenas_config = [
+            ('JUMBO', 'ean', '^[0-9]{13}$', 'Jumbo usa códigos EAN-13 estándar', 10),
+            ('ARA', 'ean', '^[0-9]{13}$', 'Ara usa códigos EAN-13 estándar', 10),
+            ('D1', 'ean', '^[0-9]{13}$', 'D1 usa códigos EAN-13 estándar', 10),
+            ('ALKOSTO', 'ean', '^[0-9]{13}$', 'Alkosto usa códigos EAN-13', 9),
+            ('MAKRO', 'ean', '^[0-9]{13}$', 'Makro usa códigos EAN-13', 9),
+            ('PRICESMART', 'ean', '^[0-9]{13}$', 'PriceSmart usa códigos EAN-13', 9),
+            ('CRUZ VERDE', 'ean', '^[0-9]{13}$', 'Cruz Verde usa EAN-13', 8),
+            ('FARMATODO', 'ean', '^[0-9]{13}$', 'Farmatodo usa EAN-13', 8),
+            ('LA REBAJA', 'ean', '^[0-9]{13}$', 'Drogas La Rebaja usa EAN-13', 8),
+            ('EXITO', 'plu_local', '^[0-9]{4,6}$', 'Éxito usa PLU locales 4-6 dígitos', 10),
+            ('CARULLA', 'plu_local', '^[0-9]{4,6}$', 'Carulla usa PLU locales 4-6 dígitos', 10),
+            ('OLIMPICA', 'plu_local', '^[0-9]{4,6}$', 'Olímpica usa PLU locales 4-6 dígitos', 9),
+            ('JUSTO Y BUENO', 'mixto', None, 'Justo & Bueno usa sistema mixto', 7),
+            ('EURO', 'mixto', None, 'Euro usa sistema mixto', 7),
+            ('METRO', 'mixto', None, 'Metro usa sistema mixto', 7),
+        ]
+
+        insertadas = 0
+        for cadena, tipo, patron, desc, prioridad in cadenas_config:
+            try:
+                cursor.execute("""
+                    INSERT INTO configuracion_cadenas
+                        (cadena, tipo_codigo_principal, patron_validacion, descripcion, prioridad_deteccion)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (cadena) DO UPDATE SET
+                        tipo_codigo_principal = EXCLUDED.tipo_codigo_principal,
+                        patron_validacion = EXCLUDED.patron_validacion,
+                        descripcion = EXCLUDED.descripcion,
+                        prioridad_deteccion = EXCLUDED.prioridad_deteccion,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                """, (cadena, tipo, patron, desc, prioridad))
+                insertadas += 1
+            except Exception as e:
+                print(f"   ⚠️ Error insertando {cadena}: {e}")
+
+        conn.commit()
+        print(f"   ✅ {insertadas} cadenas configuradas/actualizadas")
+
+        # Crear índice
+        try:
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_config_cadenas_activo
+                ON configuracion_cadenas(activo, prioridad_deteccion DESC)
+            """)
+            conn.commit()
+            print("   ✅ Índice creado")
+        except Exception as e:
+            print(f"   ⚠️ Índice: {e}")
+
+        cursor.close()
+        conn.close()
+        print("✅ Sistema de configuración de cadenas listo")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error configurando cadenas: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        except:
+            pass
+        return False
+
+
+def obtener_tipo_codigo_cadena(cadena: str) -> str:
+    """
+    Obtiene el tipo de código principal que usa una cadena
+
+    Args:
+        cadena: Nombre de la cadena (ej: "JUMBO", "EXITO")
+
+    Returns:
+        str: 'ean', 'plu_local', 'plu_estandar', 'mixto', o None si no se encuentra
+    """
+    conn = get_db_connection()
+    if not conn:
+        return None
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT tipo_codigo_principal
+            FROM configuracion_cadenas
+            WHERE UPPER(cadena) = UPPER(%s)
+              AND activo = TRUE
+            LIMIT 1
+        """, (cadena,))
+
+        resultado = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if resultado:
+            return resultado[0]
+
+        return None
+
+    except Exception as e:
+        print(f"❌ Error obteniendo tipo código: {e}")
+        try:
+            cursor.close()
+            conn.close()
+        except:
+            pass
+        return None
+
+
+def listar_configuracion_cadenas() -> list:
+    """
+    Lista todas las cadenas configuradas
+
+    Returns:
+        list: Lista de diccionarios con configuración de cadenas
+    """
+    conn = get_db_connection()
+    if not conn:
+        return []
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                cadena,
+                tipo_codigo_principal,
+                patron_validacion,
+                descripcion,
+                prioridad_deteccion,
+                activo
+            FROM configuracion_cadenas
+            ORDER BY prioridad_deteccion DESC, cadena ASC
+        """)
+
+        cadenas = []
+        for row in cursor.fetchall():
+            cadenas.append({
+                'cadena': row[0],
+                'tipo_codigo': row[1],
+                'patron': row[2],
+                'descripcion': row[3],
+                'prioridad': row[4],
+                'activo': row[5]
+            })
+
+        cursor.close()
+        conn.close()
+        return cadenas
+
+    except Exception as e:
+        print(f"❌ Error listando cadenas: {e}")
+        try:
+            cursor.close()
+            conn.close()
+        except:
+            pass
+        return []
+
+
+def actualizar_configuracion_cadena(cadena: str, tipo_codigo: str, descripcion: str = None) -> bool:
+    """
+    Actualiza la configuración de una cadena existente
+
+    Args:
+        cadena: Nombre de la cadena
+        tipo_codigo: 'ean', 'plu_local', 'plu_estandar', o 'mixto'
+        descripcion: Descripción opcional
+
+    Returns:
+        bool: True si se actualizó correctamente
+    """
+    if tipo_codigo not in ['ean', 'plu_local', 'plu_estandar', 'mixto']:
+        print(f"❌ Tipo de código inválido: {tipo_codigo}")
+        return False
+
+    conn = get_db_connection()
+    if not conn:
+        return False
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE configuracion_cadenas
+            SET tipo_codigo_principal = %s,
+                descripcion = COALESCE(%s, descripcion),
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE UPPER(cadena) = UPPER(%s)
+        """, (tipo_codigo, descripcion, cadena))
+
+        if cursor.rowcount > 0:
+            conn.commit()
+            print(f"✅ Cadena {cadena} actualizada a tipo: {tipo_codigo}")
+            cursor.close()
+            conn.close()
+            return True
+        else:
+            print(f"⚠️ Cadena {cadena} no encontrada")
+            cursor.close()
+            conn.close()
+            return False
+
+    except Exception as e:
+        print(f"❌ Error actualizando cadena: {e}")
+        try:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        except:
+            pass
+        return False
+
+
+def verificar_sistema_configuracion_cadenas() -> dict:
+    """
+    Verifica el estado del sistema de configuración de cadenas
+
+    Returns:
+        dict: Información sobre el estado del sistema
+    """
+    conn = get_db_connection()
+    if not conn:
+        return {'error': 'No se pudo conectar a la base de datos'}
+
+    cursor = conn.cursor()
+
+    try:
+        # Verificar tabla
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'configuracion_cadenas'
+            )
+        """)
+        tabla_existe = cursor.fetchone()[0]
+
+        if not tabla_existe:
+            cursor.close()
+            conn.close()
+            return {
+                'instalado': False,
+                'mensaje': 'Tabla configuracion_cadenas no existe'
+            }
+
+        # Contar cadenas
+        cursor.execute("SELECT COUNT(*) FROM configuracion_cadenas WHERE activo = TRUE")
+        total_activas = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM configuracion_cadenas")
+        total = cursor.fetchone()[0]
+
+        # Contar por tipo
+        cursor.execute("""
+            SELECT tipo_codigo_principal, COUNT(*)
+            FROM configuracion_cadenas
+            WHERE activo = TRUE
+            GROUP BY tipo_codigo_principal
+            ORDER BY COUNT(*) DESC
+        """)
+
+        por_tipo = {}
+        for row in cursor.fetchall():
+            por_tipo[row[0]] = row[1]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            'instalado': True,
+            'total_cadenas': total,
+            'cadenas_activas': total_activas,
+            'por_tipo': por_tipo,
+            'mensaje': f'Sistema configurado correctamente con {total_activas} cadenas activas'
+        }
+
+    except Exception as e:
+        print(f"❌ Error verificando sistema: {e}")
+        try:
+            cursor.close()
+            conn.close()
+        except:
+            pass
+        return {'error': str(e)}
+
+
+def identificar_tipo_codigo_con_cadena(codigo: str, cadena: str = None) -> str:
+    """
+    Identifica el tipo de código considerando la configuración de la cadena
+
+    Args:
+        codigo: Código del producto
+        cadena: Nombre de la cadena (opcional)
+
+    Returns:
+        str: Tipo de código ('ean', 'plu_local', 'plu_estandar', 'invalido', etc.)
+    """
+    # Validación básica
+    if not codigo or len(codigo) < 4:
+        return 'invalido'
+
+    # Si tenemos la cadena, consultar su configuración
+    if cadena:
+        tipo_esperado = obtener_tipo_codigo_cadena(cadena)
+
+        if tipo_esperado:
+            # Validar que el código coincida con el tipo esperado
+            if tipo_esperado == 'ean':
+                if len(codigo) in (8, 13, 14) and codigo.isdigit():
+                    return 'ean'
+            elif tipo_esperado == 'plu_local':
+                if len(codigo) in (4, 5, 6) and codigo.isdigit():
+                    return 'plu_local'
+            elif tipo_esperado == 'plu_estandar':
+                if len(codigo) in (4, 5) and codigo.isdigit():
+                    try:
+                        if 3000 <= int(codigo) <= 4999:
+                            return 'plu_estandar'
+                    except:
+                        pass
+            elif tipo_esperado == 'mixto':
+                # Para cadenas mixtas, usar detección automática
+                pass
+
+    # Detección automática si no hay configuración o es mixta
+    if len(codigo) in (8, 13, 14) and codigo.isdigit():
+        return 'ean'
+
+    if len(codigo) in (4, 5) and codigo.isdigit():
+        try:
+            if 3000 <= int(codigo) <= 4999:
+                return 'plu_estandar'
+        except:
+            pass
+
+    if len(codigo) in (4, 5, 6) and codigo.isdigit():
+        return 'plu_local'
+
+    if len(codigo) == 12 and codigo.isdigit():
+        return 'upc'
+
+    if codigo.isdigit():
+        return 'codigo_interno'
+
+    return 'otro'
+
+
+# ============================================
+# FUNCIONES DE TESTING
+# ============================================
+
+def test_configuracion_cadenas():
+    """
+    Prueba el sistema de configuración de cadenas
+    """
+    print("\n" + "="*80)
+    print("🧪 TESTING: Sistema de Configuración de Cadenas")
+    print("="*80)
+
+    # Test 1: Verificar sistema
+    print("\n1️⃣ Verificando sistema...")
+    estado = verificar_sistema_configuracion_cadenas()
+    if estado.get('instalado'):
+        print(f"   ✅ {estado['mensaje']}")
+        print(f"   📊 Total: {estado['total_cadenas']} | Activas: {estado['cadenas_activas']}")
+        print(f"   📊 Por tipo: {estado['por_tipo']}")
+    else:
+        print(f"   ❌ {estado.get('mensaje', 'Error')}")
+        return False
+
+    # Test 2: Obtener tipo de código
+    print("\n2️⃣ Probando detección de tipo de código...")
+    tests = [
+        ('JUMBO', '7702001234567', 'ean'),
+        ('EXITO', '4030', 'plu_local'),
+        ('ARA', '7707123456789', 'ean'),
+        ('CARULLA', '5678', 'plu_local'),
+    ]
+
+    for cadena, codigo, esperado in tests:
+        tipo = identificar_tipo_codigo_con_cadena(codigo, cadena)
+        resultado = "✅" if tipo == esperado else "❌"
+        print(f"   {resultado} {cadena} - Código {codigo}: {tipo} (esperado: {esperado})")
+
+    # Test 3: Listar cadenas
+    print("\n3️⃣ Listando cadenas configuradas...")
+    cadenas = listar_configuracion_cadenas()
+    if cadenas:
+        print(f"   ✅ {len(cadenas)} cadenas encontradas")
+        for c in cadenas[:5]:  # Mostrar solo las primeras 5
+            print(f"      • {c['cadena']}: {c['tipo_codigo']} (prioridad: {c['prioridad']})")
+    else:
+        print("   ❌ No se encontraron cadenas")
+
+    print("\n" + "="*80)
+    print("✅ Testing completado")
+    print("="*80 + "\n")
+
+    return True
+
+
+# ============================================
+# MENSAJE INFORMATIVO
+# ============================================
+
+print("✅ Funciones del sistema de configuración de cadenas cargadas")
+print("   📦 Funciones disponibles:")
+print("      • crear_tabla_configuracion_cadenas()")
+print("      • obtener_tipo_codigo_cadena(cadena)")
+print("      • identificar_tipo_codigo_con_cadena(codigo, cadena)")
+print("      • listar_configuracion_cadenas()")
+print("      • actualizar_configuracion_cadena(cadena, tipo, desc)")
+print("      • verificar_sistema_configuracion_cadenas()")
+print("      • test_configuracion_cadenas()")
+
 
 # ============================================================================
 # ACTUALIZAR create_tables() - AGREGAR AL FINAL
