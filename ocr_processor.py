@@ -700,7 +700,7 @@ class OCRProcessor:
                 print(f"   💾 Guardado en items_factura con código: {codigo_raw or 'NULL'}")
 
                 # PASO 6: Decidir si guardar en productos_por_establecimiento
-                if codigo_limpio and establecimiento_id and producto_maestro_id:
+                if establecimiento_id and producto_maestro_id:
                     debe_guardar_plu = False
                     razon_guardado = ""
 
