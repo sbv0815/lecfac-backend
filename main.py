@@ -106,9 +106,7 @@ from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
-from routes import productos_admin
 
-app.include_router(productos_admin.router)
 
 # Importar AMBOS routers de auditoría con nombres diferente
 from fastapi import APIRouter
@@ -423,6 +421,9 @@ app = FastAPI(
     description="Sistema de gestión de facturas con procesamiento asíncrono",
     lifespan=lifespan,
 )
+
+from routes import productos_admin
+app.include_router(productos_admin.router)
 # ==========================================
 # CONFIGURAR CORS
 # ==========================================
