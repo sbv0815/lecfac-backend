@@ -2708,192 +2708,56 @@ async def fix_rol():
 from consolidacion_productos import procesar_item_con_consolidacion
 import psycopg2.extras
 
+# ============================================================================
+# REEMPLAZAR ENDPOINT /api/v2/procesar-factura EN main.py
+# Buscar desde @app.post("/api/v2/procesar-factura") hasta el siguiente @app
+# ============================================================================
+
 @app.post("/api/v2/procesar-factura")
 async def procesar_factura_v2(
-    video: UploadFile = File(None),
-    imagen: UploadFile = File(None),
-    user_id: int = Form(...),
-    establecimiento_id: int = Form(...)
+    request: Request,
+    video_path: str = Form(None),
+    datos_json: str = Form(None)
 ):
     """
-    Nuevo endpoint v2 - CON EXTRACCIÓN DE FRAMES
+    Endpoint V2 con sistema completo de códigos por establecimiento
+    VERSIÓN CORREGIDA - 2025-11-10
     """
-    print("\n" + "="*70)
-    print("🚀 PROCESAMIENTO DE FACTURA V2 (Sistema de Consolidación)")
-    print("="*70)
-
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = None
+    cursor = None
 
     try:
-        # 1. Procesar archivo
-        print("\n📹 Procesando medios...")
+        # 1. Obtener user_id del token
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-        frames_para_ocr = []
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        if video:
-            print("   ✓ Video recibido")
+        cursor.execute("SELECT id FROM usuarios WHERE session_token = %s", (token,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="Token inválido")
 
-            # Guardar video temporalmente
-            temp_video_path = f"/tmp/video_{user_id}_{datetime.now().timestamp()}.mp4"
-            with open(temp_video_path, "wb") as f:
-                f.write(await video.read())
+        user_id = user['id']
+        print(f"\n👤 Usuario autenticado: ID {user_id}")
 
-            video_size_mb = os.path.getsize(temp_video_path) / (1024 * 1024)
-            print(f"   ℹ️  Tamaño: {video_size_mb:.2f} MB")
+        # 2. Parsear datos JSON
+        if not datos_json:
+            raise HTTPException(status_code=400, detail="No se recibieron datos JSON")
 
-            # ✅ EXTRAER FRAMES (esto resuelve el problema de 5 MB)
-            print("   📸 Extrayendo frames del video...")
-            frames_base64 = extract_frames_from_video(temp_video_path, max_frames=10)
+        datos_factura = json.loads(datos_json)
 
-            # Eliminar video temporal
-            os.remove(temp_video_path)
+        if 'items' not in datos_factura or not datos_factura['items']:
+            raise HTTPException(status_code=400, detail="No hay items en la factura")
 
-            if not frames_base64:
-                raise HTTPException(status_code=400, detail="No se pudieron extraer frames del video")
+        print(f"📦 Items recibidos: {len(datos_factura['items'])}")
+        print(f"🏪 Establecimiento detectado: {datos_factura.get('establecimiento', 'N/A')}")
 
-            print(f"   ✓ {len(frames_base64)} frames extraídos")
-
-            # Guardar frames como imágenes temporales para Claude
-            for idx, frame_b64 in enumerate(frames_base64):
-                frame_path = f"/tmp/frame_{user_id}_{idx}_{datetime.now().timestamp()}.jpg"
-
-                # Decodificar base64 y guardar
-                with open(frame_path, "wb") as f:
-                    f.write(base64.b64decode(frame_b64))
-
-                # Verificar tamaño del frame
-                frame_size_mb = os.path.getsize(frame_path) / (1024 * 1024)
-
-                if frame_size_mb < 5:  # Solo frames menores a 5 MB
-                    frames_para_ocr.append(frame_path)
-                else:
-                    print(f"   ⚠️  Frame {idx} muy grande ({frame_size_mb:.2f} MB), omitiendo")
-                    os.remove(frame_path)
-
-            print(f"   ✓ {len(frames_para_ocr)} frames listos para OCR")
-
-        elif imagen:
-            print("   ✓ Imagen recibida")
-
-            # Guardar imagen temporalmente
-            temp_img_path = f"/tmp/imagen_{user_id}_{datetime.now().timestamp()}.jpg"
-            with open(temp_img_path, "wb") as f:
-                f.write(await imagen.read())
-
-            img_size_mb = os.path.getsize(temp_img_path) / (1024 * 1024)
-            print(f"   ℹ️  Tamaño: {img_size_mb:.2f} MB")
-
-            if img_size_mb > 5:
-                os.remove(temp_img_path)
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Imagen muy grande ({img_size_mb:.2f} MB). Máximo 5 MB"
-                )
-
-            frames_para_ocr = [temp_img_path]
-
-        else:
-            raise HTTPException(status_code=400, detail="Debe proporcionar video o imagen")
-
-        # 2. OCR - Procesar cada frame y consolidar resultados
-        print(f"\n🤖 Ejecutando OCR con Claude Vision ({len(frames_para_ocr)} frames)...")
-
-        todos_los_items = []
-        total_acumulado = 0
-        fecha_factura = None
-
-        # ✅ LOOP DE PROCESAMIENTO DE FRAMES
-        for idx, frame_path in enumerate(frames_para_ocr, 1):
-            print(f"   Frame {idx}/{len(frames_para_ocr)}...")
-
-            try:
-                resultado = parse_invoice_with_claude(frame_path)
-
-                if resultado.get('success'):
-                    # ✅ CORRECCIÓN: Los productos están en resultado['data']['productos']
-                    data = resultado.get('data', {})
-                    productos = data.get('productos', [])
-
-                    if productos:
-                        # Normalizar formato para que coincida con el resto del código
-                        for prod in productos:
-                            item_normalizado = {
-                                'descripcion': prod.get('nombre', 'PRODUCTO SIN NOMBRE'),
-                                'codigo': str(prod.get('codigo', '')) if prod.get('codigo') else None,
-                                'precio_unitario': float(prod.get('precio', 0)),
-                                'cantidad': int(prod.get('cantidad', 1)),
-                                'subtotal': float(prod.get('precio', 0)) * int(prod.get('cantidad', 1))
-                            }
-                            todos_los_items.append(item_normalizado)
-
-                        print(f"      → {len(productos)} items detectados")
-                    else:
-                        print(f"      ⚠️  Frame sin productos")
-
-                    # Tomar el total y fecha del último frame que los tenga
-                    if data.get('total'):
-                        total_acumulado = data['total']
-                    if data.get('fecha'):
-                        fecha_factura = data['fecha']
-                else:
-                    print(f"      ⚠️  Frame sin datos válidos")
-
-            except Exception as e:
-                print(f"      ❌ Error procesando frame: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # Eliminar frame temporal
-            if os.path.exists(frame_path):
-                os.remove(frame_path)
-
-        datos_factura = {
-            'success': True,
-            'items': todos_los_items,
-            'total': total_acumulado or sum(item.get('subtotal', 0) for item in todos_los_items),
-            'fecha': normalizar_fecha(fecha_factura)
-        }
-
-        print(f"   ✓ Total de items detectados: {len(todos_los_items)}")
-        print(f"   • Total: ${datos_factura['total']:,.0f}")
-        print(f"   • Fecha: {datos_factura['fecha']}")
-
-        if not datos_factura['items']:
-            raise HTTPException(
-                status_code=400,
-                detail="No se detectaron productos en la factura"
-            )
-
-        # ✅ Validar que el establecimiento existe
-        # ✅ Validar que el establecimiento existe
-        print("\n🏪 Validando establecimiento...")
-
-        cursor.execute(
-            "SELECT id, nombre_normalizado, cadena FROM establecimientos WHERE id = %s",
-            (establecimiento_id,)
-            )
-        establecimiento_db = cursor.fetchone()
-
-        if not establecimiento_db:
-            print(f"   ❌ Establecimiento ID {establecimiento_id} no existe")
-
-            raise HTTPException(
-                status_code=400,
-        detail=f"Establecimiento ID {establecimiento_id} no encontrado. Por favor, créalo primero desde la app."
-            )
-
-        print(f"   ✅ Establecimiento válido:")
-        print(f"      • ID: {establecimiento_db['id']}")
-        print(f"      • Nombre: {establecimiento_db['nombre_normalizado']}")
-        print(f"      • Cadena: {establecimiento_db['cadena']}")
-        print(f"   ℹ️  El establecimiento seleccionado por el usuario tiene prioridad")
-        print(f"   ℹ️  Cualquier establecimiento detectado por OCR será IGNORADO")
-
-# ============================================================================
-# ENDPOINT V2 SIMPLIFICADO - USA FUNCIONES DE database.py
-# Reemplazar en main.py desde "# 3. Crear factura" hasta el final del endpoint
-# ============================================================================
+        # Obtener o crear establecimiento
+        establecimiento_db = obtener_o_crear_establecimiento(datos_factura.get('establecimiento', 'SUPERMERCADO'))
+        establecimiento_id = establecimiento_db['id']
 
         # 3. Crear factura
         print("\n💾 Creando registro de factura...")
@@ -2905,10 +2769,10 @@ async def procesar_factura_v2(
             (
                 user_id,
                 establecimiento_id,
-                datos_factura['fecha'],
-                datos_factura['total'],
+                datos_factura.get('fecha', datetime.now().date()),
+                datos_factura.get('total', 0),
                 establecimiento_db['nombre_normalizado'],
-                establecimiento_db['cadena']
+                establecimiento_db.get('cadena', establecimiento_db['nombre_normalizado'])
             )
         )
         factura = cursor.fetchone()
@@ -2916,9 +2780,7 @@ async def procesar_factura_v2(
         print(f"   ✅ Factura #{factura_id} creada")
         print(f"   📍 Establecimiento: {establecimiento_db['nombre_normalizado']}")
 
-        # ✅ COMMIT: Factura debe existir antes de procesar items
         conn.commit()
-        print(f"   ✅ Factura confirmada en BD")
 
         # 4. Consolidación inteligente
         print("\n" + "="*70)
@@ -2927,6 +2789,9 @@ async def procesar_factura_v2(
 
         items_procesados = []
         errores = []
+
+        # Import correcto FUERA del loop
+        from consolidacion_productos import procesar_item_con_consolidacion
 
         for idx, item in enumerate(datos_factura['items'], 1):
             try:
@@ -2937,7 +2802,7 @@ async def procesar_factura_v2(
                 if codigo_ocr:
                     print(f"   📟 Código: {codigo_ocr}")
 
-                # Procesar con consolidación inteligente
+                # Procesar con consolidación
                 producto_id = procesar_item_con_consolidacion(
                     cursor=cursor,
                     item_ocr={
@@ -2950,13 +2815,16 @@ async def procesar_factura_v2(
                     establecimiento_id=establecimiento_id
                 )
 
-                # ✅ Sincronizar a productos_maestros (tabla legacy)
+                if not producto_id:
+                    raise Exception("No se pudo obtener producto_id")
+
+                print(f"   ✅ Producto ID: {producto_id}")
+
+                # Sincronizar a productos_maestros (legacy)
                 try:
                     cursor.execute("SELECT id FROM productos_maestros WHERE id = %s", (producto_id,))
 
                     if not cursor.fetchone():
-                        print(f"   🔄 Sincronizando producto {producto_id}...")
-
                         cursor.execute("""
                             SELECT nombre_consolidado, codigo_ean, marca
                             FROM productos_maestros_v2
@@ -2980,34 +2848,37 @@ async def procesar_factura_v2(
                                 producto_v2['codigo_ean'],
                                 producto_v2['marca']
                             ))
-                            print(f"   ✅ Sincronizado a productos_maestros")
                 except Exception as sync_error:
                     print(f"   ⚠️  Error sync: {sync_error}")
 
-                # ✅ NUEVO: Registrar código usando función de database.py
+                # ✅ REGISTRAR CÓDIGO EN codigos_establecimiento
                 if codigo_ocr and len(codigo_ocr) >= 4:
-                    from database import registrar_codigo_producto
-
-                    if registrar_codigo_producto(producto_id, establecimiento_id, codigo_ocr):
-                        # Obtener tipo de código
+                    try:
                         cursor.execute("""
-                            SELECT tipo_codigo
-                            FROM codigos_establecimiento
-                            WHERE producto_maestro_id = %s
-                              AND establecimiento_id = %s
-                              AND codigo_local = %s
-                            LIMIT 1
+                            SELECT registrar_codigo_establecimiento(%s, %s, %s)
                         """, (producto_id, establecimiento_id, codigo_ocr))
 
-                        tipo = cursor.fetchone()
-                        if tipo:
-                            print(f"   ✅ Código registrado: {codigo_ocr} (tipo: {tipo[0]})")
-                    else:
-                        print(f"   ℹ️  Código {codigo_ocr} no registrado (inválido)")
+                        result = cursor.fetchone()
+                        if result and result[0]:
+                            # Obtener tipo de código
+                            cursor.execute("""
+                                SELECT tipo_codigo
+                                FROM codigos_establecimiento
+                                WHERE producto_maestro_id = %s
+                                  AND establecimiento_id = %s
+                                  AND codigo_local = %s
+                                LIMIT 1
+                            """, (producto_id, establecimiento_id, codigo_ocr))
 
-                # ✅ COMMIT después de registrar producto y código
+                            tipo_row = cursor.fetchone()
+                            if tipo_row:
+                                print(f"   ✅ Código registrado: {codigo_ocr} (tipo: {tipo_row['tipo_codigo']})")
+                        else:
+                            print(f"   ℹ️  Código {codigo_ocr} no válido")
+                    except Exception as codigo_error:
+                        print(f"   ⚠️  Error código: {codigo_error}")
+
                 conn.commit()
-                print(f"   ✅ Producto ID {producto_id} confirmado")
 
                 # Insertar item en factura
                 cursor.execute(
@@ -3028,7 +2899,6 @@ async def procesar_factura_v2(
                 )
                 item_id = cursor.fetchone()['id']
 
-                # ✅ COMMIT después de insertar item
                 conn.commit()
                 print(f"   ✅ Item #{item_id} guardado")
 
@@ -3055,51 +2925,51 @@ async def procesar_factura_v2(
             "UPDATE facturas SET productos_guardados = %s WHERE id = %s",
             (len(items_procesados), factura_id)
         )
-
-        # 6. Estadísticas
-        cursor.execute("""
-            SELECT
-                COUNT(*) as total_productos,
-                COUNT(CASE WHEN codigo_ean IS NOT NULL THEN 1 END) as con_ean,
-                COUNT(CASE WHEN estado = 'verificado' THEN 1 END) as verificados,
-                COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as pendientes,
-                COALESCE(AVG(confianza_datos), 0) as confianza_promedio
-            FROM productos_maestros_v2
-        """)
-        stats = cursor.fetchone()
-
-        # Estadísticas de códigos
-        cursor.execute("""
-            SELECT
-                COUNT(*) as total_codigos,
-                COUNT(DISTINCT producto_maestro_id) as productos_con_codigos,
-                COUNT(CASE WHEN tipo_codigo = 'plu_local' THEN 1 END) as plu_locales,
-                COUNT(CASE WHEN tipo_codigo = 'plu_estandar' THEN 1 END) as plu_estandares,
-                COUNT(CASE WHEN tipo_codigo = 'ean' THEN 1 END) as eans
-            FROM codigos_establecimiento
-            WHERE establecimiento_id = %s AND activo = TRUE
-        """, (establecimiento_id,))
-        stats_codigos = cursor.fetchone()
-
-        print("\n" + "="*70)
-        print("📈 ESTADÍSTICAS")
-        print("="*70)
-        print(f"Productos maestros: {stats['total_productos']}")
-        print(f"  • Con EAN: {stats['con_ean']}")
-        print(f"  • Verificados: {stats['verificados']}")
-        print(f"\nCódigos en {establecimiento_db['nombre_normalizado']}:")
-        print(f"  • Total: {stats_codigos['total_codigos']}")
-        print(f"  • PLU locales: {stats_codigos['plu_locales']}")
-        print(f"  • PLU estándar: {stats_codigos['plu_estandares']}")
-        print(f"  • EANs: {stats_codigos['eans']}")
-
-        # ✅ COMMIT final
         conn.commit()
 
-        # 7. ✅ CRÍTICO: Actualizar inventario
+        # 6. Estadísticas
+        try:
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_productos,
+                    COUNT(CASE WHEN codigo_ean IS NOT NULL THEN 1 END) as con_ean,
+                    COUNT(CASE WHEN estado = 'verificado' THEN 1 END) as verificados,
+                    COALESCE(AVG(confianza_datos), 0) as confianza_promedio
+                FROM productos_maestros_v2
+            """)
+            stats = cursor.fetchone()
+
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_codigos,
+                    COUNT(DISTINCT producto_maestro_id) as productos_con_codigos,
+                    COUNT(CASE WHEN tipo_codigo = 'plu_local' THEN 1 END) as plu_locales,
+                    COUNT(CASE WHEN tipo_codigo = 'plu_estandar' THEN 1 END) as plu_estandares,
+                    COUNT(CASE WHEN tipo_codigo = 'ean' THEN 1 END) as eans
+                FROM codigos_establecimiento
+                WHERE establecimiento_id = %s AND activo = TRUE
+            """, (establecimiento_id,))
+            stats_codigos = cursor.fetchone()
+
+            print("\n" + "="*70)
+            print("📈 ESTADÍSTICAS")
+            print("="*70)
+            print(f"Productos maestros: {stats['total_productos']}")
+            print(f"  • Con EAN: {stats['con_ean']}")
+            print(f"  • Verificados: {stats['verificados']}")
+            print(f"\nCódigos en {establecimiento_db['nombre_normalizado']}:")
+            print(f"  • Total: {stats_codigos['total_codigos']}")
+            print(f"  • PLU locales: {stats_codigos['plu_locales']}")
+            print(f"  • PLU estándar: {stats_codigos['plu_estandares']}")
+            print(f"  • EANs: {stats_codigos['eans']}")
+        except Exception as stats_error:
+            print(f"⚠️  Error obteniendo estadísticas: {stats_error}")
+            stats = {'total_productos': 0, 'con_ean': 0, 'verificados': 0, 'confianza_promedio': 0}
+            stats_codigos = {'total_codigos': 0, 'productos_con_codigos': 0, 'plu_locales': 0, 'plu_estandares': 0, 'eans': 0}
+
+        # 7. ✅ ACTUALIZAR INVENTARIO
         print(f"\n📦 Actualizando inventario del usuario {user_id}...")
         try:
-            from database import actualizar_inventario_desde_factura
             actualizar_inventario_desde_factura(factura_id, user_id)
             print(f"✅ Inventario actualizado")
         except Exception as e:
@@ -3122,7 +2992,6 @@ async def procesar_factura_v2(
                 "total_productos": int(stats['total_productos']),
                 "con_ean": int(stats['con_ean']),
                 "verificados": int(stats['verificados']),
-                "pendientes": int(stats['pendientes']),
                 "confianza_promedio": float(stats['confianza_promedio']),
                 "codigos": {
                     "total": int(stats_codigos['total_codigos']),
@@ -3135,15 +3004,20 @@ async def procesar_factura_v2(
         }
 
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"\n❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 
 @app.get("/api/v2/productos/pendientes")
 async def productos_pendientes_revision(limite: int = 50):
