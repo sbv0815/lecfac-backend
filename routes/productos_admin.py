@@ -1,12 +1,14 @@
 # ============================================================================
 # routes/productos_admin.py - ENDPOINTS PARA GESTIÓN DE PRODUCTOS
+# ✅ COMPATIBLE CON PSYCOPG2
 # ============================================================================
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-import psycopg
+import psycopg2  # ✅ CAMBIADO: psycopg2 en lugar de psycopg
+import psycopg2.extras  # Para dict cursor
 import os
 
 router = APIRouter(prefix="/api/v2/productos", tags=["productos"])
@@ -38,13 +40,24 @@ class ProductoUpdate(BaseModel):
 # ============================================================================
 
 def get_db():
-    """Obtiene conexión a PostgreSQL"""
+    """Obtiene conexión a PostgreSQL usando psycopg2"""
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise HTTPException(500, "DATABASE_URL no configurada")
 
     try:
-        conn = psycopg.connect(database_url)
+        # Parsear URL manualmente para psycopg2
+        from urllib.parse import urlparse
+        url = urlparse(database_url)
+
+        conn = psycopg2.connect(
+            host=url.hostname,
+            database=url.path[1:],
+            user=url.username,
+            password=url.password,
+            port=url.port or 5432,
+            cursor_factory=psycopg2.extras.RealDictCursor  # Para retornar dicts
+        )
         yield conn
     finally:
         conn.close()
@@ -102,11 +115,11 @@ async def obtener_producto(producto_id: int, db = Depends(get_db)):
         plus = []
         for row in cursor.fetchall():
             plus.append({
-                "codigo_plu": row[0],
-                "nombre_establecimiento": row[1],
-                "ultima_vez_visto": str(row[2]) if row[2] else None,
-                "veces_visto": row[3],
-                "precio": row[4]
+                "codigo_plu": row['codigo_plu'],
+                "nombre_establecimiento": row['nombre_normalizado'],
+                "ultima_vez_visto": str(row['ultima_compra']) if row['ultima_compra'] else None,
+                "veces_visto": row['veces_comprado'],
+                "precio": row['precio_unitario']
             })
 
         # Calcular estadísticas
@@ -122,20 +135,20 @@ async def obtener_producto(producto_id: int, db = Depends(get_db)):
         stats = cursor.fetchone()
 
         return {
-            "id": producto[0],
-            "codigo_ean": producto[1],
-            "nombre_normalizado": producto[2],
-            "nombre_comercial": producto[3],
-            "marca": producto[4],
-            "categoria": producto[5],
-            "subcategoria": producto[6],
-            "presentacion": producto[7],
-            "veces_comprado": producto[8],
-            "fecha_creacion": str(producto[9]),
-            "ultima_actualizacion": str(producto[10]),
+            "id": producto['id'],
+            "codigo_ean": producto['codigo_ean'],
+            "nombre_normalizado": producto['nombre_consolidado'],
+            "nombre_comercial": producto['nombre_comercial'],
+            "marca": producto['marca'],
+            "categoria": producto['categoria'],
+            "subcategoria": producto['subcategoria'],
+            "presentacion": producto['presentacion'],
+            "veces_comprado": producto['veces_visto'],
+            "fecha_creacion": str(producto['fecha_creacion']),
+            "ultima_actualizacion": str(producto['fecha_ultima_actualizacion']),
             "plus": plus,
-            "precio_promedio": stats[0] if stats else 0,
-            "num_establecimientos": stats[1] if stats else 0
+            "precio_promedio": stats['precio_promedio'] if stats else 0,
+            "num_establecimientos": stats['num_establecimientos'] if stats else 0
         }
 
     except HTTPException:
@@ -222,7 +235,7 @@ async def actualizar_producto(
                         DO UPDATE SET
                             codigo_plu = EXCLUDED.codigo_plu,
                             fecha_actualizacion = CURRENT_TIMESTAMP
-                    """, (producto_id, est[0], plu.codigo_plu))
+                    """, (producto_id, est['id'], plu.codigo_plu))
 
         db.commit()
 
@@ -263,15 +276,15 @@ async def eliminar_producto(producto_id: int, db = Depends(get_db)):
         if not producto:
             raise HTTPException(404, "Producto no encontrado")
 
-        nombre = producto[0]
+        nombre = producto['nombre_consolidado']
 
         # Verificar si tiene compras asociadas
         cursor.execute("""
-            SELECT COUNT(*) FROM items_factura
+            SELECT COUNT(*) as count FROM items_factura
             WHERE producto_maestro_id = %s
         """, (producto_id,))
 
-        compras = cursor.fetchone()[0]
+        compras = cursor.fetchone()['count']
 
         if compras > 0:
             raise HTTPException(400,
@@ -330,7 +343,10 @@ async def limpiar_duplicados(db = Depends(get_db)):
         duplicados_ean = cursor.fetchall()
         eliminados = 0
 
-        for ean, ids in duplicados_ean:
+        for row in duplicados_ean:
+            ean = row['codigo_ean']
+            ids = row['ids']
+
             # Mantener el primero, eliminar los demás
             ids_eliminar = ids[1:]
 
@@ -434,30 +450,30 @@ async def listar_productos(
         productos = []
         for row in cursor.fetchall():
             productos.append({
-                "id": row[0],
-                "codigo_ean": row[1],
-                "nombre": row[2],
-                "marca": row[3],
-                "categoria": row[4],
-                "veces_comprado": row[5],
-                "num_plus": row[6],
-                "precio_promedio": row[7],
-                "num_establecimientos": row[8],
-                "estado": [] # Badges de problemas
+                "id": row['id'],
+                "codigo_ean": row['codigo_ean'],
+                "nombre": row['nombre_consolidado'],
+                "marca": row['marca'],
+                "categoria": row['categoria'],
+                "veces_comprado": row['veces_visto'],
+                "num_plus": row['num_plus'],
+                "precio_promedio": row['precio_promedio'],
+                "num_establecimientos": row['num_establecimientos'],
+                "estado": []
             })
 
             # Agregar badges
-            if not row[1]:  # sin EAN
+            if not row['codigo_ean']:
                 productos[-1]["estado"].append("sin_ean")
-            if not row[3]:  # sin marca
+            if not row['marca']:
                 productos[-1]["estado"].append("sin_marca")
-            if not row[4]:  # sin categoría
+            if not row['categoria']:
                 productos[-1]["estado"].append("sin_categoria")
 
         # Contar total
-        count_query = f"SELECT COUNT(*) FROM productos_maestros_v2 WHERE {where_sql}"
+        count_query = f"SELECT COUNT(*) as count FROM productos_maestros_v2 WHERE {where_sql}"
         cursor.execute(count_query, params[:-2])  # Sin LIMIT/OFFSET
-        total = cursor.fetchone()[0]
+        total = cursor.fetchone()['count']
 
         return {
             "productos": productos,
@@ -473,4 +489,4 @@ async def listar_productos(
         cursor.close()
 
 
-print("✅ Endpoints de administración de productos cargados")
+print("✅ Endpoints de administración de productos cargados (psycopg2)")
