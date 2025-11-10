@@ -1,217 +1,229 @@
 #!/usr/bin/env python3
 """
-reset_lecfac_completo.py
-Script definitivo que encuentra TODAS las dependencias y hace reset completo
+reset_lecfac_CASCADE.py
+Script que borra TODOS los datos usando CASCADE para manejar foreign keys
 """
 
 import psycopg2
-from datetime import datetime
 
 DATABASE_URL = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@turntable.proxy.rlwy.net:52874/railway"
 
-def encontrar_dependencias():
-    """Encuentra todas las tablas que tienen foreign keys"""
-    print("\n🔍 Analizando dependencias...")
+def reset_completo_cascade():
+    """Hace el reset completo usando TRUNCATE CASCADE"""
+    print("\n" + "=" * 70)
+    print("🔥 RESET COMPLETO CON CASCADE")
+    print("=" * 70)
 
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
-    # Query para encontrar TODAS las foreign keys
-    cur.execute("""
-        SELECT
-            tc.table_name as tabla_hija,
-            kcu.column_name as columna_hija,
-            ccu.table_name AS tabla_padre,
-            ccu.column_name AS columna_padre
-        FROM information_schema.table_constraints AS tc
-        JOIN information_schema.key_column_usage AS kcu
-          ON tc.constraint_name = kcu.constraint_name
-          AND tc.table_schema = kcu.table_schema
-        JOIN information_schema.constraint_column_usage AS ccu
-          ON ccu.constraint_name = tc.constraint_name
-          AND ccu.table_schema = tc.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY'
-        ORDER BY tabla_padre, tabla_hija;
-    """)
-
-    dependencias = {}
-    for row in cur.fetchall():
-        tabla_hija, col_hija, tabla_padre, col_padre = row
-        if tabla_padre not in dependencias:
-            dependencias[tabla_padre] = []
-        dependencias[tabla_padre].append(tabla_hija)
-
-    # Mostrar dependencias
-    print("\n📋 Dependencias encontradas:")
-    for padre, hijas in dependencias.items():
-        print(f"   {padre} <- {', '.join(set(hijas))}")
-
-    cur.close()
-    conn.close()
-
-    return dependencias
-
-def obtener_orden_borrado(dependencias):
-    """Determina el orden correcto para borrar tablas"""
-    # Tablas que queremos borrar (no usuarios)
-    tablas_objetivo = [
-        'processing_jobs', 'inventario_usuario', 'items_factura',
-        'facturas', 'precios_productos', 'productos_por_establecimiento',
-        'codigos_normalizados', 'correcciones_productos',
-        'codigos_locales', 'matching_logs', 'historial_compras_usuario',
-        'productos_maestros', 'establecimientos', 'patrones_compra',
-        'gastos_mensuales', 'alertas_usuario', 'presupuesto_usuario',
-        'auditoria_productos', 'historial_cambios_productos'
-    ]
-
-    # Construir orden basado en dependencias
-    orden = []
-    procesadas = set()
-
-    # Función recursiva para procesar dependencias
-    def procesar_tabla(tabla):
-        if tabla in procesadas or tabla not in tablas_objetivo:
-            return
-
-        # Primero procesar las tablas que dependen de esta
-        if tabla in dependencias:
-            for hija in dependencias[tabla]:
-                if hija != tabla:  # Evitar loops
-                    procesar_tabla(hija)
-
-        # Luego agregar esta tabla
-        if tabla not in procesadas and tabla in tablas_objetivo:
-            orden.append(tabla)
-            procesadas.add(tabla)
-
-    # Procesar todas las tablas
-    for tabla in tablas_objetivo:
-        procesar_tabla(tabla)
-
-    return orden
-
-def reset_completo():
-    """Hace el reset completo en el orden correcto"""
-    print("\n🧹 Iniciando reset completo...")
-
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-
-    # Obtener dependencias y orden
-    dependencias = encontrar_dependencias()
-    orden = obtener_orden_borrado(dependencias)
-
-    print(f"\n📝 Orden de borrado determinado ({len(orden)} tablas)")
-
-    # Borrar en el orden correcto
-    total_borrados = 0
-    for tabla in orden:
-        try:
-            # Verificar si existe
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = %s
-                )
-            """, (tabla,))
-
-            if cur.fetchone()[0]:
-                cur.execute(f"DELETE FROM {tabla}")
-                borrados = cur.rowcount
-                total_borrados += borrados
-                print(f"   ✅ {tabla}: {borrados} registros eliminados")
-            else:
-                print(f"   ⚠️ {tabla}: no existe")
-
-        except Exception as e:
-            print(f"   ❌ {tabla}: {str(e).split('DETAIL')[0]}")
-            conn.rollback()
-
-    # Resetear usuarios
     try:
-        cur.execute("""
-            UPDATE usuarios
-            SET facturas_aportadas = 0,
-                productos_aportados = 0,
-                puntos_contribucion = 0
-        """)
-        print(f"\n✅ Contadores de usuarios reseteados")
-    except Exception as e:
-        print(f"❌ Error reseteando usuarios: {e}")
+        # Deshabilitar triggers temporalmente para evitar problemas
+        print("\n⚠️  Deshabilitando triggers temporalmente...")
+        cur.execute("SET session_replication_role = replica;")
 
-    # Resetear secuencias
-    print("\n🔄 Reseteando secuencias...")
-    secuencias = [
-        'establecimientos_id_seq',
-        'productos_maestros_id_seq',
-        'productos_por_establecimiento_id_seq',
-        'facturas_id_seq',
-        'items_factura_id_seq',
-        'precios_productos_id_seq',
-        'inventario_usuario_id_seq'
-    ]
+        # Lista de tablas a borrar (en cualquier orden, CASCADE se encarga)
+        tablas = [
+            # Datos de facturas
+            'items_factura',
+            'facturas',
 
-    for seq in secuencias:
+            # Precios e historial
+            'precios_historicos_v2',
+            'precios_historicos',
+            'precios_productos',
+
+            # Productos
+            'productos_por_establecimiento',
+            'codigos_establecimiento',  # ← NUEVA TABLA
+            'codigos_locales',
+            'codigos_normalizados',
+            'codigos_alternativos',
+            'variantes_nombres',
+            'productos_variantes',
+            'auditoria_productos',
+            'historial_cambios_productos',
+            'log_mejoras_nombres',
+
+            # Inventario y patrones
+            'inventario_usuario',
+            'historial_compras_usuario',
+            'patrones_compra',
+            'gastos_mensuales',
+            'alertas_usuario',
+            'presupuesto_usuario',
+
+            # Procesamiento
+            'processing_jobs',
+            'ocr_logs',
+            'matching_logs',
+            'correcciones_productos',
+
+            # NO BORRAR: usuarios, productos_maestros, productos_maestros_v2, establecimientos
+        ]
+
+        print(f"\n🗑️  Borrando {len(tablas)} tablas...\n")
+
+        total_borrados = 0
+
+        for tabla in tablas:
+            try:
+                # Verificar si existe
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_name = %s
+                    )
+                """, (tabla,))
+
+                if not cur.fetchone()[0]:
+                    print(f"   ⚠️  {tabla}: no existe")
+                    continue
+
+                # Contar registros antes
+                cur.execute(f"SELECT COUNT(*) FROM {tabla}")
+                antes = cur.fetchone()[0]
+
+                # TRUNCATE con CASCADE (borra todo sin problemas de FK)
+                cur.execute(f"TRUNCATE TABLE {tabla} CASCADE")
+
+                total_borrados += antes
+                print(f"   ✅ {tabla}: {antes} registros eliminados")
+
+            except Exception as e:
+                print(f"   ❌ {tabla}: {str(e)}")
+                conn.rollback()
+                continue
+
+        # Resetear contadores de usuarios
+        print("\n👥 Reseteando contadores de usuarios...")
         try:
-            cur.execute(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1")
-            print(f"   ✅ {seq}")
+            cur.execute("""
+                UPDATE usuarios
+                SET facturas_aportadas = 0,
+                    productos_aportados = 0,
+                    puntos_contribucion = 0
+            """)
+            print("   ✅ Contadores reseteados")
         except Exception as e:
-            print(f"   ⚠️ {seq}: {e}")
+            print(f"   ❌ Error: {e}")
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        # Resetear secuencias
+        print("\n🔄 Reseteando secuencias...")
+        secuencias = [
+            'facturas_id_seq',
+            'items_factura_id_seq',
+            'precios_productos_id_seq',
+            'inventario_usuario_id_seq',
+            'productos_por_establecimiento_id_seq',
+            'precios_historicos_v2_id_seq',
+            'codigos_establecimiento_id_seq',  # ← NUEVA
+        ]
 
-    print(f"\n✅ Reset completado: {total_borrados} registros eliminados en total")
+        for seq in secuencias:
+            try:
+                cur.execute(f"SELECT EXISTS (SELECT FROM pg_class WHERE relname = %s)", (seq,))
+                if cur.fetchone()[0]:
+                    cur.execute(f"ALTER SEQUENCE {seq} RESTART WITH 1")
+                    print(f"   ✅ {seq}")
+            except Exception as e:
+                print(f"   ⚠️  {seq}: {e}")
 
-def verificar_estado_final():
-    """Verifica el estado final"""
-    print("\n📊 Estado final de la base de datos:")
+        # Habilitar triggers de nuevo
+        print("\n✅ Habilitando triggers...")
+        cur.execute("SET session_replication_role = DEFAULT;")
+
+        # Commit final
+        conn.commit()
+        print(f"\n{'=' * 70}")
+        print(f"✅ RESET COMPLETADO: {total_borrados} registros eliminados")
+        print(f"{'=' * 70}")
+
+    except Exception as e:
+        print(f"\n❌ ERROR GENERAL: {e}")
+        conn.rollback()
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+def verificar_estado():
+    """Verifica el estado final de la BD"""
+    print("\n📊 ESTADO FINAL DE LA BASE DE DATOS")
+    print("=" * 70)
 
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
-    tablas_verificar = [
-        'usuarios', 'establecimientos', 'productos_maestros',
-        'facturas', 'items_factura', 'inventario_usuario'
+    tablas = [
+        # Tablas que deben tener datos
+        ('usuarios', True),
+        ('establecimientos', True),
+        ('productos_maestros_v2', True),
+
+        # Tablas que deben estar vacías
+        ('facturas', False),
+        ('items_factura', False),
+        ('inventario_usuario', False),
+        ('precios_historicos_v2', False),
+        ('productos_por_establecimiento', False),
+        ('codigos_establecimiento', False),
     ]
 
-    print("-" * 50)
-    for tabla in tablas_verificar:
+    print(f"{'Tabla':<35} {'Registros':>10} {'Estado':>10}")
+    print("-" * 70)
+
+    for tabla, debe_tener_datos in tablas:
         try:
             cur.execute(f"SELECT COUNT(*) FROM {tabla}")
             count = cur.fetchone()[0]
-            print(f"{tabla:<25} {count:>10} registros")
+
+            if debe_tener_datos:
+                estado = "✅" if count > 0 else "⚠️ VACÍA"
+            else:
+                estado = "✅ VACÍA" if count == 0 else "❌ CON DATOS"
+
+            print(f"{tabla:<35} {count:>10} {estado:>15}")
         except:
-            print(f"{tabla:<25} {'ERROR':>10}")
-    print("-" * 50)
+            print(f"{tabla:<35} {'ERROR':>10} {'❌':>15}")
+
+    print("-" * 70)
 
     cur.close()
     conn.close()
 
+
 def main():
+    print("\n" + "=" * 70)
+    print("🔥 LECFAC - RESET TOTAL CON CASCADE")
     print("=" * 70)
-    print("LECFAC - RESET COMPLETO DEFINITIVO")
-    print("=" * 70)
-    print("\nEste script detectará TODAS las dependencias y borrará")
-    print("los datos en el orden correcto.")
+    print("\nEste script borrará:")
+    print("  ✅ Todas las facturas")
+    print("  ✅ Todos los items de factura")
+    print("  ✅ Todo el inventario")
+    print("  ✅ Todos los precios históricos")
+    print("  ✅ Todos los códigos PLU")
+    print("\nPero mantendrá:")
+    print("  ✅ Usuarios")
+    print("  ✅ Establecimientos")
+    print("  ✅ Productos maestros")
 
-    # Confirmar
-    respuesta = input("\n⚠️  ¿Continuar? (escribe 'RESET TOTAL'): ")
+    respuesta = input("\n⚠️  ¿Continuar? (escribe 'SI BORRAR TODO'): ")
 
-    if respuesta != 'RESET TOTAL':
+    if respuesta != 'SI BORRAR TODO':
         print("❌ Cancelado")
         return
 
-    # Ejecutar
-    reset_completo()
-    verificar_estado_final()
+    reset_completo_cascade()
+    verificar_estado()
 
-    print("\n✨ ¡Base de datos lista para empezar de cero!")
-    print("\nPuedes ahora:")
-    print("1. Escanear facturas y ver el flujo completo del OCR")
-    print("2. Verificar que los user_id se asignan correctamente")
-    print("3. Ver cómo se construye la base comunitaria paso a paso")
+    print("\n✨ ¡Base de datos reseteada!")
+    print("\n📱 Ahora puedes:")
+    print("  1. Escanear una factura nueva desde la app")
+    print("  2. Ver los PLUs guardarse automáticamente")
+    print("  3. Ver el inventario con precios correctos")
+
 
 if __name__ == "__main__":
     main()

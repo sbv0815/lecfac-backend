@@ -234,13 +234,13 @@ function mostrarProductos(productos) {
                 <td>${p.total_reportes || 0}</td>
                 <td>${estadoHTML}</td>
                 <td>
-                    <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
-                        ✏️
-                    </button>
-                    <button class="btn-small btn-secondary" onclick="verHistorial(${p.id})" title="Historial">
-                        📜
-                    </button>
-                </td>
+            <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
+        ✏️
+            </button>
+            <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre_normalizado || '').replace(/'/g, "\\'")}');" title="Eliminar">
+        🗑️
+            </button>
+            </td>
             </tr>
         `;
         tbody.insertAdjacentHTML("beforeend", row);
@@ -563,6 +563,265 @@ function fusionarSeleccionados() {
 function recargarColores() {
     console.log("Recargando colores...");
 }
+// =============================================================
+// AGREGAR AL FINAL DE productos.js (después de recargarColores)
+// =============================================================
+
+// =============================================================
+// ELIMINAR PRODUCTO
+// =============================================================
+async function eliminarProducto(id, nombre) {
+    if (!confirm(`⚠️ ¿Estás seguro de eliminar "${nombre}"?\n\nEsta acción NO se puede deshacer.`)) {
+        return;
+    }
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Error al eliminar producto');
+        }
+
+        mostrarAlerta('✅ Producto eliminado correctamente', 'success');
+        cargarProductos(paginaActual); // Recargar tabla
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        mostrarAlerta(`❌ Error: ${error.message}`, 'error');
+    }
+}
+
+// =============================================================
+// FUNCIÓN MOSTRAR ALERTAS (si no existe ya)
+// =============================================================
+function mostrarAlerta(mensaje, tipo = 'info') {
+    // Buscar contenedor de alertas o crearlo
+    let alertContainer = document.getElementById('alert-container');
+    if (!alertContainer) {
+        alertContainer = document.createElement('div');
+        alertContainer.id = 'alert-container';
+        alertContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            max-width: 400px;
+        `;
+        document.body.appendChild(alertContainer);
+    }
+
+    // Crear alerta
+    const alert = document.createElement('div');
+    const alertClasses = {
+        'success': 'alert-success',
+        'error': 'alert-error',
+        'warning': 'alert-warning',
+        'info': 'alert-info'
+    };
+
+    alert.className = `alert ${alertClasses[tipo] || 'alert-info'}`;
+    alert.innerHTML = mensaje;
+    alert.style.cssText = `
+        margin-bottom: 10px;
+        padding: 15px;
+        border-radius: 6px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        animation: slideIn 0.3s ease-out;
+        background: ${tipo === 'success' ? '#d1fae5' : tipo === 'error' ? '#fee2e2' : '#e0e7ff'};
+        color: ${tipo === 'success' ? '#059669' : tipo === 'error' ? '#dc2626' : '#4338ca'};
+        border-left: 4px solid ${tipo === 'success' ? '#059669' : tipo === 'error' ? '#dc2626' : '#4338ca'};
+    `;
+
+    alertContainer.appendChild(alert);
+
+    // Auto-remover después de 5 segundos
+    setTimeout(() => {
+        alert.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => alert.remove(), 300);
+    }, 5000);
+}
+
+// Agregar estilos de animación si no existen
+if (!document.getElementById('alert-animations')) {
+    const style = document.createElement('style');
+    style.id = 'alert-animations';
+    style.textContent = `
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// =============================================================
+// AGREGAR PLU NUEVO (si funciones_plu_modal.js no existe)
+// =============================================================
+function agregarPLU() {
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) {
+        console.error('No se encontró contenedorPLUs');
+        return;
+    }
+
+    // Remover mensaje de "no hay PLUs" si existe
+    const mensaje = contenedor.querySelector('p');
+    if (mensaje) {
+        mensaje.remove();
+    }
+
+    const pluDiv = document.createElement('div');
+    pluDiv.className = 'plu-item';
+    pluDiv.innerHTML = `
+        <div class="plu-row">
+            <div class="form-group">
+                <label>Establecimiento</label>
+                <input type="text"
+                       class="plu-establecimiento"
+                       placeholder="Ej: EXITO, JUMBO, CARULLA">
+            </div>
+            <div class="form-group">
+                <label>Código PLU</label>
+                <input type="text"
+                       class="plu-codigo"
+                       placeholder="Ej: 1234, 5678">
+            </div>
+            <div class="form-group">
+                <label>Última Vez Visto</label>
+                <input type="text"
+                       class="plu-fecha"
+                       value="Nuevo"
+                       readonly
+                       style="background: #f0f0f0;">
+            </div>
+            <button type="button" class="btn-remove-plu" onclick="this.parentElement.parentElement.remove()">
+                🗑️
+            </button>
+        </div>
+    `;
+
+    contenedor.appendChild(pluDiv);
+}
+
+// =============================================================
+// CARGAR PLUs DEL PRODUCTO
+// =============================================================
+async function cargarPLUsProducto(productoId) {
+    const apiBase = getApiBase();
+    const contenedor = document.getElementById('contenedorPLUs');
+
+    if (!contenedor) {
+        console.warn('No se encontró contenedorPLUs');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`);
+        if (!response.ok) throw new Error('Error cargando PLUs');
+
+        const data = await response.json();
+        contenedor.innerHTML = '';
+
+        if (!data.plus || data.plus.length === 0) {
+            contenedor.innerHTML = '<p style="color: #666; padding: 10px;">No hay PLUs registrados</p>';
+            return;
+        }
+
+        data.plus.forEach((plu, index) => {
+            const pluDiv = document.createElement('div');
+            pluDiv.className = 'plu-item';
+            pluDiv.innerHTML = `
+                <div class="plu-row">
+                    <div class="form-group">
+                        <label>Establecimiento</label>
+                        <input type="text"
+                               class="plu-establecimiento"
+                               value="${plu.nombre_establecimiento || ''}"
+                               placeholder="Ej: EXITO, JUMBO">
+                    </div>
+                    <div class="form-group">
+                        <label>Código PLU</label>
+                        <input type="text"
+                               class="plu-codigo"
+                               value="${plu.codigo_plu || ''}"
+                               placeholder="Ej: 1234">
+                    </div>
+                    <div class="form-group">
+                        <label>Última Vez Visto</label>
+                        <input type="text"
+                               class="plu-fecha"
+                               value="${plu.ultima_vez_visto || 'N/A'}"
+                               readonly
+                               style="background: #f0f0f0;">
+                    </div>
+                    <button type="button" class="btn-remove-plu" onclick="this.parentElement.parentElement.remove()">
+                        🗑️
+                    </button>
+                </div>
+            `;
+            contenedor.appendChild(pluDiv);
+        });
+
+    } catch (error) {
+        console.error('Error cargando PLUs:', error);
+        contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
+    }
+}
+
+// =============================================================
+// RECOPILAR PLUs DEL FORMULARIO
+// =============================================================
+function recopilarPLUs() {
+    const plusItems = document.querySelectorAll('.plu-item');
+    const plus = [];
+
+    plusItems.forEach(item => {
+        const establecimiento = item.querySelector('.plu-establecimiento')?.value.trim();
+        const codigo = item.querySelector('.plu-codigo')?.value.trim();
+
+        if (establecimiento && codigo) {
+            plus.push({
+                nombre_establecimiento: establecimiento.toUpperCase(),
+                codigo_plu: codigo,
+                ultima_vez_visto: new Date().toISOString().split('T')[0]
+            });
+        }
+    });
+
+    return plus;
+}
+
+// =============================================================
+// EXPORTAR FUNCIONES ADICIONALES
+// =============================================================
+window.eliminarProducto = eliminarProducto;
+window.mostrarAlerta = mostrarAlerta;
+window.agregarPLU = agregarPLU;
+window.cargarPLUsProducto = cargarPLUsProducto;
+window.recopilarPLUs = recopilarPLUs;
+
+console.log('✅ Funciones de edición y eliminación cargadas');
 
 // =============================================================
 // Inicialización
