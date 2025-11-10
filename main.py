@@ -4040,6 +4040,107 @@ print("✅ Endpoints de categorías agregados:")
 print("   GET /admin/setup-categorias")
 print("   GET /admin/verificar-categorias")
 
+# ============================================================================
+# AGREGAR ESTE ENDPOINT A main.py - VERSIÓN ULTRA SIMPLE
+# ============================================================================
+
+@app.get("/admin/fix-categorias-final")
+async def fix_categorias_final():
+    """
+    Versión ultra simple: solo crea tabla e inserta datos
+    NO crea la vista (eso se hace después si es necesario)
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultados = []
+
+        # 1. Crear tabla
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS categorias (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) UNIQUE NOT NULL,
+                descripcion TEXT,
+                icono VARCHAR(50),
+                orden INTEGER DEFAULT 0,
+                activo BOOLEAN DEFAULT TRUE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        resultados.append("✅ Tabla categorias verificada")
+
+        # 2. Insertar categorías
+        categorias = [
+            ('Lácteos', '🥛', 1), ('Carnes', '🥩', 2),
+            ('Frutas y Verduras', '🍎', 3), ('Panadería', '🍞', 4),
+            ('Bebidas', '🥤', 5), ('Despensa', '🥫', 6),
+            ('Aseo Personal', '🧴', 7), ('Aseo Hogar', '🧹', 8),
+            ('Snacks', '🍪', 9), ('Congelados', '🧊', 10),
+            ('Farmacia', '💊', 11), ('Bebé', '👶', 12),
+            ('Mascotas', '🐕', 13), ('Licores', '🍺', 14),
+            ('Otros', '📦', 99)
+        ]
+
+        insertadas = 0
+        for nombre, icono, orden in categorias:
+            cursor.execute("""
+                INSERT INTO categorias (nombre, icono, orden)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (nombre) DO NOTHING
+            """, (nombre, icono, orden))
+            if cursor.rowcount > 0:
+                insertadas += 1
+
+        conn.commit()
+        resultados.append(f"✅ {insertadas} categorías nuevas insertadas")
+
+        # 3. Crear índice
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_productos_v2_categoria
+            ON productos_maestros_v2(categoria_id)
+        """)
+        conn.commit()
+        resultados.append("✅ Índice creado")
+
+        # 4. Verificar
+        cursor.execute("SELECT COUNT(*) FROM categorias")
+        total = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM productos_maestros_v2
+            WHERE categoria_id IS NOT NULL
+        """)
+        con_cat = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": "Tabla categorias configurada correctamente",
+            "resultados": resultados,
+            "estadisticas": {
+                "total_categorias": total,
+                "productos_con_categoria": con_cat,
+                "categorias_insertadas": insertadas
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+print("✅ Endpoint /admin/fix-categorias-final agregado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
