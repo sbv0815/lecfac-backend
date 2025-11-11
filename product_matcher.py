@@ -551,6 +551,134 @@ def detectar_duplicados_por_similitud(cursor, umbral=0.90):
     return duplicados
 
 
+def buscar_o_crear_producto_inteligente(
+    codigo: str,
+    nombre: str,
+    precio: int,
+    establecimiento: str,
+    cursor,
+    conn,
+    factura_id: int = None,
+    usuario_id: int = None,
+    item_factura_id: int = None
+) -> int:
+    """
+    Función de compatibilidad para main.py
+    Busca o crea un producto usando el sistema completo
+
+    Args:
+        codigo: Código del producto (EAN o PLU)
+        nombre: Nombre del producto (del OCR)
+        precio: Precio del producto
+        establecimiento: Nombre del establecimiento
+        cursor: Cursor de base de datos
+        conn: Conexión a base de datos
+        factura_id: ID de la factura (opcional)
+        usuario_id: ID del usuario (opcional)
+        item_factura_id: ID del item (opcional)
+
+    Returns:
+        ID del producto en productos_maestros
+    """
+    import os
+
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO:")
+    print(f"   Código: {codigo or 'Sin código'}")
+    print(f"   Nombre: {nombre[:50]}")
+    print(f"   Precio: ${precio:,}")
+    print(f"   Establecimiento: {establecimiento}")
+
+    # Normalizar nombre
+    nombre_normalizado = normalizar_nombre_producto(nombre, True)
+    tipo_codigo = clasificar_codigo_tipo(codigo)
+    cadena = detectar_cadena(establecimiento)
+
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+    param = "%s" if is_postgresql else "?"
+
+    # ========================================================================
+    # PASO 1: BUSCAR PRODUCTO EXISTENTE
+    # ========================================================================
+
+    producto_id = None
+
+    # Buscar por EAN
+    if tipo_codigo == 'EAN' and codigo:
+        cursor.execute(
+            f"SELECT id, nombre_normalizado FROM productos_maestros WHERE codigo_ean = {param}",
+            (codigo,)
+        )
+        resultado = cursor.fetchone()
+
+        if resultado:
+            producto_id = resultado[0]
+            print(f"   ✅ Encontrado por EAN: ID={producto_id}")
+            return producto_id
+
+    # Buscar por nombre similar
+    cursor.execute(
+        f"SELECT id, nombre_normalizado, codigo_ean FROM productos_maestros WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}",
+        (f"%{nombre_normalizado[:30]}%",)
+    )
+
+    candidatos = cursor.fetchall()
+
+    for cand_id, cand_nombre, cand_ean in candidatos:
+        similitud = calcular_similitud(nombre_normalizado, cand_nombre)
+
+        if similitud >= 0.85:
+            producto_id = cand_id
+            print(f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})")
+            return producto_id
+
+    # ========================================================================
+    # PASO 2: NO ENCONTRADO → VALIDAR Y CREAR
+    # ========================================================================
+
+    print(f"   ℹ️  Producto no encontrado → Validando...")
+
+    # Inicializar AprendizajeManager si está disponible
+    aprendizaje_mgr = None
+    if APRENDIZAJE_AVAILABLE:
+        try:
+            from aprendizaje_manager import AprendizajeManager
+            aprendizaje_mgr = AprendizajeManager(cursor, conn)
+        except Exception as e:
+            print(f"   ⚠️  No se pudo inicializar AprendizajeManager: {e}")
+
+    # Validar con sistema completo
+    resultado_validacion = validar_nombre_con_sistema_completo(
+        nombre_ocr_original=nombre,
+        nombre_corregido=nombre_normalizado,
+        precio=precio,
+        establecimiento=cadena,
+        codigo=codigo,
+        aprendizaje_mgr=aprendizaje_mgr,
+        factura_id=factura_id,
+        usuario_id=usuario_id,
+        item_factura_id=item_factura_id
+    )
+
+    nombre_final = resultado_validacion['nombre_final']
+
+    print(f"\n➕ CREANDO PRODUCTO:")
+    print(f"   Nombre validado: {nombre_final}")
+    print(f"   Fuente: {resultado_validacion['fuente']}")
+    print(f"   Confianza: {resultado_validacion['confianza']:.2f}")
+
+    # Crear producto
+    producto_id = crear_producto_en_ambas_tablas(
+        codigo_ean=codigo if tipo_codigo == 'EAN' else None,
+        nombre_final=nombre_final,
+        precio=precio,
+        cursor=cursor,
+        conn=conn,
+        metadatos=resultado_validacion
+    )
+
+    return producto_id
+
+
 # ==============================================================================
 # MENSAJE DE CARGA
 # ==============================================================================
