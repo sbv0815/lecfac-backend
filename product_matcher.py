@@ -1,6 +1,12 @@
 """
-product_matcher.py - VERSIÓN MEJORADA V3
+product_matcher.py - VERSIÓN MEJORADA V3.2
 Sistema de matching y normalización de productos
+
+CAMBIOS V3.2:
+- ✅ INTEGRACIÓN CON PERPLEXITY: Valida nombres de productos nuevos
+- ✅ Productos existentes mantienen su nombre (NO se revalidan)
+- ✅ Solo valida productos que NO existen en BD
+- ✅ Fallback automático si Perplexity falla
 
 CAMBIOS V3:
 - ✅ GUARDA EN AMBAS TABLAS: productos_maestros (legacy) y productos_maestros_v2 (nueva)
@@ -12,6 +18,16 @@ CAMBIOS V3:
 
 import re
 from unidecode import unidecode
+
+# Importar validador de Perplexity
+try:
+    from perplexity_validator import validar_nombre_producto
+    PERPLEXITY_AVAILABLE = True
+    print("✅ Perplexity Validator integrado")
+except ImportError as e:
+    PERPLEXITY_AVAILABLE = False
+    print(f"⚠️  Perplexity Validator no disponible: {e}")
+    print("   Sistema funcionará sin validación de nombres")
 
 
 def normalizar_nombre_producto(nombre: str) -> str:
@@ -167,17 +183,18 @@ def crear_producto_en_ambas_tablas(
     conn
 ) -> int:
     """
-    ✅ NUEVO: Crea producto en AMBAS tablas simultáneamente
+    ✅ V3.2: Crea producto en AMBAS tablas simultáneamente
+    ⚠️  NOTA: El nombre ya viene VALIDADO por Perplexity
 
     Args:
         codigo_ean: Código EAN (puede ser None para PLUs)
-        nombre_normalizado: Nombre normalizado del producto
+        nombre_normalizado: Nombre VALIDADO del producto
         precio: Precio inicial
         cursor: Cursor de BD
         conn: Conexión a BD
 
     Returns:
-        int: ID del producto en productos_maestros (LEGACY) ⬅️ CAMBIO CRÍTICO
+        int: ID del producto en productos_maestros (LEGACY)
     """
     import os
 
@@ -251,29 +268,23 @@ def buscar_o_crear_producto_inteligente(
     conn
 ) -> int:
     """
-    Busca un producto existente o crea uno nuevo EN AMBAS TABLAS
+    ✅ V3.2 CON PERPLEXITY: Busca producto existente o crea uno nuevo VALIDADO
 
-    LÓGICA V3 MEJORADA:
+    LÓGICA MEJORADA:
     1. Clasificar código como EAN o PLU
-    2. Si es EAN (8+ dígitos):
-       - Buscar por codigo_ean en productos_maestros (LEGACY)
-       - Si no existe, crear en AMBAS tablas
-    3. Si es PLU (3-7 dígitos):
-       - Buscar por similitud de nombre (>85%)
-       - Si no existe, crear en AMBAS tablas SIN codigo_ean
-    4. Si no tiene código:
-       - Buscar por similitud de nombre
-       - Si no existe, crear en AMBAS tablas SIN codigo_ean
+    2. Buscar en BD (productos_maestros legacy)
+    3a. SI EXISTE → Retornar ID (usar nombre existente)
+    3b. NO EXISTE → VALIDAR CON PERPLEXITY → Crear producto nuevo
 
     Returns:
-        int: producto_maestro_id de productos_maestros (LEGACY) ⬅️ CAMBIO CRÍTICO
+        int: producto_maestro_id de productos_maestros (LEGACY)
     """
     import os
 
     nombre_normalizado = normalizar_nombre_producto(nombre)
     tipo_codigo = clasificar_codigo_tipo(codigo)
 
-    print(f"🔍 buscar_o_crear_producto_inteligente() V3")
+    print(f"🔍 buscar_o_crear_producto_inteligente() V3.2")
     print(f"   Código: {codigo} → Tipo: {tipo_codigo}")
     print(f"   Nombre original: {nombre}")
     print(f"   Nombre normalizado: {nombre_normalizado}")
@@ -307,22 +318,53 @@ def buscar_o_crear_producto_inteligente(
         if row:
             producto_id = row[0]
             nombre_existente = row[1]
-            print(f"   ✅ Producto encontrado por EAN: ID {producto_id} (legacy)")
+            print(f"   ✅ Producto EXISTENTE encontrado por EAN: ID {producto_id}")
             print(f"      Nombre en BD: {nombre_existente}")
+            print(f"      🚫 NO se valida con Perplexity (ya existe)")
 
             # Actualizar precio promedio
             actualizar_precio_promedio_legacy(codigo, precio, cursor, conn)
 
             # Asegurar que existe en productos_maestros_v2
-            sincronizar_a_v2(producto_id, codigo, nombre_normalizado, cursor, conn)
+            sincronizar_a_v2(producto_id, codigo, nombre_existente, cursor, conn)
 
             return producto_id
 
-        # No existe, crear nuevo producto con este EAN EN AMBAS TABLAS
-        print(f"   ➕ Creando producto nuevo con EAN: {codigo}")
+        # ========================================================
+        # 🆕 PRODUCTO NUEVO CON EAN - VALIDAR CON PERPLEXITY
+        # ========================================================
+        print(f"   🆕 Producto NUEVO con EAN: {codigo}")
+        print(f"   🔍 Validando nombre con Perplexity...")
+
+        nombre_final = nombre_normalizado  # Default: usar nombre OCR
+
+        if PERPLEXITY_AVAILABLE:
+            try:
+                resultado_validacion = validar_nombre_producto(
+                    nombre_ocr=nombre,
+                    precio=precio,
+                    supermercado=establecimiento,
+                    codigo=codigo
+                )
+
+                if resultado_validacion['fuente'] == 'perplexity':
+                    nombre_final = resultado_validacion['nombre_validado']
+                    print(f"   ✅ Nombre validado por Perplexity: {nombre_final}")
+                else:
+                    print(f"   ⚠️  Perplexity falló, usando nombre OCR")
+                    nombre_final = nombre_normalizado
+
+            except Exception as e:
+                print(f"   ❌ Error validando con Perplexity: {e}")
+                nombre_final = nombre_normalizado
+        else:
+            print(f"   ⚠️  Perplexity no disponible, usando nombre OCR")
+
+        # Crear producto con nombre validado
+        print(f"   ➕ Creando producto con nombre: {nombre_final}")
         producto_id = crear_producto_en_ambas_tablas(
             codigo_ean=codigo,
-            nombre_normalizado=nombre_normalizado,
+            nombre_normalizado=nombre_final,
             precio=precio,
             cursor=cursor,
             conn=conn
@@ -333,7 +375,7 @@ def buscar_o_crear_producto_inteligente(
     # =================================================================
     # CASO 2: CÓDIGO PLU (3-7 dígitos) o SIN CÓDIGO - Buscar por nombre
     # =================================================================
-    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre en productos_maestros (legacy)...")
+    print(f"   🔍 Código PLU o sin código - Buscando por similitud de nombre...")
 
     # Buscar productos similares por nombre
     if is_postgresql:
@@ -367,25 +409,58 @@ def buscar_o_crear_producto_inteligente(
 
             if similitud > mejor_similitud:
                 mejor_similitud = similitud
-                mejor_match = producto_id
+                mejor_match = (producto_id, nombre_db)
 
     if mejor_match:
-        print(f"   ✅ Producto similar encontrado: ID {mejor_match} (legacy, similitud: {mejor_similitud:.2f})")
+        producto_id, nombre_existente = mejor_match
+        print(f"   ✅ Producto EXISTENTE similar encontrado: ID {producto_id}")
+        print(f"      Nombre en BD: {nombre_existente}")
+        print(f"      Similitud: {mejor_similitud:.2f}")
+        print(f"      🚫 NO se valida con Perplexity (ya existe)")
 
         # Actualizar precio promedio
-        actualizar_precio_promedio_legacy(None, precio, cursor, conn, nombre_normalizado)
+        actualizar_precio_promedio_legacy(None, precio, cursor, conn, nombre_existente)
 
         # Asegurar que existe en productos_maestros_v2
-        sincronizar_a_v2(mejor_match, None, nombre_normalizado, cursor, conn)
+        sincronizar_a_v2(producto_id, None, nombre_existente, cursor, conn)
 
-        return mejor_match
+        return producto_id
 
-    # No se encontró producto similar, crear uno nuevo SIN codigo_ean EN AMBAS TABLAS
-    print(f"   ➕ Creando producto nuevo SIN código EAN (será PLU específico por establecimiento)")
+    # ========================================================
+    # 🆕 PRODUCTO NUEVO SIN EAN - VALIDAR CON PERPLEXITY
+    # ========================================================
+    print(f"   🆕 Producto NUEVO sin código EAN (PLU o genérico)")
+    print(f"   🔍 Validando nombre con Perplexity...")
 
+    nombre_final = nombre_normalizado  # Default: usar nombre OCR
+
+    if PERPLEXITY_AVAILABLE:
+        try:
+            resultado_validacion = validar_nombre_producto(
+                nombre_ocr=nombre,
+                precio=precio,
+                supermercado=establecimiento,
+                codigo=codigo if codigo else ""
+            )
+
+            if resultado_validacion['fuente'] == 'perplexity':
+                nombre_final = resultado_validacion['nombre_validado']
+                print(f"   ✅ Nombre validado por Perplexity: {nombre_final}")
+            else:
+                print(f"   ⚠️  Perplexity falló, usando nombre OCR")
+                nombre_final = nombre_normalizado
+
+        except Exception as e:
+            print(f"   ❌ Error validando con Perplexity: {e}")
+            nombre_final = nombre_normalizado
+    else:
+        print(f"   ⚠️  Perplexity no disponible, usando nombre OCR")
+
+    # Crear producto con nombre validado
+    print(f"   ➕ Creando producto SIN código EAN con nombre: {nombre_final}")
     producto_id = crear_producto_en_ambas_tablas(
         codigo_ean=None,
-        nombre_normalizado=nombre_normalizado,
+        nombre_normalizado=nombre_final,
         precio=precio,
         cursor=cursor,
         conn=conn
@@ -648,8 +723,13 @@ def detectar_duplicados_por_similitud(cursor, umbral: float = 0.90) -> list:
 
 
 print("=" * 80)
-print("✅ product_matcher.py V3 CARGADO")
+print("✅ product_matcher.py V3.2 CARGADO")
 print("=" * 80)
+print("🆕 INTEGRACIÓN CON PERPLEXITY:")
+print("   • Valida SOLO productos NUEVOS")
+print("   • Productos existentes mantienen su nombre")
+print("   • Fallback automático si Perplexity falla")
+print("")
 print("🔄 GUARDA EN AMBAS TABLAS:")
 print("   • productos_maestros (legacy)")
 print("   • productos_maestros_v2 (nueva)")
