@@ -171,15 +171,18 @@ def obtener_productos_tabla(cursor, tabla: str, limit=None):
     """
     Obtiene productos de una tabla específica que necesitan normalización
 
-    IMPORTANTE: productos_maestros usa 'nombre_normalizado'
-                productos_maestros_v2 usa 'nombre_consolidado'
+    IMPORTANTE: productos_maestros usa 'nombre_normalizado' y tiene 'precio_promedio_global'
+                productos_maestros_v2 usa 'nombre_consolidado' y NO tiene precio
     """
 
     # Determinar columna de nombre según tabla
     if tabla == "productos_maestros_v2":
         columna_nombre = "nombre_consolidado"
+        # productos_maestros_v2 NO tiene precio_promedio_global
+        columna_precio = "NULL as precio_promedio_global"
     else:
         columna_nombre = "nombre_normalizado"
+        columna_precio = "precio_promedio_global"
 
     if FORZAR_RENORMALIZACION:
         # Normalizar TODOS los productos
@@ -198,7 +201,7 @@ def obtener_productos_tabla(cursor, tabla: str, limit=None):
             id,
             codigo_ean,
             {columna_nombre} as nombre,
-            precio_promedio_global
+            {columna_precio}
         FROM {tabla}
         WHERE {condicion}
         ORDER BY id ASC
