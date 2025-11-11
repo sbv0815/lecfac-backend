@@ -33,11 +33,23 @@ VERSION: 2.0
 
 import time
 from datetime import datetime
+import os
+import sys
+
+# ============================================
+# CARGAR VARIABLES DE ENTORNO
+# ============================================
+from dotenv import load_dotenv
+load_dotenv()
+
+# Verificar que las variables estén cargadas
+print(f"🔍 DATABASE_TYPE desde .env: {os.getenv('DATABASE_TYPE', 'NO CONFIGURADO')}")
+print(f"🔍 DATABASE_URL configurada: {'SÍ' if os.getenv('DATABASE_URL') else 'NO'}")
+print(f"🔍 PERPLEXITY_API_KEY configurada: {'SÍ' if os.getenv('PERPLEXITY_API_KEY') else 'NO'}")
+
 from database import get_db_connection
 from perplexity_validator import validar_nombre_producto
 from aprendizaje_manager import AprendizajeManager
-import os
-import sys
 
 # ==============================================================================
 # CONFIGURACIÓN
@@ -84,21 +96,29 @@ def limpiar_nombre(nombre: str) -> str:
     return nombre
 
 
-def obtener_establecimiento_real(cursor, producto_id: int, tabla: str) -> str:
+def obtener_establecimiento_real(cursor, producto_id: int, tabla: str, es_postgres: bool = True) -> str:
     """
     Obtiene el establecimiento más común donde se compró el producto
-    desde items_facturas (datos reales)
+    desde items_factura (datos reales)
+
+    NOTA: items_facturas NO existe, la tabla correcta es items_factura
     """
     try:
         # Determinar columna según tabla
-        columna_producto = "producto_maestro_id" if tabla == "productos_maestros" else "producto_maestro_v2_id"
+        if tabla == "productos_maestros":
+            columna_producto = "producto_maestro_id"
+        else:
+            columna_producto = "producto_maestro_v2_id"
+
+        # Placeholder según BD
+        placeholder = "%s" if es_postgres else "?"
 
         query = f"""
             SELECT e.nombre_normalizado, COUNT(*) as veces
-            FROM items_facturas i
+            FROM items_factura i
             JOIN facturas f ON i.factura_id = f.id
             JOIN establecimientos e ON f.establecimiento_id = e.id
-            WHERE i.{columna_producto} = ?
+            WHERE i.{columna_producto} = {placeholder}
             GROUP BY e.nombre_normalizado
             ORDER BY veces DESC
             LIMIT 1
@@ -150,25 +170,34 @@ def necesita_normalizacion(nombre: str) -> bool:
 def obtener_productos_tabla(cursor, tabla: str, limit=None):
     """
     Obtiene productos de una tabla específica que necesitan normalización
+
+    IMPORTANTE: productos_maestros usa 'nombre_normalizado'
+                productos_maestros_v2 usa 'nombre_consolidado'
     """
+
+    # Determinar columna de nombre según tabla
+    if tabla == "productos_maestros_v2":
+        columna_nombre = "nombre_consolidado"
+    else:
+        columna_nombre = "nombre_normalizado"
 
     if FORZAR_RENORMALIZACION:
         # Normalizar TODOS los productos
-        condicion = "nombre_normalizado IS NOT NULL AND nombre_normalizado != ''"
+        condicion = f"{columna_nombre} IS NOT NULL AND {columna_nombre} != ''"
     else:
         # Solo productos sin normalizar o con nombres sospechosos
-        condicion = """
-            (nombre_normalizado IS NULL
-             OR nombre_normalizado = ''
-             OR nombre_normalizado != UPPER(nombre_normalizado)
-             OR LENGTH(nombre_normalizado) < 3)
+        condicion = f"""
+            ({columna_nombre} IS NULL
+             OR {columna_nombre} = ''
+             OR {columna_nombre} != UPPER({columna_nombre})
+             OR LENGTH({columna_nombre}) < 3)
         """
 
     query = f"""
         SELECT
             id,
             codigo_ean,
-            nombre_normalizado,
+            {columna_nombre} as nombre,
             precio_promedio_global
         FROM {tabla}
         WHERE {condicion}
@@ -230,7 +259,7 @@ def normalizar_producto(cursor, conn, aprendizaje_mgr, producto, tabla: str, sta
             print(f"      🧹 Limpiado Python: {nombre_limpio}")
 
         # 2️⃣ Obtener establecimiento real
-        establecimiento = obtener_establecimiento_real(cursor, producto_id, tabla)
+        establecimiento = obtener_establecimiento_real(cursor, producto_id, tabla, es_postgres=True)
         resultado['establecimiento'] = establecimiento
         print(f"      🏪 Establecimiento: {establecimiento}")
 
@@ -304,12 +333,21 @@ def actualizar_producto(cursor, conn, producto_id: int, nombre_nuevo: str, tabla
     """
     Actualiza el nombre normalizado en la BD
     Compatible con SQLite y PostgreSQL
+
+    IMPORTANTE: productos_maestros usa 'nombre_normalizado'
+                productos_maestros_v2 usa 'nombre_consolidado'
     """
 
-    if es_postgres:
-        query = f"UPDATE {tabla} SET nombre_normalizado = %s WHERE id = %s"
+    # Determinar columna según tabla
+    if tabla == "productos_maestros_v2":
+        columna_nombre = "nombre_consolidado"
     else:
-        query = f"UPDATE {tabla} SET nombre_normalizado = ? WHERE id = ?"
+        columna_nombre = "nombre_normalizado"
+
+    if es_postgres:
+        query = f"UPDATE {tabla} SET {columna_nombre} = %s WHERE id = %s"
+    else:
+        query = f"UPDATE {tabla} SET {columna_nombre} = ? WHERE id = ?"
 
     cursor.execute(query, (nombre_nuevo, producto_id))
     conn.commit()
@@ -543,13 +581,19 @@ def analizar_productos():
         print(f"\n📋 Tabla: {tabla}")
         print("─" * 80)
 
+        # Determinar columna de nombre según tabla
+        if tabla == "productos_maestros_v2":
+            columna_nombre = "nombre_consolidado"
+        else:
+            columna_nombre = "nombre_normalizado"
+
         # Total productos
         cursor.execute(f"SELECT COUNT(*) FROM {tabla}")
         total = cursor.fetchone()[0]
         print(f"Total productos: {total}")
 
         # Productos con nombre
-        cursor.execute(f"SELECT COUNT(*) FROM {tabla} WHERE nombre_normalizado IS NOT NULL AND nombre_normalizado != ''")
+        cursor.execute(f"SELECT COUNT(*) FROM {tabla} WHERE {columna_nombre} IS NOT NULL AND {columna_nombre} != ''")
         con_nombre = cursor.fetchone()[0]
         print(f"Con nombre: {con_nombre}")
 
@@ -560,8 +604,8 @@ def analizar_productos():
         # Productos con minúsculas (necesitan normalización)
         cursor.execute(f"""
             SELECT COUNT(*) FROM {tabla}
-            WHERE nombre_normalizado IS NOT NULL
-            AND nombre_normalizado != UPPER(nombre_normalizado)
+            WHERE {columna_nombre} IS NOT NULL
+            AND {columna_nombre} != UPPER({columna_nombre})
         """)
         con_minusculas = cursor.fetchone()[0]
         print(f"Con minúsculas: {con_minusculas}")
@@ -569,8 +613,8 @@ def analizar_productos():
         # Productos muy cortos
         cursor.execute(f"""
             SELECT COUNT(*) FROM {tabla}
-            WHERE nombre_normalizado IS NOT NULL
-            AND LENGTH(nombre_normalizado) < 3
+            WHERE {columna_nombre} IS NOT NULL
+            AND LENGTH({columna_nombre}) < 3
         """)
         muy_cortos = cursor.fetchone()[0]
         print(f"Muy cortos (<3 chars): {muy_cortos}")
