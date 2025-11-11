@@ -62,6 +62,7 @@ CORRECCIONES_OCR = {
     "MERMEL": "MERMELADA",
     "ESPARCIB": "ESPARCIR",
 
+
     # ✅ NUEVO: Errores específicos de lácteos
     "CREM": "CREMA",
     "CREMA": "CREMA",
