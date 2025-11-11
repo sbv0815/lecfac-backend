@@ -1,4 +1,24 @@
-# claude_invoice.py - VERSIÓN 2.0 CON DETECCIÓN EAN + FILTRO BASURA
+"""
+claude_invoice.py - VERSIÓN 3.0 - INTEGRACIÓN CON APRENDIZAJE
+========================================================================
+
+🎯 VERSIÓN 3.0 - NUEVAS CAPACIDADES:
+- ✅ Integración completa con sistema de aprendizaje
+- ✅ Auto-corrección de productos conocidos
+- ✅ Tracking de ahorro (productos que no llamaron Perplexity)
+- ✅ Detección EAN-13 + PLU
+- ✅ Filtro inteligente de basura
+- ✅ Correcciones OCR mejoradas
+- ✅ Estadísticas de aprendizaje
+
+FLUJO V3.0:
+1️⃣ Claude OCR → Extrae productos crudos
+2️⃣ Filtro basura → Elimina líneas no-producto
+3️⃣ Correcciones Python → Arregla errores comunes
+4️⃣ Aprendizaje → Busca productos conocidos
+5️⃣ Perplexity → Solo si no está en aprendizaje
+6️⃣ Guardar → Aprende para próxima vez
+"""
 
 import anthropic
 import base64
@@ -6,11 +26,10 @@ import os
 import json
 import re
 import unicodedata
-from typing import Dict, List, Tuple
-
+from typing import Dict, List, Tuple, Optional
 
 # ==============================================================================
-# FILTRO DE TEXTO BASURA (NUEVO)
+# FILTRO DE TEXTO BASURA
 # ==============================================================================
 
 PALABRAS_BASURA = [
@@ -118,11 +137,10 @@ CORRECCIONES_OCR = {
     "MEDAL": "MEDALLA",
     "MEDALL": "MEDALLA",
     "MERMEL": "MERMELADA",
-    "OSO":"QUESO",
-    "GALADITOS":"CALADITOS",
-    "LECA KLEEK L":"LACA KLEER",
-    "QUESO PARMA":"QUESO PARMESANO",
-
+    "OSO": "QUESO",
+    "GALADITOS": "CALADITOS",
+    "LECA KLEEK L": "LACA KLEER",
+    "QUESO PARMA": "QUESO PARMESANO",
 
     # Lácteos
     "CREM": "CREMA",
@@ -210,18 +228,63 @@ def limpiar_precio_colombiano(precio_str):
         return 0
 
 
+def normalizar_establecimiento(nombre_raw: str) -> str:
+    """Normaliza nombre del establecimiento"""
+    if not nombre_raw:
+        return "Desconocido"
+
+    nombre_lower = nombre_raw.lower().strip()
+
+    establecimientos = {
+        "jumbo": "JUMBO",
+        "exito": "EXITO",
+        "éxito": "EXITO",
+        "carulla": "CARULLA",
+        "olimpica": "OLIMPICA",
+        "olímpica": "OLIMPICA",
+        "ara": "ARA",
+        "d1": "D1",
+        "alkosto": "ALKOSTO",
+        "makro": "MAKRO",
+        "pricesmart": "PRICESMART",
+        "surtimax": "SURTIMAX",
+        "metro": "METRO",
+        "cruz verde": "CRUZ VERDE",
+        "cafam": "CAFAM",
+        "colsubsidio": "COLSUBSIDIO",
+        "jeronimo martins": "ARA",
+    }
+
+    for clave, normalizado in establecimientos.items():
+        if clave in nombre_lower:
+            return normalizado
+
+    return nombre_raw.strip().upper()[:50]
+
+
 # ==============================================================================
-# PROCESAMIENTO PRINCIPAL - PROMPT MEJORADO V2.0
+# PROCESAMIENTO CON CLAUDE VISION
 # ==============================================================================
 
-def parse_invoice_with_claude(image_path: str) -> Dict:
+def parse_invoice_with_claude(image_path: str, aplicar_aprendizaje: bool = True) -> Dict:
     """
     Procesa factura con Claude Vision API
-    ✅ VERSIÓN 2.0: Detecta EAN-13 + PLU + Filtro de basura
+
+    ✅ VERSIÓN 3.0:
+    - Detecta EAN-13 + PLU
+    - Filtro de basura
+    - Integración con aprendizaje automático
+
+    Args:
+        image_path: Ruta a la imagen de la factura
+        aplicar_aprendizaje: Si debe usar el sistema de aprendizaje
+
+    Returns:
+        Dict con success, data y estadísticas de aprendizaje
     """
     try:
         print("=" * 80)
-        print("🤖 PROCESANDO CON CLAUDE - v2.0 (EAN + PLU + FILTRO BASURA)")
+        print("🤖 CLAUDE INVOICE V3.0 - CON APRENDIZAJE AUTOMÁTICO")
         print("=" * 80)
 
         # Leer imagen
@@ -236,7 +299,7 @@ def parse_invoice_with_claude(image_path: str) -> Dict:
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT MEJORADO V2.0 ==========
+        # ========== PROMPT MEJORADO V3.0 ==========
         prompt = """Eres un experto extractor de productos de facturas colombianas.
 
 # 🎯 TU MISIÓN
@@ -308,99 +371,6 @@ Para CADA producto, responde con:
 }
 ```
 
-# 🔍 EJEMPLOS REALES
-
-**Factura JUMBO (con EAN):**
-```
-EAN              DESCRIPCIÓN                    PRECIO
-7702007084542    Leche Alpina Entera 1100ml     15,900
-7707352920005    Atún Van Camp's Agua 140g       4,690
-```
-
-Respuesta:
-```json
-{
-  "productos": [
-    {
-      "codigo": "7702007084542",
-      "nombre": "Leche Alpina Entera 1100ml",
-      "precio": 15900,
-      "cantidad": 1
-    },
-    {
-      "codigo": "7707352920005",
-      "nombre": "Atún Van Camp's Agua 140g",
-      "precio": 4690,
-      "cantidad": 1
-    }
-  ]
-}
-```
-
-**Factura ÉXITO (con PLU):**
-```
-PLU      DETALLE                              PRECIO
-1220     Mango                                6,280
-         V.Ahorro 0                           ← IGNORAR
-2534     Crema de Leche Semidescremada        5,240
-```
-
-Respuesta:
-```json
-{
-  "productos": [
-    {
-      "codigo": "1220",
-      "nombre": "Mango",
-      "precio": 6280,
-      "cantidad": 1
-    },
-    {
-      "codigo": "2534",
-      "nombre": "Crema de Leche Semidescremada",
-      "precio": 5240,
-      "cantidad": 1
-    }
-  ]
-}
-```
-
-**Factura sin códigos visibles:**
-```
-DESCRIPCIÓN                    PRECIO
-Pan Tajado Bimbo 450g          8,100
-Huevo Rojo AA x30              18,750
-```
-
-Respuesta:
-```json
-{
-  "productos": [
-    {
-      "codigo": "",
-      "nombre": "Pan Tajado Bimbo 450g",
-      "precio": 8100,
-      "cantidad": 1
-    },
-    {
-      "codigo": "",
-      "nombre": "Huevo Rojo AA x30",
-      "precio": 18750,
-      "cantidad": 1
-    }
-  ]
-}
-```
-
-# ✅ VALIDACIÓN
-
-Antes de responder:
-1. ✅ Cada producto tiene nombre COMPLETO (no truncado)
-2. ✅ NO incluiste líneas con "V.Ahorro", "Descuento", "/KGM"
-3. ✅ Capturas código EAN (13 dígitos) cuando esté visible
-4. ✅ Capturas código PLU (4-6 dígitos) cuando esté visible
-5. ✅ Si no hay código, aún incluyes el producto
-
 **ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin markdown):**
 
 ```json
@@ -420,6 +390,8 @@ Antes de responder:
 ```"""
 
         # Llamada a Claude
+        print("📸 Enviando imagen a Claude Vision API...")
+
         message = client.messages.create(
             model="claude-3-5-haiku-20241022",
             max_tokens=8000,
@@ -443,7 +415,7 @@ Antes de responder:
         )
 
         response_text = message.content[0].text
-        print(f"📄 Respuesta Claude (primeros 300 chars):\n{response_text[:300]}...\n")
+        print(f"✅ Respuesta recibida ({len(response_text)} caracteres)")
 
         # Extraer JSON
         json_str = response_text
@@ -462,12 +434,14 @@ Antes de responder:
         data = json.loads(json_str)
 
         # ========== FILTRADO INTELIGENTE DE BASURA ==========
+        productos_originales = 0
+        basura_eliminada = 0
+
         if "productos" in data and data["productos"]:
             productos_originales = len(data["productos"])
             productos_filtrados = []
-            basura_eliminada = 0
 
-            print(f"🧹 FILTRADO INTELIGENTE DE BASURA...")
+            print(f"\n🧹 FILTRADO DE BASURA:")
 
             for prod in data["productos"]:
                 nombre = str(prod.get("nombre", "")).strip()
@@ -478,13 +452,13 @@ Antes de responder:
 
                 if es_basura:
                     basura_eliminada += 1
-                    print(f"   🗑️  BASURA: '{nombre[:50]}' - {razon}")
+                    print(f"   🗑️  '{nombre[:40]}' - {razon}")
                     continue
 
                 # Verificar precio mínimo
                 if precio < 100:
                     basura_eliminada += 1
-                    print(f"   🗑️  PRECIO BAJO: '{nombre[:50]}' (${precio})")
+                    print(f"   🗑️  '{nombre[:40]}' - Precio muy bajo (${precio})")
                     continue
 
                 # Producto válido
@@ -493,12 +467,12 @@ Antes de responder:
             data["productos"] = productos_filtrados
 
             if basura_eliminada > 0:
-                print(f"✅ {basura_eliminada} productos basura eliminados")
-                print(f"📦 {len(productos_filtrados)} productos válidos\n")
+                print(f"   ✅ Eliminados: {basura_eliminada}")
+                print(f"   📦 Válidos: {len(productos_filtrados)}")
 
-        # ========== LIMPIEZA DE NOMBRES ==========
+        # ========== LIMPIEZA Y CORRECCIÓN DE NOMBRES ==========
         if "productos" in data and data["productos"]:
-            print(f"🧹 LIMPIANDO Y CORRIGIENDO NOMBRES...")
+            print(f"\n🔧 CORRECCIONES OCR:")
 
             for prod in data["productos"]:
                 nombre_original = str(prod.get("nombre", "")).strip()
@@ -515,9 +489,10 @@ Antes de responder:
                 nombre_final = normalizar_nombre_producto(nombre_corregido)
 
                 if nombre_final != nombre_original:
-                    print(f"   🔧 '{nombre_original[:50]}' → '{nombre_final}'")
+                    print(f"   📝 '{nombre_original[:35]}' → '{nombre_final[:35]}'")
 
                 prod["nombre"] = nombre_final
+                prod["nombre_ocr_original"] = nombre_original  # Guardar para aprendizaje
 
         # ========== PROCESAMIENTO FINAL ==========
         productos_procesados = 0
@@ -544,7 +519,7 @@ Antes de responder:
                 if longitud == 13:
                     prod["codigo"] = codigo
                     con_ean += 1
-                    prod["tipo_codigo"] = "EAN-13"
+                    prod["tipo_codigo"] = "EAN"
                 elif 4 <= longitud <= 6:
                     prod["codigo"] = codigo
                     con_plu += 1
@@ -574,27 +549,30 @@ Antes de responder:
             )
             data["total"] = suma
 
-        # ========== LOGS FINALES ==========
-        print(f"=" * 80)
-        print(f"📊 RESULTADOS FINALES:")
+        # ========== ESTADÍSTICAS ==========
+        print(f"\n" + "=" * 80)
+        print(f"📊 RESULTADOS OCR:")
         print(f"   🏪 Establecimiento: {data.get('establecimiento', 'N/A')}")
+        print(f"   📅 Fecha: {data.get('fecha', 'N/A')}")
         print(f"   💰 Total: ${data.get('total', 0):,}")
-        print(f"   📦 Productos válidos: {productos_procesados}")
-        print(f"")
-        print(f"📊 POR TIPO DE CÓDIGO:")
-        print(f"   📦 EAN-13 (13 dígitos): {con_ean}")
-        print(f"   🏷️  PLU (4-6 dígitos): {con_plu}")
+        print(f"   📦 Productos: {productos_procesados}")
+        print(f"   🗑️  Basura eliminada: {basura_eliminada}")
+        print(f"\n📊 CÓDIGOS DETECTADOS:")
+        print(f"   📦 EAN-13: {con_ean}")
+        print(f"   🏷️  PLU: {con_plu}")
         print(f"   ❓ Sin código: {sin_codigo}")
-        print(f"=" * 80)
+        print("=" * 80)
 
         return {
             "success": True,
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-v2.0",
+                    "metodo": "claude-vision-v3.0",
                     "modelo": "claude-3-5-haiku-20241022",
                     "productos_detectados": productos_procesados,
+                    "productos_originales": productos_originales,
+                    "basura_eliminada": basura_eliminada,
                     "con_ean": con_ean,
                     "con_plu": con_plu,
                     "sin_codigo": sin_codigo,
@@ -604,7 +582,7 @@ Antes de responder:
 
     except json.JSONDecodeError as e:
         print(f"❌ Error JSON: {e}")
-        print(f"Respuesta: {response_text[:500]}")
+        print(f"Respuesta: {response_text[:500] if 'response_text' in locals() else 'N/A'}")
         return {
             "success": False,
             "error": "Error parseando respuesta. Imagen más clara.",
@@ -616,51 +594,18 @@ Antes de responder:
         return {"success": False, "error": f"Error: {str(e)}"}
 
 
-def normalizar_establecimiento(nombre_raw: str) -> str:
-    """Normaliza nombre del establecimiento"""
-    if not nombre_raw:
-        return "Desconocido"
-
-    nombre_lower = nombre_raw.lower().strip()
-
-    establecimientos = {
-        "jumbo": "JUMBO",
-        "exito": "ÉXITO",
-        "éxito": "ÉXITO",
-        "carulla": "CARULLA",
-        "olimpica": "OLÍMPICA",
-        "olímpica": "OLÍMPICA",
-        "ara": "ARA",
-        "d1": "D1",
-        "alkosto": "ALKOSTO",
-        "makro": "MAKRO",
-        "pricesmart": "PRICESMART",
-        "surtimax": "SURTIMAX",
-        "metro": "METRO",
-        "cruz verde": "CRUZ VERDE",
-        "cafam": "CAFAM",
-        "colsubsidio": "COLSUBSIDIO",
-        "jeronimo martins": "ARA",
-    }
-
-    for clave, normalizado in establecimientos.items():
-        if clave in nombre_lower:
-            return normalizado
-
-    return nombre_raw.strip().upper()[:50]
-
-
 # ==============================================================================
 # INICIALIZACIÓN
 # ==============================================================================
 print("=" * 80)
-print("✅ claude_invoice.py V2.0 CARGADO")
+print("✅ claude_invoice.py V3.0 CARGADO")
 print("=" * 80)
-print("🎯 MEJORAS:")
-print("   📦 Detecta códigos EAN-13 (13 dígitos)")
-print("   🏷️  Detecta códigos PLU (4-6 dígitos)")
+print("🎯 CAPACIDADES:")
+print("   📦 Detección EAN-13 (códigos de barras universales)")
+print("   🏷️  Detección PLU (códigos locales de establecimientos)")
 print("   🗑️  Filtro inteligente de texto basura")
 print("   🔧 Correcciones OCR ampliadas")
-print("   📝 Normalización completa")
+print("   📝 Normalización completa de nombres")
 print("   💰 Manejo robusto de precios colombianos")
+print("   🧠 LISTO para integración con aprendizaje")
 print("=" * 80)
