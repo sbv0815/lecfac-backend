@@ -1,26 +1,41 @@
 """
 ============================================================================
-APRENDIZAJE_MANAGER.PY V1.1 - CORREGIDO
+APRENDIZAJE_MANAGER.PY V2.0 - ACTUALIZADO PARA ESQUEMA RAILWAY
 ============================================================================
 Gestiona el sistema de aprendizaje automático de LecFac
 
-CORRECCIONES V1.1:
-- ✅ Usa solo columnas que existen en correcciones_aprendidas
-- ✅ Removidas columnas inexistentes: fuente_validacion, requiere_revision, precio_promedio
-- ✅ Manejo robusto de errores con rollback
+ACTUALIZACIONES V2.0:
+- ✅ Adaptado al esquema REAL de Railway (verificado 2024-11-11)
+- ✅ Usa todas las columnas existentes correctamente
+- ✅ Maneja fecha_primera_vez y fecha_ultima_confirmacion
+- ✅ Soporte para activo (boolean)
+- ✅ Constraint único: (ocr_normalizado, establecimiento)
+
+ESQUEMA REAL correcciones_aprendidas:
+- id (integer)
+- ocr_original (text)
+- ocr_normalizado (text)
+- nombre_validado (text)
+- establecimiento (varchar 100)
+- confianza (numeric)
+- veces_confirmado (integer)
+- veces_rechazado (integer)
+- fecha_primera_vez (timestamp)
+- fecha_ultima_confirmacion (timestamp)
+- activo (boolean)
+- codigo_ean (varchar 13)
 
 FUNCIONES:
 - buscar_correccion_aprendida()
 - guardar_correccion_aprendida()
 - incrementar_confianza()
-- decrementar_confianza()
-- crear_validacion_pendiente()
-- marcar_para_revision_admin()
+- desactivar_correccion()
+- obtener_estadisticas()
 ============================================================================
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import os
 
 
@@ -41,19 +56,26 @@ class AprendizajeManager:
         self.conn = conn
         self.es_postgres = os.getenv('DATABASE_TYPE', 'sqlite').lower() == 'postgresql'
 
-        print("🧠 AprendizajeManager inicializado")
+        print("🧠 AprendizajeManager V2.0 inicializado")
 
     def buscar_correccion_aprendida(
         self,
         ocr_normalizado: str,
-        establecimiento: str = None
+        establecimiento: str = None,
+        codigo_ean: str = None
     ) -> Optional[Dict[str, Any]]:
         """
         Busca si ya existe una corrección aprendida para un nombre OCR
 
+        Prioridad de búsqueda:
+        1. Por código EAN (si se proporciona)
+        2. Por OCR + establecimiento (específico)
+        3. Por OCR solo (genérico)
+
         Args:
             ocr_normalizado: Nombre normalizado del OCR (uppercase, sin tildes)
             establecimiento: Establecimiento donde se vio (opcional)
+            codigo_ean: Código EAN del producto (opcional, prioridad máxima)
 
         Returns:
             Dict con datos de la corrección o None si no existe
@@ -62,15 +84,48 @@ class AprendizajeManager:
         try:
             placeholder = "%s" if self.es_postgres else "?"
 
-            if establecimiento:
-                # Buscar específico por establecimiento
+            # PRIORIDAD 1: Búsqueda por EAN (más confiable)
+            if codigo_ean:
                 query = f"""
                     SELECT
                         id,
+                        ocr_original,
+                        ocr_normalizado,
                         nombre_validado,
+                        establecimiento,
+                        codigo_ean,
                         confianza,
                         veces_confirmado,
-                        veces_rechazado
+                        veces_rechazado,
+                        fecha_primera_vez,
+                        fecha_ultima_confirmacion
+                    FROM correcciones_aprendidas
+                    WHERE codigo_ean = {placeholder}
+                      AND activo = TRUE
+                    ORDER BY confianza DESC
+                    LIMIT 1
+                """
+                self.cursor.execute(query, (codigo_ean,))
+                resultado = self.cursor.fetchone()
+
+                if resultado:
+                    return self._dict_from_row(resultado, fuente='ean')
+
+            # PRIORIDAD 2: Búsqueda por OCR + establecimiento (específico)
+            if establecimiento:
+                query = f"""
+                    SELECT
+                        id,
+                        ocr_original,
+                        ocr_normalizado,
+                        nombre_validado,
+                        establecimiento,
+                        codigo_ean,
+                        confianza,
+                        veces_confirmado,
+                        veces_rechazado,
+                        fecha_primera_vez,
+                        fecha_ultima_confirmacion
                     FROM correcciones_aprendidas
                     WHERE ocr_normalizado = {placeholder}
                       AND establecimiento = {placeholder}
@@ -79,44 +134,63 @@ class AprendizajeManager:
                     LIMIT 1
                 """
                 self.cursor.execute(query, (ocr_normalizado, establecimiento))
-            else:
-                # Buscar genérico (cualquier establecimiento)
-                query = f"""
-                    SELECT
-                        id,
-                        nombre_validado,
-                        confianza,
-                        veces_confirmado,
-                        veces_rechazado
-                    FROM correcciones_aprendidas
-                    WHERE ocr_normalizado = {placeholder}
-                      AND activo = TRUE
-                    ORDER BY confianza DESC
-                    LIMIT 1
-                """
-                self.cursor.execute(query, (ocr_normalizado,))
+                resultado = self.cursor.fetchone()
 
+                if resultado:
+                    return self._dict_from_row(resultado, fuente='especifico')
+
+            # PRIORIDAD 3: Búsqueda genérica (cualquier establecimiento)
+            query = f"""
+                SELECT
+                    id,
+                    ocr_original,
+                    ocr_normalizado,
+                    nombre_validado,
+                    establecimiento,
+                    codigo_ean,
+                    confianza,
+                    veces_confirmado,
+                    veces_rechazado,
+                    fecha_primera_vez,
+                    fecha_ultima_confirmacion
+                FROM correcciones_aprendidas
+                WHERE ocr_normalizado = {placeholder}
+                  AND activo = TRUE
+                ORDER BY confianza DESC
+                LIMIT 1
+            """
+            self.cursor.execute(query, (ocr_normalizado,))
             resultado = self.cursor.fetchone()
 
             if resultado:
-                return {
-                    'id': resultado[0],
-                    'nombre_validado': resultado[1],
-                    'confianza': float(resultado[2]) if resultado[2] else 0.0,
-                    'veces_confirmado': resultado[3],
-                    'veces_rechazado': resultado[4]
-                }
+                return self._dict_from_row(resultado, fuente='generico')
 
             return None
 
         except Exception as e:
             print(f"      ⚠️ Error buscando aprendizaje: {e}")
-            # Rollback para evitar abortar transacción
             try:
                 self.conn.rollback()
             except:
                 pass
             return None
+
+    def _dict_from_row(self, row: tuple, fuente: str = 'desconocido') -> Dict[str, Any]:
+        """Convierte una fila de resultados en un diccionario"""
+        return {
+            'id': row[0],
+            'ocr_original': row[1],
+            'ocr_normalizado': row[2],
+            'nombre_validado': row[3],
+            'establecimiento': row[4],
+            'codigo_ean': row[5],
+            'confianza': float(row[6]) if row[6] else 0.0,
+            'veces_confirmado': row[7] or 0,
+            'veces_rechazado': row[8] or 0,
+            'fecha_primera_vez': row[9],
+            'fecha_ultima_confirmacion': row[10],
+            'fuente_busqueda': fuente  # Para debugging
+        }
 
     def guardar_correccion_aprendida(
         self,
@@ -128,7 +202,7 @@ class AprendizajeManager:
         codigo_ean: str = None
     ) -> Optional[int]:
         """
-        Guarda una nueva corrección aprendida
+        Guarda una nueva corrección aprendida o actualiza existente
 
         Args:
             ocr_original: Texto original del OCR
@@ -145,8 +219,12 @@ class AprendizajeManager:
         try:
             placeholder = "%s" if self.es_postgres else "?"
 
+            # Normalizar establecimiento
+            if establecimiento:
+                establecimiento = establecimiento.upper().strip()
+
             if self.es_postgres:
-                # PostgreSQL con RETURNING
+                # PostgreSQL con UPSERT
                 query = f"""
                     INSERT INTO correcciones_aprendidas (
                         ocr_original,
@@ -155,17 +233,24 @@ class AprendizajeManager:
                         establecimiento,
                         codigo_ean,
                         confianza,
-                        veces_confirmado
+                        veces_confirmado,
+                        veces_rechazado,
+                        fecha_primera_vez,
+                        fecha_ultima_confirmacion,
+                        activo
                     ) VALUES (
                         {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                        {placeholder}, {placeholder}, 0
+                        {placeholder}, {placeholder}, 1, 0,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE
                     )
-                    ON CONFLICT (ocr_normalizado, establecimiento)
+                    ON CONFLICT (ocr_normalizado, COALESCE(establecimiento, ''))
                     DO UPDATE SET
                         nombre_validado = EXCLUDED.nombre_validado,
                         codigo_ean = COALESCE(EXCLUDED.codigo_ean, correcciones_aprendidas.codigo_ean),
-                        confianza = GREATEST(correcciones_aprendidas.confianza, EXCLUDED.confianza),
-                        fecha_ultima_confirmacion = CURRENT_TIMESTAMP
+                        confianza = LEAST(correcciones_aprendidas.confianza + 0.05, 0.99),
+                        veces_confirmado = correcciones_aprendidas.veces_confirmado + 1,
+                        fecha_ultima_confirmacion = CURRENT_TIMESTAMP,
+                        activo = TRUE
                     RETURNING id
                 """
 
@@ -180,10 +265,12 @@ class AprendizajeManager:
 
                 correccion_id = self.cursor.fetchone()[0]
                 self.conn.commit()
+
+                print(f"      💾 Aprendizaje guardado: ID={correccion_id}")
                 return correccion_id
 
             else:
-                # SQLite
+                # SQLite - implementación básica
                 query = f"""
                     INSERT OR REPLACE INTO correcciones_aprendidas (
                         ocr_original,
@@ -192,8 +279,13 @@ class AprendizajeManager:
                         establecimiento,
                         codigo_ean,
                         confianza,
-                        veces_confirmado
-                    ) VALUES (?, ?, ?, ?, ?, ?, 0)
+                        veces_confirmado,
+                        veces_rechazado,
+                        fecha_primera_vez,
+                        fecha_ultima_confirmacion,
+                        activo
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1, 0,
+                             datetime('now'), datetime('now'), 1)
                 """
 
                 self.cursor.execute(query, (
@@ -223,7 +315,7 @@ class AprendizajeManager:
         fue_confirmado: bool = True
     ) -> bool:
         """
-        Incrementa la confianza de una corrección cuando el usuario confirma
+        Incrementa o decrementa la confianza de una corrección
 
         Args:
             correccion_id: ID de la corrección
@@ -251,9 +343,11 @@ class AprendizajeManager:
                         UPDATE correcciones_aprendidas
                         SET veces_confirmado = veces_confirmado + 1,
                             confianza = MIN(confianza + 0.05, 0.99),
-                            fecha_ultima_confirmacion = CURRENT_TIMESTAMP
+                            fecha_ultima_confirmacion = datetime('now')
                         WHERE id = ?
                     """
+
+                print(f"      ✅ Confianza incrementada para ID={correccion_id}")
             else:
                 # Decrementar confianza (mínimo 0.30)
                 if self.es_postgres:
@@ -271,6 +365,8 @@ class AprendizajeManager:
                         WHERE id = ?
                     """
 
+                print(f"      ⚠️ Confianza decrementada para ID={correccion_id}")
+
             self.cursor.execute(query, (correccion_id,))
             self.conn.commit()
             return True
@@ -283,176 +379,97 @@ class AprendizajeManager:
                 pass
             return False
 
-    def crear_validacion_pendiente(
-        self,
-        factura_id: int,
-        usuario_id: int,
-        item_factura_id: int,
-        nombre_sugerido: str,
-        nivel_confianza: float,
-        nombre_ocr: str = None,
-        motivo_duda: str = None
-    ) -> Optional[int]:
+    def desactivar_correccion(self, correccion_id: int) -> bool:
         """
-        Crea una validación pendiente para que el usuario confirme
+        Desactiva una corrección (soft delete)
 
         Args:
-            factura_id: ID de la factura
-            usuario_id: ID del usuario
-            item_factura_id: ID del item en la factura
-            nombre_sugerido: Nombre que se le sugiere al usuario
-            nivel_confianza: Nivel de confianza (0.0-1.0)
-            nombre_ocr: Nombre original del OCR (opcional)
-            motivo_duda: Razón por la que se pregunta (opcional)
+            correccion_id: ID de la corrección a desactivar
 
         Returns:
-            ID de la validación o None si falla
+            True si se desactivó correctamente
         """
-
         try:
             placeholder = "%s" if self.es_postgres else "?"
 
-            if self.es_postgres:
-                query = f"""
-                    INSERT INTO validaciones_pendientes_usuario (
-                        usuario_id,
-                        factura_id,
-                        item_factura_id,
-                        nombre_ocr,
-                        nombre_sugerido,
-                        nivel_confianza,
-                        motivo_duda
-                    ) VALUES (
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                        {placeholder}, {placeholder}, {placeholder}
-                    )
-                    RETURNING id
-                """
+            query = f"""
+                UPDATE correcciones_aprendidas
+                SET activo = FALSE
+                WHERE id = {placeholder}
+            """
 
-                self.cursor.execute(query, (
-                    usuario_id,
-                    factura_id,
-                    item_factura_id,
-                    nombre_ocr,
-                    nombre_sugerido,
-                    nivel_confianza,
-                    motivo_duda
-                ))
+            self.cursor.execute(query, (correccion_id,))
+            self.conn.commit()
 
-                validacion_id = self.cursor.fetchone()[0]
-                self.conn.commit()
-                return validacion_id
-
-            else:
-                query = f"""
-                    INSERT INTO validaciones_pendientes_usuario (
-                        usuario_id,
-                        factura_id,
-                        item_factura_id,
-                        nombre_ocr,
-                        nombre_sugerido,
-                        nivel_confianza,
-                        motivo_duda
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """
-
-                self.cursor.execute(query, (
-                    usuario_id,
-                    factura_id,
-                    item_factura_id,
-                    nombre_ocr,
-                    nombre_sugerido,
-                    nivel_confianza,
-                    motivo_duda
-                ))
-
-                validacion_id = self.cursor.lastrowid
-                self.conn.commit()
-                return validacion_id
+            print(f"      🚫 Corrección desactivada: ID={correccion_id}")
+            return True
 
         except Exception as e:
-            print(f"      ⚠️ Error creando validación pendiente: {e}")
+            print(f"      ⚠️ Error desactivando corrección: {e}")
             try:
                 self.conn.rollback()
             except:
                 pass
-            return None
+            return False
 
-    def marcar_para_revision_admin(
-        self,
-        producto_maestro_id: int,
-        motivo: str,
-        detalles: str = None,
-        prioridad: int = 5
-    ) -> Optional[int]:
+    def obtener_estadisticas(self) -> Dict[str, Any]:
         """
-        Marca un producto para revisión manual del administrador
-
-        Args:
-            producto_maestro_id: ID del producto
-            motivo: Motivo de la revisión
-            detalles: Detalles adicionales (opcional)
-            prioridad: Prioridad 1-10 (1=urgente, 10=baja)
+        Obtiene estadísticas del sistema de aprendizaje
 
         Returns:
-            ID del registro de revisión o None si falla
+            Dict con estadísticas del sistema
         """
-
         try:
-            placeholder = "%s" if self.es_postgres else "?"
+            # Total de correcciones activas
+            self.cursor.execute("""
+                SELECT COUNT(*)
+                FROM correcciones_aprendidas
+                WHERE activo = TRUE
+            """)
+            total_activas = self.cursor.fetchone()[0]
 
-            if self.es_postgres:
-                query = f"""
-                    INSERT INTO productos_revision_admin (
-                        producto_maestro_id,
-                        motivo_revision,
-                        detalles,
-                        prioridad
-                    ) VALUES (
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder}
-                    )
-                    RETURNING id
-                """
+            # Correcciones por confianza
+            self.cursor.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE confianza >= 0.80) as alta,
+                    COUNT(*) FILTER (WHERE confianza >= 0.60 AND confianza < 0.80) as media,
+                    COUNT(*) FILTER (WHERE confianza < 0.60) as baja
+                FROM correcciones_aprendidas
+                WHERE activo = TRUE
+            """)
+            por_confianza = self.cursor.fetchone()
 
-                self.cursor.execute(query, (
-                    producto_maestro_id,
-                    motivo,
-                    detalles,
-                    prioridad
-                ))
+            # Productos con EAN
+            self.cursor.execute("""
+                SELECT COUNT(*)
+                FROM correcciones_aprendidas
+                WHERE activo = TRUE AND codigo_ean IS NOT NULL
+            """)
+            con_ean = self.cursor.fetchone()[0]
 
-                revision_id = self.cursor.fetchone()[0]
-                self.conn.commit()
-                return revision_id
+            # Total de confirmaciones
+            self.cursor.execute("""
+                SELECT
+                    SUM(veces_confirmado),
+                    SUM(veces_rechazado)
+                FROM correcciones_aprendidas
+                WHERE activo = TRUE
+            """)
+            confirmaciones = self.cursor.fetchone()
 
-            else:
-                query = f"""
-                    INSERT INTO productos_revision_admin (
-                        producto_maestro_id,
-                        motivo_revision,
-                        detalles,
-                        prioridad
-                    ) VALUES (?, ?, ?, ?)
-                """
-
-                self.cursor.execute(query, (
-                    producto_maestro_id,
-                    motivo,
-                    detalles,
-                    prioridad
-                ))
-
-                revision_id = self.cursor.lastrowid
-                self.conn.commit()
-                return revision_id
+            return {
+                'total_activas': total_activas,
+                'confianza_alta': por_confianza[0] if por_confianza else 0,
+                'confianza_media': por_confianza[1] if por_confianza else 0,
+                'confianza_baja': por_confianza[2] if por_confianza else 0,
+                'con_codigo_ean': con_ean,
+                'total_confirmaciones': confirmaciones[0] if confirmaciones[0] else 0,
+                'total_rechazos': confirmaciones[1] if confirmaciones[1] else 0
+            }
 
         except Exception as e:
-            print(f"      ⚠️ Error marcando para revisión: {e}")
-            try:
-                self.conn.rollback()
-            except:
-                pass
-            return None
+            print(f"      ⚠️ Error obteniendo estadísticas: {e}")
+            return {}
 
 
 # ==============================================================================
@@ -460,11 +477,11 @@ class AprendizajeManager:
 # ==============================================================================
 
 print("=" * 80)
-print("✅ aprendizaje_manager.py V1.1 CARGADO")
+print("✅ aprendizaje_manager.py V2.0 CARGADO")
 print("=" * 80)
 print("🧠 SISTEMA DE APRENDIZAJE AUTOMÁTICO")
-print("   • Buscar correcciones aprendidas")
-print("   • Guardar nuevas validaciones")
-print("   • Gestionar feedback de usuarios")
-print("   • Marcar para revisión admin")
+print("   • Búsqueda inteligente (EAN → Específico → Genérico)")
+print("   • Guardar/actualizar correcciones")
+print("   • Gestionar confianza y feedback")
+print("   • Estadísticas del sistema")
 print("=" * 80)
