@@ -4138,6 +4138,431 @@ async def fix_categorias_final():
             "traceback": traceback.format_exc()
         }
 
+# ============================================================================
+# ENDPOINTS PARA productos_referencia
+# ============================================================================
+# Agregar estos endpoints a main.py
+# ============================================================================
+
+from fastapi import HTTPException, Depends
+# ============================================================================
+# MODELOS PYDANTIC
+# ============================================================================
+
+class ProductoReferenciaCreate(BaseModel):
+    """Modelo para crear producto de referencia"""
+    codigo_ean: str
+    nombre: str
+    marca: Optional[str] = None
+    categoria: Optional[str] = None
+    presentacion: Optional[str] = None
+    unidad_medida: Optional[str] = "unidades"
+
+class ProductoReferenciaUpdate(BaseModel):
+    """Modelo para actualizar producto de referencia"""
+    nombre: Optional[str] = None
+    marca: Optional[str] = None
+    categoria: Optional[str] = None
+    presentacion: Optional[str] = None
+
+
+# ============================================================================
+# ENDPOINT 1: BUSCAR PRODUCTO POR EAN
+# ============================================================================
+
+@app.get("/api/productos-referencia/{codigo_ean}")
+async def buscar_producto_referencia(
+    codigo_ean: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Busca un producto en productos_referencia por su código EAN
+
+    Returns:
+        - 200: Producto encontrado
+        - 404: Producto no encontrado
+        - 401: No autenticado
+    """
+
+    print(f"🔍 Buscando producto EAN: {codigo_ean}")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                id,
+                codigo_ean,
+                nombre,
+                marca,
+                categoria,
+                presentacion,
+                unidad_medida,
+                created_at,
+                updated_at
+            FROM productos_referencia
+            WHERE codigo_ean = %s
+        """, (codigo_ean,))
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            print(f"   ❌ Producto {codigo_ean} NO encontrado")
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        print(f"   ✅ Producto {codigo_ean} encontrado: {producto[2]}")
+
+        return {
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre": producto[2],
+            "marca": producto[3],
+            "categoria": producto[4],
+            "presentacion": producto[5],
+            "unidad_medida": producto[6],
+            "created_at": producto[7].isoformat() if producto[7] else None,
+            "updated_at": producto[8].isoformat() if producto[8] else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error buscando producto: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================================
+# ENDPOINT 2: CREAR PRODUCTO NUEVO
+# ============================================================================
+
+@app.post("/api/productos-referencia")
+async def crear_producto_referencia(
+    producto: ProductoReferenciaCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Crea un nuevo producto en productos_referencia
+
+    Returns:
+        - 200: Producto creado exitosamente
+        - 409: Producto ya existe (código EAN duplicado)
+        - 401: No autenticado
+    """
+
+    print(f"💾 Creando producto: {producto.nombre} (EAN: {producto.codigo_ean})")
+
+    # Validaciones
+    if len(producto.codigo_ean) < 8:
+        raise HTTPException(status_code=400, detail="Código EAN inválido (mínimo 8 dígitos)")
+
+    if len(producto.nombre.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Nombre muy corto (mínimo 2 caracteres)")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    cursor = conn.cursor()
+
+    try:
+        # Verificar si ya existe
+        cursor.execute("""
+            SELECT id, nombre
+            FROM productos_referencia
+            WHERE codigo_ean = %s
+        """, (producto.codigo_ean,))
+
+        existente = cursor.fetchone()
+
+        if existente:
+            print(f"   ⚠️ Producto {producto.codigo_ean} YA existe: {existente[1]}")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Producto ya existe: {existente[1]}"
+            )
+
+        # Crear producto
+        cursor.execute("""
+            INSERT INTO productos_referencia (
+                codigo_ean,
+                nombre,
+                marca,
+                categoria,
+                presentacion,
+                unidad_medida,
+                created_at,
+                updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            RETURNING id, codigo_ean, nombre, marca, categoria,
+                      presentacion, unidad_medida, created_at
+        """, (
+            producto.codigo_ean,
+            producto.nombre.strip().upper(),
+            producto.marca.strip() if producto.marca else None,
+            producto.categoria.strip() if producto.categoria else None,
+            producto.presentacion.strip() if producto.presentacion else None,
+            producto.unidad_medida
+        ))
+
+        nuevo_producto = cursor.fetchone()
+        conn.commit()
+
+        print(f"   ✅ Producto creado ID: {nuevo_producto[0]}")
+
+        # Registrar en auditoría
+        try:
+            from database import registrar_auditoria
+            registrar_auditoria(
+                usuario_id=current_user['id'],
+                accion='crear',
+                datos_nuevos={
+                    'codigo_ean': producto.codigo_ean,
+                    'nombre': producto.nombre,
+                    'marca': producto.marca,
+                    'categoria': producto.categoria
+                },
+                razon='Producto creado desde app de escaneo'
+            )
+        except:
+            pass  # No fallar si auditoría falla
+
+        return {
+            "id": nuevo_producto[0],
+            "codigo_ean": nuevo_producto[1],
+            "nombre": nuevo_producto[2],
+            "marca": nuevo_producto[3],
+            "categoria": nuevo_producto[4],
+            "presentacion": nuevo_producto[5],
+            "unidad_medida": nuevo_producto[6],
+            "created_at": nuevo_producto[7].isoformat() if nuevo_producto[7] else None,
+            "message": "Producto creado exitosamente"
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error creando producto: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================================
+# ENDPOINT 3: ACTUALIZAR PRODUCTO
+# ============================================================================
+
+@app.put("/api/productos-referencia/{codigo_ean}")
+async def actualizar_producto_referencia(
+    codigo_ean: str,
+    producto: ProductoReferenciaUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Actualiza un producto existente en productos_referencia
+
+    Returns:
+        - 200: Producto actualizado
+        - 404: Producto no encontrado
+        - 401: No autenticado
+    """
+
+    print(f"✏️ Actualizando producto EAN: {codigo_ean}")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    cursor = conn.cursor()
+
+    try:
+        # Verificar que existe
+        cursor.execute("""
+            SELECT id, nombre, marca, categoria, presentacion
+            FROM productos_referencia
+            WHERE codigo_ean = %s
+        """, (codigo_ean,))
+
+        existente = cursor.fetchone()
+
+        if not existente:
+            print(f"   ❌ Producto {codigo_ean} NO existe")
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Preparar datos anteriores para auditoría
+        datos_anteriores = {
+            'nombre': existente[1],
+            'marca': existente[2],
+            'categoria': existente[3],
+            'presentacion': existente[4]
+        }
+
+        # Construir UPDATE dinámico (solo campos proporcionados)
+        campos = []
+        valores = []
+
+        if producto.nombre is not None:
+            campos.append("nombre = %s")
+            valores.append(producto.nombre.strip().upper())
+
+        if producto.marca is not None:
+            campos.append("marca = %s")
+            valores.append(producto.marca.strip() if producto.marca else None)
+
+        if producto.categoria is not None:
+            campos.append("categoria = %s")
+            valores.append(producto.categoria.strip() if producto.categoria else None)
+
+        if producto.presentacion is not None:
+            campos.append("presentacion = %s")
+            valores.append(producto.presentacion.strip() if producto.presentacion else None)
+
+        if not campos:
+            raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+
+        # Agregar updated_at
+        campos.append("updated_at = CURRENT_TIMESTAMP")
+        valores.append(codigo_ean)
+
+        # Ejecutar UPDATE
+        query = f"""
+            UPDATE productos_referencia
+            SET {', '.join(campos)}
+            WHERE codigo_ean = %s
+            RETURNING id, codigo_ean, nombre, marca, categoria,
+                      presentacion, unidad_medida, updated_at
+        """
+
+        cursor.execute(query, valores)
+        actualizado = cursor.fetchone()
+        conn.commit()
+
+        print(f"   ✅ Producto {codigo_ean} actualizado")
+
+        # Registrar en auditoría
+        try:
+            from database import registrar_auditoria
+            datos_nuevos = {
+                'nombre': actualizado[2],
+                'marca': actualizado[3],
+                'categoria': actualizado[4],
+                'presentacion': actualizado[5]
+            }
+
+            registrar_auditoria(
+                usuario_id=current_user['id'],
+                accion='actualizar',
+                datos_anteriores=datos_anteriores,
+                datos_nuevos=datos_nuevos,
+                razon='Producto actualizado desde app de escaneo'
+            )
+        except:
+            pass
+
+        return {
+            "id": actualizado[0],
+            "codigo_ean": actualizado[1],
+            "nombre": actualizado[2],
+            "marca": actualizado[3],
+            "categoria": actualizado[4],
+            "presentacion": actualizado[5],
+            "unidad_medida": actualizado[6],
+            "updated_at": actualizado[7].isoformat() if actualizado[7] else None,
+            "message": "Producto actualizado exitosamente"
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error actualizando producto: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================================
+# ENDPOINT BONUS: LISTAR PRODUCTOS (para debugging)
+# ============================================================================
+
+@app.get("/api/productos-referencia")
+async def listar_productos_referencia(
+    limite: int = 20,
+    current_user: dict = Depends(get_current_user)
+):
+    """Lista los últimos productos de referencia creados"""
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                id, codigo_ean, nombre, marca, categoria,
+                presentacion, created_at
+            FROM productos_referencia
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (limite,))
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append({
+                "id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],
+                "marca": row[3],
+                "categoria": row[4],
+                "presentacion": row[5],
+                "created_at": row[6].isoformat() if row[6] else None
+            })
+
+        return {
+            "total": len(productos),
+            "productos": productos
+        }
+
+    except Exception as e:
+        print(f"❌ Error listando productos: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================================
+# INSTRUCCIONES DE INSTALACIÓN
+# ============================================================================
+
+print("=" * 80)
+print("✅ Endpoints productos_referencia cargados:")
+print("   GET    /api/productos-referencia/{ean}  - Buscar producto")
+print("   POST   /api/productos-referencia        - Crear producto")
+print("   PUT    /api/productos-referencia/{ean}  - Actualizar producto")
+print("   GET    /api/productos-referencia        - Listar productos")
+print("=" * 80)
+
 
 print("✅ Endpoint /admin/fix-categorias-final agregado")
 
