@@ -1,19 +1,7 @@
 """
 setup_aprendizaje.py - INSTALADOR DE SISTEMA DE APRENDIZAJE
 ============================================================
-Script para crear automáticamente todas las tablas necesarias
-para el sistema de aprendizaje automático.
-
-USO:
-    python setup_aprendizaje.py
-
-El script:
-1. Conecta a la base de datos (PostgreSQL o SQLite)
-2. Crea las 4 tablas nuevas si no existen
-3. Crea vistas y funciones útiles
-4. Verifica que todo esté correcto
-
-SEGURO: Usa IF NOT EXISTS - No borra datos existentes
+VERSIÓN CORREGIDA: Ejecuta statements SQL uno por uno para SQLite
 """
 
 import os
@@ -21,7 +9,7 @@ import sys
 
 
 def get_db_connection():
-    """Obtiene conexión a la base de datos según configuración"""
+    """Obtiene conexión a la base de datos"""
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
     if database_type == "postgresql":
@@ -33,10 +21,8 @@ def get_db_connection():
             raise Exception("DATABASE_URL no configurada")
 
         url = urlparse(database_url)
-
         print(f"📡 Conectando a PostgreSQL...")
         print(f"   Host: {url.hostname}")
-        print(f"   Database: {url.path[1:]}")
 
         conn = psycopg2.connect(
             host=url.hostname,
@@ -45,10 +31,8 @@ def get_db_connection():
             user=url.username,
             password=url.password
         )
-
         print(f"   ✅ Conectado")
         return conn, True
-
     else:
         import sqlite3
         db_path = os.environ.get("DATABASE_PATH", "lecfac.db")
@@ -58,7 +42,7 @@ def get_db_connection():
         return conn, False
 
 
-def crear_tablas(cursor, is_postgresql):
+def crear_tablas(cursor, conn, is_postgresql):
     """Crea todas las tablas necesarias"""
 
     print("\n📦 CREANDO TABLAS...")
@@ -84,9 +68,7 @@ def crear_tablas(cursor, is_postgresql):
             fecha_primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             fecha_ultima_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(ocr_normalizado, establecimiento)
-        );
-        CREATE INDEX IF NOT EXISTS idx_correcciones_ocr ON correcciones_aprendidas(ocr_normalizado);
-        CREATE INDEX IF NOT EXISTS idx_correcciones_ean ON correcciones_aprendidas(codigo_ean);
+        )
         """)
     else:
         cursor.execute("""
@@ -107,9 +89,12 @@ def crear_tablas(cursor, is_postgresql):
             fecha_primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             fecha_ultima_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(ocr_normalizado, establecimiento)
-        );
-        CREATE INDEX IF NOT EXISTS idx_correcciones_ocr ON correcciones_aprendidas(ocr_normalizado);
+        )
         """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_correcciones_ocr ON correcciones_aprendidas(ocr_normalizado)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_correcciones_ean ON correcciones_aprendidas(codigo_ean)")
+    conn.commit()
     print("   ✅ Creada")
 
     # TABLA 2: validaciones_pendientes_usuario
@@ -118,9 +103,9 @@ def crear_tablas(cursor, is_postgresql):
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS validaciones_pendientes_usuario (
             id SERIAL PRIMARY KEY,
-            factura_id INT REFERENCES facturas(id) ON DELETE CASCADE,
-            usuario_id INT REFERENCES usuarios(id) ON DELETE CASCADE,
-            item_factura_id INT REFERENCES items_factura(id) ON DELETE CASCADE,
+            factura_id INT,
+            usuario_id INT,
+            item_factura_id INT,
             ocr_original VARCHAR(255) NOT NULL,
             nombre_sugerido VARCHAR(255) NOT NULL,
             codigo_ean VARCHAR(50),
@@ -135,8 +120,7 @@ def crear_tablas(cursor, is_postgresql):
             fecha_respuesta TIMESTAMP,
             datos_perplexity TEXT,
             datos_ocr TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_val_usuario ON validaciones_pendientes_usuario(usuario_id, estado);
+        )
         """)
     else:
         cursor.execute("""
@@ -159,9 +143,12 @@ def crear_tablas(cursor, is_postgresql):
             fecha_respuesta TIMESTAMP,
             datos_perplexity TEXT,
             datos_ocr TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_val_usuario ON validaciones_pendientes_usuario(usuario_id, estado);
+        )
         """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_val_usuario ON validaciones_pendientes_usuario(usuario_id, estado)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_val_factura ON validaciones_pendientes_usuario(factura_id)")
+    conn.commit()
     print("   ✅ Creada")
 
     # TABLA 3: historial_validaciones
@@ -184,8 +171,7 @@ def crear_tablas(cursor, is_postgresql):
             fuente_final VARCHAR(50),
             fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             datos_completos TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_hist_fecha ON historial_validaciones(fecha_procesamiento);
+        )
         """)
     else:
         cursor.execute("""
@@ -205,9 +191,12 @@ def crear_tablas(cursor, is_postgresql):
             fuente_final TEXT,
             fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             datos_completos TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_hist_fecha ON historial_validaciones(fecha_procesamiento);
+        )
         """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_hist_fecha ON historial_validaciones(fecha_procesamiento)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_hist_usuario ON historial_validaciones(usuario_id)")
+    conn.commit()
     print("   ✅ Creada")
 
     # TABLA 4: productos_revision_admin
@@ -227,8 +216,7 @@ def crear_tablas(cursor, is_postgresql):
             revisado_por INT,
             fecha_revision TIMESTAMP,
             fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_rev_estado ON productos_revision_admin(estado);
+        )
         """)
     else:
         cursor.execute("""
@@ -245,9 +233,12 @@ def crear_tablas(cursor, is_postgresql):
             revisado_por INTEGER,
             fecha_revision TIMESTAMP,
             fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_rev_estado ON productos_revision_admin(estado);
+        )
         """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rev_estado ON productos_revision_admin(estado)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rev_prioridad ON productos_revision_admin(prioridad)")
+    conn.commit()
     print("   ✅ Creada")
 
 
@@ -268,7 +259,7 @@ def main():
         conn, is_postgresql = get_db_connection()
         cursor = conn.cursor()
 
-        crear_tablas(cursor, is_postgresql)
+        crear_tablas(cursor, conn, is_postgresql)
 
         conn.commit()
         cursor.close()
@@ -286,6 +277,8 @@ def main():
 
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
