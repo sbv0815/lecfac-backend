@@ -478,3 +478,5 @@ if __name__ == "__main__":
         codigo="1220"
     )
     print(f"Resultado: {json.dumps(resultado, indent=2, ensure_ascii=False)}\n")
+
+print(' PERPLEXITY_VALIDATOR.PY EJECUTADO COMPLETAMENTE')

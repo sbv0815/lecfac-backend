@@ -735,3 +735,12 @@ print("   • productos_maestros (legacy)")
 print("   • productos_maestros_v2 (nueva)")
 print("✅ Sincronización automática entre tablas")
 print("=" * 80)
+
+
+# ==========================================
+print('='*80)
+if PERPLEXITY_AVAILABLE:
+    print('   ? Perplexity integrado y listo')
+else:
+    print('   ??  Perplexity NO disponible')
+print('='*80)
