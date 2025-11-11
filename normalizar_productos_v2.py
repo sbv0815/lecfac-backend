@@ -230,6 +230,9 @@ def normalizar_producto(cursor, conn, aprendizaje_mgr, producto, tabla: str, sta
     """
     Normaliza UN producto siguiendo el flujo de 4 capas
 
+    VERSIÓN SIMPLIFICADA: No busca establecimiento real (causa errores de transacción)
+    Usa "EXITO" por defecto para normalización inicial
+
     Returns:
         dict con resultado de la normalización
     """
@@ -258,10 +261,11 @@ def normalizar_producto(cursor, conn, aprendizaje_mgr, producto, tabla: str, sta
         if nombre_limpio:
             print(f"      🧹 Limpiado Python: {nombre_limpio}")
 
-        # 2️⃣ Obtener establecimiento real
-        establecimiento = obtener_establecimiento_real(cursor, producto_id, tabla, es_postgres=True)
+        # 2️⃣ Usar establecimiento genérico para normalización inicial
+        # NOTA: En futuras versiones, se puede mejorar con datos reales
+        establecimiento = "EXITO"
         resultado['establecimiento'] = establecimiento
-        print(f"      🏪 Establecimiento: {establecimiento}")
+        print(f"      🏪 Establecimiento: {establecimiento} (genérico)")
 
         # 3️⃣ Buscar en aprendizaje previo
         if nombre_limpio:
