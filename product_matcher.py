@@ -27,12 +27,7 @@ import re
 from unidecode import unidecode
 
 # Importar módulos
-try:
-    from correcciones_ocr import corregir_ocr_basico
-    CORRECCIONES_OCR_AVAILABLE = True
-except ImportError:
-    CORRECCIONES_OCR_AVAILABLE = False
-    print("⚠️  correcciones_ocr.py no disponible")
+CORRECCIONES_OCR_AVAILABLE = False  # Módulo no usado actualmente
 
 try:
     from perplexity_validator import validar_con_perplexity
@@ -55,7 +50,7 @@ def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = Tru
 
     Args:
         nombre: Nombre original del producto
-        aplicar_correcciones_ocr: Si debe aplicar correcciones OCR avanzadas
+        aplicar_correcciones_ocr: Si debe aplicar correcciones OCR (deprecado, siempre usa normalización básica)
 
     Returns:
         Nombre normalizado (uppercase, sin tildes, sin caracteres especiales)
@@ -63,12 +58,9 @@ def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = Tru
     if not nombre:
         return ""
 
-    # Aplicar correcciones OCR si está disponible
-    if aplicar_correcciones_ocr and CORRECCIONES_OCR_AVAILABLE:
-        nombre = corregir_ocr_basico(nombre)
-    else:
-        nombre = nombre.upper()
-        nombre = unidecode(nombre)
+    # Normalización básica (sin dependencia de correcciones_ocr)
+    nombre = nombre.upper()
+    nombre = unidecode(nombre)
 
     # Limpiar caracteres especiales
     nombre = re.sub(r'[^\w\s]', ' ', nombre)
@@ -689,7 +681,6 @@ print("="*80)
 print("🎯 SISTEMA INTEGRADO CON APRENDIZAJE V2.0")
 print("   1️⃣ OCR → 2️⃣ Python → 3️⃣ Aprendizaje → 4️⃣ Perplexity → 5️⃣ BD")
 print("="*80)
-print(f"{'✅' if CORRECCIONES_OCR_AVAILABLE else '⚠️ '} Correcciones OCR")
 print(f"{'✅' if PERPLEXITY_AVAILABLE else '⚠️ '} Perplexity")
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático V2.0")
 print("="*80)
