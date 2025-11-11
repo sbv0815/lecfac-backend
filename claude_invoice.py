@@ -119,6 +119,10 @@ CORRECCIONES_OCR = {
     "MEDALL": "MEDALLA",
     "MERMEL": "MERMELADA",
     "OSO":"QUESO",
+    "GALADITOS":"CALADITOS",
+    "LECA KLEEK L":"LACA KLEER",
+    "QUESO PARMA":"QUESO PARMESANO",
+
 
     # Lácteos
     "CREM": "CREMA",
@@ -131,7 +135,7 @@ CORRECCIONES_OCR = {
     # Marcas
     "ALQUERI": "ALQUERIA",
     "ALQUER": "ALQUERIA",
-    "ALQUERIA": "ALQUERIA",  # ← CORRECCIÓN según tu nota
+    "ALQUERIA": "ALQUERIA",
     "ALPNA": "ALPINA",
     "ALPIN": "ALPINA",
     "COLANT": "COLANTA",
