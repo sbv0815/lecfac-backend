@@ -68,7 +68,6 @@ class AprendizajeManager:
                     SELECT
                         id,
                         nombre_validado,
-                        codigo_ean,
                         confianza,
                         veces_confirmado,
                         veces_rechazado
@@ -86,7 +85,6 @@ class AprendizajeManager:
                     SELECT
                         id,
                         nombre_validado,
-                        codigo_ean,
                         confianza,
                         veces_confirmado,
                         veces_rechazado
@@ -104,10 +102,9 @@ class AprendizajeManager:
                 return {
                     'id': resultado[0],
                     'nombre_validado': resultado[1],
-                    'codigo_ean': resultado[2],
-                    'confianza': float(resultado[3]) if resultado[3] else 0.0,
-                    'veces_confirmado': resultado[4],
-                    'veces_rechazado': resultado[5]
+                    'confianza': float(resultado[2]) if resultado[2] else 0.0,
+                    'veces_confirmado': resultado[3],
+                    'veces_rechazado': resultado[4]
                 }
 
             return None
