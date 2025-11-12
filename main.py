@@ -1,7 +1,7 @@
 import os
 import base64
 print("=" * 80)
-print("🚀 LECFAC BACKEND - VERSION 2025-10-30-21:00 - REBUILD FORZADO")
+print("🚀 LECFAC BACKEND - VERSION 2025-11-12-15:30 - REBUILD FORZADO V2")
 print("=" * 80)
 import tempfile
 import traceback
@@ -62,10 +62,21 @@ from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 
 # ==========================================
+# FORZAR RECARGA DE MÓDULOS - NUEVO
+# ==========================================
+import sys
+import importlib
+
+# Eliminar product_matcher del caché si existe
+if 'product_matcher' in sys.modules:
+    del sys.modules['product_matcher']
+    print("🔄 Módulo product_matcher removido del caché")
+
+# ==========================================
 # IMPORTACIÓN DE PRODUCT_MATCHER CON DEBUG
 # ==========================================
 print("\n" + "="*80)
-print("🔍 IMPORTANDO product_matcher.py...")
+print("🔍 IMPORTANDO product_matcher.py LIMPIO...")
 print("="*80)
 
 from product_matcher import buscar_o_crear_producto_inteligente
@@ -74,12 +85,40 @@ print("\n" + "="*80)
 print("✅ product_matcher IMPORTADO EXITOSAMENTE")
 print("="*80 + "\n")
 
-# Verificar versión
+# ==========================================
+# VERIFICAR VERSIÓN - MEJORADO
+# ==========================================
 import product_matcher
 import inspect
-source = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
-tiene_fix = 'fetchone() retornó None' in source
-print(f"🔧 Manejo de errores presente: {'✅ SÍ' if tiene_fix else '❌ NO'}")
+
+try:
+    source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
+
+    # Buscar múltiples indicadores del fix
+    tiene_fix_1 = 'fetchone() retornó None' in source_code
+    tiene_fix_2 = 'fallback manual' in source_code.lower()
+    tiene_fix_3 = 'if not resultado:' in source_code
+
+    fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
+
+    print(f"\n{'='*80}")
+    print(f"🔧 VERIFICACIÓN DE FIX:")
+    print(f"   - String 'fetchone() retornó None': {'✅' if tiene_fix_1 else '❌'}")
+    print(f"   - String 'fallback manual': {'✅' if tiene_fix_2 else '❌'}")
+    print(f"   - String 'if not resultado': {'✅' if tiene_fix_3 else '❌'}")
+    print(f"   - RESULTADO FINAL: {'✅ FIX PRESENTE' if fix_completo else '❌ FIX AUSENTE'}")
+    print(f"{'='*80}\n")
+
+    if not fix_completo:
+        print("⚠️⚠️⚠️ WARNING: CÓDIGO DESACTUALIZADO DETECTADO ⚠️⚠️⚠️")
+        print("El servidor se iniciará pero FALLARÁ al guardar productos")
+        print("Verifica que product_matcher.py V6.1 esté en Git")
+
+except Exception as e:
+    print(f"❌ Error verificando fix: {e}")
+    import traceback
+    traceback.print_exc()
+
 print("="*80 + "\n")
 
 from comparacion_precios import router as comparacion_router
@@ -115,6 +154,7 @@ def verify_jwt_token(token: str):
     except Exception as e:
         print(f"❌ Error verificando token: {e}")
         return None
+
 from image_handlers import router as image_handlers_router
 from duplicados_routes import router as duplicados_router
 from diagnostico_routes import router as diagnostico_router
@@ -126,7 +166,6 @@ from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
-
 
 # Importar AMBOS routers de auditoría con nombres diferente
 from fastapi import APIRouter
