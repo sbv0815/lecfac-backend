@@ -6055,3 +6055,5 @@ async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
 print("✅ Todos los endpoints administrativos y de debug cargados")
 
 
+
+# Force rebuild 11/12/2025 14:11:42
