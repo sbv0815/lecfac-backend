@@ -593,3 +593,5 @@ print("="*80)
 print(f"{'✅' if PERPLEXITY_AVAILABLE else '⚠️ '} Perplexity")
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("="*80)
+
+
