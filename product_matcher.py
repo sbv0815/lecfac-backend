@@ -505,12 +505,12 @@ def buscar_o_crear_producto_inteligente(
 
     # Crear producto
     producto_id = crear_producto_en_ambas_tablas(
-        codigo_ean=codigo if tipo_codigo == 'EAN' else None,
-        nombre_final=nombre_final,
-        precio=precio,
         cursor=cursor,
         conn=conn,
-        metadatos=resultado_validacion
+        nombre_normalizado=nombre_final,
+        codigo_ean=codigo if tipo_codigo == 'EAN' else None,
+        marca=None,
+        categoria=None
     )
 
     if not producto_id:
