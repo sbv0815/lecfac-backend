@@ -331,6 +331,7 @@ def crear_producto_en_ambas_tablas(
 ):
     """
     Crea producto en productos_maestros y productos_maestros_v2
+    CON MANEJO ROBUSTO DE ERRORES - V6.1
 
     Args:
         codigo_ean: Código EAN del producto (puede ser None)
@@ -341,7 +342,7 @@ def crear_producto_en_ambas_tablas(
         metadatos: Dict con información adicional (opcional)
 
     Returns:
-        ID del producto creado
+        ID del producto creado o None si falla
     """
     import os
     is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
@@ -353,62 +354,110 @@ def crear_producto_en_ambas_tablas(
         if metadatos.get('ahorro_dinero'):
             print(f"      💰 Ahorro: $0.005 USD (no se llamó Perplexity)")
 
-    # Crear en productos_maestros
-    if is_postgresql:
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-                codigo_ean,
-                nombre_normalizado,
-                precio_promedio_global,
-                total_reportes,
-                primera_vez_reportado,
-                ultima_actualizacion
-            )
-            VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-        """, (codigo_ean, nombre_final, precio))
-        producto_id = cursor.fetchone()[0]
-    else:
-        cursor.execute("""
-            INSERT INTO productos_maestros (
-                codigo_ean,
-                nombre_normalizado,
-                precio_promedio_global,
-                total_reportes,
-                primera_vez_reportado,
-                ultima_actualizacion
-            )
-            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """, (codigo_ean, nombre_final, precio))
-        producto_id = cursor.lastrowid
+    try:
+        # Crear en productos_maestros
+        if is_postgresql:
+            cursor.execute("""
+                INSERT INTO productos_maestros (
+                    codigo_ean,
+                    nombre_normalizado,
+                    precio_promedio_global,
+                    total_reportes,
+                    primera_vez_reportado,
+                    ultima_actualizacion
+                )
+                VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            """, (codigo_ean, nombre_final, precio))
+        else:
+            cursor.execute("""
+                INSERT INTO productos_maestros (
+                    codigo_ean,
+                    nombre_normalizado,
+                    precio_promedio_global,
+                    total_reportes,
+                    primera_vez_reportado,
+                    ultima_actualizacion
+                )
+                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (codigo_ean, nombre_final, precio))
 
-    # Crear en productos_maestros_v2
-    if is_postgresql:
-        cursor.execute("""
-            INSERT INTO productos_maestros_v2 (
-                codigo_ean,
-                nombre_consolidado,
-                marca,
-                categoria_id
-            )
-            VALUES (%s, %s, NULL, NULL)
-        """, (codigo_ean, nombre_final))
-    else:
-        cursor.execute("""
-            INSERT INTO productos_maestros_v2 (
-                codigo_ean,
-                nombre_consolidado,
-                marca,
-                categoria_id
-            )
-            VALUES (?, ?, NULL, NULL)
-        """, (codigo_ean, nombre_final))
+        # Obtener ID
+        resultado = cursor.fetchone()
 
-    conn.commit()
-    print(f"   ✅ Producto creado ID: {producto_id}")
-    print(f"      Nombre: {nombre_final}")
+        if not resultado:
+            print(f"   ❌ ERROR: No se obtuvo ID del INSERT")
+            print(f"      Producto: {nombre_final}")
+            print(f"      Intentando obtener ID manualmente...")
 
-    return producto_id
+            # Intentar buscar el producto recién creado
+            if is_postgresql:
+                cursor.execute("""
+                    SELECT id FROM productos_maestros
+                    WHERE nombre_normalizado = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                """, (nombre_final,))
+            else:
+                cursor.execute("""
+                    SELECT id FROM productos_maestros
+                    WHERE nombre_normalizado = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                """, (nombre_final,))
+
+            resultado = cursor.fetchone()
+
+            if not resultado:
+                print(f"   ❌ CRÍTICO: No se pudo obtener ID del producto")
+                conn.rollback()
+                return None
+
+        producto_id = resultado[0]
+        print(f"   ✅ Producto creado ID: {producto_id}")
+        print(f"      Nombre: {nombre_final}")
+
+        # Crear en productos_maestros_v2
+        try:
+            if is_postgresql:
+                cursor.execute("""
+                    INSERT INTO productos_maestros_v2 (
+                        codigo_ean,
+                        nombre_consolidado,
+                        marca,
+                        categoria_id
+                    )
+                    VALUES (%s, %s, NULL, NULL)
+                    ON CONFLICT (codigo_ean) DO NOTHING
+                """, (codigo_ean, nombre_final))
+            else:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO productos_maestros_v2 (
+                        codigo_ean,
+                        nombre_consolidado,
+                        marca,
+                        categoria_id
+                    )
+                    VALUES (?, ?, NULL, NULL)
+                """, (codigo_ean, nombre_final))
+        except Exception as e:
+            print(f"   ⚠️ Error en productos_maestros_v2 (no crítico): {e}")
+            # No es crítico, continuar
+
+        conn.commit()
+        return producto_id
+
+    except Exception as e:
+        print(f"   ❌ Error creando producto '{nombre_final}': {e}")
+        import traceback
+        traceback.print_exc()
+
+        try:
+            conn.rollback()
+        except:
+            pass
+
+        return None
 
 
 def sincronizar_a_v2(producto_id, codigo_ean, nombre, cursor, conn):
@@ -678,8 +727,11 @@ def buscar_o_crear_producto_inteligente(
         metadatos=resultado_validacion
     )
 
-    return producto_id
+    if not producto_id:
+        print(f"   ❌ CRÍTICO: No se pudo crear producto '{nombre_final}'")
+        return None  # ← AGREGAR ESTA LÍNEA SI NO ESTÁ
 
+    return producto_id
 
 # ==============================================================================
 # MENSAJE DE CARGA
