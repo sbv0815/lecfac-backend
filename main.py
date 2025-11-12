@@ -7,8 +7,7 @@ import tempfile
 import traceback
 import json
 import uuid
-# Al inicio de main.py, donde están los imports:
-from claude_invoice import parse_invoice_with_claude as procesar_factura_con_claude
+
 # LIMPIEZA DE CACHÉ AL INICIO
 import shutil
 print("🧹 Limpiando caché de Python...")
@@ -61,7 +60,28 @@ from mobile_endpoints import router as mobile_router
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
+
+# ==========================================
+# IMPORTACIÓN DE PRODUCT_MATCHER CON DEBUG
+# ==========================================
+print("\n" + "="*80)
+print("🔍 IMPORTANDO product_matcher.py...")
+print("="*80)
+
 from product_matcher import buscar_o_crear_producto_inteligente
+
+print("\n" + "="*80)
+print("✅ product_matcher IMPORTADO EXITOSAMENTE")
+print("="*80 + "\n")
+
+# Verificar versión
+import product_matcher
+import inspect
+source = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
+tiene_fix = 'fetchone() retornó None' in source
+print(f"🔧 Manejo de errores presente: {'✅ SÍ' if tiene_fix else '❌ NO'}")
+print("="*80 + "\n")
+
 from comparacion_precios import router as comparacion_router
 
 # ✅ ProductResolver removido - usando product_matcher
