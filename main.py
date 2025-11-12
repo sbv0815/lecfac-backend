@@ -1903,8 +1903,8 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
         # Deduplicar
         print(f"🔍 Deduplicando productos...")
-        productos_unicos = deduplicar_productos(todos_productos)
-        print(f"✅ Productos únicos: {len(productos_unicos)}")
+        productos_unicos = todos_productos
+        print(f"📦 {len(todos_productos)} productos detectados (sin pre-filtrar)")
 
         # Detector automático de duplicados
         print(f"🔍 Aplicando detector inteligente de duplicados...")

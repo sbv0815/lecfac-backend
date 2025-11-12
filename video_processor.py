@@ -80,127 +80,69 @@ def similitud_productos(prod1: str, prod2: str) -> float:
 
 def deduplicar_productos(productos: List[Dict]) -> List[Dict]:
     """
-    Deduplica productos usando CONSECUTIVO + SIMILITUD.
+    Deduplica productos usando SOLO código + precio.
 
-    Estrategia:
-    1. Extraer consecutivo de cada producto
-    2. Agrupar productos por consecutivo
-    3. Para productos sin consecutivo, usar similitud de nombres
-    4. Mantener el producto con más información
+    REGLA DE NEGOCIO:
+    - Mismo código + mismo precio = MISMO PRODUCTO (consolidar cantidades)
+    - Mismo código + precio diferente = PRODUCTOS DIFERENTES (mantener separados)
+    - Sin código = usar nombre normalizado + precio
 
-    Args:
-        productos: Lista de productos detectados
-
-    Returns:
-        Lista de productos únicos
+    NO usa similitud de nombres para evitar eliminar productos válidos.
     """
     if not productos:
         return []
 
     print(f"🔍 Deduplicando {len(productos)} productos...")
 
-    # Agrupar por consecutivo
-    por_consecutivo = {}
-    sin_consecutivo = []
+    # Agrupar por clave única: (código, precio)
+    grupos = {}
 
     for prod in productos:
-        nombre = prod.get("nombre", "")
-        consecutivo, nombre_limpio = extraer_consecutivo(nombre)
+        codigo = str(prod.get("codigo", "")).strip()
+        nombre = str(prod.get("nombre", "")).strip().upper()
+        precio = float(prod.get("precio", 0))
+        cantidad = int(prod.get("cantidad", 1))
 
-        if consecutivo is not None:
-            if consecutivo not in por_consecutivo:
-                por_consecutivo[consecutivo] = []
-            por_consecutivo[consecutivo].append(
-                {
-                    **prod,
-                    "nombre_original": nombre,
-                    "nombre_limpio": nombre_limpio,
-                    "consecutivo": consecutivo,
-                }
-            )
+        # Crear clave única
+        if codigo and codigo.isdigit():
+            # Si tiene código, usar: código + precio
+            clave = f"COD:{codigo}|PRECIO:{precio}"
         else:
-            sin_consecutivo.append(prod)
+            # Sin código, usar: nombre + precio
+            clave = f"NOMBRE:{nombre}|PRECIO:{precio}"
 
-    print(f"   📊 Productos con consecutivo: {len(por_consecutivo)} grupos")
-    print(f"   📊 Productos sin consecutivo: {len(sin_consecutivo)}")
+        if clave not in grupos:
+            grupos[clave] = {
+                "codigo": codigo,
+                "nombre": nombre,
+                "precio": precio,
+                "cantidad": 0,
+                "ocurrencias": 0
+            }
 
-    # Procesar productos con consecutivo
+        # Acumular cantidad
+        grupos[clave]["cantidad"] += cantidad
+        grupos[clave]["ocurrencias"] += 1
+
+    # Convertir grupos a lista de productos
     productos_unicos = []
+    consolidados = 0
 
-    for consecutivo, grupo in sorted(por_consecutivo.items()):
-        if len(grupo) == 1:
-            # Solo un producto con este consecutivo
-            productos_unicos.append(grupo[0])
-        else:
-            # Múltiples productos con el mismo consecutivo
-            # Elegir el que tenga más información (código, nombre más largo, etc.)
-            mejor = max(
-                grupo,
-                key=lambda p: (
-                    len(p.get("codigo", "")),
-                    len(p.get("nombre", "")),
-                    p.get("precio", 0) > 0,
-                ),
-            )
-            productos_unicos.append(mejor)
+    for clave, grupo in grupos.items():
+        productos_unicos.append({
+            "codigo": grupo["codigo"],
+            "nombre": grupo["nombre"],
+            "precio": grupo["precio"],
+            "cantidad": grupo["cantidad"]
+        })
 
-            if len(grupo) > 1:
-                print(
-                    f"   🔀 Consecutivo {consecutivo}: {len(grupo)} duplicados → 1 único"
-                )
+        if grupo["ocurrencias"] > 1:
+            consolidados += grupo["ocurrencias"] - 1
+            print(f"   🔄 Consolidado: {grupo['nombre'][:40]} x{grupo['ocurrencias']} → cantidad {grupo['cantidad']}")
 
-    # Procesar productos sin consecutivo (usar similitud)
-    for i, prod1 in enumerate(sin_consecutivo):
-        es_duplicado = False
-        nombre1 = prod1.get("nombre", "")
-
-        # Comparar con productos únicos ya agregados
-        for prod_unico in productos_unicos:
-            nombre_unico = prod_unico.get(
-                "nombre_original", prod_unico.get("nombre", "")
-            )
-            similitud = similitud_productos(nombre1, nombre_unico)
-
-            if similitud > 0.85:  # 85% de similitud
-                es_duplicado = True
-                print(
-                    f"   ⚠️ Duplicado por similitud ({similitud:.0%}): '{nombre1}' ≈ '{nombre_unico}'"
-                )
-                break
-
-        if not es_duplicado:
-            # Comparar con otros productos sin consecutivo
-            for j, prod2 in enumerate(sin_consecutivo):
-                if i >= j:  # Evitar comparar consigo mismo
-                    continue
-
-                nombre2 = prod2.get("nombre", "")
-                similitud = similitud_productos(nombre1, nombre2)
-
-                if similitud > 0.85:
-                    es_duplicado = True
-                    print(
-                        f"   ⚠️ Duplicado por similitud ({similitud:.0%}): '{nombre1}' ≈ '{nombre2}'"
-                    )
-                    break
-
-        if not es_duplicado:
-            productos_unicos.append(prod1)
-
-    # Limpiar nombres finales (remover info de deduplicación interna)
-    for prod in productos_unicos:
-        if "nombre_limpio" in prod:
-            del prod["nombre_limpio"]
-        if "nombre_original" in prod:
-            # Mantener el nombre original si es más completo
-            if len(prod["nombre_original"]) > len(prod.get("nombre", "")):
-                prod["nombre"] = prod["nombre_original"]
-            del prod["nombre_original"]
-        if "consecutivo" in prod:
-            del prod["consecutivo"]
-
-    print(f"✅ Productos únicos finales: {len(productos_unicos)}")
-    print(f"   📉 Eliminados: {len(productos) - len(productos_unicos)} duplicados")
+    print(f"✅ Productos únicos: {len(productos_unicos)}")
+    if consolidados > 0:
+        print(f"   📉 Consolidados: {consolidados} productos con mismo código+precio")
 
     return productos_unicos
 
