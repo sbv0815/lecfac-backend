@@ -596,3 +596,5 @@ print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático"
 print("="*80)
 
 
+
+# Rebuild 11/12/2025 14:30:09
