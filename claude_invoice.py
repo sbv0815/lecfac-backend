@@ -116,47 +116,62 @@ def normalizar_nombre_producto(nombre: str) -> str:
 # ==============================================================================
 
 CORRECCIONES_OCR = {
-    # Errores comunes detectados
+    # ========== Errores comunes de OCR ==========
     "QSO": "QUESO",
+    "OSO": "QUESO",
     "FRANC": "FRANCES",
     "BCO": "BLANCO",
     "ZHRIA": "ZANAHORIA",
     "GRL": "GRANEL",
     "PONQ": "PONQUE",
     "PONO": "PONQUE",
-    "GGNS": "",  # Ruido OCR
+    "GGNS": "",
+
+    # ========== Chocolatinas ==========
     "CHOCTINA": "CHOCOLATINA",
     "CHOCTINGA": "CHOCOLATINA",
     "CHOCTING": "CHOCOLATINA",
     "CHOCITINA": "CHOCOLATINA",
+
+    # ========== Refrescos ==========
     "REFRESC": "REFRESCO",
+    "REPESO": "REFRESCO",  # ← NUEVO
+    "POL": "POLVO",        # ← NUEVO
+
+    # ========== Mermeladas ==========
+    "MERMEL": "MERMELADA",
+    "FRUGAL PIDA": "FRUGAL PIÑA",  # ← NUEVO
+    "PIDA": "PIÑA",                 # ← NUEVO
+
+    # ========== Marcas comunes ==========
     "DODA": "DOÑA",
     "MARGAR": "MARGARINA",
     "ESPARCI": "MARGARINA",
     "ESPARCIR": "MARGARINA",
     "MEDAL": "MEDALLA",
     "MEDALL": "MEDALLA",
-    "MERMEL": "MERMELADA",
-    "OSO": "QUESO",
     "GALADITOS": "CALADITOS",
     "LECA KLEEK L": "LACA KLEER",
     "QUESO PARMA": "QUESO PARMESANO",
 
-    # Lácteos
+    # ========== Lácteos ==========
     "CREM": "CREMA",
     "VECHE": "LECHE",
     "VEC": "LECHE",
     "LECH": "LECHE",
     "LEC": "LECHE",
     "SEMI": "SEMIDESCREMADA",
-
-    # Marcas
     "ALQUERI": "ALQUERIA",
     "ALQUER": "ALQUERIA",
-    "ALQUERIA": "ALQUERIA",
     "ALPNA": "ALPINA",
     "ALPIN": "ALPINA",
     "COLANT": "COLANTA",
+
+    # ========== Palabras sin sentido (eliminar) ==========
+    "BLENG": "",      # ← NUEVO (basura OCR)
+    "MORCAF": "",     # ← NUEVO (basura OCR)
+
+
 }
 
 

@@ -618,7 +618,7 @@ def buscar_o_crear_producto_inteligente(
     for cand_id, cand_nombre, cand_ean in candidatos:
         similitud = calcular_similitud(nombre_normalizado, cand_nombre)
 
-        if similitud >= 0.85:
+        if similitud >= 0.95:
             producto_id = cand_id
             print(f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})")
             return producto_id
