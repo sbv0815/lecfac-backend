@@ -1,7 +1,7 @@
 import os
 import base64
 print("=" * 80)
-print("🚀 LECFAC BACKEND - VERSION 2025-11-12-15:30 - REBUILD FORZADO V2")
+print("🚀 LECFAC BACKEND - VERSION 2025-10-30-21:00 - REBUILD FORZADO")
 print("=" * 80)
 import tempfile
 import traceback
@@ -62,21 +62,10 @@ from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 
 # ==========================================
-# FORZAR RECARGA DE MÓDULOS - NUEVO
-# ==========================================
-import sys
-import importlib
-
-# Eliminar product_matcher del caché si existe
-if 'product_matcher' in sys.modules:
-    del sys.modules['product_matcher']
-    print("🔄 Módulo product_matcher removido del caché")
-
-# ==========================================
 # IMPORTACIÓN DE PRODUCT_MATCHER CON DEBUG
 # ==========================================
 print("\n" + "="*80)
-print("🔍 IMPORTANDO product_matcher.py LIMPIO...")
+print("🔍 IMPORTANDO product_matcher.py...")
 print("="*80)
 
 from product_matcher import buscar_o_crear_producto_inteligente
@@ -85,40 +74,12 @@ print("\n" + "="*80)
 print("✅ product_matcher IMPORTADO EXITOSAMENTE")
 print("="*80 + "\n")
 
-# ==========================================
-# VERIFICAR VERSIÓN - MEJORADO
-# ==========================================
+# Verificar versión
 import product_matcher
 import inspect
-
-try:
-    source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
-
-    # Buscar múltiples indicadores del fix
-    tiene_fix_1 = 'fetchone() retornó None' in source_code
-    tiene_fix_2 = 'fallback manual' in source_code.lower()
-    tiene_fix_3 = 'if not resultado:' in source_code
-
-    fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
-
-    print(f"\n{'='*80}")
-    print(f"🔧 VERIFICACIÓN DE FIX:")
-    print(f"   - String 'fetchone() retornó None': {'✅' if tiene_fix_1 else '❌'}")
-    print(f"   - String 'fallback manual': {'✅' if tiene_fix_2 else '❌'}")
-    print(f"   - String 'if not resultado': {'✅' if tiene_fix_3 else '❌'}")
-    print(f"   - RESULTADO FINAL: {'✅ FIX PRESENTE' if fix_completo else '❌ FIX AUSENTE'}")
-    print(f"{'='*80}\n")
-
-    if not fix_completo:
-        print("⚠️⚠️⚠️ WARNING: CÓDIGO DESACTUALIZADO DETECTADO ⚠️⚠️⚠️")
-        print("El servidor se iniciará pero FALLARÁ al guardar productos")
-        print("Verifica que product_matcher.py V6.1 esté en Git")
-
-except Exception as e:
-    print(f"❌ Error verificando fix: {e}")
-    import traceback
-    traceback.print_exc()
-
+source = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
+tiene_fix = 'fetchone() retornó None' in source
+print(f"🔧 Manejo de errores presente: {'✅ SÍ' if tiene_fix else '❌ NO'}")
 print("="*80 + "\n")
 
 from comparacion_precios import router as comparacion_router
@@ -133,7 +94,7 @@ from auth import router as auth_router
 def verify_jwt_token(token: str):
     """
     Verifica y decodifica un token JWT
-    Retorna el payload si es válido, None si es inválido.
+    Retorna el payload si es válido, None si es inválido
     """
     try:
         import jwt
@@ -154,7 +115,6 @@ def verify_jwt_token(token: str):
     except Exception as e:
         print(f"❌ Error verificando token: {e}")
         return None
-
 from image_handlers import router as image_handlers_router
 from duplicados_routes import router as duplicados_router
 from diagnostico_routes import router as diagnostico_router
@@ -166,6 +126,7 @@ from corrections_service import aplicar_correcciones_automaticas
 from concurrent.futures import ThreadPoolExecutor
 import time
 from establishments import procesar_establecimiento, obtener_o_crear_establecimiento_id
+
 
 # Importar AMBOS routers de auditoría con nombres diferente
 from fastapi import APIRouter
@@ -480,8 +441,6 @@ app = FastAPI(
     description="Sistema de gestión de facturas con procesamiento asíncrono",
     lifespan=lifespan,
 )
-
-
 
 from routes import productos_admin
 app.include_router(productos_admin.router)
@@ -2106,7 +2065,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
 
-
+            # Guardar productos
             productos_guardados = 0
             productos_fallidos = 0
 
@@ -2117,13 +2076,11 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     precio = producto.get("precio") or producto.get("valor", 0)
                     cantidad = producto.get("cantidad", 1)
 
-                    # Validación: producto sin nombre
                     if not nombre or nombre.strip() == "":
                         print(f"⚠️ Producto sin nombre, omitiendo")
                         productos_fallidos += 1
                         continue
 
-                    # Validación: cantidad válida
                     try:
                         cantidad = int(cantidad)
                         if cantidad <= 0:
@@ -2131,7 +2088,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     except (ValueError, TypeError):
                         cantidad = 1
 
-                    # Validación: precio válido
                     try:
                         precio = float(precio)
                         if precio < 0:
@@ -2146,9 +2102,11 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         productos_fallidos += 1
                         continue
 
-                    # ==========================================
-                    # BUSCAR O CREAR PRODUCTO MAESTRO
-                    # ==========================================
+                    # ========================================
+                    # ✅ NUEVO: Usar ProductResolver
+                    # ========================================
+                    # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
+                    # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
                     producto_maestro_id = None
 
                     if codigo and len(codigo) >= 3:
@@ -2160,53 +2118,50 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                             cursor=cursor,
                             conn=conn
                         )
-
-                        # ✅ FIX: Validar que se creó correctamente
-                        if not producto_maestro_id:
-                            print(f"   ⚠️ SKIP: No se pudo crear producto maestro para '{nombre}'")
-                            productos_fallidos += 1
-                            continue
-
                         print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                     # Guardar en items_factura
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO items_factura (
                                 factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            factura_id,
-                            usuario_id,
-                            producto_maestro_id,
-                            codigo or None,
-                            nombre,
-                            cantidad,
-                            precio,
-                        ))
+                            """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                producto_maestro_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
                     else:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO items_factura (
                                 factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
                             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            factura_id,
-                            usuario_id,
-                            producto_maestro_id,
-                            codigo or None,
-                            nombre,
-                            cantidad,
-                            precio,
-                        ))
+                            """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                producto_maestro_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
 
                     productos_guardados += 1
 
                 except Exception as e:
                     print(f"❌ Error guardando '{nombre}': {str(e)}")
-                    import traceback
-                    traceback.print_exc()
                     productos_fallidos += 1
 
                     if "constraint" in str(e).lower():
@@ -6099,45 +6054,4 @@ async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
 
 print("✅ Todos los endpoints administrativos y de debug cargados")
 
-@app.get("/debug/fix-status")
-async def check_fix_status():
-    """Verificar si el fix está presente"""
-    try:
-        import product_matcher
-        import inspect
 
-        source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
-
-        tiene_fix_1 = 'fetchone() retornó None' in source_code
-        tiene_fix_2 = 'fallback manual' in source_code.lower()
-        tiene_fix_3 = 'if not resultado:' in source_code
-
-        fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
-
-        # Intentar leer archivo de status
-        status_file = None
-        try:
-            with open('/tmp/fix_status.txt', 'r') as f:
-                status_file = f.read()
-        except:
-            pass
-
-        return {
-            "fix_presente": fix_completo,
-            "verificaciones": {
-                "string_fetchone": tiene_fix_1,
-                "string_fallback": tiene_fix_2,
-                "string_if_not": tiene_fix_3
-            },
-            "status_file": status_file,
-            "version_esperada": "V6.1",
-            "mensaje": "✅ FIX PRESENTE" if fix_completo else "❌ FIX AUSENTE"
-        }
-
-    except Exception as e:
-        return {
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-# Force rebuild 11/12/2025 14:11:42
