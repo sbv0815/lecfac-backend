@@ -2106,7 +2106,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
 
-            # Guardar productos
+
             productos_guardados = 0
             productos_fallidos = 0
 
@@ -2117,11 +2117,13 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     precio = producto.get("precio") or producto.get("valor", 0)
                     cantidad = producto.get("cantidad", 1)
 
+                    # Validación: producto sin nombre
                     if not nombre or nombre.strip() == "":
                         print(f"⚠️ Producto sin nombre, omitiendo")
                         productos_fallidos += 1
                         continue
 
+                    # Validación: cantidad válida
                     try:
                         cantidad = int(cantidad)
                         if cantidad <= 0:
@@ -2129,6 +2131,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     except (ValueError, TypeError):
                         cantidad = 1
 
+                    # Validación: precio válido
                     try:
                         precio = float(precio)
                         if precio < 0:
@@ -2143,11 +2146,9 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                         productos_fallidos += 1
                         continue
 
-                    # ========================================
-                    # ✅ NUEVO: Usar ProductResolver
-                    # ========================================
-                    # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
-                    # ✅ CAMBIO D: Usar buscar_o_crear_producto_inteligente
+                    # ==========================================
+                    # BUSCAR O CREAR PRODUCTO MAESTRO
+                    # ==========================================
                     producto_maestro_id = None
 
                     if codigo and len(codigo) >= 3:
@@ -2159,50 +2160,53 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                             cursor=cursor,
                             conn=conn
                         )
+
+                        # ✅ FIX: Validar que se creó correctamente
+                        if not producto_maestro_id:
+                            print(f"   ⚠️ SKIP: No se pudo crear producto maestro para '{nombre}'")
+                            productos_fallidos += 1
+                            continue
+
                         print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                     # Guardar en items_factura
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute(
-                            """
+                        cursor.execute("""
                             INSERT INTO items_factura (
                                 factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """,
-                            (
-                                factura_id,
-                                usuario_id,
-                                producto_maestro_id,
-                                codigo or None,
-                                nombre,
-                                cantidad,
-                                precio,
-                            ),
-                        )
+                        """, (
+                            factura_id,
+                            usuario_id,
+                            producto_maestro_id,
+                            codigo or None,
+                            nombre,
+                            cantidad,
+                            precio,
+                        ))
                     else:
-                        cursor.execute(
-                            """
+                        cursor.execute("""
                             INSERT INTO items_factura (
                                 factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
                             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                factura_id,
-                                usuario_id,
-                                producto_maestro_id,
-                                codigo or None,
-                                nombre,
-                                cantidad,
-                                precio,
-                            ),
-                        )
+                        """, (
+                            factura_id,
+                            usuario_id,
+                            producto_maestro_id,
+                            codigo or None,
+                            nombre,
+                            cantidad,
+                            precio,
+                        ))
 
                     productos_guardados += 1
 
                 except Exception as e:
                     print(f"❌ Error guardando '{nombre}': {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                     productos_fallidos += 1
 
                     if "constraint" in str(e).lower():
