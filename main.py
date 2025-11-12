@@ -4569,7 +4569,7 @@ print("✅ Endpoint /admin/fix-categorias-final agregado")
 @app.get("/admin/migrar-aprendizaje")
 async def migrar_aprendizaje():
     """
-    Ejecutar migración del constraint de aprendizaje
+    Ejecutar migración del constraint de aprendizaje (VERSIÓN CORREGIDA)
     Visitar: https://tu-app.railway.app/admin/migrar-aprendizaje
     """
     try:
@@ -4599,24 +4599,36 @@ async def migrar_aprendizaje():
 
         resultado["pasos"].append("✅ Tabla existe")
 
-        # Verificar constraint
+        # ELIMINAR constraint viejo si existe
         cursor.execute("""
             SELECT constraint_name
             FROM information_schema.table_constraints
             WHERE table_name = 'correcciones_aprendidas'
               AND constraint_type = 'UNIQUE'
-              AND constraint_name = 'unique_correccion'
         """)
 
-        if cursor.fetchone():
-            resultado["success"] = True
-            resultado["mensaje"] = "Constraint ya existe"
-            resultado["pasos"].append("ℹ️  Constraint 'unique_correccion' ya existe")
-            cursor.close()
-            conn.close()
-            return resultado
+        constraints = cursor.fetchall()
+        for (constraint_name,) in constraints:
+            cursor.execute(f"ALTER TABLE correcciones_aprendidas DROP CONSTRAINT IF EXISTS {constraint_name}")
+            resultado["pasos"].append(f"🗑️  Eliminado constraint viejo: {constraint_name}")
 
-        resultado["pasos"].append("⚠️  Constraint no existe, creando...")
+        # Agregar columna computed si no existe
+        cursor.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'correcciones_aprendidas'
+              AND column_name = 'establecimiento_key'
+        """)
+
+        if not cursor.fetchone():
+            cursor.execute("""
+                ALTER TABLE correcciones_aprendidas
+                ADD COLUMN establecimiento_key VARCHAR(100)
+                GENERATED ALWAYS AS (COALESCE(establecimiento, '')) STORED
+            """)
+            resultado["pasos"].append("➕ Agregada columna establecimiento_key")
+        else:
+            resultado["pasos"].append("✅ Columna establecimiento_key ya existe")
 
         # Limpiar duplicados
         cursor.execute("""
@@ -4630,15 +4642,15 @@ async def migrar_aprendizaje():
         duplicados = cursor.rowcount
         resultado["pasos"].append(f"🗑️  {duplicados} duplicados eliminados")
 
-        # Crear constraint
+        # Crear constraint correcto
         cursor.execute("""
             ALTER TABLE correcciones_aprendidas
             ADD CONSTRAINT unique_correccion
-            UNIQUE (ocr_normalizado, establecimiento)
+            UNIQUE (ocr_normalizado, establecimiento_key)
         """)
 
         conn.commit()
-        resultado["pasos"].append("✅ Constraint creado")
+        resultado["pasos"].append("✅ Constraint creado correctamente")
 
         # Verificar
         cursor.execute("""
@@ -4650,7 +4662,7 @@ async def migrar_aprendizaje():
 
         if cursor.fetchone():
             resultado["success"] = True
-            resultado["mensaje"] = "✅ Migración completada"
+            resultado["mensaje"] = "✅ Migración completada correctamente"
             resultado["pasos"].append("✅ Constraint verificado")
         else:
             resultado["error"] = "Constraint no se creó"

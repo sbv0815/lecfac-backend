@@ -224,35 +224,35 @@ class AprendizajeManager:
                 establecimiento = establecimiento.upper().strip()
 
             if self.es_postgres:
-                # PostgreSQL con UPSERT
+    # PostgreSQL con UPSERT
                 query = f"""
                     INSERT INTO correcciones_aprendidas (
-                        ocr_original,
-                        ocr_normalizado,
-                        nombre_validado,
-                        establecimiento,
-                        codigo_ean,
-                        confianza,
-                        veces_confirmado,
-                        veces_rechazado,
-                        fecha_primera_vez,
-                        fecha_ultima_confirmacion,
-                        activo
-                    ) VALUES (
-                        {placeholder}, {placeholder}, {placeholder}, {placeholder},
-                        {placeholder}, {placeholder}, 1, 0,
-                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE
-                    )
-                    ON CONFLICT (ocr_normalizado, COALESCE(establecimiento, ''))
-                    DO UPDATE SET
-                        nombre_validado = EXCLUDED.nombre_validado,
-                        codigo_ean = COALESCE(EXCLUDED.codigo_ean, correcciones_aprendidas.codigo_ean),
-                        confianza = LEAST(correcciones_aprendidas.confianza + 0.05, 0.99),
-                        veces_confirmado = correcciones_aprendidas.veces_confirmado + 1,
-                        fecha_ultima_confirmacion = CURRENT_TIMESTAMP,
-                        activo = TRUE
-                    RETURNING id
-                """
+                    ocr_original,
+                    ocr_normalizado,
+                    nombre_validado,
+                    establecimiento,
+                    codigo_ean,
+                    confianza,
+                    veces_confirmado,
+                    veces_rechazado,
+                    fecha_primera_vez,
+                    fecha_ultima_confirmacion,
+                    activo
+                ) VALUES (
+                    {placeholder}, {placeholder}, {placeholder}, {placeholder},
+                    {placeholder}, {placeholder}, 1, 0,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE
+                )
+                ON CONFLICT (ocr_normalizado, establecimiento_key)
+                DO UPDATE SET
+                    nombre_validado = EXCLUDED.nombre_validado,
+                    codigo_ean = COALESCE(EXCLUDED.codigo_ean, correcciones_aprendidas.codigo_ean),
+                    confianza = LEAST(correcciones_aprendidas.confianza + 0.05, 0.99),
+                    veces_confirmado = correcciones_aprendidas.veces_confirmado + 1,
+                    fecha_ultima_confirmacion = CURRENT_TIMESTAMP,
+                    activo = TRUE
+                RETURNING id
+            """
 
                 self.cursor.execute(query, (
                     ocr_original,
