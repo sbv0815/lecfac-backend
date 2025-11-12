@@ -4566,6 +4566,170 @@ print("=" * 80)
 
 print("✅ Endpoint /admin/fix-categorias-final agregado")
 
+@app.get("/admin/migrar-aprendizaje")
+async def migrar_aprendizaje():
+    """
+    Ejecutar migración del constraint de aprendizaje
+    Visitar: https://tu-app.railway.app/admin/migrar-aprendizaje
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultado = {
+            "success": False,
+            "pasos": []
+        }
+
+        # Verificar tabla
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'correcciones_aprendidas'
+            )
+        """)
+
+        if not cursor.fetchone()[0]:
+            resultado["error"] = "Tabla correcciones_aprendidas no existe"
+            cursor.close()
+            conn.close()
+            return resultado
+
+        resultado["pasos"].append("✅ Tabla existe")
+
+        # Verificar constraint
+        cursor.execute("""
+            SELECT constraint_name
+            FROM information_schema.table_constraints
+            WHERE table_name = 'correcciones_aprendidas'
+              AND constraint_type = 'UNIQUE'
+              AND constraint_name = 'unique_correccion'
+        """)
+
+        if cursor.fetchone():
+            resultado["success"] = True
+            resultado["mensaje"] = "Constraint ya existe"
+            resultado["pasos"].append("ℹ️  Constraint 'unique_correccion' ya existe")
+            cursor.close()
+            conn.close()
+            return resultado
+
+        resultado["pasos"].append("⚠️  Constraint no existe, creando...")
+
+        # Limpiar duplicados
+        cursor.execute("""
+            DELETE FROM correcciones_aprendidas a
+            USING correcciones_aprendidas b
+            WHERE a.id < b.id
+              AND a.ocr_normalizado = b.ocr_normalizado
+              AND COALESCE(a.establecimiento, '') = COALESCE(b.establecimiento, '')
+        """)
+
+        duplicados = cursor.rowcount
+        resultado["pasos"].append(f"🗑️  {duplicados} duplicados eliminados")
+
+        # Crear constraint
+        cursor.execute("""
+            ALTER TABLE correcciones_aprendidas
+            ADD CONSTRAINT unique_correccion
+            UNIQUE (ocr_normalizado, establecimiento)
+        """)
+
+        conn.commit()
+        resultado["pasos"].append("✅ Constraint creado")
+
+        # Verificar
+        cursor.execute("""
+            SELECT constraint_name
+            FROM information_schema.table_constraints
+            WHERE table_name = 'correcciones_aprendidas'
+              AND constraint_name = 'unique_correccion'
+        """)
+
+        if cursor.fetchone():
+            resultado["success"] = True
+            resultado["mensaje"] = "✅ Migración completada"
+            resultado["pasos"].append("✅ Constraint verificado")
+        else:
+            resultado["error"] = "Constraint no se creó"
+
+        cursor.close()
+        conn.close()
+
+        return resultado
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/admin/verificar-aprendizaje")
+async def verificar_aprendizaje():
+    """Verificar estado del sistema de aprendizaje"""
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar constraint
+        cursor.execute("""
+            SELECT constraint_name, constraint_type
+            FROM information_schema.table_constraints
+            WHERE table_name = 'correcciones_aprendidas'
+              AND constraint_name = 'unique_correccion'
+        """)
+
+        constraint = cursor.fetchone()
+
+        # Contar registros
+        cursor.execute("SELECT COUNT(*) FROM correcciones_aprendidas WHERE activo = TRUE")
+        total = cursor.fetchone()[0]
+
+        # Ver últimos 5
+        cursor.execute("""
+            SELECT ocr_normalizado, nombre_validado, establecimiento, confianza, veces_confirmado
+            FROM correcciones_aprendidas
+            WHERE activo = TRUE
+            ORDER BY fecha_ultima_confirmacion DESC
+            LIMIT 5
+        """)
+
+        ultimos = []
+        for row in cursor.fetchall():
+            ultimos.append({
+                "ocr": row[0],
+                "validado": row[1],
+                "establecimiento": row[2],
+                "confianza": float(row[3]) if row[3] else 0,
+                "veces": row[4]
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "constraint_existe": constraint is not None,
+            "productos_aprendidos": total,
+            "sistema_listo": constraint is not None,
+            "ultimos_5": ultimos
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
@@ -5331,107 +5495,7 @@ async def get_aprendizaje_stats():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.get("/admin/migrar-aprendizaje")
-async def migrar_aprendizaje():
-    """
-    Endpoint para ejecutar migración del constraint de aprendizaje
-    Ejecutar visitando: https://tu-app.railway.app/admin/migrar-aprendizaje
-    """
-    try:
-        print("\n" + "="*80)
-        print("🔧 INICIANDO MIGRACIÓN DESDE ENDPOINT")
-        print("="*80)
 
-        from database import get_db_connection
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        resultado = {
-            "success": False,
-            "pasos": []
-        }
-
-        # Paso 1: Verificar tabla
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_name = 'correcciones_aprendidas'
-            )
-        """)
-
-        if not cursor.fetchone()[0]:
-            resultado["error"] = "Tabla correcciones_aprendidas no existe"
-            return resultado
-
-        resultado["pasos"].append("✅ Tabla existe")
-
-        # Paso 2: Verificar si constraint existe
-        cursor.execute("""
-            SELECT constraint_name
-            FROM information_schema.table_constraints
-            WHERE table_name = 'correcciones_aprendidas'
-              AND constraint_type = 'UNIQUE'
-              AND constraint_name = 'unique_correccion'
-        """)
-
-        if cursor.fetchone():
-            resultado["success"] = True
-            resultado["mensaje"] = "Constraint ya existe - no se requiere migración"
-            resultado["pasos"].append("ℹ️  Constraint 'unique_correccion' ya existe")
-            return resultado
-
-        resultado["pasos"].append("⚠️  Constraint no existe")
-
-        # Paso 3: Limpiar duplicados
-        cursor.execute("""
-            DELETE FROM correcciones_aprendidas a
-            USING correcciones_aprendidas b
-            WHERE a.id < b.id
-              AND a.ocr_normalizado = b.ocr_normalizado
-              AND COALESCE(a.establecimiento, '') = COALESCE(b.establecimiento, '')
-        """)
-
-        duplicados = cursor.rowcount
-        resultado["pasos"].append(f"🗑️  {duplicados} duplicados eliminados")
-
-        # Paso 4: Crear constraint
-        cursor.execute("""
-            ALTER TABLE correcciones_aprendidas
-            ADD CONSTRAINT unique_correccion
-            UNIQUE (ocr_normalizado, establecimiento)
-        """)
-
-        conn.commit()
-        resultado["pasos"].append("✅ Constraint creado")
-
-        # Paso 5: Verificar
-        cursor.execute("""
-            SELECT constraint_name
-            FROM information_schema.table_constraints
-            WHERE table_name = 'correcciones_aprendidas'
-              AND constraint_name = 'unique_correccion'
-        """)
-
-        if cursor.fetchone():
-            resultado["success"] = True
-            resultado["mensaje"] = "✅ Migración completada exitosamente"
-            resultado["pasos"].append("✅ Constraint verificado")
-        else:
-            resultado["error"] = "Constraint no se creó correctamente"
-
-        cursor.close()
-        conn.close()
-
-        return resultado
-
-    except Exception as e:
-        import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
 # ==========================================
 # ENDPOINTS DEBUG
 # ==========================================

@@ -137,6 +137,9 @@ CORRECCIONES_OCR = {
     "REFRESC": "REFRESCO",
     "REPESO": "REFRESCO",  # ← NUEVO
     "POL": "POLVO",        # ← NUEVO
+    "REFRESC  CLIGHT POL": "REFRESCO  CLIGHT POLVO",
+    "PASA FUSIL FERRA": "PASA FUSIL FERRARA",
+
 
     # ========== Mermeladas ==========
     "MERMEL": "MERMELADA",
