@@ -608,17 +608,21 @@ def buscar_o_crear_producto_inteligente(
             return producto_id
 
     # Buscar por nombre similar
-    cursor.execute(
-        f"SELECT id, nombre_normalizado, codigo_ean FROM productos_maestros WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}",
-        (f"%{nombre_normalizado[:30]}%",)
-    )
+    # Buscar por nombre similar (más flexible)
+    cursor.execute(f"""
+        SELECT id, nombre_normalizado, codigo_ean
+        FROM productos_maestros
+        WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
+       OR {param} {('ILIKE' if is_postgresql else 'LIKE')} '%' || nombre_normalizado || '%'
+        LIMIT 10
+    """, (f"%{nombre_normalizado[:50]}%", nombre_normalizado))
 
     candidatos = cursor.fetchall()
 
     for cand_id, cand_nombre, cand_ean in candidatos:
         similitud = calcular_similitud(nombre_normalizado, cand_nombre)
 
-        if similitud >= 0.95:
+        if similitud >= 0.90:
             producto_id = cand_id
             print(f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})")
             return producto_id
