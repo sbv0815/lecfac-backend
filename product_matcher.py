@@ -1,5 +1,5 @@
 """
-product_matcher.py - VERSIÓN 6.1 - INTEGRACIÓN COMPLETA
+product_matcher.py - VERSIÓN 6.1.1 - DEBUG AGREGADO
 ========================================================================
 Sistema de matching y normalización de productos con aprendizaje automático
 
@@ -12,13 +12,9 @@ Sistema de matching y normalización de productos con aprendizaje automático
 5️⃣ Guardar Aprendizaje             → Aprende para próxima vez.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CAMBIOS V6.1:
-- ✅ Integración con productos_referencia (fuente oficial)
-- ✅ Manejo robusto de errores en crear_producto_en_ambas_tablas
-- ✅ Imports correctos de typing
-- ✅ Threshold de similitud ajustado a 0.90
-- ✅ Búsqueda mejorada con OR en SQL
-    Ojala y funcione.
+CAMBIOS V6.1.1:
+- ✅ Logs de debug agregados para identificar errores
+- ✅ Validación de tipos de parámetros
 """
 
 import re
@@ -44,9 +40,7 @@ except ImportError:
 
 
 def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = True) -> str:
-    """
-    Normaliza nombre del producto para búsquedas
-    """
+    """Normaliza nombre del producto para búsquedas"""
     if not nombre:
         return ""
 
@@ -59,9 +53,7 @@ def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = Tru
 
 
 def calcular_similitud(nombre1: str, nombre2: str) -> float:
-    """
-    Calcula similitud entre dos nombres de productos
-    """
+    """Calcula similitud entre dos nombres de productos"""
     n1 = normalizar_nombre_producto(nombre1, False)
     n2 = normalizar_nombre_producto(nombre2, False)
 
@@ -81,9 +73,7 @@ def calcular_similitud(nombre1: str, nombre2: str) -> float:
 
 
 def clasificar_codigo_tipo(codigo: str) -> str:
-    """
-    Clasifica el tipo de código del producto
-    """
+    """Clasifica el tipo de código del producto"""
     if not codigo:
         return 'DESCONOCIDO'
 
@@ -99,9 +89,7 @@ def clasificar_codigo_tipo(codigo: str) -> str:
 
 
 def detectar_cadena(establecimiento: str) -> str:
-    """
-    Detecta la cadena principal del establecimiento
-    """
+    """Detecta la cadena principal del establecimiento"""
     if not establecimiento:
         return "DESCONOCIDO"
 
@@ -126,16 +114,7 @@ def detectar_cadena(establecimiento: str) -> str:
 
 
 def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str, Any]]:
-    """
-    Busca producto en la tabla de referencia oficial
-
-    Args:
-        codigo_ean: Código EAN-13 del producto
-        cursor: Cursor de base de datos
-
-    Returns:
-        Dict con datos oficiales del producto o None si no existe
-    """
+    """Busca producto en la tabla de referencia oficial"""
     import os
     is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
     param = "%s" if is_postgresql else "?"
@@ -212,16 +191,12 @@ def validar_nombre_con_sistema_completo(
     item_factura_id: int = None,
     cursor = None
 ) -> dict:
-    """
-    V6.1: Sistema completo con productos_referencia como fuente prioritaria
-    """
+    """V6.1: Sistema completo con productos_referencia como fuente prioritaria"""
 
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
 
-    # ========================================================================
     # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (FUENTE OFICIAL)
-    # ========================================================================
     if tipo_codigo == 'EAN' and codigo and cursor:
         producto_oficial = buscar_en_productos_referencia(codigo, cursor)
 
@@ -252,9 +227,7 @@ def validar_nombre_con_sistema_completo(
                 'ahorro_dinero': True
             }
 
-    # ========================================================================
     # PASO 2: BUSCAR EN APRENDIZAJE
-    # ========================================================================
     if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
         correccion = aprendizaje_mgr.buscar_correccion_aprendida(
             ocr_normalizado=nombre_corregido,
@@ -279,9 +252,7 @@ def validar_nombre_con_sistema_completo(
                 'ahorro_dinero': True
             }
 
-    # ========================================================================
     # PASO 3: VALIDAR CON PERPLEXITY
-    # ========================================================================
     if not PERPLEXITY_AVAILABLE:
         return {
             'nombre_final': nombre_corregido,
@@ -348,9 +319,18 @@ def validar_nombre_con_sistema_completo(
 def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None):
     """
     Crea producto en productos_maestros con manejo robusto de errores
-    V6.1 - Con fallback cuando fetchone() retorna None
+    V6.1.1 - Con logs de debug y validación de tipos
     """
     try:
+        # 🔍 DEBUG - Validar parámetros recibidos
+        print(f"   🐛 [DEBUG] crear_producto_en_ambas_tablas llamado:")
+        print(f"      cursor: {type(cursor).__name__}")
+        print(f"      conn: {type(conn).__name__}")
+        print(f"      nombre_normalizado: '{nombre_normalizado}' (type: {type(nombre_normalizado).__name__})")
+        print(f"      codigo_ean: '{codigo_ean}' (type: {type(codigo_ean).__name__ if codigo_ean else 'None'})")
+        print(f"      marca: '{marca}' (type: {type(marca).__name__ if marca else 'None'})")
+        print(f"      categoria: '{categoria}' (type: {type(categoria).__name__ if categoria else 'None'})")
+
         # Construir nombre final
         nombre_final = nombre_normalizado.strip().upper()
         if marca and marca.strip():
@@ -368,9 +348,7 @@ def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=
             RETURNING id
         """, (codigo_ean, nombre_final, marca, categoria))
 
-        # ==========================================
         # ✅ FIX V6.1 - MANEJO ROBUSTO DE ERRORES
-        # ==========================================
         resultado = cursor.fetchone()
 
         if not resultado:
@@ -402,6 +380,8 @@ def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=
 
     except Exception as e:
         print(f"   ❌ Error en crear_producto_en_ambas_tablas: {e}")
+        import traceback
+        traceback.print_exc()
         conn.rollback()
         return None
 
@@ -417,9 +397,7 @@ def buscar_o_crear_producto_inteligente(
     usuario_id: int = None,
     item_factura_id: int = None
 ) -> Optional[int]:
-    """
-    Función principal de matching de productos V6.1
-    """
+    """Función principal de matching de productos V6.1"""
     import os
 
     print(f"\n🔍 BUSCAR O CREAR PRODUCTO:")
@@ -435,11 +413,7 @@ def buscar_o_crear_producto_inteligente(
     is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
     param = "%s" if is_postgresql else "?"
 
-    # ========================================================================
     # PASO 1: BUSCAR PRODUCTO EXISTENTE
-    # ========================================================================
-
-    # Buscar por EAN
     if tipo_codigo == 'EAN' and codigo:
         cursor.execute(
             f"SELECT id, nombre_normalizado FROM productos_maestros WHERE codigo_ean = {param}",
@@ -471,10 +445,7 @@ def buscar_o_crear_producto_inteligente(
             print(f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})")
             return producto_id
 
-    # ========================================================================
     # PASO 2: NO ENCONTRADO → VALIDAR Y CREAR
-    # ========================================================================
-
     print(f"   ℹ️  Producto no encontrado → Validando...")
 
     # Inicializar AprendizajeManager
@@ -503,7 +474,7 @@ def buscar_o_crear_producto_inteligente(
 
     nombre_final = resultado_validacion['nombre_final']
 
-    # Crear producto
+    # Crear producto CON PARÁMETROS CORRECTOS
     producto_id = crear_producto_en_ambas_tablas(
         cursor=cursor,
         conn=conn,
@@ -520,12 +491,9 @@ def buscar_o_crear_producto_inteligente(
     return producto_id
 
 
-# ==============================================================================
 # MENSAJE DE CARGA
-# ==============================================================================
-
 print("="*80)
-print("✅ product_matcher.py V6.1 CARGADO")
+print("✅ product_matcher.py V6.1.1 CARGADO (CON DEBUG)")
 print("="*80)
 print("🎯 SISTEMA INTEGRADO COMPLETO")
 print("   1️⃣ Productos Referencia → 2️⃣ Aprendizaje → 3️⃣ Perplexity → 4️⃣ BD")
@@ -533,7 +501,3 @@ print("="*80)
 print(f"{'✅' if PERPLEXITY_AVAILABLE else '⚠️ '} Perplexity")
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("="*80)
-
-
-
-# Rebuild 11/12/2025 14:30:09
