@@ -345,125 +345,64 @@ def validar_nombre_con_sistema_completo(
         }
 
 
-def crear_producto_en_ambas_tablas(
-    codigo_ean,
-    nombre_final,
-    precio,
-    cursor,
-    conn,
-    metadatos=None
-):
+def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None):
     """
-    Crea producto en productos_maestros y productos_maestros_v2
-    V6.1 - CON MANEJO ROBUSTO DE ERRORES
+    Crea producto en productos_maestros con manejo robusto de errores
+    V6.1 - Con fallback cuando fetchone() retorna None
     """
-    import os
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-
-    if metadatos:
-        fuente = metadatos.get('fuente', 'desconocido')
-        if metadatos.get('ahorro_dinero'):
-            print(f"      💰 Ahorro: $0.005 USD (fuente: {fuente})")
-
     try:
-        # Crear en productos_maestros
-        if is_postgresql:
-            cursor.execute("""
-                INSERT INTO productos_maestros (
-                    codigo_ean,
-                    nombre_normalizado,
-                    precio_promedio_global,
-                    total_reportes,
-                    primera_vez_reportado,
-                    ultima_actualizacion
-                )
-                VALUES (%s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id
-            """, (codigo_ean, nombre_final, precio))
-        else:
-            cursor.execute("""
-                INSERT INTO productos_maestros (
-                    codigo_ean,
-                    nombre_normalizado,
-                    precio_promedio_global,
-                    total_reportes,
-                    primera_vez_reportado,
-                    ultima_actualizacion
-                )
-                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (codigo_ean, nombre_final, precio))
+        # Construir nombre final
+        nombre_final = nombre_normalizado.strip().upper()
+        if marca and marca.strip():
+            nombre_final = f"{marca.strip().upper()} {nombre_final}"
 
-        # Obtener ID con manejo de errores
+        print(f"   📝 Creando producto: {nombre_final}")
+
+        # Insertar
+        cursor.execute("""
+            INSERT INTO productos_maestros (
+                codigo_ean, nombre_normalizado, marca, categoria,
+                precio_promedio_global, total_reportes,
+                primera_vez_reportado, ultima_actualizacion
+            ) VALUES (%s, %s, %s, %s, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+        """, (codigo_ean, nombre_final, marca, categoria))
+
+        # ==========================================
+        # ✅ FIX V6.1 - MANEJO ROBUSTO DE ERRORES
+        # ==========================================
         resultado = cursor.fetchone()
 
         if not resultado:
             print(f"   ❌ ERROR: fetchone() retornó None")
+            print(f"   🔄 Intentando fallback manual...")
 
-            # Fallback: buscar manualmente
-            if is_postgresql:
-                cursor.execute("""
-                    SELECT id FROM productos_maestros
-                    WHERE nombre_normalizado = %s
-                    ORDER BY id DESC
-                    LIMIT 1
-                """, (nombre_final,))
-            else:
-                cursor.execute("""
-                    SELECT id FROM productos_maestros
-                    WHERE nombre_normalizado = ?
-                    ORDER BY id DESC
-                    LIMIT 1
-                """, (nombre_final,))
+            # Fallback: buscar manualmente el producto recién creado
+            cursor.execute("""
+                SELECT id FROM productos_maestros
+                WHERE nombre_normalizado = %s
+                ORDER BY id DESC
+                LIMIT 1
+            """, (nombre_final,))
 
             resultado = cursor.fetchone()
 
             if not resultado:
-                print(f"   ❌ CRÍTICO: No se pudo obtener ID")
+                print(f"   ❌ CRÍTICO: No se pudo recuperar el ID del producto")
                 conn.rollback()
                 return None
 
+            print(f"   ✅ Recuperado por fallback: ID {resultado[0]}")
+
         producto_id = resultado[0]
-        print(f"   ✅ Producto creado ID: {producto_id}")
-
-        # Crear en productos_maestros_v2
-        try:
-            if is_postgresql:
-                cursor.execute("""
-                    INSERT INTO productos_maestros_v2 (
-                        codigo_ean,
-                        nombre_consolidado,
-                        marca,
-                        categoria_id
-                    )
-                    VALUES (%s, %s, NULL, NULL)
-                    ON CONFLICT (codigo_ean) DO NOTHING
-                """, (codigo_ean, nombre_final))
-            else:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO productos_maestros_v2 (
-                        codigo_ean,
-                        nombre_consolidado,
-                        marca,
-                        categoria_id
-                    )
-                    VALUES (?, ?, NULL, NULL)
-                """, (codigo_ean, nombre_final))
-        except Exception as e:
-            print(f"   ⚠️ Error v2 (no crítico): {e}")
-
         conn.commit()
+
+        print(f"   ✅ Producto creado: ID {producto_id}")
         return producto_id
 
     except Exception as e:
-        print(f"   ❌ Error creando '{nombre_final}': {e}")
-        import traceback
-        traceback.print_exc()
-
-        try:
-            conn.rollback()
-        except:
-            pass
-
+        print(f"   ❌ Error en crear_producto_en_ambas_tablas: {e}")
+        conn.rollback()
         return None
 
 
