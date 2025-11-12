@@ -397,7 +397,6 @@ def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=
         conn.rollback()
         return None
 
-
 def buscar_o_crear_producto_inteligente(
     codigo: str,
     nombre: str,
@@ -409,7 +408,10 @@ def buscar_o_crear_producto_inteligente(
     usuario_id: int = None,
     item_factura_id: int = None
 ) -> Optional[int]:
-    """Función principal de matching de productos V6.1"""
+    """
+    Función principal de matching de productos V6.1.2
+    FIX DEFINITIVO: tuple index out of range en candidatos
+    """
     import os
 
     print(f"\n🔍 BUSCAR O CREAR PRODUCTO:")
@@ -418,94 +420,126 @@ def buscar_o_crear_producto_inteligente(
     print(f"   Precio: ${precio:,}")
     print(f"   Establecimiento: {establecimiento}")
 
-    nombre_normalizado = normalizar_nombre_producto(nombre, True)
-    tipo_codigo = clasificar_codigo_tipo(codigo)
-    cadena = detectar_cadena(establecimiento)
+    try:
+        nombre_normalizado = normalizar_nombre_producto(nombre, True)
+        tipo_codigo = clasificar_codigo_tipo(codigo)
+        cadena = detectar_cadena(establecimiento)
 
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-    param = "%s" if is_postgresql else "?"
+        is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+        param = "%s" if is_postgresql else "?"
 
-    # PASO 1: BUSCAR PRODUCTO EXISTENTE
-    if tipo_codigo == 'EAN' and codigo:
-        cursor.execute(
-            f"SELECT id, nombre_normalizado FROM productos_maestros WHERE codigo_ean = {param}",
-            (codigo,)
-        )
-        resultado = cursor.fetchone()
+        # PASO 1: BUSCAR POR EAN
+        if tipo_codigo == 'EAN' and codigo:
+            try:
+                cursor.execute(
+                    f"SELECT id, nombre_normalizado FROM productos_maestros WHERE codigo_ean = {param}",
+                    (codigo,)
+                )
+                resultado = cursor.fetchone()
 
-        if resultado:
-            producto_id = resultado[0]
-            print(f"   ✅ Encontrado por EAN: ID={producto_id}")
-            return producto_id
+                if resultado and len(resultado) >= 1:
+                    producto_id = resultado[0]
+                    print(f"   ✅ Encontrado por EAN: ID={producto_id}")
+                    return producto_id
+            except Exception as e:
+                print(f"   ⚠️ Error buscando por EAN: {e}")
 
-    # Buscar por nombre similar
-    cursor.execute(f"""
-        SELECT id, nombre_normalizado, codigo_ean
-        FROM productos_maestros
-        WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
-           OR {param} {('ILIKE' if is_postgresql else 'LIKE')} '%' || nombre_normalizado || '%'
-        LIMIT 10
-    """, (f"%{nombre_normalizado[:50]}%", nombre_normalizado))
-
-    candidatos = cursor.fetchall()
-
-    for cand_id, cand_nombre, cand_ean in candidatos:
-        similitud = calcular_similitud(nombre_normalizado, cand_nombre)
-
-        if similitud >= 0.90:
-            producto_id = cand_id
-            print(f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})")
-            return producto_id
-
-    # PASO 2: NO ENCONTRADO → VALIDAR Y CREAR
-    print(f"   ℹ️  Producto no encontrado → Validando...")
-
-    # Inicializar AprendizajeManager
-    aprendizaje_mgr = None
-
-    if APRENDIZAJE_AVAILABLE:
+        # PASO 2: BUSCAR POR NOMBRE SIMILAR
         try:
-            from aprendizaje_manager import AprendizajeManager
-            aprendizaje_mgr = AprendizajeManager(cursor, conn)
+            cursor.execute(f"""
+                SELECT id, nombre_normalizado, codigo_ean
+                FROM productos_maestros
+                WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
+                   OR {param} {('ILIKE' if is_postgresql else 'LIKE')} '%' || nombre_normalizado || '%'
+                LIMIT 10
+            """, (f"%{nombre_normalizado[:50]}%", nombre_normalizado))
+
+            candidatos = cursor.fetchall()
+
+            # ✅ FIX CRÍTICO: VALIDAR CADA TUPLA ANTES DE UNPACK
+            for candidato in candidatos:
+                # Validar que la tupla tenga al menos 3 elementos
+                if not candidato or len(candidato) < 3:
+                    print(f"   ⚠️ Candidato inválido (len={len(candidato) if candidato else 0}), saltando...")
+                    continue
+
+                # Unpack seguro
+                cand_id = candidato[0]
+                cand_nombre = candidato[1]
+                cand_ean = candidato[2]
+
+                # Validar que los valores no sean None
+                if not cand_id or not cand_nombre:
+                    continue
+
+                similitud = calcular_similitud(nombre_normalizado, cand_nombre)
+
+                if similitud >= 0.90:
+                    producto_id = cand_id
+                    print(f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})")
+                    return producto_id
+
         except Exception as e:
-            print(f"   ⚠️ Error AprendizajeManager: {e}")
+            print(f"   ⚠️ Error buscando por similitud: {e}")
+            import traceback
+            traceback.print_exc()
 
-    # Validar con sistema completo
-    resultado_validacion = validar_nombre_con_sistema_completo(
-        nombre_ocr_original=nombre,
-        nombre_corregido=nombre_normalizado,
-        precio=precio,
-        establecimiento=cadena,
-        codigo=codigo,
-        aprendizaje_mgr=aprendizaje_mgr,
-        factura_id=factura_id,
-        usuario_id=usuario_id,
-        item_factura_id=item_factura_id,
-        cursor=cursor
-    )
+        # PASO 3: NO ENCONTRADO → VALIDAR Y CREAR
+        print(f"   ℹ️  Producto no encontrado → Validando...")
 
-    nombre_final = resultado_validacion['nombre_final']
+        # Inicializar AprendizajeManager
+        aprendizaje_mgr = None
 
-    # Crear producto CON PARÁMETROS CORRECTOS
-    producto_id = crear_producto_en_ambas_tablas(
-        cursor=cursor,
-        conn=conn,
-        nombre_normalizado=nombre_final,
-        codigo_ean=codigo if tipo_codigo == 'EAN' else None,
-        marca=None,
-        categoria=None
-    )
+        if APRENDIZAJE_AVAILABLE:
+            try:
+                from aprendizaje_manager import AprendizajeManager
+                aprendizaje_mgr = AprendizajeManager(cursor, conn)
+            except Exception as e:
+                print(f"   ⚠️ Error AprendizajeManager: {e}")
 
-    if not producto_id:
-        print(f"   ❌ CRÍTICO: No se pudo crear '{nombre_final}'")
+        # Validar con sistema completo
+        resultado_validacion = validar_nombre_con_sistema_completo(
+            nombre_ocr_original=nombre,
+            nombre_corregido=nombre_normalizado,
+            precio=precio,
+            establecimiento=cadena,
+            codigo=codigo,
+            aprendizaje_mgr=aprendizaje_mgr,
+            factura_id=factura_id,
+            usuario_id=usuario_id,
+            item_factura_id=item_factura_id,
+            cursor=cursor
+        )
+
+        nombre_final = resultado_validacion['nombre_final']
+
+        # Crear producto CON PARÁMETROS CORRECTOS
+        producto_id = crear_producto_en_ambas_tablas(
+            cursor=cursor,
+            conn=conn,
+            nombre_normalizado=nombre_final,
+            codigo_ean=codigo if tipo_codigo == 'EAN' else None,
+            marca=None,
+            categoria=None
+        )
+
+        if not producto_id:
+            print(f"   ❌ SKIP: No se pudo crear '{nombre_final}'")
+            return None
+
+        print(f"   ✅ Producto nuevo creado: ID={producto_id}")
+        return producto_id
+
+    except Exception as e:
+        print(f"   ❌ ERROR CRÍTICO en buscar_o_crear_producto_inteligente: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
-    return producto_id
-
-
+# MENSAJE DE CARGA
 # MENSAJE DE CARGA
 print("="*80)
-print("✅ product_matcher.py V6.1.1 CARGADO (CON DEBUG)")
+print("✅ product_matcher.py V6.1.2 CARGADO - FIX: tuple index out of range")
 print("="*80)
 print("🎯 SISTEMA INTEGRADO COMPLETO")
 print("   1️⃣ Productos Referencia → 2️⃣ Aprendizaje → 3️⃣ Perplexity → 4️⃣ BD")
