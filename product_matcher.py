@@ -42,6 +42,7 @@ try:
 except ImportError:
     APRENDIZAJE_AVAILABLE = False
     print("⚠️  aprendizaje_manager.py no disponible")
+from typing import Optional, Dict
 
 
 def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = True) -> str:
