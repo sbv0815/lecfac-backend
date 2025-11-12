@@ -9,7 +9,7 @@ Sistema de matching y normalización de productos con aprendizaje automático
 2️⃣ Aprendizaje Automático          → Productos validados previamente
 3️⃣ Productos Maestros              → Búsqueda en catálogo existente
 4️⃣ Validación Perplexity           → Último recurso (cuesta $$$)
-5️⃣ Guardar Aprendizaje             → Aprende para próxima vez
+5️⃣ Guardar Aprendizaje             → Aprende para próxima vez.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 CAMBIOS V6.1:
