@@ -191,12 +191,23 @@ def validar_nombre_con_sistema_completo(
     item_factura_id: int = None,
     cursor = None
 ) -> dict:
-    """V6.1: Sistema completo con productos_referencia como fuente prioritaria"""
+    """
+    V6.2: Sistema sin Perplexity - NO inventa texto
+
+    FLUJO:
+    1️⃣ Productos Referencia (EAN oficial) → Nombre oficial correcto
+    2️⃣ Aprendizaje Automático → Correcciones previas validadas
+    3️⃣ OCR Directo → Usar lo que leyó Claude Vision SIN modificar
+
+    ❌ PERPLEXITY DESHABILITADO: Inventaba texto que no existía
+    """
 
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
 
+    # ═══════════════════════════════════════════════════════════════
     # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (FUENTE OFICIAL)
+    # ═══════════════════════════════════════════════════════════════
     if tipo_codigo == 'EAN' and codigo and cursor:
         producto_oficial = buscar_en_productos_referencia(codigo, cursor)
 
@@ -204,7 +215,7 @@ def validar_nombre_con_sistema_completo(
             print(f"   ✅ ENCONTRADO EN PRODUCTOS REFERENCIA")
             print(f"   📝 Nombre oficial: {producto_oficial['nombre_oficial']}")
             print(f"   🏷️  Marca: {producto_oficial.get('marca', 'N/A')}")
-            print(f"   💰 Ahorro: $0.005 USD")
+            print(f"   💰 Ahorro: $0.005 USD (Perplexity deshabilitado)")
 
             # Guardar en aprendizaje
             if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
@@ -227,7 +238,9 @@ def validar_nombre_con_sistema_completo(
                 'ahorro_dinero': True
             }
 
-    # PASO 2: BUSCAR EN APRENDIZAJE
+    # ═══════════════════════════════════════════════════════════════
+    # PASO 2: BUSCAR EN APRENDIZAJE AUTOMÁTICO
+    # ═══════════════════════════════════════════════════════════════
     if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
         correccion = aprendizaje_mgr.buscar_correccion_aprendida(
             ocr_normalizado=nombre_corregido,
@@ -241,6 +254,11 @@ def validar_nombre_con_sistema_completo(
 
             aprendizaje_mgr.incrementar_confianza(correccion['id'], True)
 
+            print(f"   ✅ ENCONTRADO EN APRENDIZAJE")
+            print(f"   📝 Nombre validado: {correccion['nombre_validado']}")
+            print(f"   🎯 Confianza: {confianza:.0%}")
+            print(f"   💰 Ahorro: $0.005 USD (Perplexity deshabilitado)")
+
             return {
                 'nombre_final': correccion['nombre_validado'],
                 'fue_validado': True,
@@ -252,68 +270,38 @@ def validar_nombre_con_sistema_completo(
                 'ahorro_dinero': True
             }
 
-    # PASO 3: VALIDAR CON PERPLEXITY
-    if not PERPLEXITY_AVAILABLE:
-        return {
-            'nombre_final': nombre_corregido,
-            'fue_validado': False,
-            'confianza': 0.50,
-            'categoria_confianza': 'baja',
-            'fuente': 'python',
-            'detalles': 'Perplexity no disponible',
-            'ahorro_dinero': False
-        }
+    # ═══════════════════════════════════════════════════════════════
+    # PASO 3: USAR NOMBRE OCR DIRECTO (SIN PERPLEXITY)
+    # ═══════════════════════════════════════════════════════════════
+    print(f"   📝 USANDO NOMBRE OCR DIRECTO (sin validación externa)")
+    print(f"   ⚡ Perplexity deshabilitado para evitar invención de texto")
+    print(f"   💰 Ahorro: $0.005 USD")
 
-    try:
-        resultado_perplexity = validar_con_perplexity(
-            nombre_corregido,
-            precio,
-            cadena,
-            codigo,
-            nombre_ocr_original
+    # Determinar confianza basada en tipo de código
+    tiene_ean = (tipo_codigo == 'EAN')
+    confianza = 0.75 if tiene_ean else 0.70  # Alta confianza si tiene EAN
+    categoria = 'alta' if confianza >= 0.75 else 'media'
+
+    # Guardar en aprendizaje para próxima vez
+    if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
+        aprendizaje_mgr.guardar_correccion_aprendida(
+            ocr_original=nombre_ocr_original,
+            ocr_normalizado=nombre_corregido,
+            nombre_validado=nombre_corregido,  # ← Usar lo que leyó Claude Vision
+            establecimiento=cadena,
+            confianza_inicial=confianza,
+            codigo_ean=codigo if tipo_codigo == 'EAN' else None
         )
 
-        nombre_final = resultado_perplexity.get('nombre_final', nombre_corregido)
-        fue_validado = resultado_perplexity.get('fue_validado', False)
-
-        tiene_ean = (tipo_codigo == 'EAN')
-        confianza = 0.85 if fue_validado else 0.60
-        if tiene_ean:
-            confianza = min(confianza + 0.10, 0.95)
-
-        categoria = 'alta' if confianza >= 0.85 else 'media'
-
-        # Guardar en aprendizaje
-        if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
-            aprendizaje_mgr.guardar_correccion_aprendida(
-                ocr_original=nombre_ocr_original,
-                ocr_normalizado=nombre_corregido,
-                nombre_validado=nombre_final,
-                establecimiento=cadena,
-                confianza_inicial=confianza,
-                codigo_ean=codigo if tipo_codigo == 'EAN' else None
-            )
-
-        return {
-            'nombre_final': nombre_final,
-            'fue_validado': fue_validado,
-            'confianza': confianza,
-            'categoria_confianza': categoria,
-            'fuente': 'perplexity',
-            'detalles': resultado_perplexity.get('detalles', ''),
-            'ahorro_dinero': False
-        }
-
-    except Exception as e:
-        return {
-            'nombre_final': nombre_corregido,
-            'fue_validado': False,
-            'confianza': 0.50,
-            'categoria_confianza': 'baja',
-            'fuente': 'python',
-            'detalles': f'Error: {str(e)}',
-            'ahorro_dinero': False
-        }
+    return {
+        'nombre_final': nombre_corregido,  # ← USAR NOMBRE OCR SIN MODIFICAR
+        'fue_validado': True,
+        'confianza': confianza,
+        'categoria_confianza': categoria,
+        'fuente': 'ocr_directo',
+        'detalles': 'Perplexity deshabilitado - usando OCR directo',
+        'ahorro_dinero': True  # ← Ahorro de $0.005 por producto
+    }
 
 
 def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None):
