@@ -628,15 +628,21 @@ def buscar_o_crear_producto_inteligente(
     # ========================================================================
 
     print(f"   ℹ️  Producto no encontrado → Validando...")
-
-    # Inicializar AprendizajeManager si está disponible
+# Inicializar AprendizajeManager si está disponible
     aprendizaje_mgr = None
+    print(f"   🧠 APRENDIZAJE_AVAILABLE: {APRENDIZAJE_AVAILABLE}")
+
     if APRENDIZAJE_AVAILABLE:
         try:
             from aprendizaje_manager import AprendizajeManager
             aprendizaje_mgr = AprendizajeManager(cursor, conn)
+            print(f"   ✅ AprendizajeManager inicializado correctamente")
         except Exception as e:
-            print(f"   ⚠️  No se pudo inicializar AprendizajeManager: {e}")
+            print(f"   ❌ Error inicializando AprendizajeManager: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"   ⚠️  APRENDIZAJE_AVAILABLE = False")
 
     # Validar con sistema completo
     resultado_validacion = validar_nombre_con_sistema_completo(
