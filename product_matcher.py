@@ -18,6 +18,7 @@ CAMBIOS V6.1:
 - ✅ Imports correctos de typing
 - ✅ Threshold de similitud ajustado a 0.90
 - ✅ Búsqueda mejorada con OR en SQL
+    Ojala y funcione.
 """
 
 import re
