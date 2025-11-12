@@ -4741,6 +4741,192 @@ async def verificar_aprendizaje():
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+@app.post("/admin/corregir-aprendizaje/{aprendizaje_id}")
+async def corregir_aprendizaje(
+    aprendizaje_id: int,
+    nombre_correcto: str
+):
+    """
+    Corregir un producto mal aprendido
+
+    Ejemplo:
+    POST /admin/corregir-aprendizaje/3
+    Body: { "nombre_correcto": "ZANAHORIA GRANEL" }
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Actualizar el nombre validado
+        cursor.execute("""
+            UPDATE correcciones_aprendidas
+            SET nombre_validado = %s,
+                fecha_ultima_confirmacion = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING ocr_normalizado, establecimiento
+        """, (nombre_correcto.upper().strip(), aprendizaje_id))
+
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            return {
+                "success": False,
+                "error": f"No se encontró aprendizaje con ID {aprendizaje_id}"
+            }
+
+        conn.commit()
+
+        ocr_norm, establecimiento = resultado
+
+        # Actualizar productos_maestros que usen este nombre
+        cursor.execute("""
+            UPDATE productos_maestros pm
+            SET nombre_normalizado = %s
+            FROM items_factura if_
+            WHERE pm.id = if_.producto_maestro_id
+              AND if_.nombre_leido = %s
+        """, (nombre_correcto.upper().strip(), ocr_norm))
+
+        productos_actualizados = cursor.rowcount
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": f"Aprendizaje corregido: '{ocr_norm}' → '{nombre_correcto}'",
+            "productos_actualizados": productos_actualizados,
+            "establecimiento": establecimiento
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.get("/admin/listar-aprendizaje")
+async def listar_aprendizaje(
+    limite: int = 20,
+    orden: str = "fecha"  # "fecha" o "confianza" o "veces"
+):
+    """
+    Listar productos aprendidos con opción de filtrado
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Determinar orden
+        if orden == "confianza":
+            order_by = "confianza DESC"
+        elif orden == "veces":
+            order_by = "veces_confirmado DESC"
+        else:
+            order_by = "fecha_ultima_confirmacion DESC"
+
+        cursor.execute(f"""
+            SELECT
+                id,
+                ocr_original,
+                ocr_normalizado,
+                nombre_validado,
+                establecimiento,
+                codigo_ean,
+                confianza,
+                veces_confirmado,
+                veces_rechazado,
+                fecha_primera_vez,
+                fecha_ultima_confirmacion,
+                activo
+            FROM correcciones_aprendidas
+            WHERE activo = TRUE
+            ORDER BY {order_by}
+            LIMIT %s
+        """, (limite,))
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append({
+                "id": row[0],
+                "ocr_original": row[1],
+                "ocr_normalizado": row[2],
+                "nombre_validado": row[3],
+                "establecimiento": row[4],
+                "codigo_ean": row[5],
+                "confianza": float(row[6]) if row[6] else 0,
+                "veces_confirmado": row[7],
+                "veces_rechazado": row[8],
+                "fecha_primera_vez": row[9].isoformat() if row[9] else None,
+                "fecha_ultima_confirmacion": row[10].isoformat() if row[10] else None,
+                "activo": row[11]
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "total": len(productos),
+            "productos": productos
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.delete("/admin/eliminar-aprendizaje/{aprendizaje_id}")
+async def eliminar_aprendizaje(aprendizaje_id: int):
+    """
+    Desactivar (soft delete) un aprendizaje incorrecto
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE correcciones_aprendidas
+            SET activo = FALSE
+            WHERE id = %s
+            RETURNING ocr_normalizado, nombre_validado
+        """, (aprendizaje_id,))
+
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            return {
+                "success": False,
+                "error": f"No se encontró aprendizaje con ID {aprendizaje_id}"
+            }
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        ocr_norm, nombre_val = resultado
+
+        return {
+            "success": True,
+            "mensaje": f"Aprendizaje desactivado: '{ocr_norm}' → '{nombre_val}'"
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
@@ -4757,10 +4943,7 @@ if __name__ == "__main__":  # ← AGREGAR :
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
 
-# ==========================================
-# SEGUNDA PARTE - ENDPOINTS ADMINISTRATIVOS Y DEBUG
-# Agregar después de los endpoints básicos en main.py
-# ==========================================
+
 
 # ==========================================
 # ENDPOINTS DE CONSULTA DE JOBS
