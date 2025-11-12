@@ -4928,6 +4928,185 @@ async def eliminar_aprendizaje(aprendizaje_id: int):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/admin/reparar-secuencia")
+async def reparar_secuencia():
+    """
+    Repara la secuencia de IDs de productos_maestros
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener el ID máximo actual
+        cursor.execute("SELECT MAX(id) FROM productos_maestros")
+        max_id = cursor.fetchone()[0] or 0
+
+        # Reiniciar la secuencia
+        cursor.execute(f"""
+            SELECT setval('productos_maestros_id_seq', {max_id}, true)
+        """)
+
+        # Verificar
+        cursor.execute("SELECT last_value FROM productos_maestros_id_seq")
+        nuevo_valor = cursor.fetchone()[0]
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": "Secuencia reparada",
+            "max_id_actual": max_id,
+            "siguiente_id": nuevo_valor + 1
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+@app.get("/admin/encontrar-duplicados")
+async def encontrar_duplicados(limite: int = 50):
+    """
+    Encuentra productos duplicados por similitud de nombre
+    """
+    try:
+        from database import get_db_connection
+        from product_matcher import calcular_similitud
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener todos los productos
+        cursor.execute("""
+            SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
+            FROM productos_maestros
+            ORDER BY id DESC
+            LIMIT %s
+        """, (limite * 2,))
+
+        productos = cursor.fetchall()
+        duplicados = []
+
+        # Comparar cada producto con los demás
+        for i in range(len(productos)):
+            for j in range(i + 1, len(productos)):
+                id1, nombre1, ean1, precio1 = productos[i]
+                id2, nombre2, ean2, precio2 = productos[j]
+
+                # Mismo EAN = duplicado
+                if ean1 and ean2 and ean1 == ean2:
+                    duplicados.append({
+                        "id1": id1,
+                        "nombre1": nombre1,
+                        "id2": id2,
+                        "nombre2": nombre2,
+                        "similitud": 1.0,
+                        "razon": "Mismo EAN"
+                    })
+                    continue
+
+                # Similitud de nombre
+                sim = calcular_similitud(nombre1, nombre2)
+
+                if sim >= 0.90:
+                    duplicados.append({
+                        "id1": id1,
+                        "nombre1": nombre1,
+                        "id2": id2,
+                        "nombre2": nombre2,
+                        "similitud": round(sim, 2),
+                        "razon": "Nombre similar"
+                    })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "total_duplicados": len(duplicados),
+            "duplicados": duplicados[:limite]
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@app.post("/admin/fusionar-productos")
+async def fusionar_productos(
+    producto_principal_id: int,
+    productos_duplicados: list[int]
+):
+    """
+    Fusiona productos duplicados en uno solo
+
+    Ejemplo:
+    POST /admin/fusionar-productos
+    Body: {
+        "producto_principal_id": 150,
+        "productos_duplicados": [228, 230, 231]
+    }
+    """
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        fusionados = 0
+
+        for dup_id in productos_duplicados:
+            # Actualizar items_factura
+            cursor.execute("""
+                UPDATE items_factura
+                SET producto_maestro_id = %s
+                WHERE producto_maestro_id = %s
+            """, (producto_principal_id, dup_id))
+
+            items_actualizados = cursor.rowcount
+
+            # Actualizar inventario_usuario
+            cursor.execute("""
+                UPDATE inventario_usuario
+                SET producto_maestro_id = %s
+                WHERE producto_maestro_id = %s
+            """, (producto_principal_id, dup_id))
+
+            # Eliminar producto duplicado
+            cursor.execute("""
+                DELETE FROM productos_maestros
+                WHERE id = %s
+            """, (dup_id,))
+
+            fusionados += 1
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": f"{fusionados} productos fusionados en ID {producto_principal_id}"
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
