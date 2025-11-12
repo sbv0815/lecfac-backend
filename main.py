@@ -481,6 +481,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+
 from routes import productos_admin
 app.include_router(productos_admin.router)
 # ==========================================
@@ -6093,6 +6095,45 @@ async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
 
 print("✅ Todos los endpoints administrativos y de debug cargados")
 
+@app.get("/debug/fix-status")
+async def check_fix_status():
+    """Verificar si el fix está presente"""
+    try:
+        import product_matcher
+        import inspect
 
+        source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
+
+        tiene_fix_1 = 'fetchone() retornó None' in source_code
+        tiene_fix_2 = 'fallback manual' in source_code.lower()
+        tiene_fix_3 = 'if not resultado:' in source_code
+
+        fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
+
+        # Intentar leer archivo de status
+        status_file = None
+        try:
+            with open('/tmp/fix_status.txt', 'r') as f:
+                status_file = f.read()
+        except:
+            pass
+
+        return {
+            "fix_presente": fix_completo,
+            "verificaciones": {
+                "string_fetchone": tiene_fix_1,
+                "string_fallback": tiene_fix_2,
+                "string_if_not": tiene_fix_3
+            },
+            "status_file": status_file,
+            "version_esperada": "V6.1",
+            "mensaje": "✅ FIX PRESENTE" if fix_completo else "❌ FIX AUSENTE"
+        }
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 # Force rebuild 11/12/2025 14:11:42
