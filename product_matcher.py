@@ -25,10 +25,10 @@ CAMBIOS V6.0:
 
 import re
 from unidecode import unidecode
+from typing import Optional, Dict, Any
 
 # Importar módulos
-CORRECCIONES_OCR_AVAILABLE = False  # Módulo no usado actualmente
-
+CORRECCIONES_OCR_AVAILABLE = False
 try:
     from perplexity_validator import validar_con_perplexity
     PERPLEXITY_AVAILABLE = True
