@@ -319,26 +319,35 @@ def validar_nombre_con_sistema_completo(
 def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None):
     """
     Crea producto en productos_maestros con manejo robusto de errores
-    V6.1.1 - Con logs de debug y validación de tipos
+    V6.1.2 - FIX DEFINITIVO: tuple index out of range
     """
     try:
         # 🔍 DEBUG - Validar parámetros recibidos
         print(f"   🐛 [DEBUG] crear_producto_en_ambas_tablas llamado:")
-        print(f"      cursor: {type(cursor).__name__}")
-        print(f"      conn: {type(conn).__name__}")
-        print(f"      nombre_normalizado: '{nombre_normalizado}' (type: {type(nombre_normalizado).__name__})")
-        print(f"      codigo_ean: '{codigo_ean}' (type: {type(codigo_ean).__name__ if codigo_ean else 'None'})")
-        print(f"      marca: '{marca}' (type: {type(marca).__name__ if marca else 'None'})")
-        print(f"      categoria: '{categoria}' (type: {type(categoria).__name__ if categoria else 'None'})")
+        print(f"      nombre_normalizado: '{nombre_normalizado}'")
+        print(f"      codigo_ean: '{codigo_ean}'")
+        print(f"      marca: '{marca}'")
+        print(f"      categoria: '{categoria}'")
+
+        # ✅ VALIDAR PARÁMETROS (no pueden ser None)
+        if not nombre_normalizado or not nombre_normalizado.strip():
+            print(f"   ❌ ERROR: nombre_normalizado vacío")
+            return None
 
         # Construir nombre final
         nombre_final = nombre_normalizado.strip().upper()
         if marca and marca.strip():
             nombre_final = f"{marca.strip().upper()} {nombre_final}"
 
-        print(f"   📝 Creando producto: {nombre_final}")
+        # ✅ CONVERTIR None A VALORES SQL VÁLIDOS
+        codigo_ean_safe = codigo_ean if codigo_ean and codigo_ean.strip() else None
+        marca_safe = marca if marca and marca.strip() else None
+        categoria_safe = categoria if categoria and categoria.strip() else None
 
-        # Insertar
+        print(f"   📝 Creando producto: {nombre_final}")
+        print(f"   🔍 Valores seguros: EAN={codigo_ean_safe}, Marca={marca_safe}, Cat={categoria_safe}")
+
+        # ✅ FIX: USAR RETURNING id CORRECTAMENTE
         cursor.execute("""
             INSERT INTO productos_maestros (
                 codigo_ean, nombre_normalizado, marca, categoria,
@@ -346,37 +355,40 @@ def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=
                 primera_vez_reportado, ultima_actualizacion
             ) VALUES (%s, %s, %s, %s, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
-        """, (codigo_ean, nombre_final, marca, categoria))
+        """, (codigo_ean_safe, nombre_final, marca_safe, categoria_safe))
 
-        # ✅ FIX V6.1 - MANEJO ROBUSTO DE ERRORES
+        # ✅ FIX CRÍTICO: VALIDAR ANTES DE ACCEDER
         resultado = cursor.fetchone()
 
         if not resultado:
-            print(f"   ❌ ERROR: fetchone() retornó None")
-            print(f"   🔄 Intentando fallback manual...")
+            print(f"   ❌ ERROR: INSERT no retornó ID")
+            conn.rollback()
+            return None
 
-            # Fallback: buscar manualmente el producto recién creado
-            cursor.execute("""
-                SELECT id FROM productos_maestros
-                WHERE nombre_normalizado = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """, (nombre_final,))
+        if len(resultado) == 0:
+            print(f"   ❌ ERROR: RETURNING id retornó tupla vacía")
+            conn.rollback()
+            return None
 
-            resultado = cursor.fetchone()
-
-            if not resultado:
-                print(f"   ❌ CRÍTICO: No se pudo recuperar el ID del producto")
-                conn.rollback()
-                return None
-
-            print(f"   ✅ Recuperado por fallback: ID {resultado[0]}")
-
+        # ✅ ACCESO SEGURO AL ID
         producto_id = resultado[0]
-        conn.commit()
 
-        print(f"   ✅ Producto creado: ID {producto_id}")
+        if not producto_id or producto_id <= 0:
+            print(f"   ❌ ERROR: ID inválido: {producto_id}")
+            conn.rollback()
+            return None
+
+        conn.commit()
+        print(f"   ✅ Producto creado exitosamente: ID {producto_id}")
         return producto_id
+
+    except IndexError as e:
+        print(f"   ❌ IndexError en crear_producto_en_ambas_tablas: {e}")
+        print(f"   🔍 resultado = {resultado if 'resultado' in locals() else 'NO DEFINIDO'}")
+        import traceback
+        traceback.print_exc()
+        conn.rollback()
+        return None
 
     except Exception as e:
         print(f"   ❌ Error en crear_producto_en_ambas_tablas: {e}")
