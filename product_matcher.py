@@ -142,7 +142,8 @@ def detectar_cadena(establecimiento: str) -> str:
         'D1': 'D1',
         'ARA': 'ARA',
         'CRUZ VERDE': 'CRUZ VERDE',
-        'FARMATODO': 'FARMATODO'
+        'FARMATODO': 'FARMATODO',
+        'SUPERMERCADOS PREMIUM':'SUPERMERCADOS PREMIUM',
     }
 
     for cadena_key, cadena_value in cadenas.items():
@@ -151,6 +152,83 @@ def detectar_cadena(establecimiento: str) -> str:
 
     return establecimiento_upper.split()[0] if establecimiento_upper else "DESCONOCIDO"
 
+def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str, Any]]:
+    """
+    Busca producto en la tabla de referencia oficial
+
+    Args:
+        codigo_ean: Código EAN-13 del producto
+        cursor: Cursor de base de datos
+
+    Returns:
+        Dict con datos oficiales del producto o None si no existe
+    """
+    import os
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+    param = "%s" if is_postgresql else "?"
+
+    if not codigo_ean or len(codigo_ean) < 8:
+        return None
+
+    try:
+        cursor.execute(f"""
+            SELECT
+                codigo_ean,
+                nombre,
+                marca,
+                categoria,
+                presentacion,
+                unidad_medida
+            FROM productos_referencia
+            WHERE codigo_ean = {param}
+            LIMIT 1
+        """, (codigo_ean,))
+
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            return None
+
+        # Extraer campos
+        ean = resultado[0]
+        nombre = resultado[1] or ""
+        marca = resultado[2] or ""
+        categoria = resultado[3] or ""
+        presentacion = resultado[4] or ""
+        unidad_medida = resultado[5] or ""
+
+        # Construir nombre completo: MARCA NOMBRE PRESENTACION UNIDAD_MEDIDA
+        # Ejemplo: "KIKES HUEVO ROJO AA 30 UNIDADES"
+        partes = []
+
+        if marca:
+            partes.append(marca.upper().strip())
+        if nombre:
+            partes.append(nombre.upper().strip())
+        if presentacion:
+            partes.append(presentacion.upper().strip())
+        if unidad_medida and unidad_medida.upper() not in ['UNIDAD', 'UND', 'U']:
+            # Solo agregar unidad si no es redundante
+            partes.append(unidad_medida.upper().strip())
+
+        nombre_oficial = " ".join(partes)
+
+        return {
+            'codigo_ean': ean,
+            'nombre_oficial': nombre_oficial,
+            'marca': marca,
+            'nombre': nombre,
+            'presentacion': presentacion,
+            'categoria': categoria,
+            'unidad_medida': unidad_medida,
+            'fuente': 'productos_referencia'
+        }
+
+    except Exception as e:
+        print(f"   ⚠️ Error buscando en productos_referencia: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 def validar_nombre_con_sistema_completo(
     nombre_ocr_original: str,
@@ -161,29 +239,17 @@ def validar_nombre_con_sistema_completo(
     aprendizaje_mgr = None,
     factura_id: int = None,
     usuario_id: int = None,
-    item_factura_id: int = None
+    item_factura_id: int = None,
+    cursor = None  # ← NUEVO
 ) -> dict:
     """
-    V6.0: Sistema completo de validación con aprendizaje automático
+    V6.1: Sistema completo con productos_referencia como fuente prioritaria
 
     Flujo:
-    1. Busca en aprendizaje (por EAN, específico, genérico)
-    2. Si no encuentra o confianza baja → Perplexity
-    3. Guarda resultado en aprendizaje para próxima vez
-
-    Args:
-        nombre_ocr_original: Texto original del OCR
-        nombre_corregido: Nombre normalizado
-        precio: Precio del producto
-        establecimiento: Nombre del establecimiento
-        codigo: Código del producto (EAN o PLU)
-        aprendizaje_mgr: Instancia de AprendizajeManager
-        factura_id: ID de la factura (opcional)
-        usuario_id: ID del usuario (opcional)
-        item_factura_id: ID del item (opcional)
-
-    Returns:
-        Dict con resultado de validación
+    1. Busca en productos_referencia (OFICIAL - máxima prioridad)
+    2. Busca en aprendizaje (productos validados previamente)
+    3. Si no encuentra → Perplexity
+    4. Guarda resultado en aprendizaje para próxima vez
     """
 
     print(f"\n🔍 VALIDACIÓN SISTEMA COMPLETO:")
@@ -196,9 +262,49 @@ def validar_nombre_con_sistema_completo(
     cadena = detectar_cadena(establecimiento)
 
     # ========================================================================
-    # PASO 1: BUSCAR EN APRENDIZAJE
+    # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (FUENTE OFICIAL)
     # ========================================================================
-    print(f"\n3️⃣ CAPA 3 - APRENDIZAJE AUTOMÁTICO:")
+    if tipo_codigo == 'EAN' and codigo and cursor:
+        print(f"\n1️⃣ CAPA 1 - PRODUCTOS REFERENCIA (OFICIAL):")
+
+        producto_oficial = buscar_en_productos_referencia(codigo, cursor)
+
+        if producto_oficial:
+            print(f"   ✅ ENCONTRADO EN PRODUCTOS REFERENCIA")
+            print(f"   📝 Nombre oficial: {producto_oficial['nombre_oficial']}")
+            print(f"   🏷️  Marca: {producto_oficial.get('marca', 'N/A')}")
+            print(f"   📦 Presentación: {producto_oficial.get('presentacion', 'N/A')}")
+            print(f"   📂 Categoría: {producto_oficial.get('categoria', 'N/A')}")
+            print(f"   💰 Ahorro: $0.005 USD (no se llamó Perplexity)")
+
+            # Guardar en aprendizaje para acelerar próximas búsquedas
+            if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
+                aprendizaje_mgr.guardar_correccion_aprendida(
+                    ocr_original=nombre_ocr_original,
+                    ocr_normalizado=nombre_corregido,
+                    nombre_validado=producto_oficial['nombre_oficial'],
+                    establecimiento=cadena,
+                    confianza_inicial=0.95,  # Máxima confianza
+                    codigo_ean=codigo
+                )
+
+            return {
+                'nombre_final': producto_oficial['nombre_oficial'],
+                'fue_validado': True,
+                'confianza': 0.95,
+                'categoria_confianza': 'alta',
+                'fuente': 'productos_referencia',
+                'detalles': f"Código EAN oficial: {codigo}",
+                'ahorro_dinero': True,
+                'producto_oficial': producto_oficial
+            }
+        else:
+            print(f"   ℹ️  No encontrado en productos_referencia")
+
+    # ========================================================================
+    # PASO 2: BUSCAR EN APRENDIZAJE
+    # ========================================================================
+    print(f"\n2️⃣ CAPA 2 - APRENDIZAJE AUTOMÁTICO:")
 
     if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
         correccion = aprendizaje_mgr.buscar_correccion_aprendida(
@@ -216,6 +322,7 @@ def validar_nombre_con_sistema_completo(
             print(f"   📊 Confianza: {confianza:.2f} ({categoria})")
             print(f"   📈 Confirmado: {correccion['veces_confirmado']} veces")
             print(f"   🔍 Fuente: {correccion.get('fuente_busqueda', 'desconocido')}")
+            print(f"   💰 Ahorro: $0.005 USD")
 
             # Incrementar confianza por uso exitoso
             aprendizaje_mgr.incrementar_confianza(correccion['id'], True)
@@ -228,7 +335,7 @@ def validar_nombre_con_sistema_completo(
                 'fuente': 'aprendizaje',
                 'detalles': f"Usado {correccion['veces_confirmado']} veces",
                 'aprendizaje_id': correccion['id'],
-                'ahorro_dinero': True  # No se llamó a Perplexity
+                'ahorro_dinero': True
             }
         else:
             print(f"   ℹ️  No encontrado en aprendizaje (o confianza baja)")
@@ -236,9 +343,9 @@ def validar_nombre_con_sistema_completo(
         print(f"   ⚠️  Sistema de aprendizaje no disponible")
 
     # ========================================================================
-    # PASO 2: VALIDAR CON PERPLEXITY
+    # PASO 3: VALIDAR CON PERPLEXITY (ÚLTIMO RECURSO)
     # ========================================================================
-    print(f"\n4️⃣ CAPA 4 - VALIDACIÓN PERPLEXITY:")
+    print(f"\n3️⃣ CAPA 3 - VALIDACIÓN PERPLEXITY:")
 
     if not PERPLEXITY_AVAILABLE:
         print(f"   ⚠️  Perplexity no disponible")
@@ -264,7 +371,7 @@ def validar_nombre_con_sistema_completo(
         nombre_final = resultado_perplexity.get('nombre_final', nombre_corregido)
         fue_validado = resultado_perplexity.get('fue_validado', False)
 
-        # Calcular confianza basada en múltiples factores
+        # Calcular confianza
         tiene_ean = (tipo_codigo == 'EAN')
         confianza = 0.85 if fue_validado else 0.60
         if tiene_ean:
@@ -278,10 +385,10 @@ def validar_nombre_con_sistema_completo(
         print(f"   💰 Costo: ~$0.005 USD")
 
         # ====================================================================
-        # PASO 3: GUARDAR EN APRENDIZAJE PARA PRÓXIMA VEZ
+        # PASO 4: GUARDAR EN APRENDIZAJE
         # ====================================================================
         if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
-            print(f"\n5️⃣ GUARDANDO EN APRENDIZAJE:")
+            print(f"\n4️⃣ GUARDANDO EN APRENDIZAJE:")
 
             aprendizaje_id = aprendizaje_mgr.guardar_correccion_aprendida(
                 ocr_original=nombre_ocr_original,
@@ -305,7 +412,7 @@ def validar_nombre_con_sistema_completo(
             'categoria_confianza': categoria,
             'fuente': 'perplexity',
             'detalles': resultado_perplexity.get('detalles', ''),
-            'ahorro_dinero': False  # Se llamó a Perplexity
+            'ahorro_dinero': False
         }
 
     except Exception as e:
