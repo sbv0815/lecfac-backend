@@ -94,7 +94,7 @@ from auth import router as auth_router
 def verify_jwt_token(token: str):
     """
     Verifica y decodifica un token JWT
-    Retorna el payload si es válido, None si es inválido
+    Retorna el payload si es válido, None si es inválido.
     """
     try:
         import jwt
