@@ -1,26 +1,23 @@
 """
-product_matcher.py - VERSIÓN 6.0 - INTEGRACIÓN CON APRENDIZAJE V2.0
+product_matcher.py - VERSIÓN 6.1 - INTEGRACIÓN COMPLETA
 ========================================================================
 Sistema de matching y normalización de productos con aprendizaje automático
 
-🎯 FLUJO COMPLETO V6.0:
+🎯 FLUJO COMPLETO V6.1:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1️⃣ OCR (Claude Vision)           → "oso  blanco" (datos crudos)
-2️⃣ Correcciones Python            → "QUESO BLANCO" (corregido)
-3️⃣ Búsqueda Aprendizaje           → ¿Ya lo conocemos?
-   ├─ ENCONTRADO (conf ≥70%)     → Usar nombre aprendido ✅ AHORRA $$$
-   └─ NO ENCONTRADO              → Continuar ↓
-4️⃣ Validación Perplexity          → "QUESO BLANCO COLANTA 500G"
-5️⃣ Guardar Aprendizaje            → Aprende para próxima vez
-6️⃣ Base de Datos                  → Guarda en productos_maestros
+1️⃣ Productos Referencia (OFICIAL)  → Datos oficiales con EAN
+2️⃣ Aprendizaje Automático          → Productos validados previamente
+3️⃣ Productos Maestros              → Búsqueda en catálogo existente
+4️⃣ Validación Perplexity           → Último recurso (cuesta $$$)
+5️⃣ Guardar Aprendizaje             → Aprende para próxima vez
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CAMBIOS V6.0:
-- ✅ Compatible con aprendizaje_manager.py V2.0
-- ✅ Usa esquema real de Railway (verificado)
-- ✅ Búsqueda inteligente: EAN → Específico → Genérico
-- ✅ Guarda automáticamente en aprendizaje después de Perplexity
-- ✅ Maneja confianza y feedback correctamente
+CAMBIOS V6.1:
+- ✅ Integración con productos_referencia (fuente oficial)
+- ✅ Manejo robusto de errores en crear_producto_en_ambas_tablas
+- ✅ Imports correctos de typing
+- ✅ Threshold de similitud ajustado a 0.90
+- ✅ Búsqueda mejorada con OR en SQL
 """
 
 import re
@@ -29,6 +26,7 @@ from typing import Optional, Dict, Any
 
 # Importar módulos
 CORRECCIONES_OCR_AVAILABLE = False
+
 try:
     from perplexity_validator import validar_con_perplexity
     PERPLEXITY_AVAILABLE = True
@@ -42,28 +40,17 @@ try:
 except ImportError:
     APRENDIZAJE_AVAILABLE = False
     print("⚠️  aprendizaje_manager.py no disponible")
-from typing import Optional, Dict
 
 
 def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = True) -> str:
     """
     Normaliza nombre del producto para búsquedas
-
-    Args:
-        nombre: Nombre original del producto
-        aplicar_correcciones_ocr: Si debe aplicar correcciones OCR (deprecado, siempre usa normalización básica)
-
-    Returns:
-        Nombre normalizado (uppercase, sin tildes, sin caracteres especiales)
     """
     if not nombre:
         return ""
 
-    # Normalización básica (sin dependencia de correcciones_ocr)
     nombre = nombre.upper()
     nombre = unidecode(nombre)
-
-    # Limpiar caracteres especiales
     nombre = re.sub(r'[^\w\s]', ' ', nombre)
     nombre = re.sub(r'\s+', ' ', nombre)
 
@@ -73,22 +60,16 @@ def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = Tru
 def calcular_similitud(nombre1: str, nombre2: str) -> float:
     """
     Calcula similitud entre dos nombres de productos
-
-    Returns:
-        Float entre 0.0 y 1.0 (1.0 = idénticos)
     """
     n1 = normalizar_nombre_producto(nombre1, False)
     n2 = normalizar_nombre_producto(nombre2, False)
 
-    # Nombres idénticos
     if n1 == n2:
         return 1.0
 
-    # Uno contiene al otro
     if n1 in n2 or n2 in n1:
         return 0.8 + (0.2 * min(len(n1), len(n2)) / max(len(n1), len(n2)))
 
-    # Similitud por palabras en común
     palabras1 = set(n1.split())
     palabras2 = set(n2.split())
 
@@ -101,9 +82,6 @@ def calcular_similitud(nombre1: str, nombre2: str) -> float:
 def clasificar_codigo_tipo(codigo: str) -> str:
     """
     Clasifica el tipo de código del producto
-
-    Returns:
-        'EAN', 'PLU', o 'DESCONOCIDO'
     """
     if not codigo:
         return 'DESCONOCIDO'
@@ -111,9 +89,9 @@ def clasificar_codigo_tipo(codigo: str) -> str:
     codigo_limpio = ''.join(filter(str.isdigit, str(codigo)))
     longitud = len(codigo_limpio)
 
-    if longitud >= 8:  # EAN-8, EAN-13, UPC
+    if longitud >= 8:
         return 'EAN'
-    elif 3 <= longitud <= 7:  # PLU codes
+    elif 3 <= longitud <= 7:
         return 'PLU'
 
     return 'DESCONOCIDO'
@@ -122,19 +100,12 @@ def clasificar_codigo_tipo(codigo: str) -> str:
 def detectar_cadena(establecimiento: str) -> str:
     """
     Detecta la cadena principal del establecimiento
-
-    Args:
-        establecimiento: Nombre completo del establecimiento
-
-    Returns:
-        Cadena normalizada (JUMBO, EXITO, etc.)
     """
     if not establecimiento:
         return "DESCONOCIDO"
 
     establecimiento_upper = establecimiento.upper()
 
-    # Mapeo de cadenas conocidas
     cadenas = {
         'JUMBO': 'JUMBO',
         'EXITO': 'EXITO',
@@ -143,8 +114,7 @@ def detectar_cadena(establecimiento: str) -> str:
         'D1': 'D1',
         'ARA': 'ARA',
         'CRUZ VERDE': 'CRUZ VERDE',
-        'FARMATODO': 'FARMATODO',
-        'SUPERMERCADOS PREMIUM':'SUPERMERCADOS PREMIUM',
+        'FARMATODO': 'FARMATODO'
     }
 
     for cadena_key, cadena_value in cadenas.items():
@@ -152,6 +122,7 @@ def detectar_cadena(establecimiento: str) -> str:
             return cadena_value
 
     return establecimiento_upper.split()[0] if establecimiento_upper else "DESCONOCIDO"
+
 
 def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str, Any]]:
     """
@@ -198,8 +169,7 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
         presentacion = resultado[4] or ""
         unidad_medida = resultado[5] or ""
 
-        # Construir nombre completo: MARCA NOMBRE PRESENTACION UNIDAD_MEDIDA
-        # Ejemplo: "KIKES HUEVO ROJO AA 30 UNIDADES"
+        # Construir nombre completo
         partes = []
 
         if marca:
@@ -209,7 +179,6 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
         if presentacion:
             partes.append(presentacion.upper().strip())
         if unidad_medida and unidad_medida.upper() not in ['UNIDAD', 'UND', 'U']:
-            # Solo agregar unidad si no es redundante
             partes.append(unidad_medida.upper().strip())
 
         nombre_oficial = " ".join(partes)
@@ -227,9 +196,8 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
 
     except Exception as e:
         print(f"   ⚠️ Error buscando en productos_referencia: {e}")
-        import traceback
-        traceback.print_exc()
         return None
+
 
 def validar_nombre_con_sistema_completo(
     nombre_ocr_original: str,
@@ -241,23 +209,11 @@ def validar_nombre_con_sistema_completo(
     factura_id: int = None,
     usuario_id: int = None,
     item_factura_id: int = None,
-    cursor = None  # ← NUEVO
+    cursor = None
 ) -> dict:
     """
     V6.1: Sistema completo con productos_referencia como fuente prioritaria
-
-    Flujo:
-    1. Busca en productos_referencia (OFICIAL - máxima prioridad)
-    2. Busca en aprendizaje (productos validados previamente)
-    3. Si no encuentra → Perplexity
-    4. Guarda resultado en aprendizaje para próxima vez
     """
-
-    print(f"\n🔍 VALIDACIÓN SISTEMA COMPLETO:")
-    print(f"   OCR Original: {nombre_ocr_original}")
-    print(f"   Corregido: {nombre_corregido}")
-    print(f"   Establecimiento: {establecimiento}")
-    print(f"   Código: {codigo or 'Sin código'}")
 
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
@@ -266,26 +222,22 @@ def validar_nombre_con_sistema_completo(
     # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (FUENTE OFICIAL)
     # ========================================================================
     if tipo_codigo == 'EAN' and codigo and cursor:
-        print(f"\n1️⃣ CAPA 1 - PRODUCTOS REFERENCIA (OFICIAL):")
-
         producto_oficial = buscar_en_productos_referencia(codigo, cursor)
 
         if producto_oficial:
             print(f"   ✅ ENCONTRADO EN PRODUCTOS REFERENCIA")
             print(f"   📝 Nombre oficial: {producto_oficial['nombre_oficial']}")
             print(f"   🏷️  Marca: {producto_oficial.get('marca', 'N/A')}")
-            print(f"   📦 Presentación: {producto_oficial.get('presentacion', 'N/A')}")
-            print(f"   📂 Categoría: {producto_oficial.get('categoria', 'N/A')}")
-            print(f"   💰 Ahorro: $0.005 USD (no se llamó Perplexity)")
+            print(f"   💰 Ahorro: $0.005 USD")
 
-            # Guardar en aprendizaje para acelerar próximas búsquedas
+            # Guardar en aprendizaje
             if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
                 aprendizaje_mgr.guardar_correccion_aprendida(
                     ocr_original=nombre_ocr_original,
                     ocr_normalizado=nombre_corregido,
                     nombre_validado=producto_oficial['nombre_oficial'],
                     establecimiento=cadena,
-                    confianza_inicial=0.95,  # Máxima confianza
+                    confianza_inicial=0.95,
                     codigo_ean=codigo
                 )
 
@@ -296,17 +248,12 @@ def validar_nombre_con_sistema_completo(
                 'categoria_confianza': 'alta',
                 'fuente': 'productos_referencia',
                 'detalles': f"Código EAN oficial: {codigo}",
-                'ahorro_dinero': True,
-                'producto_oficial': producto_oficial
+                'ahorro_dinero': True
             }
-        else:
-            print(f"   ℹ️  No encontrado en productos_referencia")
 
     # ========================================================================
     # PASO 2: BUSCAR EN APRENDIZAJE
     # ========================================================================
-    print(f"\n2️⃣ CAPA 2 - APRENDIZAJE AUTOMÁTICO:")
-
     if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
         correccion = aprendizaje_mgr.buscar_correccion_aprendida(
             ocr_normalizado=nombre_corregido,
@@ -318,14 +265,6 @@ def validar_nombre_con_sistema_completo(
             confianza = correccion['confianza']
             categoria = 'alta' if confianza >= 0.85 else 'media'
 
-            print(f"   ✅ ENCONTRADO EN APRENDIZAJE")
-            print(f"   📝 Nombre: {correccion['nombre_validado']}")
-            print(f"   📊 Confianza: {confianza:.2f} ({categoria})")
-            print(f"   📈 Confirmado: {correccion['veces_confirmado']} veces")
-            print(f"   🔍 Fuente: {correccion.get('fuente_busqueda', 'desconocido')}")
-            print(f"   💰 Ahorro: $0.005 USD")
-
-            # Incrementar confianza por uso exitoso
             aprendizaje_mgr.incrementar_confianza(correccion['id'], True)
 
             return {
@@ -338,18 +277,11 @@ def validar_nombre_con_sistema_completo(
                 'aprendizaje_id': correccion['id'],
                 'ahorro_dinero': True
             }
-        else:
-            print(f"   ℹ️  No encontrado en aprendizaje (o confianza baja)")
-    else:
-        print(f"   ⚠️  Sistema de aprendizaje no disponible")
 
     # ========================================================================
-    # PASO 3: VALIDAR CON PERPLEXITY (ÚLTIMO RECURSO)
+    # PASO 3: VALIDAR CON PERPLEXITY
     # ========================================================================
-    print(f"\n3️⃣ CAPA 3 - VALIDACIÓN PERPLEXITY:")
-
     if not PERPLEXITY_AVAILABLE:
-        print(f"   ⚠️  Perplexity no disponible")
         return {
             'nombre_final': nombre_corregido,
             'fue_validado': False,
@@ -372,7 +304,6 @@ def validar_nombre_con_sistema_completo(
         nombre_final = resultado_perplexity.get('nombre_final', nombre_corregido)
         fue_validado = resultado_perplexity.get('fue_validado', False)
 
-        # Calcular confianza
         tiene_ean = (tipo_codigo == 'EAN')
         confianza = 0.85 if fue_validado else 0.60
         if tiene_ean:
@@ -380,18 +311,9 @@ def validar_nombre_con_sistema_completo(
 
         categoria = 'alta' if confianza >= 0.85 else 'media'
 
-        print(f"   ✅ VALIDADO CON PERPLEXITY")
-        print(f"   📝 Nombre final: {nombre_final}")
-        print(f"   📊 Confianza: {confianza:.2f} ({categoria})")
-        print(f"   💰 Costo: ~$0.005 USD")
-
-        # ====================================================================
-        # PASO 4: GUARDAR EN APRENDIZAJE
-        # ====================================================================
+        # Guardar en aprendizaje
         if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
-            print(f"\n4️⃣ GUARDANDO EN APRENDIZAJE:")
-
-            aprendizaje_id = aprendizaje_mgr.guardar_correccion_aprendida(
+            aprendizaje_mgr.guardar_correccion_aprendida(
                 ocr_original=nombre_ocr_original,
                 ocr_normalizado=nombre_corregido,
                 nombre_validado=nombre_final,
@@ -399,12 +321,6 @@ def validar_nombre_con_sistema_completo(
                 confianza_inicial=confianza,
                 codigo_ean=codigo if tipo_codigo == 'EAN' else None
             )
-
-            if aprendizaje_id:
-                print(f"   ✅ Guardado en aprendizaje (ID: {aprendizaje_id})")
-                print(f"   💡 Próxima vez será instantáneo y gratis")
-            else:
-                print(f"   ⚠️  No se pudo guardar en aprendizaje")
 
         return {
             'nombre_final': nombre_final,
@@ -417,7 +333,6 @@ def validar_nombre_con_sistema_completo(
         }
 
     except Exception as e:
-        print(f"   ❌ Error en Perplexity: {e}")
         return {
             'nombre_final': nombre_corregido,
             'fue_validado': False,
@@ -439,28 +354,15 @@ def crear_producto_en_ambas_tablas(
 ):
     """
     Crea producto en productos_maestros y productos_maestros_v2
-    CON MANEJO ROBUSTO DE ERRORES - V6.1
-
-    Args:
-        codigo_ean: Código EAN del producto (puede ser None)
-        nombre_final: Nombre validado del producto
-        precio: Precio del producto
-        cursor: Cursor de la base de datos
-        conn: Conexión a la base de datos
-        metadatos: Dict con información adicional (opcional)
-
-    Returns:
-        ID del producto creado o None si falla
+    V6.1 - CON MANEJO ROBUSTO DE ERRORES
     """
     import os
     is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
 
     if metadatos:
-        print(f"\n   📊 Metadatos de validación:")
-        print(f"      Fuente: {metadatos.get('fuente', 'desconocido')}")
-        print(f"      Confianza: {metadatos.get('confianza', 0):.2f}")
+        fuente = metadatos.get('fuente', 'desconocido')
         if metadatos.get('ahorro_dinero'):
-            print(f"      💰 Ahorro: $0.005 USD (no se llamó Perplexity)")
+            print(f"      💰 Ahorro: $0.005 USD (fuente: {fuente})")
 
     try:
         # Crear en productos_maestros
@@ -490,15 +392,13 @@ def crear_producto_en_ambas_tablas(
                 VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """, (codigo_ean, nombre_final, precio))
 
-        # Obtener ID
+        # Obtener ID con manejo de errores
         resultado = cursor.fetchone()
 
         if not resultado:
-            print(f"   ❌ ERROR: No se obtuvo ID del INSERT")
-            print(f"      Producto: {nombre_final}")
-            print(f"      Intentando obtener ID manualmente...")
+            print(f"   ❌ ERROR: fetchone() retornó None")
 
-            # Intentar buscar el producto recién creado
+            # Fallback: buscar manualmente
             if is_postgresql:
                 cursor.execute("""
                     SELECT id FROM productos_maestros
@@ -517,13 +417,12 @@ def crear_producto_en_ambas_tablas(
             resultado = cursor.fetchone()
 
             if not resultado:
-                print(f"   ❌ CRÍTICO: No se pudo obtener ID del producto")
+                print(f"   ❌ CRÍTICO: No se pudo obtener ID")
                 conn.rollback()
                 return None
 
         producto_id = resultado[0]
         print(f"   ✅ Producto creado ID: {producto_id}")
-        print(f"      Nombre: {nombre_final}")
 
         # Crear en productos_maestros_v2
         try:
@@ -549,14 +448,13 @@ def crear_producto_en_ambas_tablas(
                     VALUES (?, ?, NULL, NULL)
                 """, (codigo_ean, nombre_final))
         except Exception as e:
-            print(f"   ⚠️ Error en productos_maestros_v2 (no crítico): {e}")
-            # No es crítico, continuar
+            print(f"   ⚠️ Error v2 (no crítico): {e}")
 
         conn.commit()
         return producto_id
 
     except Exception as e:
-        print(f"   ❌ Error creando producto '{nombre_final}': {e}")
+        print(f"   ❌ Error creando '{nombre_final}': {e}")
         import traceback
         traceback.print_exc()
 
@@ -566,138 +464,6 @@ def crear_producto_en_ambas_tablas(
             pass
 
         return None
-
-
-def sincronizar_a_v2(producto_id, codigo_ean, nombre, cursor, conn):
-    """Sincroniza producto a tabla v2 (legacy)"""
-    import os
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-
-    if is_postgresql:
-        if codigo_ean:
-            cursor.execute(
-                "SELECT id FROM productos_maestros_v2 WHERE codigo_ean = %s",
-                (codigo_ean,)
-            )
-        else:
-            cursor.execute(
-                "SELECT id FROM productos_maestros_v2 WHERE nombre_consolidado ILIKE %s",
-                (nombre,)
-            )
-    else:
-        if codigo_ean:
-            cursor.execute(
-                "SELECT id FROM productos_maestros_v2 WHERE codigo_ean = ?",
-                (codigo_ean,)
-            )
-        else:
-            cursor.execute(
-                "SELECT id FROM productos_maestros_v2 WHERE nombre_consolidado LIKE ?",
-                (nombre,)
-            )
-
-    if not cursor.fetchone():
-        if is_postgresql:
-            cursor.execute(
-                "INSERT INTO productos_maestros_v2 (codigo_ean, nombre_consolidado) VALUES (%s, %s)",
-                (codigo_ean, nombre)
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO productos_maestros_v2 (codigo_ean, nombre_consolidado) VALUES (?, ?)",
-                (codigo_ean, nombre)
-            )
-        conn.commit()
-
-
-def actualizar_precio_promedio_legacy(codigo_ean, nuevo_precio, cursor, conn, nombre=None):
-    """Actualiza precio promedio (legacy)"""
-    import os
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-
-    if codigo_ean:
-        cursor.execute(
-            "SELECT id FROM productos_maestros WHERE codigo_ean = " +
-            ("%s" if is_postgresql else "?"),
-            (codigo_ean,)
-        )
-    elif nombre:
-        cursor.execute(
-            "SELECT id FROM productos_maestros WHERE nombre_normalizado " +
-            ("ILIKE" if is_postgresql else "LIKE") +
-            (" %s" if is_postgresql else " ?"),
-            (nombre,)
-        )
-    else:
-        return
-
-    row = cursor.fetchone()
-    if row:
-        cursor.execute(
-            """
-            UPDATE productos_maestros
-            SET precio_promedio_global = (
-                (precio_promedio_global * total_reportes + """ +
-                ("%s" if is_postgresql else "?") + """) / (total_reportes + 1)
-            ),
-            total_reportes = total_reportes + 1
-            WHERE id = """ + ("%s" if is_postgresql else "?"),
-            (nuevo_precio, row[0])
-        )
-        conn.commit()
-
-
-def fusionar_productos_duplicados(producto_principal_id, productos_a_fusionar, cursor, conn):
-    """Fusiona productos duplicados"""
-    import os
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-    param = "%s" if is_postgresql else "?"
-
-    for pid in productos_a_fusionar:
-        # Actualizar referencias en items_factura
-        cursor.execute(
-            f"UPDATE items_factura SET producto_maestro_id = {param} WHERE producto_maestro_id = {param}",
-            (producto_principal_id, pid)
-        )
-
-        # Actualizar referencias en inventario_usuario
-        cursor.execute(
-            f"UPDATE inventario_usuario SET producto_maestro_id = {param} WHERE producto_maestro_id = {param}",
-            (producto_principal_id, pid)
-        )
-
-        # Eliminar producto duplicado
-        cursor.execute(
-            f"DELETE FROM productos_maestros WHERE id = {param}",
-            (pid,)
-        )
-
-    conn.commit()
-
-
-def detectar_duplicados_por_similitud(cursor, umbral=0.90):
-    """Detecta productos duplicados por similitud"""
-    cursor.execute(
-        "SELECT id, nombre_normalizado, codigo_ean FROM productos_maestros ORDER BY id"
-    )
-    productos = cursor.fetchall()
-    duplicados = []
-
-    for i in range(len(productos)):
-        for j in range(i + 1, len(productos)):
-            id1, n1, c1 = productos[i]
-            id2, n2, c2 = productos[j]
-
-            # Si tienen mismo EAN, son duplicados
-            if c1 and c2 and c1 == c2:
-                sim = 1.0
-            else:
-                sim = calcular_similitud(n1, n2)
-
-            if sim >= umbral:
-                duplicados.append((id1, n1, id2, n2, sim))
-
-    return duplicados
 
 
 def buscar_o_crear_producto_inteligente(
@@ -710,24 +476,9 @@ def buscar_o_crear_producto_inteligente(
     factura_id: int = None,
     usuario_id: int = None,
     item_factura_id: int = None
-) -> int:
+) -> Optional[int]:
     """
-    Función de compatibilidad para main.py
-    Busca o crea un producto usando el sistema completo
-
-    Args:
-        codigo: Código del producto (EAN o PLU)
-        nombre: Nombre del producto (del OCR)
-        precio: Precio del producto
-        establecimiento: Nombre del establecimiento
-        cursor: Cursor de base de datos
-        conn: Conexión a base de datos
-        factura_id: ID de la factura (opcional)
-        usuario_id: ID del usuario (opcional)
-        item_factura_id: ID del item (opcional)
-
-    Returns:
-        ID del producto en productos_maestros
+    Función principal de matching de productos V6.1
     """
     import os
 
@@ -737,7 +488,6 @@ def buscar_o_crear_producto_inteligente(
     print(f"   Precio: ${precio:,}")
     print(f"   Establecimiento: {establecimiento}")
 
-    # Normalizar nombre
     nombre_normalizado = normalizar_nombre_producto(nombre, True)
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
@@ -748,8 +498,6 @@ def buscar_o_crear_producto_inteligente(
     # ========================================================================
     # PASO 1: BUSCAR PRODUCTO EXISTENTE
     # ========================================================================
-
-    producto_id = None
 
     # Buscar por EAN
     if tipo_codigo == 'EAN' and codigo:
@@ -765,12 +513,11 @@ def buscar_o_crear_producto_inteligente(
             return producto_id
 
     # Buscar por nombre similar
-    # Buscar por nombre similar (más flexible)
     cursor.execute(f"""
         SELECT id, nombre_normalizado, codigo_ean
         FROM productos_maestros
         WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
-       OR {param} {('ILIKE' if is_postgresql else 'LIKE')} '%' || nombre_normalizado || '%'
+           OR {param} {('ILIKE' if is_postgresql else 'LIKE')} '%' || nombre_normalizado || '%'
         LIMIT 10
     """, (f"%{nombre_normalizado[:50]}%", nombre_normalizado))
 
@@ -789,21 +536,16 @@ def buscar_o_crear_producto_inteligente(
     # ========================================================================
 
     print(f"   ℹ️  Producto no encontrado → Validando...")
-# Inicializar AprendizajeManager si está disponible
+
+    # Inicializar AprendizajeManager
     aprendizaje_mgr = None
-    print(f"   🧠 APRENDIZAJE_AVAILABLE: {APRENDIZAJE_AVAILABLE}")
 
     if APRENDIZAJE_AVAILABLE:
         try:
             from aprendizaje_manager import AprendizajeManager
             aprendizaje_mgr = AprendizajeManager(cursor, conn)
-            print(f"   ✅ AprendizajeManager inicializado correctamente")
         except Exception as e:
-            print(f"   ❌ Error inicializando AprendizajeManager: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print(f"   ⚠️  APRENDIZAJE_AVAILABLE = False")
+            print(f"   ⚠️ Error AprendizajeManager: {e}")
 
     # Validar con sistema completo
     resultado_validacion = validar_nombre_con_sistema_completo(
@@ -815,15 +557,11 @@ def buscar_o_crear_producto_inteligente(
         aprendizaje_mgr=aprendizaje_mgr,
         factura_id=factura_id,
         usuario_id=usuario_id,
-        item_factura_id=item_factura_id
+        item_factura_id=item_factura_id,
+        cursor=cursor
     )
 
     nombre_final = resultado_validacion['nombre_final']
-
-    print(f"\n➕ CREANDO PRODUCTO:")
-    print(f"   Nombre validado: {nombre_final}")
-    print(f"   Fuente: {resultado_validacion['fuente']}")
-    print(f"   Confianza: {resultado_validacion['confianza']:.2f}")
 
     # Crear producto
     producto_id = crear_producto_en_ambas_tablas(
@@ -836,21 +574,22 @@ def buscar_o_crear_producto_inteligente(
     )
 
     if not producto_id:
-        print(f"   ❌ CRÍTICO: No se pudo crear producto '{nombre_final}'")
-        return None  # ← AGREGAR ESTA LÍNEA SI NO ESTÁ
+        print(f"   ❌ CRÍTICO: No se pudo crear '{nombre_final}'")
+        return None
 
     return producto_id
+
 
 # ==============================================================================
 # MENSAJE DE CARGA
 # ==============================================================================
 
 print("="*80)
-print("✅ product_matcher.py V6.0 CARGADO")
+print("✅ product_matcher.py V6.1 CARGADO")
 print("="*80)
-print("🎯 SISTEMA INTEGRADO CON APRENDIZAJE V2.0")
-print("   1️⃣ OCR → 2️⃣ Python → 3️⃣ Aprendizaje → 4️⃣ Perplexity → 5️⃣ BD")
+print("🎯 SISTEMA INTEGRADO COMPLETO")
+print("   1️⃣ Productos Referencia → 2️⃣ Aprendizaje → 3️⃣ Perplexity → 4️⃣ BD")
 print("="*80)
 print(f"{'✅' if PERPLEXITY_AVAILABLE else '⚠️ '} Perplexity")
-print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático V2.0")
+print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("="*80)
