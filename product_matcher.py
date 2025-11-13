@@ -1,20 +1,20 @@
 """
-product_matcher.py - VERSIÓN 6.1.1 - DEBUG AGREGADO
+product_matcher.py - VERSIÓN 6.2 - Perplexity DESHABILITADO
 ========================================================================
 Sistema de matching y normalización de productos con aprendizaje automático
 
-🎯 FLUJO COMPLETO V6.1:
+🎯 FLUJO COMPLETO V6.2:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1️⃣ Productos Referencia (OFICIAL)  → Datos oficiales con EAN
 2️⃣ Aprendizaje Automático          → Productos validados previamente
-3️⃣ Productos Maestros              → Búsqueda en catálogo existente
-4️⃣ Validación Perplexity           → Último recurso (cuesta $$$)
-5️⃣ Guardar Aprendizaje             → Aprende para próxima vez.
+3️⃣ OCR Directo                     → Usar lo que leyó Claude Vision
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CAMBIOS V6.1.1:
-- ✅ Logs de debug agregados para identificar errores
-- ✅ Validación de tipos de parámetros
+CAMBIOS V6.2:
+- ✅ Perplexity DESHABILITADO (inventaba texto que no existía)
+- ✅ Fix tuple index out of range en query SQL
+- ✅ Validación robusta de tuplas antes de unpack
+- ✅ Ahorro de $0.005 por producto
 """
 
 import re
@@ -307,16 +307,9 @@ def validar_nombre_con_sistema_completo(
 def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None):
     """
     Crea producto en productos_maestros con manejo robusto de errores
-    V6.1.2 - FIX DEFINITIVO: tuple index out of range
+    V6.2 - FIX DEFINITIVO: tuple index out of range
     """
     try:
-        # 🔍 DEBUG - Validar parámetros recibidos
-        print(f"   🐛 [DEBUG] crear_producto_en_ambas_tablas llamado:")
-        print(f"      nombre_normalizado: '{nombre_normalizado}'")
-        print(f"      codigo_ean: '{codigo_ean}'")
-        print(f"      marca: '{marca}'")
-        print(f"      categoria: '{categoria}'")
-
         # ✅ VALIDAR PARÁMETROS (no pueden ser None)
         if not nombre_normalizado or not nombre_normalizado.strip():
             print(f"   ❌ ERROR: nombre_normalizado vacío")
@@ -333,7 +326,6 @@ def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=
         categoria_safe = categoria if categoria and categoria.strip() else None
 
         print(f"   📝 Creando producto: {nombre_final}")
-        print(f"   🔍 Valores seguros: EAN={codigo_ean_safe}, Marca={marca_safe}, Cat={categoria_safe}")
 
         # ✅ FIX: USAR RETURNING id CORRECTAMENTE
         cursor.execute("""
@@ -385,6 +377,7 @@ def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=
         conn.rollback()
         return None
 
+
 def buscar_o_crear_producto_inteligente(
     codigo: str,
     nombre: str,
@@ -397,8 +390,8 @@ def buscar_o_crear_producto_inteligente(
     item_factura_id: int = None
 ) -> Optional[int]:
     """
-    Función principal de matching de productos V6.1.2
-    FIX DEFINITIVO: tuple index out of range en candidatos
+    Función principal de matching de productos V6.2
+    FIX DEFINITIVO: tuple index out of range en query SQL
     """
     import os
 
@@ -434,13 +427,14 @@ def buscar_o_crear_producto_inteligente(
 
         # PASO 2: BUSCAR POR NOMBRE SIMILAR
         try:
+            # ✅ FIX CRÍTICO: Usar solo UN parámetro para evitar tuple index error
+            search_pattern = f"%{nombre_normalizado[:50]}%"
             cursor.execute(f"""
                 SELECT id, nombre_normalizado, codigo_ean
                 FROM productos_maestros
                 WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
-                   OR {param} {('ILIKE' if is_postgresql else 'LIKE')} '%' || nombre_normalizado || '%'
                 LIMIT 10
-            """, (f"%{nombre_normalizado[:50]}%", nombre_normalizado))
+            """, (search_pattern,))
 
             candidatos = cursor.fetchall()
 
@@ -448,7 +442,6 @@ def buscar_o_crear_producto_inteligente(
             for candidato in candidatos:
                 # Validar que la tupla tenga al menos 3 elementos
                 if not candidato or len(candidato) < 3:
-                    print(f"   ⚠️ Candidato inválido (len={len(candidato) if candidato else 0}), saltando...")
                     continue
 
                 # Unpack seguro
@@ -524,14 +517,16 @@ def buscar_o_crear_producto_inteligente(
         traceback.print_exc()
         return None
 
+
 # MENSAJE DE CARGA
-# MENSAJE DE CARGA
 print("="*80)
-print("✅ product_matcher.py V6.1.2 CARGADO - FIX: tuple index out of range")
+print("✅ product_matcher.py V6.2 - Perplexity DESHABILITADO")
 print("="*80)
-print("🎯 SISTEMA INTEGRADO COMPLETO")
-print("   1️⃣ Productos Referencia → 2️⃣ Aprendizaje → 3️⃣ Perplexity → 4️⃣ BD")
+print("🎯 FLUJO OPTIMIZADO:")
+print("   1️⃣ Productos Referencia (EAN oficial)")
+print("   2️⃣ Aprendizaje Automático")
+print("   3️⃣ OCR Directo (SIN Perplexity)")
 print("="*80)
-print(f"{'✅' if PERPLEXITY_AVAILABLE else '⚠️ '} Perplexity")
+print(f"❌ Perplexity: DESHABILITADO (inventaba texto)")
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("="*80)
