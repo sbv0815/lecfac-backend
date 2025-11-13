@@ -3049,6 +3049,50 @@ async def actualizar_producto_referencia(
         conn.close()
 
 
+@app.post("/api/productos/{producto_id}/marcar-revisado")
+async def marcar_producto_revisado(producto_id: int):
+    """Marca un producto como revisado por admin"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión")
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE productos_maestros
+            SET revisado_admin = TRUE,
+                fecha_revision = CURRENT_TIMESTAMP,
+                notas_revision = 'Revisado desde dashboard admin'
+            WHERE id = %s
+            RETURNING id, nombre_normalizado
+        """,
+            (producto_id,),
+        )
+
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "producto_id": resultado[0],
+            "nombre": resultado[1],
+            "mensaje": "Producto marcado como revisado",
+        }
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/fix-rol")
 async def fix_rol():
     """Endpoint temporal para arreglar rol del usuario"""
