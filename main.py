@@ -6109,6 +6109,51 @@ print("✅ Endpoints de depuración agregados")
 print("✅ Endpoint /admin/verificar-analytics registrado")
 
 
+@app.post("/admin/limpiar-productos-huerfanos")
+async def limpiar_productos_huerfanos():
+    """
+    Elimina productos que NO están vinculados a ninguna factura
+    ⚠️ PELIGROSO - Solo usar en desarrollo
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Eliminar productos NO usados en items_factura
+        cursor.execute(
+            """
+            DELETE FROM productos_maestros
+            WHERE id NOT IN (
+                SELECT DISTINCT producto_maestro_id
+                FROM items_factura
+                WHERE producto_maestro_id IS NOT NULL
+            )
+        """
+        )
+
+        productos_eliminados = cursor.rowcount
+        conn.commit()
+
+        # Contar restantes
+        cursor.execute("SELECT COUNT(*) FROM productos_maestros")
+        productos_restantes = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "productos_eliminados": productos_eliminados,
+            "productos_restantes": productos_restantes,
+            "mensaje": f"✅ Limpieza completada: {productos_eliminados} productos huérfanos eliminados",
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+print("✅ Endpoint /admin/limpiar-productos-huerfanos registrado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
