@@ -5832,6 +5832,261 @@ async def fusionar_productos(
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+# ==========================================
+# ENDPOINTS DE DEPURACIÓN - DEBEN ESTAR ANTES DEL MAIN
+# ==========================================
+
+
+@app.post("/admin/reprocesar-todas-facturas")
+async def reprocesar_todas_facturas(limite: int = 1000):
+    """
+    Reprocesa TODAS las facturas existentes para actualizar tablas analíticas
+    ⚠️ Proceso pesado - usar con cuidado
+    """
+    try:
+        from database import get_db_connection
+        from analytics_updater import actualizar_todas_las_tablas_analiticas
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("\n" + "=" * 80)
+        print("🔄 REPROCESAMIENTO MASIVO DE FACTURAS")
+        print("=" * 80)
+
+        # Obtener todas las facturas
+        cursor.execute(
+            """
+            SELECT f.id, f.usuario_id, f.establecimiento_id
+            FROM facturas f
+            ORDER BY f.id DESC
+            LIMIT %s
+        """,
+            (limite,),
+        )
+
+        facturas = cursor.fetchall()
+        total_facturas = len(facturas)
+
+        print(f"📊 Total de facturas a procesar: {total_facturas}")
+
+        procesadas = 0
+        errores = 0
+
+        for factura_id, usuario_id, establecimiento_id in facturas:
+            try:
+                print(f"\n🔄 Procesando factura {factura_id}...")
+
+                # Obtener items de la factura
+                cursor.execute(
+                    """
+                    SELECT producto_maestro_id, codigo_leido
+                    FROM items_factura
+                    WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
+                """,
+                    (factura_id,),
+                )
+
+                items_data = []
+                for row in cursor.fetchall():
+                    items_data.append(
+                        {"producto_maestro_id": row[0], "codigo_leido": row[1] or ""}
+                    )
+
+                if not items_data:
+                    print(f"   ⚠️ Factura {factura_id} sin items válidos")
+                    continue
+
+                # Actualizar tablas analíticas
+                resultado = actualizar_todas_las_tablas_analiticas(
+                    cursor=cursor,
+                    conn=conn,
+                    factura_id=factura_id,
+                    usuario_id=usuario_id,
+                    establecimiento_id=establecimiento_id,
+                    items_procesados=items_data,
+                )
+
+                procesadas += 1
+
+                if procesadas % 10 == 0:
+                    print(f"\n📊 Progreso: {procesadas}/{total_facturas} facturas")
+                    conn.commit()  # Commit cada 10 facturas
+
+            except Exception as e:
+                errores += 1
+                print(f"❌ Error en factura {factura_id}: {e}")
+                continue
+
+        # Commit final
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print("\n" + "=" * 80)
+        print("✅ REPROCESAMIENTO COMPLETADO")
+        print(f"   Total: {total_facturas}")
+        print(f"   Procesadas: {procesadas}")
+        print(f"   Errores: {errores}")
+        print("=" * 80)
+
+        return {
+            "success": True,
+            "total_facturas": total_facturas,
+            "procesadas": procesadas,
+            "errores": errores,
+            "porcentaje": (
+                round((procesadas / total_facturas * 100), 2)
+                if total_facturas > 0
+                else 0
+            ),
+        }
+
+    except Exception as e:
+        print(f"❌ Error en reprocesamiento masivo: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/admin/diagnostico-general")
+async def diagnostico_general():
+    """Estado general del sistema"""
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # Total facturas
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        stats["total_facturas"] = cursor.fetchone()[0]
+
+        # Items con producto_maestro_id
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(producto_maestro_id) as con_producto
+            FROM items_factura
+        """
+        )
+        row = cursor.fetchone()
+        stats["total_items"] = row[0]
+        stats["items_con_producto"] = row[1]
+        stats["items_sin_producto"] = row[0] - row[1]
+
+        # Productos maestros
+        cursor.execute("SELECT COUNT(*) FROM productos_maestros")
+        stats["total_productos_maestros"] = cursor.fetchone()[0]
+
+        # Tablas analíticas
+        cursor.execute("SELECT COUNT(*) FROM historial_compras_usuario")
+        stats["registros_historial"] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM patrones_compra")
+        stats["registros_patrones"] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
+        stats["registros_productos_est"] = cursor.fetchone()[0]
+
+        # Productos con códigos actualizados
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM productos_maestros
+            WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+        """
+        )
+        stats["productos_con_codigo"] = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, "timestamp": datetime.now().isoformat(), **stats}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/admin/verificar-analytics")
+async def verificar_analytics():
+    """Verificar estado de tablas analíticas"""
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultado = {}
+
+        # Historial de compras por usuario
+        cursor.execute(
+            """
+            SELECT usuario_id, COUNT(*) as compras
+            FROM historial_compras_usuario
+            GROUP BY usuario_id
+            ORDER BY compras DESC
+            LIMIT 10
+        """
+        )
+        resultado["top_usuarios"] = [
+            {"usuario_id": row[0], "compras": row[1]} for row in cursor.fetchall()
+        ]
+
+        # Patrones de compra más frecuentes
+        cursor.execute(
+            """
+            SELECT
+                pm.nombre_normalizado,
+                pc.frecuencia_compra,
+                pc.ultima_compra
+            FROM patrones_compra pc
+            JOIN productos_maestros pm ON pc.producto_maestro_id = pm.id
+            ORDER BY pc.frecuencia_compra DESC
+            LIMIT 10
+        """
+        )
+        resultado["productos_frecuentes"] = [
+            {
+                "producto": row[0],
+                "frecuencia": row[1],
+                "ultima_compra": str(row[2]) if row[2] else None,
+            }
+            for row in cursor.fetchall()
+        ]
+
+        # Productos por establecimiento
+        cursor.execute(
+            """
+            SELECT
+                e.nombre_normalizado,
+                COUNT(DISTINCT ppe.producto_maestro_id) as productos_unicos
+            FROM productos_por_establecimiento ppe
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            GROUP BY e.nombre_normalizado
+            ORDER BY productos_unicos DESC
+        """
+        )
+        resultado["productos_por_tienda"] = [
+            {"establecimiento": row[0], "productos": row[1]}
+            for row in cursor.fetchall()
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, **resultado}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+print("✅ Endpoints de depuración agregados")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
@@ -6803,254 +7058,3 @@ async def check_fix_status():
 
     except Exception as e:
         return {"error": str(e), "traceback": traceback.format_exc()}
-
-
-@app.post("/admin/reprocesar-todas-facturas")
-async def reprocesar_todas_facturas(limite: int = 1000):
-    """
-    Reprocesa TODAS las facturas existentes para actualizar tablas analíticas
-    ⚠️ Proceso pesado - usar con cuidado
-    """
-    try:
-        from database import get_db_connection
-        from analytics_updater import actualizar_todas_las_tablas_analiticas
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("\n" + "=" * 80)
-        print("🔄 REPROCESAMIENTO MASIVO DE FACTURAS")
-        print("=" * 80)
-
-        # Obtener todas las facturas
-        cursor.execute(
-            """
-            SELECT f.id, f.usuario_id, f.establecimiento_id
-            FROM facturas f
-            ORDER BY f.id DESC
-            LIMIT %s
-        """,
-            (limite,),
-        )
-
-        facturas = cursor.fetchall()
-        total_facturas = len(facturas)
-
-        print(f"📊 Total de facturas a procesar: {total_facturas}")
-
-        procesadas = 0
-        errores = 0
-
-        for factura_id, usuario_id, establecimiento_id in facturas:
-            try:
-                print(f"\n🔄 Procesando factura {factura_id}...")
-
-                # Obtener items de la factura
-                cursor.execute(
-                    """
-                    SELECT producto_maestro_id, codigo_leido
-                    FROM items_factura
-                    WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
-                """,
-                    (factura_id,),
-                )
-
-                items_data = []
-                for row in cursor.fetchall():
-                    items_data.append(
-                        {"producto_maestro_id": row[0], "codigo_leido": row[1] or ""}
-                    )
-
-                if not items_data:
-                    print(f"   ⚠️ Factura {factura_id} sin items válidos")
-                    continue
-
-                # Actualizar tablas analíticas
-                resultado = actualizar_todas_las_tablas_analiticas(
-                    cursor=cursor,
-                    conn=conn,
-                    factura_id=factura_id,
-                    usuario_id=usuario_id,
-                    establecimiento_id=establecimiento_id,
-                    items_procesados=items_data,
-                )
-
-                procesadas += 1
-
-                if procesadas % 10 == 0:
-                    print(f"\n📊 Progreso: {procesadas}/{total_facturas} facturas")
-                    conn.commit()  # Commit cada 10 facturas
-
-            except Exception as e:
-                errores += 1
-                print(f"❌ Error en factura {factura_id}: {e}")
-                continue
-
-        # Commit final
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        print("\n" + "=" * 80)
-        print("✅ REPROCESAMIENTO COMPLETADO")
-        print(f"   Total: {total_facturas}")
-        print(f"   Procesadas: {procesadas}")
-        print(f"   Errores: {errores}")
-        print("=" * 80)
-
-        return {
-            "success": True,
-            "total_facturas": total_facturas,
-            "procesadas": procesadas,
-            "errores": errores,
-            "porcentaje": (
-                round((procesadas / total_facturas * 100), 2)
-                if total_facturas > 0
-                else 0
-            ),
-        }
-
-    except Exception as e:
-        print(f"❌ Error en reprocesamiento masivo: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return {"success": False, "error": str(e)}
-
-
-@app.get("/admin/diagnostico-general")
-async def diagnostico_general():
-    """Estado general del sistema"""
-    try:
-        from database import get_db_connection
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        stats = {}
-
-        # Total facturas
-        cursor.execute("SELECT COUNT(*) FROM facturas")
-        stats["total_facturas"] = cursor.fetchone()[0]
-
-        # Items con producto_maestro_id
-        cursor.execute(
-            """
-            SELECT
-                COUNT(*) as total,
-                COUNT(producto_maestro_id) as con_producto
-            FROM items_factura
-        """
-        )
-        row = cursor.fetchone()
-        stats["total_items"] = row[0]
-        stats["items_con_producto"] = row[1]
-        stats["items_sin_producto"] = row[0] - row[1]
-
-        # Productos maestros
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros")
-        stats["total_productos_maestros"] = cursor.fetchone()[0]
-
-        # Tablas analíticas
-        cursor.execute("SELECT COUNT(*) FROM historial_compras_usuario")
-        stats["registros_historial"] = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM patrones_compra")
-        stats["registros_patrones"] = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
-        stats["registros_productos_est"] = cursor.fetchone()[0]
-
-        # Productos con códigos actualizados
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM productos_maestros
-            WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
-        """
-        )
-        stats["productos_con_codigo"] = cursor.fetchone()[0]
-
-        cursor.close()
-        conn.close()
-
-        return {"success": True, "timestamp": datetime.now().isoformat(), **stats}
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-@app.get("/admin/verificar-analytics")
-async def verificar_analytics():
-    """Verificar estado de tablas analíticas"""
-    try:
-        from database import get_db_connection
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        resultado = {}
-
-        # Historial de compras por usuario
-        cursor.execute(
-            """
-            SELECT usuario_id, COUNT(*) as compras
-            FROM historial_compras_usuario
-            GROUP BY usuario_id
-            ORDER BY compras DESC
-            LIMIT 10
-        """
-        )
-        resultado["top_usuarios"] = [
-            {"usuario_id": row[0], "compras": row[1]} for row in cursor.fetchall()
-        ]
-
-        # Patrones de compra más frecuentes
-        cursor.execute(
-            """
-            SELECT
-                pm.nombre_normalizado,
-                pc.frecuencia_compra,
-                pc.ultima_compra
-            FROM patrones_compra pc
-            JOIN productos_maestros pm ON pc.producto_maestro_id = pm.id
-            ORDER BY pc.frecuencia_compra DESC
-            LIMIT 10
-        """
-        )
-        resultado["productos_frecuentes"] = [
-            {
-                "producto": row[0],
-                "frecuencia": row[1],
-                "ultima_compra": str(row[2]) if row[2] else None,
-            }
-            for row in cursor.fetchall()
-        ]
-
-        # Productos por establecimiento
-        cursor.execute(
-            """
-            SELECT
-                e.nombre_normalizado,
-                COUNT(DISTINCT ppe.producto_maestro_id) as productos_unicos
-            FROM productos_por_establecimiento ppe
-            JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            GROUP BY e.nombre_normalizado
-            ORDER BY productos_unicos DESC
-        """
-        )
-        resultado["productos_por_tienda"] = [
-            {"establecimiento": row[0], "productos": row[1]}
-            for row in cursor.fetchall()
-        ]
-
-        cursor.close()
-        conn.close()
-
-        return {"success": True, **resultado}
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-print("✅ Endpoints de depuración agregados")
