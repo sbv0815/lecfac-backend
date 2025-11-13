@@ -6230,6 +6230,38 @@ async def diagnostico_items_sin_producto():
 
 print("✅ Endpoint /admin/diagnostico-items-sin-producto registrado")
 
+
+@app.get("/admin/verificar-schema-patrones")
+async def verificar_schema_patrones():
+    """Ver estructura de tabla patrones_compra"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = 'patrones_compra'
+            ORDER BY ordinal_position
+        """
+        )
+
+        columnas = []
+        for row in cursor.fetchall():
+            columnas.append({"columna": row[0], "tipo": row[1]})
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, "tabla": "patrones_compra", "columnas": columnas}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+print("✅ Endpoint /admin/verificar-schema-patrones registrado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
