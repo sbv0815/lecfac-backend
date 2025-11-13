@@ -1768,14 +1768,18 @@ async def save_invoice_with_image(
                     items_data.append(
                         {"producto_maestro_id": row[0], "codigo_leido": row[1] or ""}
                     )
-
+            productos_ids = [
+                item["producto_maestro_id"]
+                for item in items_data
+                if item.get("producto_maestro_id")
+            ]
             resultado_analytics = actualizar_todas_las_tablas_analiticas(
                 cursor=cursor,
                 conn=conn,
                 factura_id=factura_id,
                 usuario_id=usuario_id,
                 establecimiento_id=establecimiento_id,
-                items_procesados=items_data,
+                productos_ids=productos_ids,
             )
 
             print(f"✅ Tablas analíticas actualizadas:")
@@ -2505,7 +2509,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     factura_id=factura_id,
                     usuario_id=usuario_id,
                     establecimiento_id=establecimiento_id,
-                    items_procesados=items_data,
+                    productos_ids=productos_ids,
                 )
 
                 print(f"✅ Tablas analíticas actualizadas:")
