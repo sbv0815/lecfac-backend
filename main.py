@@ -5921,7 +5921,7 @@ async def reprocesar_todas_facturas(limite: int = 1000):
                     factura_id=factura_id,
                     usuario_id=usuario_id,
                     establecimiento_id=establecimiento_id,
-                    items_procesados=items_data,
+                    productos_ids=productos_ids,
                 )
 
                 procesadas += 1
@@ -6418,55 +6418,43 @@ async def test_reprocesar_una_factura(factura_id: int):
         if not factura:
             return {"success": False, "error": f"Factura {factura_id} no encontrada"}
 
-        factura_id, usuario_id, establecimiento_id, establecimiento = factura
+        fid, usuario_id, establecimiento_id, establecimiento = factura
 
-        print(f"   📋 Factura: {factura_id}")
+        print(f"   📋 Factura: {fid}")
         print(f"   👤 Usuario: {usuario_id}")
         print(f"   🏪 Establecimiento: {establecimiento} (ID: {establecimiento_id})")
 
-        # Obtener items
+        # ✅ CORRECCIÓN: Obtener solo los IDs de productos
         cursor.execute(
             """
-            SELECT
-                producto_maestro_id,
-                codigo_leido,
-                nombre_leido,
-                precio_pagado
+            SELECT producto_maestro_id
             FROM items_factura
             WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
         """,
             (factura_id,),
         )
 
-        items_data = []
-        for row in cursor.fetchall():
-            items_data.append(
-                {
-                    "producto_maestro_id": row[0],
-                    "codigo_leido": row[1] or "",
-                    "nombre": row[2],
-                    "precio": row[3],
-                }
-            )
+        productos_ids = [row[0] for row in cursor.fetchall()]
 
-        print(f"   📦 Items encontrados: {len(items_data)}")
+        print(f"   📦 Productos IDs encontrados: {len(productos_ids)}")
+        print(f"   📦 IDs: {productos_ids[:10]}...")  # Primeros 10
 
-        if not items_data:
+        if not productos_ids:
             return {
                 "success": False,
                 "error": f"Factura {factura_id} no tiene items con producto_maestro_id",
             }
 
-        # Intentar actualizar tablas analíticas
+        # ✅ CORRECCIÓN: Llamar con productos_ids
         print(f"   🔄 Actualizando tablas analíticas...")
 
         resultado = actualizar_todas_las_tablas_analiticas(
             cursor=cursor,
             conn=conn,
-            factura_id=factura_id,
+            factura_id=fid,
             usuario_id=usuario_id,
             establecimiento_id=establecimiento_id,
-            items_procesados=items_data,
+            productos_ids=productos_ids,  # ← Parámetro correcto
         )
 
         conn.commit()
@@ -6474,14 +6462,14 @@ async def test_reprocesar_una_factura(factura_id: int):
         conn.close()
 
         print(f"   ✅ Actualización completada")
+        print(f"   📊 Resultado: {resultado}")
         print(f"{'='*60}\n")
 
         return {
             "success": True,
-            "factura_id": factura_id,
-            "items_procesados": len(items_data),
+            "factura_id": fid,
+            "productos_procesados": len(productos_ids),
             "resultado": resultado,
-            "items_muestra": items_data[:5],
         }
 
     except Exception as e:
@@ -6493,6 +6481,9 @@ async def test_reprocesar_una_factura(factura_id: int):
         print(f"   Traceback:\n{error_trace}")
 
         return {"success": False, "error": str(e), "traceback": error_trace}
+
+
+print("✅ Endpoint /admin/test-reprocesar-una-factura registrado (v3 - corregido)")
 
 
 print("✅ Endpoint /admin/test-reprocesar-una-factura registrado")
