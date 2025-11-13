@@ -4182,6 +4182,91 @@ async def get_codigos_producto(producto_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v2/productos/{producto_id}")
+async def obtener_producto_detalle(producto_id: int):
+    """Obtiene detalles de un producto específico con sus PLUs"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión")
+
+    try:
+        cursor = conn.cursor()
+
+        # Obtener producto
+        cursor.execute(
+            """
+            SELECT
+                id,
+                codigo_ean,
+                nombre_normalizado,
+                marca,
+                categoria,
+                precio_promedio_global,
+                total_reportes
+            FROM productos_maestros
+            WHERE id = %s
+        """,
+            (producto_id,),
+        )
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Obtener PLUs
+        cursor.execute(
+            """
+            SELECT
+                ppe.codigo_plu,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion
+            FROM productos_por_establecimiento ppe
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE ppe.producto_maestro_id = %s
+        """,
+            (producto_id,),
+        )
+
+        plus_rows = cursor.fetchall()
+
+        plus = []
+        for plu in plus_rows:
+            plus.append(
+                {
+                    "codigo_plu": plu[0],
+                    "nombre_establecimiento": plu[1],
+                    "precio": plu[2],
+                    "ultima_vez_visto": plu[3].strftime("%Y-%m-%d") if plu[3] else None,
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre_normalizado": producto[2],
+            "nombre_comercial": producto[2],  # Por ahora igual
+            "marca": producto[3],
+            "categoria": producto[4],
+            "subcategoria": None,
+            "presentacion": None,
+            "precio_promedio": producto[5],
+            "veces_comprado": producto[6],
+            "num_establecimientos": len(plus),
+            "plus": plus,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/v2/establecimientos/{establecimiento_id}/codigos")
 async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100):
     """
