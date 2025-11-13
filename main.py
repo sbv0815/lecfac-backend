@@ -5918,6 +5918,7 @@ async def reprocesar_todas_facturas(limite: int = 1000):
                     print(f"   ⚠️ Factura {factura_id} sin items válidos")
                     continue
 
+                productos_ids = [item["producto_maestro_id"] for item in items_data]
                 # Actualizar tablas analíticas
                 resultado = actualizar_todas_las_tablas_analiticas(
                     cursor=cursor,
@@ -6452,6 +6453,7 @@ async def test_reprocesar_una_factura(factura_id: int):
         # ✅ CORRECCIÓN: Llamar con productos_ids
         print(f"   🔄 Actualizando tablas analíticas...")
 
+        productos_ids = [item["producto_maestro_id"] for item in items_data]
         resultado = actualizar_todas_las_tablas_analiticas(
             cursor=cursor,
             conn=conn,
