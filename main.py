@@ -6057,24 +6057,27 @@ async def verificar_analytics():
             {"usuario_id": row[0], "compras": row[1]} for row in cursor.fetchall()
         ]
 
+        # ✅ CORRECCIÓN: Usar columnas correctas
         # Patrones de compra más frecuentes
         cursor.execute(
             """
             SELECT
                 pm.nombre_normalizado,
-                pc.frecuencia_compra,
-                pc.ultima_compra
+                pc.veces_comprado,
+                pc.ultima_compra,
+                pc.frecuencia_dias
             FROM patrones_compra pc
             JOIN productos_maestros pm ON pc.producto_maestro_id = pm.id
-            ORDER BY pc.frecuencia_compra DESC
+            ORDER BY pc.veces_comprado DESC
             LIMIT 10
         """
         )
         resultado["productos_frecuentes"] = [
             {
                 "producto": row[0],
-                "frecuencia": row[1],
+                "veces_comprado": row[1],
                 "ultima_compra": str(row[2]) if row[2] else None,
+                "frecuencia_dias": row[3],
             }
             for row in cursor.fetchall()
         ]
