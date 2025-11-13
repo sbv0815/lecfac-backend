@@ -1,20 +1,27 @@
 """
-product_matcher.py - VERSIÓN 6.2 - Perplexity DESHABILITADO
+product_matcher.py - VERSIÓN 7.0 - Sistema de Consolidación PLU
 ========================================================================
 Sistema de matching y normalización de productos con aprendizaje automático
 
-🎯 FLUJO COMPLETO V6.2:
+🎯 FLUJO COMPLETO V7.0:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1️⃣ Productos Referencia (OFICIAL)  → Datos oficiales con EAN
-2️⃣ Aprendizaje Automático          → Productos validados previamente
-3️⃣ OCR Directo                     → Usar lo que leyó Claude Vision
+2️⃣ Consolidación PLU (OPCIONAL)    → Agrupa variantes por código PLU
+3️⃣ Aprendizaje Automático          → Productos validados previamente
+4️⃣ OCR Directo                     → Usar lo que leyó Claude Vision
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CAMBIOS V6.2:
+CAMBIOS V7.0:
+- ✅ Consolidación PLU integrada (controlada por flag)
 - ✅ Perplexity DESHABILITADO (inventaba texto que no existía)
 - ✅ Fix tuple index out of range en query SQL
 - ✅ Validación robusta de tuplas antes de unpack
 - ✅ Ahorro de $0.005 por producto
+
+FILOSOFÍA:
+- NO rompe funcionalidad existente
+- Consolidación PLU es OPCIONAL (flag)
+- Completamente reversible
 """
 
 import re
@@ -37,6 +44,14 @@ try:
 except ImportError:
     APRENDIZAJE_AVAILABLE = False
     print("⚠️  aprendizaje_manager.py no disponible")
+
+try:
+    from plu_consolidator import aplicar_consolidacion_plu, ENABLE_PLU_CONSOLIDATION
+    PLU_CONSOLIDATOR_AVAILABLE = True
+except ImportError:
+    PLU_CONSOLIDATOR_AVAILABLE = False
+    ENABLE_PLU_CONSOLIDATION = False
+    print("⚠️  plu_consolidator.py no disponible")
 
 
 def normalizar_nombre_producto(nombre: str, aplicar_correcciones_ocr: bool = True) -> str:
@@ -192,7 +207,7 @@ def validar_nombre_con_sistema_completo(
     cursor = None
 ) -> dict:
     """
-    V6.2: Sistema sin Perplexity - NO inventa texto
+    V7.0: Sistema sin Perplexity - NO inventa texto
 
     FLUJO:
     1️⃣ Productos Referencia (EAN oficial) → Nombre oficial correcto
@@ -307,7 +322,7 @@ def validar_nombre_con_sistema_completo(
 def crear_producto_en_ambas_tablas(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None):
     """
     Crea producto en productos_maestros con manejo robusto de errores
-    V6.2 - FIX DEFINITIVO: tuple index out of range
+    V7.0 - FIX DEFINITIVO: tuple index out of range
     """
     try:
         # ✅ VALIDAR PARÁMETROS (no pueden ser None)
@@ -390,8 +405,8 @@ def buscar_o_crear_producto_inteligente(
     item_factura_id: int = None
 ) -> Optional[int]:
     """
-    Función principal de matching de productos V6.2
-    FIX DEFINITIVO: tuple index out of range en query SQL
+    Función principal de matching de productos V7.0
+    Incluye consolidación PLU opcional
     """
     import os
 
@@ -409,7 +424,38 @@ def buscar_o_crear_producto_inteligente(
         is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
         param = "%s" if is_postgresql else "?"
 
+        # ═══════════════════════════════════════════════════════════════
+        # PASO 0: CONSOLIDACIÓN PLU (OPCIONAL - Solo si flag activo)
+        # ═══════════════════════════════════════════════════════════════
+        if PLU_CONSOLIDATOR_AVAILABLE and ENABLE_PLU_CONSOLIDATION:
+            nombre_consolidado_plu = aplicar_consolidacion_plu(
+                codigo=codigo,
+                nombre_ocr=nombre_normalizado,
+                tipo_codigo=tipo_codigo,
+                establecimiento=cadena,
+                cursor=cursor
+            )
+
+            # Si encontró consolidación, usar ese nombre
+            if nombre_consolidado_plu:
+                print(f"   🎯 Usando nombre consolidado por PLU")
+                # Buscar si ya existe con el nombre consolidado
+                cursor.execute(f"""
+                    SELECT id FROM productos_maestros
+                    WHERE nombre_normalizado = {param}
+                      AND codigo_ean = {param}
+                    LIMIT 1
+                """, (nombre_consolidado_plu, codigo))
+
+                resultado = cursor.fetchone()
+                if resultado and len(resultado) >= 1:
+                    producto_id = resultado[0]
+                    print(f"   ✅ Producto consolidado encontrado: ID={producto_id}")
+                    return producto_id
+
+        # ═══════════════════════════════════════════════════════════════
         # PASO 1: BUSCAR POR EAN
+        # ═══════════════════════════════════════════════════════════════
         if tipo_codigo == 'EAN' and codigo:
             try:
                 cursor.execute(
@@ -425,7 +471,9 @@ def buscar_o_crear_producto_inteligente(
             except Exception as e:
                 print(f"   ⚠️ Error buscando por EAN: {e}")
 
+        # ═══════════════════════════════════════════════════════════════
         # PASO 2: BUSCAR POR NOMBRE SIMILAR
+        # ═══════════════════════════════════════════════════════════════
         try:
             # ✅ FIX CRÍTICO: Usar solo UN parámetro para evitar tuple index error
             search_pattern = f"%{nombre_normalizado[:50]}%"
@@ -465,7 +513,9 @@ def buscar_o_crear_producto_inteligente(
             import traceback
             traceback.print_exc()
 
+        # ═══════════════════════════════════════════════════════════════
         # PASO 3: NO ENCONTRADO → VALIDAR Y CREAR
+        # ═══════════════════════════════════════════════════════════════
         print(f"   ℹ️  Producto no encontrado → Validando...")
 
         # Inicializar AprendizajeManager
@@ -518,15 +568,26 @@ def buscar_o_crear_producto_inteligente(
         return None
 
 
+# ═══════════════════════════════════════════════════════════════
 # MENSAJE DE CARGA
+# ═══════════════════════════════════════════════════════════════
 print("="*80)
-print("✅ product_matcher.py V6.2 - Perplexity DESHABILITADO")
+print("✅ product_matcher.py V7.0 - Sistema de Consolidación PLU")
 print("="*80)
 print("🎯 FLUJO OPTIMIZADO:")
 print("   1️⃣ Productos Referencia (EAN oficial)")
-print("   2️⃣ Aprendizaje Automático")
-print("   3️⃣ OCR Directo (SIN Perplexity)")
+if PLU_CONSOLIDATOR_AVAILABLE and ENABLE_PLU_CONSOLIDATION:
+    print("   2️⃣ Consolidación PLU (ACTIVA)")
+else:
+    print("   2️⃣ Consolidación PLU (INACTIVA)")
+print("   3️⃣ Aprendizaje Automático")
+print("   4️⃣ OCR Directo")
 print("="*80)
 print(f"❌ Perplexity: DESHABILITADO (inventaba texto)")
+print(f"{'✅' if PLU_CONSOLIDATOR_AVAILABLE and ENABLE_PLU_CONSOLIDATION else '⚠️ '} Consolidación PLU: {'ACTIVA' if ENABLE_PLU_CONSOLIDATION else 'INACTIVA'}")
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("="*80)
+if not ENABLE_PLU_CONSOLIDATION:
+    print("💡 Para activar consolidación PLU:")
+    print("   export ENABLE_PLU_CONSOLIDATION=true")
+    print("="*80)
