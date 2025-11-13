@@ -183,11 +183,31 @@ def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
         "efectivo",
         "tarjeta",
         "pago",
+        "precio final",
+        "perico final",
+        "bolsa para empacar",
+        "bsa p empacar",
+        "bsa p empacar olim",
+        "bsa p empacar olimpica",
+        "bolsa para empacar olimpica",
     ]
 
     for texto_prohibido in lista_negra_exacta:
         if nombre_lower == texto_prohibido:
             return True, f"Lista negra exacta: '{texto_prohibido}'"
+
+    # ========== CONTIENE PALABRAS PROHIBIDAS ==========
+    # Si el nombre CONTIENE estas palabras, es basura
+    palabras_prohibidas_contenidas = [
+        "empacar",
+        "empaque",
+        "perico final",
+        "precio final",
+    ]
+
+    for palabra in palabras_prohibidas_contenidas:
+        if palabra in nombre_lower:
+            return True, f"Contiene palabra prohibida: '{palabra}'"
 
     # ========== PREFIJOS SOSPECHOSOS ==========
     prefijos_sospechosos = [
@@ -200,6 +220,10 @@ def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
         "promocion",
         "v.ahorro",
         "precio final",
+        "perico final",
+        "bolsa para",
+        "bsa p",
+        "bsa ",
     ]
 
     for prefijo in prefijos_sospechosos:

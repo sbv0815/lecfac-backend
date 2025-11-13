@@ -78,6 +78,16 @@ PALABRAS_BASURA = [
     "guardar",
     "refrigerar",
     "congelar",
+    # Materiales de empaque (NO SON PRODUCTOS)
+    "bolsa",
+    "empacar",
+    "empaque",
+    "bsa p empacar",
+    "bolsa para empacar",
+    # Precio/Total (errores OCR comunes)
+    "precio final",
+    "perico final",  # ← OCR lee mal "precio"
+    "precio",
 ]
 
 
@@ -240,6 +250,10 @@ CORRECCIONES_OCR = {
     # ========== Palabras sin sentido (eliminar) ==========
     "BLENG": "",
     "MORCAF": "",
+    # ========== Errores OCR comunes ==========
+    "PERICO": "PRECIO",  # ← AGREGAR (PERICO FINAL → PRECIO FINAL)
+    "BSA": "BOLSA",  # ← AGREGAR
+    "OLIM": "OLIMPICA",  # ← AGREGAR
 }
 
 
