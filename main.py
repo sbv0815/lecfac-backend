@@ -512,6 +512,23 @@ app = FastAPI(
 )
 
 
+# ==========================================
+# ENDPOINT DE VERIFICACIÓN DE DEPLOY
+# ==========================================
+@app.get("/test-deploy-check")
+async def test_deploy_check():
+    """Endpoint de prueba para verificar deploys"""
+    return {
+        "success": True,
+        "mensaje": "Railway está leyendo código actualizado",
+        "timestamp": datetime.now().isoformat(),
+        "version": "deploy-check-1",
+    }
+
+
+print("🔥 ENDPOINT /test-deploy-check REGISTRADO")
+
+
 from routes import productos_admin
 
 app.include_router(productos_admin.router)
@@ -6012,6 +6029,9 @@ async def diagnostico_general():
         return {"success": False, "error": str(e)}
 
 
+print("✅ Endpoint /admin/diagnostico-general registrado")
+
+
 @app.get("/admin/verificar-analytics")
 async def verificar_analytics():
     """Verificar estado de tablas analíticas"""
@@ -6086,6 +6106,8 @@ async def verificar_analytics():
 
 
 print("✅ Endpoints de depuración agregados")
+print("✅ Endpoint /admin/verificar-analytics registrado")
+
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
