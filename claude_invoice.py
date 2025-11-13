@@ -72,6 +72,8 @@ PALABRAS_BASURA = [
     "espaci",
     "espaciador",
     "separador",
+    "domicilio",  # ← AGREGAR ESTA LÍNEA
+    "domicilio web",  # ← AGREGAR ESTA LÍNEA
     # Instrucciones
     "guardar",
     "refrigerar",
@@ -90,6 +92,20 @@ def es_texto_basura(nombre: str) -> Tuple[bool, str]:
         return True, "Nombre muy corto"
 
     nombre_lower = nombre.lower().strip()
+
+    # ✅ NUEVO: Validación específica para textos informativos
+    textos_informativos = [
+        "domicilio web",
+        "domicilio",
+        "web",
+        "display",
+        "exhibicion",
+        "espaciador",
+    ]
+
+    for texto in textos_informativos:
+        if nombre_lower == texto or nombre_lower.startswith(texto + " "):
+            return True, f"Texto informativo: '{texto}'"
 
     # Verificar palabras basura
     for palabra in PALABRAS_BASURA:
@@ -175,9 +191,10 @@ CORRECCIONES_OCR = {
     "AREPA DONA PAISA": "AREPAS DONA PAISA",
     "ATUN NESTLE AGUA": "ATUN MEDALLA AGUA",
     # ========== Correcciones Doña Pepa ==========
-    "DONAPEPA": "DONA PEPA",
-    "DONAPAPA": "DONA PEPA",
-    "DODAPEPA": "DONA PEPA",
+    "ARROZ DONAPEPA": "ARROZ DONA PEPA",
+    "ARROZ DONA PAPA": "ARROZ DONA PEPA",
+    "ARROZ DODAPEPA": "ARROZ DONA PEPA",
+    "ARROZ DOBLEPEPA": "ARROZ DONA PEPA",
     "DODA PEPA": "DONA PEPA",
     "DODA": "DONA",
     # ========== Otras correcciones ==========
@@ -438,7 +455,7 @@ Extraer CADA producto que el cliente compró con su código, nombre completo y p
 - "x 0.750", "x 1.5"
 
 **IGNORAR estas líneas (NO son productos):**
-````
+```
 V.Ahorro 0.250               ← Solo descuento
 0.750/KGM x 8.800            ← Peso/medida
 2x1 Descuento                ← Promoción
@@ -446,7 +463,15 @@ Subtotal                     ← Total parcial
 Precio Final                 ← Texto promocional
 Ahorra 40x                   ← Promoción
 Display                      ← No es producto
-DOMICILIO WEB                ← No es producto
+DOMICILIO WEB                ← Texto informativo, NO ES UN PRODUCTO
+Domicilio                    ← Texto informativo, NO ES UN PRODUCTO
+```
+
+**IMPORTANTE: Si una línea tiene estas palabras, NO la incluyas en productos:**
+- "Domicilio", "Domicilio Web"
+- "Display", "Exhibición"
+- "Ahorra", "Ahorro", "Descuento"
+- "Subtotal", "Total", "IVA"
 ````
 
 # 📝 FORMATO DE SALIDA
