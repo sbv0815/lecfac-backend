@@ -3955,14 +3955,7 @@ async def verificar_codigos():
 
 print("✅ Endpoints de setup agregados")
 
-# ============================================================================
-# AGREGAR A main.py - Endpoint para crear tabla categorias
-# ============================================================================
 
-# ============================================================================
-# AGREGAR A main.py - VERSIÓN CORREGIDA
-# Reemplazar el endpoint anterior con este
-# ============================================================================
 
 @app.get("/admin/setup-categorias")
 async def setup_categorias():
@@ -4310,11 +4303,96 @@ async def fix_categorias_final():
             "traceback": traceback.format_exc()
         }
 
-# ============================================================================
-# ENDPOINTS PARA productos_referencia
-# ============================================================================
-# Agregar estos endpoints a main.py
-# ============================================================================
+from inventory_consolidator import obtener_inventario_consolidado, obtener_estadisticas_stock
+
+@app.get("/api/v2/inventario-consolidado/{usuario_id}")
+async def get_inventario_consolidado(usuario_id: int):
+    """
+    🆕 ENDPOINT NUEVO - Obtiene inventario consolidado del usuario
+
+    Agrupa productos duplicados y muestra 1 línea por producto único
+
+    Args:
+        usuario_id: ID del usuario
+
+    Returns:
+        {
+            "productos": [...],
+            "estadisticas": {...},
+            "total": 50,
+            "consolidados": 10
+        }
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener inventario consolidado
+        inventario = obtener_inventario_consolidado(usuario_id, cursor)
+
+        # Obtener estadísticas
+        estadisticas = obtener_estadisticas_stock(inventario)
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "productos": inventario,
+            "estadisticas": estadisticas,
+            "total": len(inventario),
+            "consolidados": estadisticas['productos_consolidados']
+        }
+
+    except Exception as e:
+        print(f"❌ Error en get_inventario_consolidado: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
+# MODIFICACIÓN OPCIONAL DEL ENDPOINT EXISTENTE
+# ═══════════════════════════════════════════════════════════════
+
+# Si quieres agregar un parámetro opcional al endpoint existente:
+
+@app.get("/api/v2/inventario/{usuario_id}")
+async def get_inventario(usuario_id: int, consolidado: bool = False):
+    """
+    Obtiene inventario del usuario
+
+    Args:
+        usuario_id: ID del usuario
+        consolidado: Si es True, devuelve inventario consolidado
+
+    Returns:
+        Lista de productos (consolidados o sin consolidar)
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # ✅ NUEVO: Si piden consolidado, usar el nuevo módulo
+        if consolidado:
+            inventario = obtener_inventario_consolidado(usuario_id, cursor)
+            estadisticas = obtener_estadisticas_stock(inventario)
+
+            cursor.close()
+            conn.close()
+
+            return {
+                "success": True,
+                "productos": inventario,
+                "estadisticas": estadisticas,
+                "consolidado": True
+            }
+
+        # ❌ CÓDIGO EXISTENTE - NO MODIFICAR
+        # ... código actual del endpoint ...
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 from fastapi import HTTPException, Depends
 # ============================================================================
