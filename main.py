@@ -6386,6 +6386,117 @@ async def vincular_items_sin_codigo():
 
 print("✅ Endpoint /admin/vincular-items-sin-codigo registrado")
 
+
+@app.get("/admin/test-reprocesar-una-factura/{factura_id}")
+async def test_reprocesar_una_factura(factura_id: int):
+    """
+    Probar reprocesamiento de UNA factura con logs detallados
+    """
+    try:
+        from database import get_db_connection
+        from analytics_updater import actualizar_todas_las_tablas_analiticas
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"\n{'='*60}")
+        print(f"🔄 TEST: Reprocesando factura {factura_id}")
+        print(f"{'='*60}")
+
+        # Obtener datos de la factura
+        cursor.execute(
+            """
+            SELECT f.id, f.usuario_id, f.establecimiento_id, f.establecimiento
+            FROM facturas f
+            WHERE f.id = %s
+        """,
+            (factura_id,),
+        )
+
+        factura = cursor.fetchone()
+
+        if not factura:
+            return {"success": False, "error": f"Factura {factura_id} no encontrada"}
+
+        factura_id, usuario_id, establecimiento_id, establecimiento = factura
+
+        print(f"   📋 Factura: {factura_id}")
+        print(f"   👤 Usuario: {usuario_id}")
+        print(f"   🏪 Establecimiento: {establecimiento} (ID: {establecimiento_id})")
+
+        # Obtener items
+        cursor.execute(
+            """
+            SELECT
+                producto_maestro_id,
+                codigo_leido,
+                nombre_leido,
+                precio_pagado
+            FROM items_factura
+            WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
+        """,
+            (factura_id,),
+        )
+
+        items_data = []
+        for row in cursor.fetchall():
+            items_data.append(
+                {
+                    "producto_maestro_id": row[0],
+                    "codigo_leido": row[1] or "",
+                    "nombre": row[2],
+                    "precio": row[3],
+                }
+            )
+
+        print(f"   📦 Items encontrados: {len(items_data)}")
+
+        if not items_data:
+            return {
+                "success": False,
+                "error": f"Factura {factura_id} no tiene items con producto_maestro_id",
+            }
+
+        # Intentar actualizar tablas analíticas
+        print(f"   🔄 Actualizando tablas analíticas...")
+
+        resultado = actualizar_todas_las_tablas_analiticas(
+            cursor=cursor,
+            conn=conn,
+            factura_id=factura_id,
+            usuario_id=usuario_id,
+            establecimiento_id=establecimiento_id,
+            items_procesados=items_data,
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"   ✅ Actualización completada")
+        print(f"{'='*60}\n")
+
+        return {
+            "success": True,
+            "factura_id": factura_id,
+            "items_procesados": len(items_data),
+            "resultado": resultado,
+            "items_muestra": items_data[:5],
+        }
+
+    except Exception as e:
+        import traceback
+
+        error_trace = traceback.format_exc()
+
+        print(f"   ❌ ERROR: {e}")
+        print(f"   Traceback:\n{error_trace}")
+
+        return {"success": False, "error": str(e), "traceback": error_trace}
+
+
+print("✅ Endpoint /admin/test-reprocesar-una-factura registrado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
