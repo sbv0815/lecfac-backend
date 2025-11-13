@@ -753,7 +753,6 @@ function agregarPLU() {
         return;
     }
 
-    // Remover mensaje de "no hay PLUs" si existe
     const mensaje = contenedor.querySelector('p');
     if (mensaje) {
         mensaje.remove();
@@ -787,21 +786,11 @@ function agregarPLU() {
                 🗑️
             </button>
         </div>
-        <button class="btn-secondary" onclick="recargarColores()"
-                        title="Recargar colores de establecimientos">
-                        🔄 Colores
-                    </button>
-                </div>
-            </div>
-
-            <button class="btn-success btn-small" onclick="marcarRevisado(${prod.id})"
-        title="Marcar como revisado">
-    ✅
-        </button>
     `;
 
     contenedor.appendChild(pluDiv);
 }
+
 
 // =============================================================
 // CARGAR PLUs DEL PRODUCTO
