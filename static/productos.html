@@ -657,236 +657,235 @@
                     <button class="btn-warning" onclick="detectarDuplicados()">
                         🔍 Detectar Duplicados
                     </button>
-                    <button class="btn-secondary" onclick="recargarColores()"
-                        title="Recargar colores de establecimientos">
-                        🔄 Colores
-                    </button>
-                </div>
-            </div>
 
-            <!-- Table -->
-            <div class="productos-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="checkbox-cell">
-                                <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
-                            </th>
-                            <th>ID</th>
-                            <th>EAN</th>
-                            <th>PLU</th>
-                            <th>Establecimiento</th> <!-- ⭐ NUEVA COLUMNA -->
-                            <th>Nombre</th>
-                            <th>Marca</th>
-                            <th>Categoría</th>
-                            <th>Precio</th>
-                            <th>Compras</th>
-                            <th>Estado</th>
-                            <th style="width: 150px;">Acciones</th>
-                        </tr>
-                    </thead>
 
-                    <tbody id="productos-body">
-                        <tr>
-                            <td colspan="11" style="text-align: center; padding: 40px;">
-                                <div class="loading"></div>
-                                <p style="margin-top: 10px;">Cargando productos...</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                    <!-- Table -->
+                    <div class="productos-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th class="checkbox-cell">
+                                        <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                                    </th>
+                                    <th>ID</th>
+                                    <th>EAN</th>
+                                    <th>PLU</th>
+                                    <th>Establecimiento</th> <!-- ⭐ NUEVA COLUMNA -->
+                                    <th>Nombre</th>
+                                    <th>Marca</th>
+                                    <th>Categoría</th>
+                                    <th>Precio</th>
+                                    <th>Compras</th>
+                                    <th>Estado</th>
+                                    <th style="width: 150px;">Acciones</th>
+                                </tr>
+                            </thead>
 
-            <!-- Pagination -->
-            <div class="pagination" id="pagination"></div>
-        </div>
-
-        <!-- TAB 2: DUPLICADOS -->
-        <div id="tab-duplicados" class="tab-content">
-            <div class="alert alert-info">
-                <strong>🔍 Detección de Duplicados</strong><br>
-                El sistema detecta automáticamente productos duplicados por:
-                <ul style="margin-top: 10px; margin-left: 20px;">
-                    <li>Mismo código EAN pero diferentes IDs (🔴 Crítico)</li>
-                    <li>Mismo PLU en el mismo establecimiento (🔴 Crítico)</li>
-                    <li>Nombres muy similares (🟡 Revisar)</li>
-                </ul>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-                <button class="btn-primary" onclick="cargarDuplicados()" style="font-size: 16px; padding: 15px 30px;">
-                    🔍 Analizar Todos los Productos
-                </button>
-            </div>
-
-            <div id="duplicados-container">
-                <!-- Duplicados se cargan aquí -->
-            </div>
-        </div>
-
-        <!-- TAB 3: CALIDAD DE DATOS -->
-        <div id="tab-calidad" class="tab-content">
-            <div class="alert alert-info">
-                <strong>📊 Dashboard de Calidad de Datos</strong><br>
-                Métricas de completitud y salud del catálogo de productos
-            </div>
-
-            <div id="calidad-stats" class="stats">
-                <!-- Stats de calidad -->
-            </div>
-
-            <div style="background: white; padding: 30px; border-radius: 8px; margin-top: 20px;">
-                <h2>📈 Recomendaciones</h2>
-                <div id="recomendaciones" style="margin-top: 20px;">
-                    <!-- Recomendaciones dinámicas -->
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL DE EDICIÓN MEJORADO CON PLUs -->
-    <div id="modal-editar" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>✏️ Editar Producto</h2>
-                <span class="close" onclick="cerrarModal('modal-editar')">&times;</span>
-            </div>
-            <form id="form-editar" onsubmit="guardarEdicion(event)">
-                <input type="hidden" id="edit-id">
-
-                <!-- Sección 1: Identificación Global -->
-                <div class="section-header">
-                    📦 Identificación Global
-                </div>
-
-                <div class="form-group">
-                    <label>Código EAN</label>
-                    <input type="text" id="edit-ean" placeholder="7702001234567" maxlength="13">
-                </div>
-
-                <div class="form-group">
-                    <label>Nombre Normalizado *</label>
-                    <input type="text" id="edit-nombre-norm" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Nombre Comercial</label>
-                    <input type="text" id="edit-nombre-com">
-                </div>
-
-                <div class="form-group">
-                    <label>Marca</label>
-                    <input type="text" id="edit-marca" placeholder="Ej: Alpina">
-                </div>
-
-                <div class="form-group">
-                    <label>Categoría</label>
-                    <input type="text" id="edit-categoria" placeholder="Ej: Lácteos">
-                </div>
-
-                <div class="form-group">
-                    <label>Subcategoría</label>
-                    <input type="text" id="edit-subcategoria" placeholder="Ej: Leches">
-                </div>
-
-                <div class="form-group">
-                    <label>Presentación</label>
-                    <input type="text" id="edit-presentacion" placeholder="Ej: 1L">
-                </div>
-
-                <!-- Sección 2: PLUs por Establecimiento -->
-                <div class="section-header">
-                    🏪 PLUs por Establecimiento
-                </div>
-
-                <div id="contenedorPLUs">
-                    <!-- Los PLUs se cargan dinámicamente aquí -->
-                </div>
-
-                <button type="button" class="btn-add-plu" onclick="agregarPLU()">
-                    ➕ Agregar PLU
-                </button>
-
-                <!-- Sección 3: Estadísticas (solo lectura) -->
-                <div class="section-header">
-                    📊 Estadísticas
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                    <div class="form-group">
-                        <label>Veces Comprado</label>
-                        <input type="text" id="edit-veces-comprado" readonly style="background: #f0f0f0;">
+                            <tbody id="productos-body">
+                                <tr>
+                                    <td colspan="11" style="text-align: center; padding: 40px;">
+                                        <div class="loading"></div>
+                                        <p style="margin-top: 10px;">Cargando productos...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="form-group">
-                        <label>Precio Promedio</label>
-                        <input type="text" id="edit-precio-promedio" readonly style="background: #f0f0f0;">
+
+                    <!-- Pagination -->
+                    <div class="pagination" id="pagination"></div>
+                </div>
+
+                <!-- TAB 2: DUPLICADOS -->
+                <div id="tab-duplicados" class="tab-content">
+                    <div class="alert alert-info">
+                        <strong>🔍 Detección de Duplicados</strong><br>
+                        El sistema detecta automáticamente productos duplicados por:
+                        <ul style="margin-top: 10px; margin-left: 20px;">
+                            <li>Mismo código EAN pero diferentes IDs (🔴 Crítico)</li>
+                            <li>Mismo PLU en el mismo establecimiento (🔴 Crítico)</li>
+                            <li>Nombres muy similares (🟡 Revisar)</li>
+                        </ul>
                     </div>
-                    <div class="form-group">
-                        <label>Establecimientos</label>
-                        <input type="text" id="edit-num-establecimientos" readonly style="background: #f0f0f0;">
+
+                    <div style="text-align: center; margin: 30px 0;">
+                        <button class="btn-primary" onclick="cargarDuplicados()"
+                            style="font-size: 16px; padding: 15px 30px;">
+                            🔍 Analizar Todos los Productos
+                        </button>
+                    </div>
+
+                    <div id="duplicados-container">
+                        <!-- Duplicados se cargan aquí -->
                     </div>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="cerrarModal('modal-editar')">Cancelar</button>
-                    <button type="submit" class="btn-success">💾 Guardar Cambios</button>
+                <!-- TAB 3: CALIDAD DE DATOS -->
+                <div id="tab-calidad" class="tab-content">
+                    <div class="alert alert-info">
+                        <strong>📊 Dashboard de Calidad de Datos</strong><br>
+                        Métricas de completitud y salud del catálogo de productos
+                    </div>
+
+                    <div id="calidad-stats" class="stats">
+                        <!-- Stats de calidad -->
+                    </div>
+
+                    <div style="background: white; padding: 30px; border-radius: 8px; margin-top: 20px;">
+                        <h2>📈 Recomendaciones</h2>
+                        <div id="recomendaciones" style="margin-top: 20px;">
+                            <!-- Recomendaciones dinámicas -->
+                        </div>
+                    </div>
                 </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODAL DE FUSIÓN -->
-    <div id="modal-fusionar" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🔗 Fusionar Productos</h2>
-                <span class="close" onclick="cerrarModal('modal-fusionar')">&times;</span>
             </div>
 
-            <div class="alert alert-warning">
-                <strong>⚠️ Acción Permanente</strong><br>
-                Esta acción fusionará todos los productos seleccionados en uno solo. Los datos se consolidarán
-                automáticamente.
+            <!-- MODAL DE EDICIÓN MEJORADO CON PLUs -->
+            <div id="modal-editar" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>✏️ Editar Producto</h2>
+                        <span class="close" onclick="cerrarModal('modal-editar')">&times;</span>
+                    </div>
+                    <form id="form-editar" onsubmit="guardarEdicion(event)">
+                        <input type="hidden" id="edit-id">
+
+                        <!-- Sección 1: Identificación Global -->
+                        <div class="section-header">
+                            📦 Identificación Global
+                        </div>
+
+                        <div class="form-group">
+                            <label>Código EAN</label>
+                            <input type="text" id="edit-ean" placeholder="7702001234567" maxlength="13">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Nombre Normalizado *</label>
+                            <input type="text" id="edit-nombre-norm" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Nombre Comercial</label>
+                            <input type="text" id="edit-nombre-com">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Marca</label>
+                            <input type="text" id="edit-marca" placeholder="Ej: Alpina">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Categoría</label>
+                            <input type="text" id="edit-categoria" placeholder="Ej: Lácteos">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Subcategoría</label>
+                            <input type="text" id="edit-subcategoria" placeholder="Ej: Leches">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Presentación</label>
+                            <input type="text" id="edit-presentacion" placeholder="Ej: 1L">
+                        </div>
+
+                        <!-- Sección 2: PLUs por Establecimiento -->
+                        <div class="section-header">
+                            🏪 PLUs por Establecimiento
+                        </div>
+
+                        <div id="contenedorPLUs">
+                            <!-- Los PLUs se cargan dinámicamente aquí -->
+                        </div>
+
+                        <button type="button" class="btn-add-plu" onclick="agregarPLU()">
+                            ➕ Agregar PLU
+                        </button>
+
+                        <!-- Sección 3: Estadísticas (solo lectura) -->
+                        <div class="section-header">
+                            📊 Estadísticas
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label>Veces Comprado</label>
+                                <input type="text" id="edit-veces-comprado" readonly style="background: #f0f0f0;">
+                            </div>
+                            <div class="form-group">
+                                <label>Precio Promedio</label>
+                                <input type="text" id="edit-precio-promedio" readonly style="background: #f0f0f0;">
+                            </div>
+                            <div class="form-group">
+                                <label>Establecimientos</label>
+                                <input type="text" id="edit-num-establecimientos" readonly style="background: #f0f0f0;">
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn-secondary"
+                                onclick="cerrarModal('modal-editar')">Cancelar</button>
+                            <button type="submit" class="btn-success">💾 Guardar Cambios</button>
+                        </div>
+                    </form>
+                </div>
             </div>
 
-            <div id="fusion-preview">
-                <!-- Preview de productos a fusionar -->
+            <!-- MODAL DE FUSIÓN -->
+            <div id="modal-fusionar" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>🔗 Fusionar Productos</h2>
+                        <span class="close" onclick="cerrarModal('modal-fusionar')">&times;</span>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Acción Permanente</strong><br>
+                        Esta acción fusionará todos los productos seleccionados en uno solo. Los datos se consolidarán
+                        automáticamente.
+                    </div>
+
+                    <div id="fusion-preview">
+                        <!-- Preview de productos a fusionar -->
+                    </div>
+
+                    <div class="form-group">
+                        <label>Estrategia de Fusión</label>
+                        <select id="estrategia-fusion">
+                            <option value="mas_completo">Mantener datos más completos</option>
+                            <option value="principal">Mantener datos del producto principal</option>
+                        </select>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary"
+                            onclick="cerrarModal('modal-fusionar')">Cancelar</button>
+                        <button type="button" class="btn-success" onclick="confirmarFusion()">✅ Confirmar
+                            Fusión</button>
+                    </div>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>Estrategia de Fusión</label>
-                <select id="estrategia-fusion">
-                    <option value="mas_completo">Mantener datos más completos</option>
-                    <option value="principal">Mantener datos del producto principal</option>
-                </select>
+            <!-- MODAL DE HISTORIAL -->
+            <div id="modal-historial" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>📜 Historial de Compras</h2>
+                        <span class="close" onclick="cerrarModal('modal-historial')">&times;</span>
+                    </div>
+
+                    <div id="historial-container">
+                        <!-- Historial se carga aquí -->
+                    </div>
+                </div>
             </div>
 
-            <div class="form-actions">
-                <button type="button" class="btn-secondary" onclick="cerrarModal('modal-fusionar')">Cancelar</button>
-                <button type="button" class="btn-success" onclick="confirmarFusion()">✅ Confirmar Fusión</button>
-            </div>
-        </div>
-    </div>
+            <script src="/static/js/productos.js"></script>
+            <script src="/static/js/funciones_plu_modal.js"></script>
 
-    <!-- MODAL DE HISTORIAL -->
-    <div id="modal-historial" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>📜 Historial de Compras</h2>
-                <span class="close" onclick="cerrarModal('modal-historial')">&times;</span>
-            </div>
-
-            <div id="historial-container">
-                <!-- Historial se carga aquí -->
-            </div>
-        </div>
-    </div>
-
-    <script src="/static/js/productos.js"></script>
-    <script src="/static/js/funciones_plu_modal.js"></script>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+            <!-- Bootstrap JS -->
+            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

@@ -558,6 +558,28 @@ async function guardarEdicion(event) {
         alert("Error al guardar: " + error.message);
     }
 }
+async function marcarRevisado(productoId) {
+    if (!confirm('¿Marcar este producto como REVISADO y CORRECTO?\n\nEsto significa que el nombre, marca y categoría son correctos.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/productos/${productoId}/marcar-revisado`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            alert('✅ Producto marcado como revisado');
+            cargarProductos(); // Recargar tabla
+        } else {
+            const error = await response.json();
+            alert('Error: ' + error.detail);
+        }
+    } catch (error) {
+        alert('Error de conexión: ' + error.message);
+    }
+}
 
 // =============================================================
 // Funciones auxiliares
@@ -765,6 +787,17 @@ function agregarPLU() {
                 🗑️
             </button>
         </div>
+        <button class="btn-secondary" onclick="recargarColores()"
+                        title="Recargar colores de establecimientos">
+                        🔄 Colores
+                    </button>
+                </div>
+            </div>
+
+            <button class="btn-success btn-small" onclick="marcarRevisado(${prod.id})"
+        title="Marcar como revisado">
+    ✅
+        </button>
     `;
 
     contenedor.appendChild(pluDiv);
