@@ -34,21 +34,47 @@ from typing import Dict, List, Tuple, Optional
 
 PALABRAS_BASURA = [
     # Promociones
-    'ahorra', 'ahorro', 'descuento', 'oferta', 'promocion', 'promo',
-    '2x1', '3x2', 'lleva', 'paga', 'gratis', 'v.ahorro', 'v.khorro',
-
+    "ahorra",
+    "ahorro",
+    "descuento",
+    "oferta",
+    "promocion",
+    "promo",
+    "2x1",
+    "3x2",
+    "lleva",
+    "paga",
+    "gratis",
+    "v.ahorro",
+    "v.khorro",
     # Textos de factura
-    'subtotal', 'total', 'iva', 'propina', 'cambio', 'efectivo',
-    'tarjeta', 'credito', 'debito', 'pago', 'recibido',
-    'devuelta', 'vuelto', 'recaudo',
-
+    "subtotal",
+    "total",
+    "iva",
+    "propina",
+    "cambio",
+    "efectivo",
+    "tarjeta",
+    "credito",
+    "debito",
+    "pago",
+    "recibido",
+    "devuelta",
+    "vuelto",
+    "recaudo",
     # Textos generales
-    'precio final', 'display', 'exhibicion',
-    'espaci', 'espaciador', 'separador',
-
+    "precio final",
+    "display",
+    "exhibicion",
+    "espaci",
+    "espaciador",
+    "separador",
     # Instrucciones
-    'guardar', 'refrigerar', 'congelar',
+    "guardar",
+    "refrigerar",
+    "congelar",
 ]
+
 
 def es_texto_basura(nombre: str) -> Tuple[bool, str]:
     """
@@ -68,11 +94,11 @@ def es_texto_basura(nombre: str) -> Tuple[bool, str]:
             return True, f"Contiene '{palabra}'"
 
     # Solo números
-    if nombre.replace(' ', '').isdigit():
+    if nombre.replace(" ", "").isdigit():
         return True, "Solo números"
 
     # Patrones basura
-    if re.match(r'^\d+x\d+$', nombre_lower):
+    if re.match(r"^\d+x\d+$", nombre_lower):
         return True, "Patrón promocional"
 
     return False, ""
@@ -81,6 +107,7 @@ def es_texto_basura(nombre: str) -> Tuple[bool, str]:
 # ==============================================================================
 # NORMALIZACIÓN DE NOMBRES
 # ==============================================================================
+
 
 def normalizar_nombre_producto(nombre: str) -> str:
     """
@@ -93,20 +120,21 @@ def normalizar_nombre_producto(nombre: str) -> str:
     nombre = nombre.upper().strip()
 
     # Quitar tildes
-    nombre = ''.join(
-        c for c in unicodedata.normalize('NFD', nombre)
-        if unicodedata.category(c) != 'Mn'
+    nombre = "".join(
+        c
+        for c in unicodedata.normalize("NFD", nombre)
+        if unicodedata.category(c) != "Mn"
     )
 
     # Reemplazar caracteres especiales por espacios
-    for char in ['-', '_', '.', ',', '/', '\\', '|']:
-        nombre = nombre.replace(char, ' ')
+    for char in ["-", "_", ".", ",", "/", "\\", "|"]:
+        nombre = nombre.replace(char, " ")
 
     # Quitar espacios múltiples
-    nombre = ' '.join(nombre.split())
+    nombre = " ".join(nombre.split())
 
     # Quitar caracteres no alfanuméricos (excepto espacios)
-    nombre = ''.join(c for c in nombre if c.isalnum() or c.isspace())
+    nombre = "".join(c for c in nombre if c.isalnum() or c.isspace())
 
     return nombre
 
@@ -126,47 +154,45 @@ CORRECCIONES_OCR = {
     "PONQ": "PONQUE",
     "PONO": "PONQUE",
     "GGNS": "",
-    "ZHRIA": "ZANAHORIA",        # ← YA EXISTE
-    "ZHIRIA": "ZANAHORIA",       # ← AGREGAR ESTA
-    "ZANARIA": "ZANAHORIA",      # ← AGREGAR ESTA
-    "ZANAHRIA": "ZANAHORIA",     # ← AGREGAR ESTA
-    "PONQUE GANS RAMO 48G":"PONQUE GANS RAMO ",
-    "PONQUE GANS RAMO 486":"PONQUE GANS RAMO ",
-    "PONQUE GNS RAMO 48G":"PONQUE GANS RAMO ",
-    "PONQUE GNS RAMO 480":"PONQUE GANS RAMO ",
-    "PAN BLANCO BIMBO 730GR":"PAN BLANCO BIMBO 730G",
-    "ESPARCIB RAMA C S" :"ESPARCIR RAMA C/S",
-    "PIDA GOLDEN":"PIÑA GOLDEN",
-    "QSO PARMES RALLAD":"QUESO PARMESANO RALLADO",
-    "QUESO PARKES RALLAD":"QUESO PARMESANO RALLADO",
-    "ARROZ DODA PEPA":"ARROZ DOÑA PEPA",
-    "AREPA DODO PAISA":"AREPAS DOÑA PAISA",
-    "AREPA DORA PAISA":"AREPAS DOÑA PAISA",
-    "AREPA DONA PAISA":"AREPAS DOÑA PAISA",
-    "ATUN NESTLE AGUA":"ATUN MEDALLA AGUA",
-
-
+    "ZHRIA": "ZANAHORIA",
+    "ZHIRIA": "ZANAHORIA",
+    "ZANARIA": "ZANAHORIA",
+    "ZANAHRIA": "ZANAHORIA",
+    "PONQUE GANS RAMO 48G": "PONQUE GANS RAMO ",
+    "PONQUE GANS RAMO 486": "PONQUE GANS RAMO ",
+    "PONQUE GNS RAMO 48G": "PONQUE GANS RAMO ",
+    "PONQUE GNS RAMO 480": "PONQUE GANS RAMO ",
+    "PAN BLANCO BIMBO 730GR": "PAN BLANCO BIMBO 730G",
+    "ESPARCIB RAMA C S": "ESPARCIR RAMA C/S",
+    "PIDA GOLDEN": "PIÑA GOLDEN",
+    "QSO PARMES RALLAD": "QUESO PARMESANO RALLADO",
+    "QUESO PARKES RALLAD": "QUESO PARMESANO RALLADO",
+    "ARROZ DODA PEPA": "ARROZ DONA PEPA",
+    "AREPA DODO PAISA": "AREPAS DONA PAISA",
+    "AREPA DORA PAISA": "AREPAS DONA PAISA",
+    "AREPA DONA PAISA": "AREPAS DONA PAISA",
+    "ATUN NESTLE AGUA": "ATUN MEDALLA AGUA",
+    "DONAPEPA": "DONA PEPA",
+    "DONAPAPA": "DONA PEPA",
+    "DODAPEPA": "DONA PEPA",
+    "DODA PEPA": "DONA PEPA",
+    "BANAN GRANEL": "BANANO GRANEL",
     # ========== Chocolatinas ==========
     "CHOCTINA": "CHOCOLATINA",
     "CHOCTINGA": "CHOCOLATINA",
     "CHOCTING": "CHOCOLATINA",
     "CHOCITINA": "CHOCOLATINA",
-
     # ========== Refrescos ==========
     "REFRESC": "REFRESCO",
     "REPESO": "REFRESCO",  # ← NUEVO
-    "POL": "POLVO",        # ← NUEVO
+    "POL": "POLVO",  # ← NUEVO
     "REFRESC  CLIGHT POL": "REFRESCO  CLIGHT POLVO",
     "PASA FUSIL FERRA": "PASA FUSIL FERRARA",
     "PASA FUSIL TERRA": "PASA FUSIL FERRARA",
-
-
-
     # ========== Mermeladas ==========
     "MERMEL": "MERMELADA",
     "FRUGAL PIDA": "FRUGAL PIÑA",  # ← NUEVO
-    "PIDA": "PIÑA",                 # ← NUEVO
-
+    "PIDA": "PIÑA",  # ← NUEVO
     # ========== Marcas comunes ==========
     "DODA": "DOÑA",
     "MARGAR": "MARGARINA",
@@ -177,7 +203,6 @@ CORRECCIONES_OCR = {
     "GALADITOS": "CALADITOS",
     "LECA KLEEK L": "LACA KLEER",
     "QUESO PARMA": "QUESO PARMESANO",
-
     # ========== Lácteos ==========
     "CREM": "CREMA",
     "VECHE": "LECHE",
@@ -190,12 +215,9 @@ CORRECCIONES_OCR = {
     "ALPNA": "ALPINA",
     "ALPIN": "ALPINA",
     "COLANT": "COLANTA",
-
     # ========== Palabras sin sentido (eliminar) ==========
-    "BLENG": "",      # ← NUEVO (basura OCR)
-    "MORCAF": "",     # ← NUEVO (basura OCR)
-
-
+    "BLENG": "",  # ← NUEVO (basura OCR)
+    "MORCAF": "",  # ← NUEVO (basura OCR)
 }
 
 
@@ -227,6 +249,7 @@ def corregir_nombre_producto(nombre: str) -> str:
 # LIMPIEZA DE PRECIOS
 # ==============================================================================
 
+
 def limpiar_precio_colombiano(precio_str):
     """
     Convierte precio colombiano a entero (sin decimales)
@@ -243,15 +266,21 @@ def limpiar_precio_colombiano(precio_str):
         return max(0, int(precio_str * 100))
 
     precio_str = str(precio_str).strip()
-    precio_str = precio_str.replace(" ", "").replace("$", "").replace("COP", "").replace("cop", "").strip()
+    precio_str = (
+        precio_str.replace(" ", "")
+        .replace("$", "")
+        .replace("COP", "")
+        .replace("cop", "")
+        .strip()
+    )
 
-    if precio_str.count('.') > 1 or precio_str.count(',') > 1:
+    if precio_str.count(".") > 1 or precio_str.count(",") > 1:
         precio_str = precio_str.replace(",", "").replace(".", "")
-    elif '.' in precio_str or ',' in precio_str:
-        if '.' in precio_str:
-            partes = precio_str.split('.')
+    elif "." in precio_str or "," in precio_str:
+        if "." in precio_str:
+            partes = precio_str.split(".")
         else:
-            partes = precio_str.split(',')
+            partes = precio_str.split(",")
 
         if len(partes) == 2 and len(partes[1]) == 3:
             precio_str = precio_str.replace(",", "").replace(".", "")
@@ -305,7 +334,10 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 # PROCESAMIENTO CON CLAUDE VISION
 # ==============================================================================
 
-def parse_invoice_with_claude(image_path: str, aplicar_aprendizaje: bool = True) -> Dict:
+
+def parse_invoice_with_claude(
+    image_path: str, aplicar_aprendizaje: bool = True
+) -> Dict:
     """
     Procesa factura con Claude Vision API
 
@@ -330,7 +362,9 @@ def parse_invoice_with_claude(image_path: str, aplicar_aprendizaje: bool = True)
         with open(image_path, "rb") as f:
             image_data = base64.b64encode(f.read()).decode("utf-8")
 
-        media_type = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
+        media_type = (
+            "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
+        )
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
@@ -414,7 +448,12 @@ Para CADA producto, responde con:
 
 ```json
 {
-  "establecimiento": "NOMBRE DEL ESTABLECIMIENTO",
+  # 🏪 ESTABLECIMIENTO CONFIRMADO
+El usuario ya confirmó que esta factura es de: **{establecimiento_seleccionado}**
+
+# 🎯 TU MISIÓN
+Extraer CADA producto de esta factura de {establecimiento_seleccionado}
+
   "fecha": "YYYY-MM-DD",
   "total": total_entero,
   "productos": [
@@ -517,8 +556,12 @@ Para CADA producto, responde con:
                 nombre_original = str(prod.get("nombre", "")).strip()
 
                 # Eliminar sufijos de error
-                nombre_limpio = re.sub(r"\s+V\.?\s*Ahorro.*$", "", nombre_original, flags=re.IGNORECASE)
-                nombre_limpio = re.sub(r"\s+\d+\.?\d*/KG[MH]?.*$", "", nombre_limpio, flags=re.IGNORECASE)
+                nombre_limpio = re.sub(
+                    r"\s+V\.?\s*Ahorro.*$", "", nombre_original, flags=re.IGNORECASE
+                )
+                nombre_limpio = re.sub(
+                    r"\s+\d+\.?\d*/KG[MH]?.*$", "", nombre_limpio, flags=re.IGNORECASE
+                )
                 nombre_limpio = nombre_limpio.strip()
 
                 # Corregir errores OCR
@@ -531,7 +574,9 @@ Para CADA producto, responde con:
                     print(f"   📝 '{nombre_original[:35]}' → '{nombre_final[:35]}'")
 
                 prod["nombre"] = nombre_final
-                prod["nombre_ocr_original"] = nombre_original  # Guardar para aprendizaje
+                prod["nombre_ocr_original"] = (
+                    nombre_original  # Guardar para aprendizaje
+                )
 
         # ========== PROCESAMIENTO FINAL ==========
         productos_procesados = 0
@@ -621,7 +666,9 @@ Para CADA producto, responde con:
 
     except json.JSONDecodeError as e:
         print(f"❌ Error JSON: {e}")
-        print(f"Respuesta: {response_text[:500] if 'response_text' in locals() else 'N/A'}")
+        print(
+            f"Respuesta: {response_text[:500] if 'response_text' in locals() else 'N/A'}"
+        )
         return {
             "success": False,
             "error": "Error parseando respuesta. Imagen más clara.",
@@ -629,6 +676,7 @@ Para CADA producto, responde con:
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         return {"success": False, "error": f"Error: {str(e)}"}
 
