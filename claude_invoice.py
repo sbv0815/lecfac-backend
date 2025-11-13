@@ -1,8 +1,10 @@
 """
-claude_invoice.py - VERSIÓN 3.0 - INTEGRACIÓN CON APRENDIZAJE
+claude_invoice.py - VERSIÓN 3.1 - CON ESTABLECIMIENTO CONFIRMADO
 ========================================================================
 
-🎯 VERSIÓN 3.0 - NUEVAS CAPACIDADES:
+🎯 VERSIÓN 3.1 - NUEVAS CAPACIDADES:
+- ✅ Establecimiento confirmado por usuario
+- ✅ Corrección automática de fechas antiguas
 - ✅ Integración completa con sistema de aprendizaje
 - ✅ Auto-corrección de productos conocidos
 - ✅ Tracking de ahorro (productos que no llamaron Perplexity)
@@ -11,8 +13,8 @@ claude_invoice.py - VERSIÓN 3.0 - INTEGRACIÓN CON APRENDIZAJE
 - ✅ Correcciones OCR mejoradas
 - ✅ Estadísticas de aprendizaje
 
-FLUJO V3.0:
-1️⃣ Claude OCR → Extrae productos crudos
+FLUJO V3.1:
+1️⃣ Claude OCR → Extrae productos crudos (con establecimiento confirmado)
 2️⃣ Filtro basura → Elimina líneas no-producto
 3️⃣ Correcciones Python → Arregla errores comunes
 4️⃣ Aprendizaje → Busca productos conocidos
@@ -27,6 +29,7 @@ import json
 import re
 import unicodedata
 from typing import Dict, List, Tuple, Optional
+from datetime import datetime
 
 # ==============================================================================
 # FILTRO DE TEXTO BASURA
@@ -154,7 +157,6 @@ CORRECCIONES_OCR = {
     "PONQ": "PONQUE",
     "PONO": "PONQUE",
     "GGNS": "",
-    "ZHRIA": "ZANAHORIA",
     "ZHIRIA": "ZANAHORIA",
     "ZANARIA": "ZANAHORIA",
     "ZANAHRIA": "ZANAHORIA",
@@ -172,11 +174,15 @@ CORRECCIONES_OCR = {
     "AREPA DORA PAISA": "AREPAS DONA PAISA",
     "AREPA DONA PAISA": "AREPAS DONA PAISA",
     "ATUN NESTLE AGUA": "ATUN MEDALLA AGUA",
+    # ========== Correcciones Doña Pepa ==========
     "DONAPEPA": "DONA PEPA",
     "DONAPAPA": "DONA PEPA",
     "DODAPEPA": "DONA PEPA",
     "DODA PEPA": "DONA PEPA",
-    "BANAN GRANEL": "BANANO GRANEL",
+    "DODA": "DONA",
+    # ========== Otras correcciones ==========
+    "BANAN": "BANANO",
+    "BANANO GRANEL": "BANANO GRANEL",
     # ========== Chocolatinas ==========
     "CHOCTINA": "CHOCOLATINA",
     "CHOCTINGA": "CHOCOLATINA",
@@ -184,17 +190,16 @@ CORRECCIONES_OCR = {
     "CHOCITINA": "CHOCOLATINA",
     # ========== Refrescos ==========
     "REFRESC": "REFRESCO",
-    "REPESO": "REFRESCO",  # ← NUEVO
-    "POL": "POLVO",  # ← NUEVO
+    "REPESO": "REFRESCO",
+    "POL": "POLVO",
     "REFRESC  CLIGHT POL": "REFRESCO  CLIGHT POLVO",
     "PASA FUSIL FERRA": "PASA FUSIL FERRARA",
     "PASA FUSIL TERRA": "PASA FUSIL FERRARA",
     # ========== Mermeladas ==========
     "MERMEL": "MERMELADA",
-    "FRUGAL PIDA": "FRUGAL PIÑA",  # ← NUEVO
-    "PIDA": "PIÑA",  # ← NUEVO
+    "FRUGAL PIDA": "FRUGAL PIÑA",
+    "PIDA": "PIÑA",
     # ========== Marcas comunes ==========
-    "DODA": "DOÑA",
     "MARGAR": "MARGARINA",
     "ESPARCI": "MARGARINA",
     "ESPARCIR": "MARGARINA",
@@ -216,8 +221,8 @@ CORRECCIONES_OCR = {
     "ALPIN": "ALPINA",
     "COLANT": "COLANTA",
     # ========== Palabras sin sentido (eliminar) ==========
-    "BLENG": "",  # ← NUEVO (basura OCR)
-    "MORCAF": "",  # ← NUEVO (basura OCR)
+    "BLENG": "",
+    "MORCAF": "",
 }
 
 
@@ -321,6 +326,8 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         "cafam": "CAFAM",
         "colsubsidio": "COLSUBSIDIO",
         "jeronimo martins": "ARA",
+        "farmatodo": "FARMATODO",
+        "supermercados premium": "SUPERMERCADOS PREMIUM",
     }
 
     for clave, normalizado in establecimientos.items():
@@ -336,18 +343,18 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 
 
 def parse_invoice_with_claude(
-    image_path: str, aplicar_aprendizaje: bool = True
+    image_path: str,
+    establecimiento_preseleccionado: str = None,  # ← NUEVO
+    aplicar_aprendizaje: bool = True,
 ) -> Dict:
     """
-    Procesa factura con Claude Vision API
+    Procesa factura con Claude Vision API - V3.1
 
-    ✅ VERSIÓN 3.0:
-    - Detecta EAN-13 + PLU
-    - Filtro de basura
-    - Integración con aprendizaje automático
+    ✅ NUEVO: Recibe establecimiento confirmado por usuario
 
     Args:
         image_path: Ruta a la imagen de la factura
+        establecimiento_preseleccionado: Nombre del supermercado (ya confirmado)
         aplicar_aprendizaje: Si debe usar el sistema de aprendizaje
 
     Returns:
@@ -355,7 +362,9 @@ def parse_invoice_with_claude(
     """
     try:
         print("=" * 80)
-        print("🤖 CLAUDE INVOICE V3.0 - CON APRENDIZAJE AUTOMÁTICO")
+        print("🤖 CLAUDE INVOICE V3.1 - CON ESTABLECIMIENTO CONFIRMADO")
+        if establecimiento_preseleccionado:
+            print(f"🏪 ESTABLECIMIENTO: {establecimiento_preseleccionado.upper()}")
         print("=" * 80)
 
         # Leer imagen
@@ -372,8 +381,25 @@ def parse_invoice_with_claude(
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT MEJORADO V3.0 ==========
-        prompt = """Eres un experto extractor de productos de facturas colombianas.
+        # ========== PROMPT MEJORADO V3.1 CON ESTABLECIMIENTO ==========
+
+        # Construir sección de establecimiento si está confirmado
+        prompt_establecimiento = ""
+        if establecimiento_preseleccionado:
+            prompt_establecimiento = f"""
+# 🏪 INFORMACIÓN IMPORTANTE DEL ESTABLECIMIENTO
+
+**El usuario YA confirmó que esta factura es de: {establecimiento_preseleccionado.upper()}**
+
+REGLAS CRÍTICAS:
+- Usa EXACTAMENTE el nombre: "{establecimiento_preseleccionado.upper()}"
+- NO uses nombres genéricos como "Supermercado No Identificado" o "Domicilio Web"
+- NO intentes adivinar el establecimiento
+- Si la factura tiene un nombre diferente, IGNÓRALO y usa "{establecimiento_preseleccionado.upper()}"
+
+"""
+
+        prompt = f"""{prompt_establecimiento}Eres un experto extractor de productos de facturas colombianas.
 
 # 🎯 TU MISIÓN
 
@@ -412,7 +438,7 @@ Extraer CADA producto que el cliente compró con su código, nombre completo y p
 - "x 0.750", "x 1.5"
 
 **IGNORAR estas líneas (NO son productos):**
-```
+````
 V.Ahorro 0.250               ← Solo descuento
 0.750/KGM x 8.800            ← Peso/medida
 2x1 Descuento                ← Promoción
@@ -420,51 +446,46 @@ Subtotal                     ← Total parcial
 Precio Final                 ← Texto promocional
 Ahorra 40x                   ← Promoción
 Display                      ← No es producto
-```
+DOMICILIO WEB                ← No es producto
+````
 
 # 📝 FORMATO DE SALIDA
 
 Para CADA producto, responde con:
-```json
-{
+````json
+{{
   "codigo": "13 dígitos EAN o 4-6 dígitos PLU",
   "nombre": "Nombre COMPLETO del producto",
   "precio": precio_entero_sin_decimales,
   "cantidad": 1
-}
-```
+}}
+````
 
 **Si NO tiene código visible:**
-```json
-{
+````json
+{{
   "codigo": "",
   "nombre": "Nombre completo del producto",
   "precio": precio,
   "cantidad": 1
-}
-```
+}}
+````
 
 **ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON (sin markdown):**
-
-```json
-{
-  # 🏪 ESTABLECIMIENTO CONFIRMADO
-El usuario ya confirmó que esta factura es de: **{establecimiento_seleccionado}**
-
-# 🎯 TU MISIÓN
-Extraer CADA producto de esta factura de {establecimiento_seleccionado}
-
+````json
+{{
+  "establecimiento": "{establecimiento_preseleccionado.upper() if establecimiento_preseleccionado else 'NOMBRE DEL ESTABLECIMIENTO'}",
   "fecha": "YYYY-MM-DD",
   "total": total_entero,
   "productos": [
-    {
+    {{
       "codigo": "EAN13 o PLU o vacío",
       "nombre": "Nombre completo",
       "precio": precio_entero,
       "cantidad": 1
-    }
+    }}
   ]
-}
+}}
 ```"""
 
         # Llamada a Claude
@@ -510,6 +531,29 @@ Extraer CADA producto de esta factura de {establecimiento_seleccionado}
 
         json_str = json_str.strip()
         data = json.loads(json_str)
+
+        # ✅ FORZAR establecimiento si fue preseleccionado
+        if establecimiento_preseleccionado:
+            data["establecimiento"] = establecimiento_preseleccionado.upper()
+            print(
+                f"✅ Establecimiento forzado a: {establecimiento_preseleccionado.upper()}"
+            )
+
+        # ✅ FIX: Validar y corregir fecha sospechosa (año antiguo)
+        if "fecha" in data and data["fecha"]:
+            try:
+                fecha_str = str(data["fecha"])
+                if len(fecha_str) >= 4:
+                    año = int(fecha_str[:4])
+                    if año < 2020:  # Fecha sospechosa (ej: 2013)
+                        año_actual = datetime.now().year
+                        fecha_corregida = fecha_str.replace(
+                            str(año), str(año_actual), 1
+                        )
+                        print(f"   ⚠️  Año sospechoso ({año}) corregido a {año_actual}")
+                        data["fecha"] = fecha_corregida
+            except:
+                pass
 
         # ========== FILTRADO INTELIGENTE DE BASURA ==========
         productos_originales = 0
@@ -620,10 +664,11 @@ Extraer CADA producto de esta factura de {establecimiento_seleccionado}
                 sin_codigo += 1
                 prod["tipo_codigo"] = "SIN_CODIGO"
 
-        # Normalizar establecimiento
-        data["establecimiento"] = normalizar_establecimiento(
-            data.get("establecimiento", "Desconocido")
-        )
+        # Normalizar establecimiento (solo si no fue preseleccionado)
+        if not establecimiento_preseleccionado:
+            data["establecimiento"] = normalizar_establecimiento(
+                data.get("establecimiento", "Desconocido")
+            )
 
         # Total
         if "total" not in data or not data["total"]:
@@ -652,8 +697,9 @@ Extraer CADA producto de esta factura de {establecimiento_seleccionado}
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-v3.0",
+                    "metodo": "claude-vision-v3.1",
                     "modelo": "claude-3-5-haiku-20241022",
+                    "establecimiento_confirmado": bool(establecimiento_preseleccionado),
                     "productos_detectados": productos_procesados,
                     "productos_originales": productos_originales,
                     "basura_eliminada": basura_eliminada,
@@ -685,14 +731,16 @@ Extraer CADA producto de esta factura de {establecimiento_seleccionado}
 # INICIALIZACIÓN
 # ==============================================================================
 print("=" * 80)
-print("✅ claude_invoice.py V3.0 CARGADO")
+print("✅ claude_invoice.py V3.1 CARGADO - CON ESTABLECIMIENTO CONFIRMADO")
 print("=" * 80)
 print("🎯 CAPACIDADES:")
+print("   🏪 Establecimiento confirmado por usuario")
 print("   📦 Detección EAN-13 (códigos de barras universales)")
 print("   🏷️  Detección PLU (códigos locales de establecimientos)")
 print("   🗑️  Filtro inteligente de texto basura")
 print("   🔧 Correcciones OCR ampliadas")
 print("   📝 Normalización completa de nombres")
 print("   💰 Manejo robusto de precios colombianos")
+print("   📅 Corrección automática de fechas antiguas")
 print("   🧠 LISTO para integración con aprendizaje")
 print("=" * 80)

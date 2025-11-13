@@ -1978,10 +1978,16 @@ async def crear_establecimiento(request: Request):
         )
 
 
-# FUNCIÓN DE BACKGROUND - COMPLETA
+# FUNCIÓN DE BACKGROUND - COMPLETA CON ESTABLECIMIENTO
 # ==========================================
-async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
-    """Procesa video en BACKGROUND"""
+async def process_video_background_task(
+    job_id: str,
+    video_path: str,
+    usuario_id: int,
+    establecimiento_nombre: str = None,  # ← NUEVO
+    establecimiento_id: int = None,  # ← NUEVO
+):
+    """Procesa video en BACKGROUND con establecimiento confirmado"""
     conn = None
     cursor = None
     frames_paths = []
@@ -1990,6 +1996,11 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         print(f"\n{'='*80}")
         print(f"🔄 PROCESAMIENTO EN BACKGROUND")
         print(f"🆔 Job: {job_id}")
+        print(f"👤 Usuario: {usuario_id}")
+        if establecimiento_nombre:
+            print(
+                f"🏪 Establecimiento: {establecimiento_nombre} (ID: {establecimiento_id})"
+            )
         print(f"{'='*80}")
 
         conn = get_db_connection()
@@ -2111,7 +2122,11 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
         def procesar_frame_individual(args):
             i, frame_path = args
             try:
-                resultado = parse_invoice_with_claude(frame_path)
+                # ✅ CRÍTICO: Pasar establecimiento_nombre a Claude
+                resultado = parse_invoice_with_claude(
+                    frame_path,
+                    establecimiento_preseleccionado=establecimiento_nombre,  # ← NUEVO
+                )
                 if resultado.get("success") and resultado.get("data"):
                     return (i, resultado["data"])
                 return (i, None)
@@ -3118,11 +3133,58 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
             form_data = await request.form()
             print(f"   Form keys: {list(form_data.keys())}")
 
+            # ✅ VALIDAR CAMPOS REQUERIDOS
             if "video" not in form_data:
                 raise HTTPException(
                     status_code=400,
                     detail="Se esperaba un archivo 'video' en el form-data",
                 )
+
+            # ✅ NUEVO: Extraer establecimiento_id del form
+            establecimiento_id = form_data.get("establecimiento_id")
+            if not establecimiento_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Se requiere 'establecimiento_id' en el form-data",
+                )
+
+            try:
+                establecimiento_id = int(establecimiento_id)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="'establecimiento_id' debe ser un número",
+                )
+
+            print(f"🏪 Establecimiento ID: {establecimiento_id}")
+
+            # ✅ NUEVO: Obtener nombre del establecimiento desde la BD
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT nombre_normalizado, cadena
+                FROM establecimientos
+                WHERE id = %s
+            """,
+                (establecimiento_id,),
+            )
+
+            resultado = cursor.fetchone()
+
+            if not resultado:
+                cursor.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Establecimiento ID {establecimiento_id} no encontrado",
+                )
+
+            establecimiento_nombre = resultado[0]
+            cadena = resultado[1]
+
+            print(f"🏪 Establecimiento: {establecimiento_nombre} (Cadena: {cadena})")
 
             video = form_data.get("video")
 
@@ -3133,9 +3195,6 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
 
             video_size_mb = len(content) / (1024 * 1024)
             print(f"💾 Video guardado: {video_size_mb:.2f} MB")
-
-            conn = get_db_connection()
-            cursor = conn.cursor()
 
             job_id = str(uuid.uuid4())
 
@@ -3154,8 +3213,14 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
 
             print(f"✅ Job creado: {job_id}")
 
+            # ✅ NUEVO: Pasar establecimiento_nombre y establecimiento_id a la tarea
             background_tasks.add_task(
-                process_video_background_task, job_id, temp_video.name, user_id
+                process_video_background_task,
+                job_id,
+                temp_video.name,
+                user_id,
+                establecimiento_nombre,  # ← NUEVO
+                establecimiento_id,  # ← NUEVO
             )
 
             return {
@@ -3163,6 +3228,7 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
                 "job_id": job_id,
                 "message": "Video recibido, procesando en background",
                 "status": "pending",
+                "establecimiento": establecimiento_nombre,
             }
 
         # 4. ✅ SI ES JSON (IMÁGENES INDIVIDUALES)
