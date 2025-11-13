@@ -6154,6 +6154,82 @@ async def limpiar_productos_huerfanos():
 
 print("✅ Endpoint /admin/limpiar-productos-huerfanos registrado")
 
+
+@app.get("/admin/diagnostico-items-sin-producto")
+async def diagnostico_items_sin_producto():
+    """
+    Ver cuáles items NO tienen producto_maestro_id
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Items sin producto
+        cursor.execute(
+            """
+            SELECT
+                i.id,
+                i.factura_id,
+                i.codigo_leido,
+                i.nombre_leido,
+                i.precio_pagado,
+                f.establecimiento
+            FROM items_factura i
+            JOIN facturas f ON i.factura_id = f.id
+            WHERE i.producto_maestro_id IS NULL
+            ORDER BY i.factura_id, i.id
+            LIMIT 50
+        """
+        )
+
+        items_sin_producto = []
+        for row in cursor.fetchall():
+            items_sin_producto.append(
+                {
+                    "item_id": row[0],
+                    "factura_id": row[1],
+                    "codigo": row[2] or "SIN CODIGO",
+                    "nombre": row[3],
+                    "precio": float(row[4]) if row[4] else 0,
+                    "establecimiento": row[5],
+                }
+            )
+
+        # Contar por factura
+        cursor.execute(
+            """
+            SELECT
+                factura_id,
+                COUNT(*) as items_sin_producto
+            FROM items_factura
+            WHERE producto_maestro_id IS NULL
+            GROUP BY factura_id
+            ORDER BY factura_id
+        """
+        )
+
+        por_factura = []
+        for row in cursor.fetchall():
+            por_factura.append({"factura_id": row[0], "items_sin_producto": row[1]})
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "total_items_sin_producto": len(items_sin_producto),
+            "items_sin_producto": items_sin_producto,
+            "resumen_por_factura": por_factura,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+print("✅ Endpoint /admin/diagnostico-items-sin-producto registrado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
