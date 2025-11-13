@@ -6262,6 +6262,127 @@ async def verificar_schema_patrones():
 
 print("✅ Endpoint /admin/verificar-schema-patrones registrado")
 
+
+@app.post("/admin/vincular-items-sin-codigo")
+async def vincular_items_sin_codigo():
+    """
+    Crea productos maestros para items que NO tienen código EAN
+    y los vincula automáticamente
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener items sin producto_maestro_id
+        cursor.execute(
+            """
+            SELECT
+                i.id as item_id,
+                i.nombre_leido,
+                i.precio_pagado,
+                i.factura_id,
+                f.establecimiento,
+                f.establecimiento_id
+            FROM items_factura i
+            JOIN facturas f ON i.factura_id = f.id
+            WHERE i.producto_maestro_id IS NULL
+            ORDER BY i.nombre_leido
+        """
+        )
+
+        items_sin_producto = cursor.fetchall()
+
+        print(f"\n🔍 Encontrados {len(items_sin_producto)} items sin producto maestro")
+
+        vinculados = 0
+        creados = 0
+        errores = 0
+
+        for item in items_sin_producto:
+            item_id, nombre, precio, factura_id, establecimiento, establecimiento_id = (
+                item
+            )
+
+            try:
+                nombre_normalizado = nombre.strip().upper()
+
+                # Buscar si ya existe un producto con este nombre
+                cursor.execute(
+                    """
+                    SELECT id
+                    FROM productos_maestros
+                    WHERE nombre_normalizado = %s
+                    LIMIT 1
+                """,
+                    (nombre_normalizado,),
+                )
+
+                producto_existente = cursor.fetchone()
+
+                if producto_existente:
+                    # Vincular al producto existente
+                    producto_id = producto_existente[0]
+                    print(
+                        f"   ✓ Vinculando '{nombre}' a producto existente ID {producto_id}"
+                    )
+                else:
+                    # Crear nuevo producto maestro
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_maestros (
+                            nombre_normalizado,
+                            precio_promedio_global,
+                            total_reportes,
+                            primera_vez_reportado,
+                            ultima_actualizacion
+                        ) VALUES (%s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        RETURNING id
+                    """,
+                        (nombre_normalizado, int(precio)),
+                    )
+
+                    producto_id = cursor.fetchone()[0]
+                    creados += 1
+                    print(f"   + Creado producto ID {producto_id}: '{nombre}'")
+
+                # Vincular item al producto
+                cursor.execute(
+                    """
+                    UPDATE items_factura
+                    SET producto_maestro_id = %s
+                    WHERE id = %s
+                """,
+                    (producto_id, item_id),
+                )
+
+                vinculados += 1
+
+            except Exception as e:
+                errores += 1
+                print(f"   ❌ Error procesando item {item_id}: {e}")
+                continue
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "items_procesados": len(items_sin_producto),
+            "productos_creados": creados,
+            "items_vinculados": vinculados,
+            "errores": errores,
+            "mensaje": f"✅ Vinculación completada: {creados} productos nuevos, {vinculados} items vinculados",
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+print("✅ Endpoint /admin/vincular-items-sin-codigo registrado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
