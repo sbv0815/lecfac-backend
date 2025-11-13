@@ -9,12 +9,13 @@ from psycopg2 import sql
 def migrate_add_codigo_ean():
     """Agrega columna codigo_ean a la tabla correcciones_aprendidas"""
 
-    # Obtener DATABASE_URL desde variables de entorno
+    # Intentar obtener de variable de entorno primero
     database_url = os.getenv("DATABASE_URL")
 
+    # Si no existe, usar la URL de Railway directamente
     if not database_url:
-        print("❌ ERROR: DATABASE_URL no está configurada")
-        return False
+        database_url = "postgresql://postgres:cupPYKmBUuABVOVtREemnOSfLIwyScVa@turntable.proxy.rlwy.net:52874/railway"
+        print("⚠️  Usando DATABASE_URL hardcodeada")
 
     try:
         # Conectar a la base de datos

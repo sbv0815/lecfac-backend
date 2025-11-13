@@ -1,0 +1,1126 @@
+================================================================================
+REPORTE DE NORMALIZACIÓN DE PRODUCTOS V2.0
+================================================================================
+Fecha: 2025-11-11 14:18:25
+Total cambios: 124
+Validados con Perplexity: 124
+Ahorrados con aprendizaje: 0
+Ahorro total: $0.000
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 1
+ANTES:  crema veche
+DESPUÉS: CREMA VECHE
+Precio: $10,390
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 2
+ANTES:  crema semi
+DESPUÉS: CREMA SEMI
+Precio: $5,064
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 3
+ANTES:  crema leche semi
+DESPUÉS: CREMA LECHE SEMI
+Precio: $5,240
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 4
+ANTES:  huevo rojo a 15
+DESPUÉS: HUEVO ROJO A 15
+Precio: $10,875
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 7
+ANTES:  protector carefree sin fragancia largos 400undm
+DESPUÉS: PROTECTOR CAREFREE SIN FRAGANCIA LARGOS 400UNDM
+Precio: $3,825
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 8
+ANTES:  x ray dul capsulas caja 12undcap gemowa acetaminofen
+DESPUÉS: X RAY DUL CAPSULAS CAJA 12UNDCAP GEMOWA ACETAMINOFEN
+Precio: $17,200
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 9
+ANTES:  capsulas caja 12undcap genomma aceitanofe
+DESPUÉS: CAPSULAS CAJA 12UNDCAP GENOMMA ACEITANOFE
+Precio: $5,450
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 10
+ANTES:  bolsa biodegradable farmatodo 8kg 1und unidad
+DESPUÉS: BOLSA BIODEGRADABLE FARMATODO 8KG 1UND UNIDAD
+Precio: $550
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 11
+ANTES:  shampoo acondicionador savital multivitaminas
+DESPUÉS: SHAMPOO ACONDICIONADOR SAVITAL MULTIVITAMINAS
+Precio: $36,950
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 12
+ANTES:  ray dol
+DESPUÉS: RAY DOL
+Precio: $17,200
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 13
+ANTES:  crema de mascara tratante fresh herbal sin azucar
+DESPUÉS: CREMA DE MASCARA TRATANTE FRESH HERBAL SIN AZUCAR
+Precio: $15,300
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 14
+ANTES:  bolsa biodegradable farmacotodo 8kg 1und unidad
+DESPUÉS: BOLSA BIODEGRADABLE FARMACOTODO 8KG 1UND UNIDAD
+Precio: $550
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 15
+ANTES:  acondicionador savital multivitaminos 5a
+DESPUÉS: ACONDICIONADOR SAVITAL MULTIVITAMINOS 5A
+Precio: $36,950
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 16
+ANTES:  crema de manos trivent fresh herbal sin alcohol
+DESPUÉS: CREMA DE MANOS TRIVENT FRESH HERBAL SIN ALCOHOL
+Precio: $4,900
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 17
+ANTES:  gel con componente caja hyxos neutro estimulante
+DESPUÉS: GEL CON COMPONENTE CAJA HYXOS NEUTRO ESTIMULANTE
+Precio: $11,200
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 18
+ANTES:  bolsa dispensable farmatodo 8 m 1und unidad
+DESPUÉS: BOLSA DISPENSABLE FARMATODO 8 M 1UND UNIDAD
+Precio: $550
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 19
+ANTES:  x ray 001 capsulas caja 1und 2cp genomma actinofer
+DESPUÉS: X RAY 001 CAPSULAS CAJA 1UND 2CP GENOMMA ACTINOFER
+Precio: $17,200
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 20
+ANTES:  protector carefree sin fragancia largos xabon
+DESPUÉS: PROTECTOR CAREFREE SIN FRAGANCIA LARGOS XABON
+Precio: $15,500
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 21
+ANTES:  kin oral capsulas caja xjcap dexmag dermo
+DESPUÉS: KIN ORAL CAPSULAS CAJA XJCAP DEXMAG DERMO
+Precio: $17,000
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 22
+ANTES:  goma de mascara trident fresh herbal sin azucar xitrap
+DESPUÉS: GOMA DE MASCARA TRIDENT FRESH HERBAL SIN AZUCAR XITRAP
+Precio: $7,850
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 23
+ANTES:  x ray 60 capsulas cara xitcap genomax acetaminofen
+DESPUÉS: X RAY 60 CAPSULAS CARA XITCAP GENOMAX ACETAMINOFEN
+Precio: $13,283
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 24
+ANTES:  acondicionador savital
+DESPUÉS: ACONDICIONADOR SAVITAL
+Precio: $36,950
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 25
+ANTES:  protector carefree sin fragancia
+DESPUÉS: PROTECTOR CAREFREE SIN FRAGANCIA
+Precio: $15,300
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 26
+ANTES:  k ray dol capsulas con 120undcap genomma acetaminofe
+DESPUÉS: K RAY DOL CAPSULAS CON 120UNDCAP GENOMMA ACETAMINOFE
+Precio: $17,200
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 27
+ANTES:  bolsa biodegradable farmatodo 8kg 1und unidad
+DESPUÉS: BOLSA BIODEGRADABLE FARMATODO 8KG 1UND UNIDAD
+Precio: $550
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 28
+ANTES:  producto no identificado
+DESPUÉS: PRODUCTO NO IDENTIFICADO
+Precio: $75,450
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 29
+ANTES:  faroloto 8kg 1und unidad
+DESPUÉS: FAROLOTO 8KG 1UND UNIDAD
+Precio: $11,260
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 30
+ANTES:  acondicionador savital multivitaminas
+DESPUÉS: ACONDICIONADOR SAVITAL MULTIVITAMINAS
+Precio: $560
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 31
+ANTES:  crema de manos trivent fresh herbal sin alcohol
+DESPUÉS: CREMA DE MANOS TRIVENT FRESH HERBAL SIN ALCOHOL
+Precio: $4,900
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 32
+ANTES:  crema con complejo caja rizado serum multivitaminico
+DESPUÉS: CREMA CON COMPLEJO CAJA RIZADO SERUM MULTIVITAMINICO
+Precio: $11,200
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 33
+ANTES:  acondicionador sunsilk multivitaminico 5g
+DESPUÉS: ACONDICIONADOR SUNSILK MULTIVITAMINICO 5G
+Precio: $9,600
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 34
+ANTES:  crema mascara incident fresh herbal sin azucar xtrem
+DESPUÉS: CREMA MASCARA INCIDENT FRESH HERBAL SIN AZUCAR XTREM
+Precio: $5,450
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 35
+ANTES:  acido folico tableta 5 mg 1und unidad
+DESPUÉS: ACIDO FOLICO TABLETA 5 MG 1UND UNIDAD
+Precio: $550
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 36
+ANTES:  acondicionador savital multivitaminas
+DESPUÉS: ACONDICIONADOR SAVITAL MULTIVITAMINAS
+Precio: $560
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 37
+ANTES:  contruslo de kgm
+DESPUÉS: CONTRUSLO DE KGM
+Precio: $1,179
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 38
+ANTES:  brownie mini arequipe
+DESPUÉS: BROWNIE MINI AREQUIPE
+Precio: $14,156
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 39
+ANTES:  contramuslo de p
+DESPUÉS: CONTRAMUSLO DE P
+Precio: $31,980
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 40
+ANTES:  platano verde sw
+DESPUÉS: PLATANO VERDE SW
+Precio: $3,407
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 41
+ANTES:  platano maduro s
+DESPUÉS: PLATANO MADURO S
+Precio: $4,234
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 42
+ANTES:  ajo malla importado
+DESPUÉS: AJO MALLA IMPORTADO
+Precio: $1,167
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 43
+ANTES:  galleta wafer ha
+DESPUÉS: GALLETA WAFER HA
+Precio: $12,013
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 44
+ANTES:  cilantro
+DESPUÉS: CILANTRO
+Precio: $3,233
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 45
+ANTES:  salsa carne bolonesa
+DESPUÉS: SALSA CARNE BOLONESA
+Precio: $11,153
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 46
+ANTES:  bombillo led 70
+DESPUÉS: BOMBILLO LED 70
+Precio: $8,226
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 47
+ANTES:  cinta uniplas rb
+DESPUÉS: CINTA UNIPLAS RB
+Precio: $12,109
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 48
+ANTES:  salsa carne rojo
+DESPUÉS: SALSA CARNE ROJO
+Precio: $11,153
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 49
+ANTES:  crema tomate
+DESPUÉS: CREMA TOMATE
+Precio: $1,527
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 50
+ANTES:  display galletas
+DESPUÉS: DISPLAY GALLETAS
+Precio: $6,772
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 51
+ANTES:  queso mostaza
+DESPUÉS: QUESO MOSTAZA
+Precio: $18,496
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 52
+ANTES:  queso mozarella
+DESPUÉS: QUESO MOZARELLA
+Precio: $18,496
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 53
+ANTES:  banano
+DESPUÉS: BANANO
+Precio: $6,124
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 54
+ANTES:  kiwi
+DESPUÉS: KIWI
+Precio: $9,290
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 55
+ANTES:  molida res 93 7
+DESPUÉS: MOLIDA RES 93 7
+Precio: $17,944
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 56
+ANTES:  galletas yogurt
+DESPUÉS: GALLETAS YOGURT
+Precio: $10,234
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 57
+ANTES:  aguacate lind
+DESPUÉS: AGUACATE LIND
+Precio: $8,169
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 58
+ANTES:  yerbabuena fresca
+DESPUÉS: YERBABUENA FRESCA
+Precio: $4,419
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 59
+ANTES:  caramuso de
+DESPUÉS: CARAMUSO DE
+Precio: $15,990
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 60
+ANTES:  canastusio de p
+DESPUÉS: CANASTUSIO DE P
+Precio: $13,903
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 61
+ANTES:  zanahoria granel
+DESPUÉS: ZANAHORIA GRANEL
+Precio: $1,570
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 62
+ANTES:  pan blanco bimbo 7306
+DESPUÉS: PAN BLANCO BIMBO 7306
+Precio: $8,100
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 63
+ANTES:  pono ggns ramo 48g
+DESPUÉS: PONO GGNS RAMO 48G
+Precio: $3,140
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 64
+ANTES:  chocitina jet leche
+DESPUÉS: CHOCITINA JET LECHE
+Precio: $15,450
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 65
+ANTES:  arepa dona paisa
+DESPUÉS: AREPA DONA PAISA
+Precio: $6,350
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 66
+ANTES:  atun medall agua
+DESPUÉS: ATUN MEDALL AGUA
+Precio: $4,690
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 67
+ANTES:  chocorramo bar min
+DESPUÉS: CHOCORRAMO BAR MIN
+Precio: $15,990
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 68
+ANTES:  pasta fusil ferra
+DESPUÉS: PASTA FUSIL FERRA
+Precio: $3,990
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 69
+ANTES:  esparci rama c s
+DESPUÉS: ESPARCI RAMA C S
+Precio: $16,000
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros
+ID: 70
+ANTES:  crema leche alqueria
+DESPUÉS: CREMA LECHE ALQUERIA
+Precio: $5,240
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 552
+ANTES:  crema de manos trivent fresh herbal sin alcohol
+DESPUÉS: CREMA DE MANOS TRIVENT FRESH HERBAL SIN ALCOHOL
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 553
+ANTES:  gel con componente caja hyxos neutro estimulante
+DESPUÉS: GEL CON COMPONENTE CAJA HYXOS NEUTRO ESTIMULANTE
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 554
+ANTES:  bolsa dispensable farmatodo 8 m 1und unidad
+DESPUÉS: BOLSA DISPENSABLE FARMATODO 8 M 1UND UNIDAD
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 555
+ANTES:  x ray 001 capsulas caja 1und 2cp genomma actinofer
+DESPUÉS: X RAY 001 CAPSULAS CAJA 1UND 2CP GENOMMA ACTINOFER
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 556
+ANTES:  protector carefree sin fragancia largos xabon
+DESPUÉS: PROTECTOR CAREFREE SIN FRAGANCIA LARGOS XABON
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 557
+ANTES:  kin oral capsulas caja xjcap dexmag dermo
+DESPUÉS: KIN ORAL CAPSULAS CAJA XJCAP DEXMAG DERMO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 558
+ANTES:  goma de mascara trident fresh herbal sin azucar xitrap
+DESPUÉS: GOMA DE MASCARA TRIDENT FRESH HERBAL SIN AZUCAR XITRAP
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 559
+ANTES:  x ray 60 capsulas cara xitcap genomax acetaminofen
+DESPUÉS: X RAY 60 CAPSULAS CARA XITCAP GENOMAX ACETAMINOFEN
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 560
+ANTES:  acondicionador savital
+DESPUÉS: ACONDICIONADOR SAVITAL
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 561
+ANTES:  protector carefree sin fragancia
+DESPUÉS: PROTECTOR CAREFREE SIN FRAGANCIA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 562
+ANTES:  k ray dol capsulas con 120undcap genomma acetaminofe
+DESPUÉS: K RAY DOL CAPSULAS CON 120UNDCAP GENOMMA ACETAMINOFE
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 563
+ANTES:  bolsa biodegradable farmatodo 8kg 1und unidad
+DESPUÉS: BOLSA BIODEGRADABLE FARMATODO 8KG 1UND UNIDAD
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 564
+ANTES:  producto no identificado
+DESPUÉS: PRODUCTO NO IDENTIFICADO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 565
+ANTES:  faroloto 8kg 1und unidad
+DESPUÉS: FAROLOTO 8KG 1UND UNIDAD
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 566
+ANTES:  acondicionador savital multivitaminas
+DESPUÉS: ACONDICIONADOR SAVITAL MULTIVITAMINAS
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 567
+ANTES:  crema de manos trivent fresh herbal sin alcohol
+DESPUÉS: CREMA DE MANOS TRIVENT FRESH HERBAL SIN ALCOHOL
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 568
+ANTES:  crema con complejo caja rizado serum multivitaminico
+DESPUÉS: CREMA CON COMPLEJO CAJA RIZADO SERUM MULTIVITAMINICO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 569
+ANTES:  acondicionador sunsilk multivitaminico 5g
+DESPUÉS: ACONDICIONADOR SUNSILK MULTIVITAMINICO 5G
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 570
+ANTES:  crema mascara incident fresh herbal sin azucar xtrem
+DESPUÉS: CREMA MASCARA INCIDENT FRESH HERBAL SIN AZUCAR XTREM
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 571
+ANTES:  acido folico tableta 5 mg 1und unidad
+DESPUÉS: ACIDO FOLICO TABLETA 5 MG 1UND UNIDAD
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 572
+ANTES:  acondicionador savital multivitaminas
+DESPUÉS: ACONDICIONADOR SAVITAL MULTIVITAMINAS
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 573
+ANTES:  contruslo de kgm
+DESPUÉS: CONTRUSLO DE KGM
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 574
+ANTES:  brownie mini arequipe
+DESPUÉS: BROWNIE MINI AREQUIPE
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 575
+ANTES:  contramuslo de p
+DESPUÉS: CONTRAMUSLO DE P
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 576
+ANTES:  platano verde sw
+DESPUÉS: PLATANO VERDE SW
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 577
+ANTES:  platano maduro s
+DESPUÉS: PLATANO MADURO S
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 578
+ANTES:  ajo malla importado
+DESPUÉS: AJO MALLA IMPORTADO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 579
+ANTES:  galleta wafer ha
+DESPUÉS: GALLETA WAFER HA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 580
+ANTES:  cilantro
+DESPUÉS: CILANTRO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 581
+ANTES:  salsa carne bolonesa
+DESPUÉS: SALSA CARNE BOLONESA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 582
+ANTES:  bombillo led 70
+DESPUÉS: BOMBILLO LED 70
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 583
+ANTES:  cinta uniplas rb
+DESPUÉS: CINTA UNIPLAS RB
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 584
+ANTES:  salsa carne rojo
+DESPUÉS: SALSA CARNE ROJO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 585
+ANTES:  crema tomate
+DESPUÉS: CREMA TOMATE
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 586
+ANTES:  display galletas
+DESPUÉS: DISPLAY GALLETAS
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 587
+ANTES:  queso mostaza
+DESPUÉS: QUESO MOSTAZA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 588
+ANTES:  queso mozarella
+DESPUÉS: QUESO MOZARELLA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 589
+ANTES:  banano
+DESPUÉS: BANANO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 590
+ANTES:  tomate chonto
+DESPUÉS: TOMATE CHONTO
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 591
+ANTES:  kiwi
+DESPUÉS: KIWI
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 592
+ANTES:  molida res 93 7
+DESPUÉS: MOLIDA RES 93 7
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 593
+ANTES:  galletas yogurt
+DESPUÉS: GALLETAS YOGURT
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 594
+ANTES:  aguacate lind
+DESPUÉS: AGUACATE LIND
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 595
+ANTES:  yerbabuena fresca
+DESPUÉS: YERBABUENA FRESCA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 596
+ANTES:  caramuso de
+DESPUÉS: CARAMUSO DE
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 597
+ANTES:  canastusio de p
+DESPUÉS: CANASTUSIO DE P
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 598
+ANTES:  zanahoria granel
+DESPUÉS: ZANAHORIA GRANEL
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 599
+ANTES:  pan blanco bimbo 7306
+DESPUÉS: PAN BLANCO BIMBO 7306
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 600
+ANTES:  pono ggns ramo 48g
+DESPUÉS: PONO GGNS RAMO 48G
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 601
+ANTES:  chocitina jet leche
+DESPUÉS: CHOCITINA JET LECHE
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 602
+ANTES:  arepa dona paisa
+DESPUÉS: AREPA DONA PAISA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 603
+ANTES:  atun medall agua
+DESPUÉS: ATUN MEDALL AGUA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 604
+ANTES:  chocorramo bar min
+DESPUÉS: CHOCORRAMO BAR MIN
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 605
+ANTES:  pasta fusil ferra
+DESPUÉS: PASTA FUSIL FERRA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 606
+ANTES:  esparci rama c s
+DESPUÉS: ESPARCI RAMA C S
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+
+────────────────────────────────────────────────────────────────────────────────
+Tabla: productos_maestros_v2
+ID: 607
+ANTES:  crema leche alqueria
+DESPUÉS: CREMA LECHE ALQUERIA
+Precio: N/A
+Establecimiento: EXITO
+Fuente: ocr_normalizado
+

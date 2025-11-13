@@ -84,9 +84,9 @@ cursor.execute("""
         categoria,
         total_reportes,
         precio_promedio_global,
-        created_at
+        primera_vez_reportado
     FROM productos_maestros
-    ORDER BY created_at DESC
+    ORDER BY primera_vez_reportado DESC
     LIMIT 30
 """)
 
@@ -119,7 +119,7 @@ cursor.execute("""
         OR nombre_normalizado ILIKE '%descuento%'
         OR nombre_normalizado ILIKE '%promocion%'
         OR nombre_normalizado ILIKE '%espaci%'
-    ORDER BY created_at DESC
+    ORDER BY primera_vez_reportado DESC
     LIMIT 20
 """)
 
@@ -162,12 +162,12 @@ cursor.execute("""
         ce.codigo_local,
         ce.tipo_codigo,
         ce.veces_visto,
-        e.nombre as establecimiento,
+        e.nombre_normalizado as establecimiento,
         pm.nombre_normalizado
     FROM codigos_establecimiento ce
     JOIN establecimientos e ON ce.establecimiento_id = e.id
     JOIN productos_maestros pm ON ce.producto_maestro_id = pm.id
-    ORDER BY ce.created_at DESC
+    ORDER BY ce.primera_vez_visto DESC
     LIMIT 20
 """)
 

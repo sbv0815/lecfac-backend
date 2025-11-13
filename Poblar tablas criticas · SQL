@@ -1,0 +1,118 @@
+-- ============================================================================
+-- SCRIPT COMPLETO: POBLAR TABLAS CRÍTICAS DE LECFAC
+-- ============================================================================
+-- Ejecutar después de procesar facturas para llenar tablas analíticas
+-- ============================================================================
+
+-- PASO 1: Actualizar códigos en productos_maestros
+-- ============================================================================
+UPDATE productos_maestros pm
+SET codigo_ean = subq.codigo_leido
+FROM (
+    SELECT DISTINCT
+        producto_maestro_id,
+        FIRST_VALUE(codigo_leido) OVER (PARTITION BY producto_maestro_id ORDER BY id DESC) as codigo_leido
+    FROM items_factura
+    WHERE codigo_leido IS NOT NULL
+      AND codigo_leido != ''
+      AND producto_maestro_id IS NOT NULL
+) subq
+WHERE pm.id = subq.producto_maestro_id;
+
+-- PASO 2: Corregir Foreign Keys
+-- ============================================================================
+
+-- historial_compras_usuario
+ALTER TABLE historial_compras_usuario
+DROP CONSTRAINT IF EXISTS historial_compras_usuario_producto_id_fkey;
+
+ALTER TABLE historial_compras_usuario
+ADD CONSTRAINT historial_compras_usuario_producto_id_fkey
+FOREIGN KEY (producto_id) REFERENCES productos_maestros(id);
+
+-- patrones_compra
+ALTER TABLE patrones_compra
+DROP CONSTRAINT IF EXISTS patrones_compra_producto_maestro_id_fkey;
+
+ALTER TABLE patrones_compra
+ADD CONSTRAINT patrones_compra_producto_maestro_id_fkey
+FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id);
+
+-- productos_por_establecimiento
+ALTER TABLE productos_por_establecimiento
+DROP CONSTRAINT IF EXISTS productos_por_establecimiento_producto_maestro_id_fkey;
+
+ALTER TABLE productos_por_establecimiento
+ADD CONSTRAINT productos_por_establecimiento_producto_maestro_id_fkey
+FOREIGN KEY (producto_maestro_id) REFERENCES productos_maestros(id);
+
+-- PASO 3: Poblar historial_compras_usuario
+-- ============================================================================
+INSERT INTO historial_compras_usuario
+    (usuario_id, producto_id, factura_id, fecha_compra, precio_pagado)
+SELECT
+    if.usuario_id,
+    if.producto_maestro_id,
+    if.factura_id,
+    if.fecha_creacion,
+    if.precio_pagado
+FROM items_factura if
+WHERE if.producto_maestro_id IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+
+-- PASO 4: Poblar patrones_compra
+-- ============================================================================
+INSERT INTO patrones_compra
+    (usuario_id, producto_maestro_id, ultima_compra, veces_comprado, precio_promedio_pagado)
+SELECT
+    if.usuario_id,
+    if.producto_maestro_id,
+    MAX(if.fecha_creacion)::DATE,
+    COUNT(DISTINCT if.factura_id),
+    AVG(if.precio_pagado)::INTEGER
+FROM items_factura if
+WHERE if.producto_maestro_id IS NOT NULL
+GROUP BY if.usuario_id, if.producto_maestro_id
+ON CONFLICT (usuario_id, producto_maestro_id) DO UPDATE SET
+    ultima_compra = EXCLUDED.ultima_compra,
+    veces_comprado = EXCLUDED.veces_comprado,
+    precio_promedio_pagado = EXCLUDED.precio_promedio_pagado;
+
+-- PASO 5: Poblar productos_por_establecimiento
+-- ============================================================================
+INSERT INTO productos_por_establecimiento
+    (producto_maestro_id, establecimiento_id, precio_actual, precio_minimo, precio_maximo, ultima_actualizacion, total_reportes)
+SELECT
+    if.producto_maestro_id,
+    f.establecimiento_id,
+    AVG(if.precio_pagado)::INTEGER,
+    MIN(if.precio_pagado)::INTEGER,
+    MAX(if.precio_pagado)::INTEGER,
+    MAX(f.fecha_factura)::TIMESTAMP,
+    COUNT(*)
+FROM items_factura if
+INNER JOIN facturas f ON if.factura_id = f.id
+WHERE if.producto_maestro_id IS NOT NULL
+  AND f.establecimiento_id IS NOT NULL
+GROUP BY if.producto_maestro_id, f.establecimiento_id
+ON CONFLICT (producto_maestro_id, establecimiento_id) DO UPDATE SET
+    precio_actual = EXCLUDED.precio_actual,
+    precio_minimo = LEAST(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo),
+    precio_maximo = GREATEST(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo),
+    ultima_actualizacion = EXCLUDED.ultima_actualizacion,
+    total_reportes = productos_por_establecimiento.total_reportes + EXCLUDED.total_reportes;
+
+-- PASO 6: Verificar resultados
+-- ============================================================================
+SELECT
+    'productos_maestros' AS tabla, COUNT(*) AS registros FROM productos_maestros
+UNION ALL
+SELECT 'items_factura', COUNT(*) FROM items_factura
+UNION ALL
+SELECT 'historial_compras_usuario', COUNT(*) FROM historial_compras_usuario
+UNION ALL
+SELECT 'patrones_compra', COUNT(*) FROM patrones_compra
+UNION ALL
+SELECT 'productos_por_establecimiento', COUNT(*) FROM productos_por_establecimiento
+ORDER BY registros DESC;
+
