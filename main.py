@@ -1,5 +1,6 @@
 import os
 import base64
+
 print("=" * 80)
 print("🚀 LECFAC BACKEND - VERSION 2025-11-12-15:30 - REBUILD FORZADO V2")
 print("=" * 80)
@@ -10,10 +11,11 @@ import uuid
 
 # LIMPIEZA DE CACHÉ AL INICIO
 import shutil
+
 print("🧹 Limpiando caché de Python...")
-for root, dirs, files in os.walk('.'):
-    if '__pycache__' in dirs:
-        shutil.rmtree(os.path.join(root, '__pycache__'))
+for root, dirs, files in os.walk("."):
+    if "__pycache__" in dirs:
+        shutil.rmtree(os.path.join(root, "__pycache__"))
         print(f"   ✓ Eliminado: {os.path.join(root, '__pycache__')}")
 print("✅ Caché limpiado - Iniciando servidor...")
 
@@ -69,22 +71,22 @@ import sys
 import importlib
 
 # Eliminar product_matcher del caché si existe
-if 'product_matcher' in sys.modules:
-    del sys.modules['product_matcher']
+if "product_matcher" in sys.modules:
+    del sys.modules["product_matcher"]
     print("🔄 Módulo product_matcher removido del caché")
 
 # ==========================================
 # IMPORTACIÓN DE PRODUCT_MATCHER CON DEBUG
 # ==========================================
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("🔍 IMPORTANDO product_matcher.py LIMPIO...")
-print("="*80)
+print("=" * 80)
 
 from product_matcher import buscar_o_crear_producto_inteligente
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("✅ product_matcher IMPORTADO EXITOSAMENTE")
-print("="*80 + "\n")
+print("=" * 80 + "\n")
 
 # ==========================================
 # VERIFICAR VERSIÓN - MEJORADO
@@ -96,9 +98,9 @@ try:
     source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
 
     # Buscar múltiples indicadores del fix
-    tiene_fix_1 = 'fetchone() retornó None' in source_code
-    tiene_fix_2 = 'fallback manual' in source_code.lower()
-    tiene_fix_3 = 'if not resultado:' in source_code
+    tiene_fix_1 = "fetchone() retornó None" in source_code
+    tiene_fix_2 = "fallback manual" in source_code.lower()
+    tiene_fix_3 = "if not resultado:" in source_code
 
     fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
 
@@ -107,7 +109,9 @@ try:
     print(f"   - String 'fetchone() retornó None': {'✅' if tiene_fix_1 else '❌'}")
     print(f"   - String 'fallback manual': {'✅' if tiene_fix_2 else '❌'}")
     print(f"   - String 'if not resultado': {'✅' if tiene_fix_3 else '❌'}")
-    print(f"   - RESULTADO FINAL: {'✅ FIX PRESENTE' if fix_completo else '❌ FIX AUSENTE'}")
+    print(
+        f"   - RESULTADO FINAL: {'✅ FIX PRESENTE' if fix_completo else '❌ FIX AUSENTE'}"
+    )
     print(f"{'='*80}\n")
 
     if not fix_completo:
@@ -118,9 +122,10 @@ try:
 except Exception as e:
     print(f"❌ Error verificando fix: {e}")
     import traceback
+
     traceback.print_exc()
 
-print("="*80 + "\n")
+print("=" * 80 + "\n")
 
 from comparacion_precios import router as comparacion_router
 
@@ -130,6 +135,7 @@ print("✅ product_matcher configurado")
 
 from admin_dashboard import router as admin_dashboard_router
 from auth import router as auth_router
+
 
 def verify_jwt_token(token: str):
     """
@@ -143,7 +149,9 @@ def verify_jwt_token(token: str):
         # Decodificar con verificación de signature
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
 
-        print(f"✅ Token válido - Usuario: {payload.get('user_id')}, Rol: {payload.get('rol')}")
+        print(
+            f"✅ Token válido - Usuario: {payload.get('user_id')}, Rol: {payload.get('rol')}"
+        )
         return payload
 
     except jwt.ExpiredSignatureError:
@@ -155,6 +163,7 @@ def verify_jwt_token(token: str):
     except Exception as e:
         print(f"❌ Error verificando token: {e}")
         return None
+
 
 from image_handlers import router as image_handlers_router
 from duplicados_routes import router as duplicados_router
@@ -172,7 +181,11 @@ from establishments import procesar_establecimiento, obtener_o_crear_establecimi
 from fastapi import APIRouter
 from inventory_adjuster import ajustar_precios_items_por_total, limpiar_items_duplicados
 from duplicate_detector import detectar_duplicados_automaticamente
-from anomaly_monitor import guardar_reporte_anomalia, obtener_estadisticas_por_establecimiento, obtener_anomalias_pendientes
+from anomaly_monitor import (
+    guardar_reporte_anomalia,
+    obtener_estadisticas_por_establecimiento,
+    obtener_anomalias_pendientes,
+)
 from productos_mejoras import router as productos_mejoras_router
 from fastapi import FastAPI
 from productos_establecimiento_endpoints import router as productos_est_router
@@ -180,12 +193,14 @@ from productos_api_v2 import router as productos_v2_router
 from establecimientos_api import router as establecimientos_router
 from consolidacion_productos import (
     procesar_item_con_consolidacion,
-    mejorar_nombre_con_claude
+    mejorar_nombre_con_claude,
 )
+
 
 def extract_frames_from_video(video_path: str, max_frames: int = 10) -> List[str]:
     """Extrae frames de un video"""
     import cv2
+
     frames_base64 = []
 
     try:
@@ -202,8 +217,8 @@ def extract_frames_from_video(video_path: str, max_frames: int = 10) -> List[str
                 break
 
             if frame_count % interval == 0:
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                _, buffer = cv2.imencode(".jpg", frame)
+                frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 frames_base64.append(frame_base64)
                 extracted += 1
 
@@ -215,6 +230,8 @@ def extract_frames_from_video(video_path: str, max_frames: int = 10) -> List[str
     except Exception as e:
         print(f"❌ Error: {e}")
         return []
+
+
 # ==========================================
 # MODELOS PYDANTIC
 # ==========================================
@@ -243,6 +260,7 @@ class InvoiceConfirm(BaseModel):
 
 class FacturaUpdate(BaseModel):
     """Modelo para actualizar datos generales de factura"""
+
     establecimiento: Optional[str] = None
     total: Optional[float] = None
     fecha: Optional[str] = None
@@ -250,6 +268,7 @@ class FacturaUpdate(BaseModel):
 
 class ItemUpdate(BaseModel):
     """Modelo para actualizar un item de factura"""
+
     nombre: str
     precio: float
     codigo_ean: Optional[str] = None
@@ -257,6 +276,7 @@ class ItemUpdate(BaseModel):
 
 class ItemCreate(BaseModel):
     """Modelo para crear un nuevo item"""
+
     nombre: str
     precio: float
     codigo_ean: Optional[str] = None
@@ -299,6 +319,7 @@ def get_user_id_from_token(authorization: str) -> int:
 
     try:
         import jwt
+
         token = authorization.replace("Bearer ", "")
 
         print(f"🔐 [AUTH] Token extraído (primeros 30 chars): {token[:30]}...")
@@ -345,12 +366,15 @@ def get_user_id_from_token(authorization: str) -> int:
     except Exception as e:
         print(f"❌ [AUTH] Error inesperado: {e}")
         import traceback
+
         traceback.print_exc()
         return 2
+
 
 # ==========================================
 # FUNCIONES AUXILIARES
 # ==========================================
+
 
 def normalizar_fecha(fecha_str):
     """
@@ -360,7 +384,14 @@ def normalizar_fecha(fecha_str):
     from datetime import datetime, date
 
     # Casos especiales que NO son fechas válidas
-    if not fecha_str or fecha_str in ['No legible', 'Desconocido', 'N/A', '', 'null', 'None']:
+    if not fecha_str or fecha_str in [
+        "No legible",
+        "Desconocido",
+        "N/A",
+        "",
+        "null",
+        "None",
+    ]:
         print(f"⚠️ Fecha no válida o no legible, usando fecha actual")
         return datetime.now().date()
 
@@ -374,20 +405,20 @@ def normalizar_fecha(fecha_str):
     fecha_str = str(fecha_str).strip()
 
     # Verificar si contiene palabras que indican fecha inválida
-    palabras_invalidas = ['legible', 'desconocido', 'no', 'n/a', 'ninguno', 'error']
+    palabras_invalidas = ["legible", "desconocido", "no", "n/a", "ninguno", "error"]
     if any(palabra in fecha_str.lower() for palabra in palabras_invalidas):
         print(f"⚠️ Fecha inválida detectada: '{fecha_str}', usando fecha actual")
         return datetime.now().date()
 
     # Intentar diferentes formatos comunes
     formatos = [
-        '%d/%m/%Y',    # 16/11/2016
-        '%d-%m-%Y',    # 16-11-2016
-        '%Y-%m-%d',    # 2016-11-16
-        '%Y/%m/%d',    # 2016/11/16
-        '%d/%m/%y',    # 16/11/16
-        '%d-%m-%y',    # 16-11-16
-        '%Y%m%d',      # 20161116
+        "%d/%m/%Y",  # 16/11/2016
+        "%d-%m-%Y",  # 16-11-2016
+        "%Y-%m-%d",  # 2016-11-16
+        "%Y/%m/%d",  # 2016/11/16
+        "%d/%m/%y",  # 16/11/16
+        "%d-%m-%y",  # 16-11-16
+        "%Y%m%d",  # 20161116
     ]
 
     for formato in formatos:
@@ -411,8 +442,6 @@ def normalizar_fecha(fecha_str):
     # Si ningún formato funcionó
     print(f"⚠️ No se pudo parsear fecha '{fecha_str}', usando fecha actual")
     return datetime.now().date()
-
-
 
 
 def normalizar_precio_unitario(valor_ocr: float, cantidad: int) -> int:
@@ -483,8 +512,8 @@ app = FastAPI(
 )
 
 
-
 from routes import productos_admin
+
 app.include_router(productos_admin.router)
 # ==========================================
 # CONFIGURAR CORS
@@ -517,16 +546,18 @@ try:
 except Exception as e:
     print(f"❌ Error registrando productos_mejoras_router: {e}")
     import traceback
+
     traceback.print_exc()
 
 app.include_router(productos_est_router)
 print("✅ productos_establecimiento_router registrado")
 
+
 @app.post("/invoices/parse-video")
 async def parse_video(
     background_tasks: BackgroundTasks,
     video: UploadFile = File(...),
-    authorization: str = Header(None)
+    authorization: str = Header(None),
 ):
     """
     Endpoint para procesar videos de facturas
@@ -540,7 +571,7 @@ async def parse_video(
         usuario_id = get_user_id_from_token(authorization)
         print(f"🆔 Usuario: {usuario_id}")
 
-        temp_video = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+        temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         content = await video.read()
         temp_video.write(content)
         temp_video.close()
@@ -554,17 +585,23 @@ async def parse_video(
         job_id = str(uuid.uuid4())
 
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO processing_jobs (
                     id, usuario_id, status, created_at
                 ) VALUES (%s, %s, 'pending', CURRENT_TIMESTAMP)
-            """, (job_id, usuario_id))
+            """,
+                (job_id, usuario_id),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO processing_jobs (
                     id, usuario_id, status, created_at
                 ) VALUES (?, ?, 'pending', ?)
-            """, (job_id, usuario_id, datetime.now()))
+            """,
+                (job_id, usuario_id, datetime.now()),
+            )
 
         conn.commit()
         cursor.close()
@@ -573,10 +610,7 @@ async def parse_video(
         print(f"✅ Job creado: {job_id}")
 
         background_tasks.add_task(
-            process_video_background_task,
-            job_id,
-            temp_video.name,
-            usuario_id
+            process_video_background_task, job_id, temp_video.name, usuario_id
         )
 
         print(f"✅ Tarea en background agregada")
@@ -588,14 +622,15 @@ async def parse_video(
                 "success": True,
                 "job_id": job_id,
                 "message": "Video recibido, procesando en background",
-                "status": "pending"
-            }
+                "status": "pending",
+            },
         )
 
     except Exception as e:
         print(f"❌ Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 app.include_router(mobile_router, tags=["mobile"])
 app.include_router(establecimientos_router)
@@ -650,7 +685,8 @@ print("=" * 60)
 print("✅ ROUTERS CONFIGURADOS")
 print("=" * 60 + "\n")
 
-#========================================
+# ========================================
+
 
 @app.get("/api/admin/usuarios/{usuario_id}/inventario")
 async def get_inventario_usuario(usuario_id: int):
@@ -663,7 +699,8 @@ async def get_inventario_usuario(usuario_id: int):
 
         # Obtener productos del inventario
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     iu.producto_maestro_id,
                     pm.nombre_normalizado,
@@ -678,9 +715,12 @@ async def get_inventario_usuario(usuario_id: int):
                 WHERE iu.usuario_id = %s
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 100
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     iu.producto_maestro_id,
                     pm.nombre_normalizado,
@@ -695,73 +735,97 @@ async def get_inventario_usuario(usuario_id: int):
                 WHERE iu.usuario_id = ?
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 100
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
 
         inventario = []
         for row in cursor.fetchall():
-            inventario.append({
-                "producto_id": row[0],
-                "nombre": row[1] or "Producto sin nombre",
-                "codigo_ean": row[2] or "",
-                "cantidad": float(row[3]) if row[3] else 0,
-                "precio_ultima_compra": float(row[4]) if row[4] else 0,
-                "ultima_actualizacion": str(row[5]) if row[5] else None,
-                "establecimiento": row[6] or "-",
-                "categoria": row[7] or "-"
-            })
+            inventario.append(
+                {
+                    "producto_id": row[0],
+                    "nombre": row[1] or "Producto sin nombre",
+                    "codigo_ean": row[2] or "",
+                    "cantidad": float(row[3]) if row[3] else 0,
+                    "precio_ultima_compra": float(row[4]) if row[4] else 0,
+                    "ultima_actualizacion": str(row[5]) if row[5] else None,
+                    "establecimiento": row[6] or "-",
+                    "categoria": row[7] or "-",
+                }
+            )
 
         # ✅ CORRECCIÓN: Calcular estadísticas adicionales que el dashboard necesita
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             # Total de facturas del usuario
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(DISTINCT id)
                 FROM facturas
                 WHERE usuario_id = %s
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
             total_facturas = cursor.fetchone()[0] or 0
 
             # Total gastado (suma de todas las facturas)
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COALESCE(SUM(total_factura), 0)
                 FROM facturas
                 WHERE usuario_id = %s
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
             total_gastado = float(cursor.fetchone()[0] or 0)
 
             # Productos únicos en inventario
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(DISTINCT producto_maestro_id)
                 FROM inventario_usuario
                 WHERE usuario_id = %s AND producto_maestro_id IS NOT NULL
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
             productos_unicos = cursor.fetchone()[0] or 0
         else:
             # SQLite
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(DISTINCT id)
                 FROM facturas
                 WHERE usuario_id = ?
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
             total_facturas = cursor.fetchone()[0] or 0
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COALESCE(SUM(total_factura), 0)
                 FROM facturas
                 WHERE usuario_id = ?
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
             total_gastado = float(cursor.fetchone()[0] or 0)
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(DISTINCT producto_maestro_id)
                 FROM inventario_usuario
                 WHERE usuario_id = ? AND producto_maestro_id IS NOT NULL
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
             productos_unicos = cursor.fetchone()[0] or 0
 
         conn.close()
 
         print(f"✅ {len(inventario)} productos en inventario")
-        print(f"📊 Stats: {total_facturas} facturas, ${total_gastado:,.0f} gastado, {productos_unicos} productos únicos")
+        print(
+            f"📊 Stats: {total_facturas} facturas, ${total_gastado:,.0f} gastado, {productos_unicos} productos únicos"
+        )
 
         # ✅ CORRECCIÓN: Retornar la estructura que el dashboard espera
         return {
@@ -769,9 +833,9 @@ async def get_inventario_usuario(usuario_id: int):
             "usuario_id": usuario_id,
             "inventario": inventario,
             "total_productos": len(inventario),
-            "total_facturas": total_facturas,          # ← AGREGADO
-            "total_gastado": total_gastado,            # ← AGREGADO
-            "productos_unicos": productos_unicos       # ← AGREGADO
+            "total_facturas": total_facturas,  # ← AGREGADO
+            "total_gastado": total_gastado,  # ← AGREGADO
+            "productos_unicos": productos_unicos,  # ← AGREGADO
         }
 
     except Exception as e:
@@ -794,7 +858,8 @@ async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
         print(f"📦 Obteniendo inventarios (página {pagina})...")
 
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     iu.usuario_id,
                     u.email,
@@ -808,9 +873,12 @@ async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
                 LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT %s OFFSET %s
-            """, (limite, offset))
+            """,
+                (limite, offset),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     iu.usuario_id,
                     u.email,
@@ -824,19 +892,23 @@ async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
                 LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT ? OFFSET ?
-            """, (limite, offset))
+            """,
+                (limite, offset),
+            )
 
         inventarios = []
         for row in cursor.fetchall():
-            inventarios.append({
-                "usuario_id": row[0],
-                "email": row[1] or f"Usuario {row[0]}",
-                "producto": row[2] or "Sin nombre",
-                "cantidad": float(row[3]) if row[3] else 0,
-                "precio": float(row[4]) if row[4] else 0,
-                "ultima_actualizacion": str(row[5]) if row[5] else None,
-                "categoria": row[6] or "-"
-            })
+            inventarios.append(
+                {
+                    "usuario_id": row[0],
+                    "email": row[1] or f"Usuario {row[0]}",
+                    "producto": row[2] or "Sin nombre",
+                    "cantidad": float(row[3]) if row[3] else 0,
+                    "precio": float(row[4]) if row[4] else 0,
+                    "ultima_actualizacion": str(row[5]) if row[5] else None,
+                    "categoria": row[6] or "-",
+                }
+            )
 
         # Contar total
         if os.environ.get("DATABASE_TYPE") == "postgresql":
@@ -856,7 +928,7 @@ async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
             "total": total,
             "pagina": pagina,
             "limite": limite,
-            "total_paginas": (total + limite - 1) // limite
+            "total_paginas": (total + limite - 1) // limite,
         }
 
     except Exception as e:
@@ -883,7 +955,9 @@ async def get_admin_stats():
         cursor.execute("SELECT COUNT(*) FROM facturas")
         total_facturas = cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COUNT(DISTINCT producto_maestro_id) FROM items_factura WHERE producto_maestro_id IS NOT NULL")
+        cursor.execute(
+            "SELECT COUNT(DISTINCT producto_maestro_id) FROM items_factura WHERE producto_maestro_id IS NOT NULL"
+        )
         total_productos = cursor.fetchone()[0] or 0
 
         conn.close()
@@ -891,7 +965,7 @@ async def get_admin_stats():
         return {
             "total_usuarios": total_usuarios,
             "total_facturas": total_facturas,
-            "total_productos": total_productos
+            "total_productos": total_productos,
         }
     except Exception as e:
         print(f"❌ Error en estadísticas: {e}")
@@ -905,24 +979,28 @@ async def get_admin_usuarios():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT u.id, u.email, u.nombre, u.fecha_registro,
                    COUNT(f.id) as total_facturas
             FROM usuarios u
             LEFT JOIN facturas f ON u.id = f.usuario_id
             GROUP BY u.id, u.email, u.nombre, u.fecha_registro
             ORDER BY total_facturas DESC
-        """)
+        """
+        )
 
         usuarios = []
         for row in cursor.fetchall():
-            usuarios.append({
-                "id": row[0],
-                "email": row[1],
-                "nombre": row[2] or row[1],
-                "fecha_registro": str(row[3]) if row[3] else None,
-                "total_facturas": row[4] or 0
-            })
+            usuarios.append(
+                {
+                    "id": row[0],
+                    "email": row[1],
+                    "nombre": row[2] or row[1],
+                    "fecha_registro": str(row[3]) if row[3] else None,
+                    "total_facturas": row[4] or 0,
+                }
+            )
 
         conn.close()
         return usuarios
@@ -930,6 +1008,7 @@ async def get_admin_usuarios():
     except Exception as e:
         print(f"❌ Error obteniendo usuarios: {e}")
         raise HTTPException(500, str(e))
+
 
 @app.get("/consolidacion.html", response_class=HTMLResponse)
 async def serve_consolidacion():
@@ -941,6 +1020,7 @@ async def serve_consolidacion():
         print(f"❌ Error sirviendo consolidacion.html: {e}")
         raise HTTPException(status_code=404, detail="Página no encontrada")
 
+
 @app.get("/api/admin/productos")
 async def get_admin_productos():
     """Catálogo de productos maestros con información completa"""
@@ -950,7 +1030,8 @@ async def get_admin_productos():
 
         print("🏷️ Obteniendo productos maestros con información completa...")
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 pm.id,
                 pm.codigo_ean,
@@ -973,30 +1054,37 @@ async def get_admin_productos():
                      pm.total_reportes, pm.primera_vez_reportado, pm.ultima_actualizacion
             ORDER BY pm.total_reportes DESC, pm.id DESC
             LIMIT 500
-        """)
+        """
+        )
 
         productos = []
         for row in cursor.fetchall():
-            productos.append({
-                "id": row[0],
-                "codigo_ean": row[1] or "",
-                "nombre": row[2],
-                "marca": row[3] or "Sin marca",
-                "categoria": row[4] or "Sin categoría",
-                "subcategoria": row[5] or "",
-                "precio_promedio": float(row[6]) if row[6] else 0,
-                "veces_comprado": row[7] or 0,
-                "primera_vez": str(row[8]) if row[8] else None,
-                "ultima_actualizacion": str(row[9]) if row[9] else None,
-                "usuarios_compraron": row[10] or 0,
-                "facturas_incluyen": row[11] or 0
-            })
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1] or "",
+                    "nombre": row[2],
+                    "marca": row[3] or "Sin marca",
+                    "categoria": row[4] or "Sin categoría",
+                    "subcategoria": row[5] or "",
+                    "precio_promedio": float(row[6]) if row[6] else 0,
+                    "veces_comprado": row[7] or 0,
+                    "primera_vez": str(row[8]) if row[8] else None,
+                    "ultima_actualizacion": str(row[9]) if row[9] else None,
+                    "usuarios_compraron": row[10] or 0,
+                    "facturas_incluyen": row[11] or 0,
+                }
+            )
 
         conn.close()
 
         print(f"✅ {len(productos)} productos maestros obtenidos")
-        print(f"📊 Productos con marca: {sum(1 for p in productos if p['marca'] != 'Sin marca')}")
-        print(f"📊 Productos con categoría: {sum(1 for p in productos if p['categoria'] != 'Sin categoría')}")
+        print(
+            f"📊 Productos con marca: {sum(1 for p in productos if p['marca'] != 'Sin marca')}"
+        )
+        print(
+            f"📊 Productos con categoría: {sum(1 for p in productos if p['categoria'] != 'Sin categoría')}"
+        )
 
         return productos
 
@@ -1015,7 +1103,8 @@ async def get_admin_duplicados():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT f1.id, f2.id, f1.establecimiento, f1.total_factura, f1.fecha_factura
             FROM facturas f1
             INNER JOIN facturas f2 ON
@@ -1024,16 +1113,19 @@ async def get_admin_duplicados():
                 f1.fecha_factura = f2.fecha_factura AND
                 f1.id < f2.id
             LIMIT 50
-        """)
+        """
+        )
 
         duplicados = []
         for row in cursor.fetchall():
-            duplicados.append({
-                "ids": [row[0], row[1]],
-                "establecimiento": row[2],
-                "total": float(row[3]) if row[3] else 0,
-                "fecha": str(row[4]) if row[4] else None
-            })
+            duplicados.append(
+                {
+                    "ids": [row[0], row[1]],
+                    "establecimiento": row[2],
+                    "total": float(row[3]) if row[3] else 0,
+                    "fecha": str(row[4]) if row[4] else None,
+                }
+            )
 
         conn.close()
         return {"duplicados": duplicados, "total": len(duplicados)}
@@ -1042,7 +1134,9 @@ async def get_admin_duplicados():
         print(f"❌ Error buscando duplicados: {e}")
         raise HTTPException(500, str(e))
 
+
 print("✅ Endpoints admin registrados directamente en main.py")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -1096,6 +1190,7 @@ async def serve_editor():
     print("❌ Archivo editor.html no encontrado")
     raise HTTPException(status_code=404, detail="Editor no encontrado")
 
+
 @app.get("/productos.html", response_class=HTMLResponse)
 async def serve_productos():
     """Servir página de gestión de productos v2"""
@@ -1104,6 +1199,8 @@ async def serve_productos():
     except Exception as e:
         print(f"❌ Error sirviendo productos.html: {e}")
         raise HTTPException(status_code=404, detail=f"Productos no disponible: {e}")
+
+
 @app.get("/health")
 @app.get("/api/health-check")
 async def health_check():
@@ -1165,15 +1262,16 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
         # Detectar duplicados automáticamente
         productos_parseados = []
         for p in productos_corregidos:
-            productos_parseados.append({
-                "codigo": p.get("codigo", ""),
-                "nombre": p.get("nombre", ""),
-                "valor": float(p.get("valor") or p.get("precio", 0))
-            })
+            productos_parseados.append(
+                {
+                    "codigo": p.get("codigo", ""),
+                    "nombre": p.get("nombre", ""),
+                    "valor": float(p.get("valor") or p.get("precio", 0)),
+                }
+            )
 
         resultado_deteccion = detectar_duplicados_automaticamente(
-            productos_parseados,
-            total_factura
+            productos_parseados, total_factura
         )
 
         productos_finales = resultado_deteccion["productos_limpios"]
@@ -1183,13 +1281,15 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
         # Convertir de vuelta al formato original
         productos_corregidos = []
         for p in productos_finales:
-            productos_corregidos.append({
-                "codigo": p.get("codigo", ""),
-                "nombre": p.get("nombre", ""),
-                "precio": p.get("valor", 0),
-                "valor": p.get("valor", 0),
-                "cantidad": p.get("cantidad", 1)
-            })
+            productos_corregidos.append(
+                {
+                    "codigo": p.get("codigo", ""),
+                    "nombre": p.get("nombre", ""),
+                    "precio": p.get("valor", 0),
+                    "valor": p.get("valor", 0),
+                    "cantidad": p.get("cantidad", 1),
+                }
+            )
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1247,7 +1347,9 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
             metricas = resultado_deteccion.get("metricas", {})
             metricas["productos_originales"] = len(productos_parseados)
             metricas["productos_corregidos"] = len(productos_finales)
-            metricas["productos_eliminados_detalle"] = resultado_deteccion.get("productos_eliminados", [])
+            metricas["productos_eliminados_detalle"] = resultado_deteccion.get(
+                "productos_eliminados", []
+            )
 
             guardar_reporte_anomalia(factura_id, establecimiento_raw, metricas)
 
@@ -1279,7 +1381,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     precio=precio_unitario,
                     establecimiento=establecimiento_raw,
                     cursor=cursor,
-                    conn=conn
+                    conn=conn,
                 )
 
                 # ✅ CAMBIO B: Usar buscar_o_crear_producto_inteligente
@@ -1289,7 +1391,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     precio=precio_unitario,
                     establecimiento=establecimiento_raw,
                     cursor=cursor,
-                    conn=conn
+                    conn=conn,
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
@@ -1363,10 +1465,12 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
         print(f"💰 Guardando precios para comparación...")
         try:
             stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
-            if stats.get('error'):
+            if stats.get("error"):
                 print(f"⚠️ Error guardando precios: {stats['error']}")
             else:
-                print(f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos")
+                print(
+                    f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos"
+                )
         except Exception as e:
             print(f"⚠️ Error guardando precios: {e}")
             traceback.print_exc()
@@ -1390,7 +1494,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
             "data": data,
             "productos_guardados": productos_guardados,
             "imagen_guardada": imagen_guardada,
-            "deteccion_duplicados": resultado_deteccion.get("metricas", {})
+            "deteccion_duplicados": resultado_deteccion.get("metricas", {}),
         }
 
     except HTTPException:
@@ -1442,21 +1546,23 @@ async def save_invoice_with_image(
         print(f"💰 Total: ${total:,.0f}")
 
         import json
+
         productos_list = json.loads(productos)
         print(f"📦 Productos recibidos: {len(productos_list)}")
 
         # Detector automático de duplicados
         productos_parseados = []
         for p in productos_list:
-            productos_parseados.append({
-                "codigo": p.get("codigo", ""),
-                "nombre": p.get("nombre", ""),
-                "valor": float(p.get("precio", 0))
-            })
+            productos_parseados.append(
+                {
+                    "codigo": p.get("codigo", ""),
+                    "nombre": p.get("nombre", ""),
+                    "valor": float(p.get("precio", 0)),
+                }
+            )
 
         resultado_deteccion = detectar_duplicados_automaticamente(
-            productos_parseados,
-            total
+            productos_parseados, total
         )
 
         productos_finales = resultado_deteccion["productos_limpios"]
@@ -1466,11 +1572,13 @@ async def save_invoice_with_image(
         # Convertir de vuelta al formato original
         productos_list = []
         for p in productos_finales:
-            productos_list.append({
-                "codigo": p.get("codigo", ""),
-                "nombre": p.get("nombre", ""),
-                "precio": p.get("valor", 0)
-            })
+            productos_list.append(
+                {
+                    "codigo": p.get("codigo", ""),
+                    "nombre": p.get("nombre", ""),
+                    "precio": p.get("valor", 0),
+                }
+            )
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1526,7 +1634,7 @@ async def save_invoice_with_image(
                     precio=int(precio),
                     establecimiento=establecimiento,
                     cursor=cursor,
-                    conn=conn
+                    conn=conn,
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
@@ -1540,8 +1648,14 @@ async def save_invoice_with_image(
                             codigo_leido, nombre_leido, precio_pagado, cantidad
                         ) VALUES (%s, %s, %s, %s, %s, %s, 1)
                     """,
-                        (factura_id, usuario_id, producto_maestro_id,
-                         codigo, nombre, precio),
+                        (
+                            factura_id,
+                            usuario_id,
+                            producto_maestro_id,
+                            codigo,
+                            nombre,
+                            precio,
+                        ),
                     )
                 else:
                     cursor.execute(
@@ -1551,8 +1665,14 @@ async def save_invoice_with_image(
                             codigo_leido, nombre_leido, precio_pagado, cantidad
                         ) VALUES (?, ?, ?, ?, ?, ?, 1)
                     """,
-                        (factura_id, usuario_id, producto_maestro_id,
-                         codigo, nombre, precio),
+                        (
+                            factura_id,
+                            usuario_id,
+                            producto_maestro_id,
+                            codigo,
+                            nombre,
+                            precio,
+                        ),
                     )
 
                 productos_guardados += 1
@@ -1582,7 +1702,9 @@ async def save_invoice_with_image(
             metricas = resultado_deteccion.get("metricas", {})
             metricas["productos_originales"] = len(productos_parseados)
             metricas["productos_corregidos"] = len(productos_finales)
-            metricas["productos_eliminados_detalle"] = resultado_deteccion.get("productos_eliminados", [])
+            metricas["productos_eliminados_detalle"] = resultado_deteccion.get(
+                "productos_eliminados", []
+            )
 
             guardar_reporte_anomalia(factura_id, establecimiento, metricas)
 
@@ -1614,19 +1736,21 @@ async def save_invoice_with_image(
         print(f"📊 Actualizando tablas analíticas...")
         try:
             # Preparar items procesados desde items_factura
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT producto_maestro_id, codigo_leido
                 FROM items_factura
                 WHERE factura_id = %s
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
             items_data = []
             for row in cursor.fetchall():
                 if row[0]:  # Solo si tiene producto_maestro_id
-                    items_data.append({
-                        'producto_maestro_id': row[0],
-                        'codigo_leido': row[1] or ''
-                    })
+                    items_data.append(
+                        {"producto_maestro_id": row[0], "codigo_leido": row[1] or ""}
+                    )
 
             resultado_analytics = actualizar_todas_las_tablas_analiticas(
                 cursor=cursor,
@@ -1634,27 +1758,32 @@ async def save_invoice_with_image(
                 factura_id=factura_id,
                 usuario_id=usuario_id,
                 establecimiento_id=establecimiento_id,
-                items_procesados=items_data
+                items_procesados=items_data,
             )
 
             print(f"✅ Tablas analíticas actualizadas:")
             print(f"   - Códigos: {resultado_analytics['codigos_actualizados']}")
             print(f"   - Historial: {resultado_analytics['historial_compras']}")
             print(f"   - Patrones: {resultado_analytics['patrones_compra']}")
-            print(f"   - Precios: {resultado_analytics['productos_por_establecimiento']}")
+            print(
+                f"   - Precios: {resultado_analytics['productos_por_establecimiento']}"
+            )
 
         except Exception as e:
             print(f"⚠️ Error actualizando tablas analíticas: {e}")
             import traceback
+
             traceback.print_exc()
 
         print(f"💰 Guardando precios para comparación...")
         try:
             stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
-            if stats.get('error'):
+            if stats.get("error"):
                 print(f"⚠️ Error guardando precios: {stats['error']}")
             else:
-                print(f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos")
+                print(
+                    f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos"
+                )
         except Exception as e:
             print(f"⚠️ Error guardando precios: {e}")
             traceback.print_exc()
@@ -1701,6 +1830,8 @@ async def save_invoice_with_image(
                 pass
 
         raise HTTPException(500, f"Error guardando factura: {str(e)}")
+
+
 @app.get("/api/establecimientos")
 async def get_establecimientos():
     """
@@ -1711,22 +1842,26 @@ async def get_establecimientos():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, nombre_normalizado, cadena, activo
             FROM establecimientos
             WHERE activo = TRUE
             ORDER BY nombre_normalizado
-        """)
+        """
+        )
 
         establecimientos = []
         for row in cursor.fetchall():
-            establecimientos.append({
-                "id": row[0],
-                "nombre_normalizado": row[1],
-                "nombre": row[1],  # Alias para compatibilidad
-                "cadena": row[2] if len(row) > 2 else None,
-                "activo": row[3] if len(row) > 3 else True
-            })
+            establecimientos.append(
+                {
+                    "id": row[0],
+                    "nombre_normalizado": row[1],
+                    "nombre": row[1],  # Alias para compatibilidad
+                    "cadena": row[2] if len(row) > 2 else None,
+                    "activo": row[3] if len(row) > 3 else True,
+                }
+            )
 
         cursor.close()
         conn.close()
@@ -1737,6 +1872,7 @@ async def get_establecimientos():
         print(f"❌ Error obteniendo establecimientos: {e}")
         # Retornar lista vacía en lugar de error para no romper el frontend
         return []
+
 
 @app.post("/api/establecimientos")
 async def crear_establecimiento(request: Request):
@@ -1750,7 +1886,7 @@ async def crear_establecimiento(request: Request):
         if not nombre:
             return JSONResponse(
                 status_code=400,
-                content={"success": False, "error": "Nombre es requerido"}
+                content={"success": False, "error": "Nombre es requerido"},
             )
 
         # Normalizar nombre (convertir a mayúsculas)
@@ -1762,7 +1898,7 @@ async def crear_establecimiento(request: Request):
         # Verificar si ya existe
         cursor.execute(
             "SELECT id FROM establecimientos WHERE UPPER(nombre_normalizado) = %s",
-            (nombre_normalizado,)
+            (nombre_normalizado,),
         )
 
         existente = cursor.fetchone()
@@ -1774,8 +1910,8 @@ async def crear_establecimiento(request: Request):
                 status_code=400,
                 content={
                     "success": False,
-                    "error": f"El establecimiento '{nombre}' ya existe"
-                }
+                    "error": f"El establecimiento '{nombre}' ya existe",
+                },
             )
 
         # Insertar nuevo establecimiento
@@ -1785,7 +1921,7 @@ async def crear_establecimiento(request: Request):
             VALUES (%s, %s, TRUE)
             RETURNING id
             """,
-            (nombre_normalizado, None)
+            (nombre_normalizado, None),
         )
 
         nuevo_id = cursor.fetchone()[0]
@@ -1803,21 +1939,24 @@ async def crear_establecimiento(request: Request):
                 "nombre": nombre_normalizado,
                 "nombre_normalizado": nombre_normalizado,
                 "cadena": None,
-                "activo": True
-            }
+                "activo": True,
+            },
         }
 
     except Exception as e:
         print(f"❌ Error creando establecimiento: {e}")
         import traceback
+
         traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
-                "error": f"Error al crear establecimiento: {str(e)}"
-            }
+                "error": f"Error al crear establecimiento: {str(e)}",
+            },
         )
+
+
 # FUNCIÓN DE BACKGROUND - COMPLETA
 # ==========================================
 async def process_video_background_task(job_id: str, video_path: str, usuario_id: int):
@@ -1840,12 +1979,12 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 cursor.execute(
                     "SELECT status, factura_id FROM processing_jobs WHERE id = %s",
-                    (job_id,)
+                    (job_id,),
                 )
             else:
                 cursor.execute(
                     "SELECT status, factura_id FROM processing_jobs WHERE id = ?",
-                    (job_id,)
+                    (job_id,),
                 )
 
             job_data = cursor.fetchone()
@@ -1890,7 +2029,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     SET status = 'processing', started_at = CURRENT_TIMESTAMP
                     WHERE id = %s AND status = 'pending'
                     """,
-                    (job_id,)
+                    (job_id,),
                 )
             else:
                 cursor.execute(
@@ -1899,7 +2038,7 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     SET status = 'processing', started_at = ?
                     WHERE id = ? AND status = 'pending'
                     """,
-                    (datetime.now(), job_id)
+                    (datetime.now(), job_id),
                 )
 
             affected_rows = cursor.rowcount
@@ -2011,31 +2150,36 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
         productos_parseados = []
         for p in productos_unicos:
-            productos_parseados.append({
-                "codigo": p.get("codigo", ""),
-                "nombre": p.get("nombre", ""),
-                "valor": float(p.get("precio") or p.get("valor", 0))
-            })
+            productos_parseados.append(
+                {
+                    "codigo": p.get("codigo", ""),
+                    "nombre": p.get("nombre", ""),
+                    "valor": float(p.get("precio") or p.get("valor", 0)),
+                }
+            )
 
         resultado_deteccion = detectar_duplicados_automaticamente(
-            productos_parseados,
-            total
+            productos_parseados, total
         )
 
         productos_finales = resultado_deteccion["productos_limpios"]
 
-        print(f"✅ Después de detección inteligente: {len(productos_finales)} productos")
+        print(
+            f"✅ Después de detección inteligente: {len(productos_finales)} productos"
+        )
 
         # Convertir de vuelta
         productos_unicos = []
         for p in productos_finales:
-            productos_unicos.append({
-                "codigo": p.get("codigo", ""),
-                "nombre": p.get("nombre", ""),
-                "precio": p.get("valor", 0),
-                "valor": p.get("valor", 0),
-                "cantidad": p.get("cantidad", 1)
-            })
+            productos_unicos.append(
+                {
+                    "codigo": p.get("codigo", ""),
+                    "nombre": p.get("nombre", ""),
+                    "precio": p.get("valor", 0),
+                    "valor": p.get("valor", 0),
+                    "cantidad": p.get("cantidad", 1),
+                }
+            )
 
         # Guardar en BD
         print(f"💾 Guardando en base de datos...")
@@ -2111,7 +2255,9 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 metricas = resultado_deteccion.get("metricas", {})
                 metricas["productos_originales"] = len(productos_parseados)
                 metricas["productos_corregidos"] = len(productos_finales)
-                metricas["productos_eliminados_detalle"] = resultado_deteccion.get("productos_eliminados", [])
+                metricas["productos_eliminados_detalle"] = resultado_deteccion.get(
+                    "productos_eliminados", []
+                )
 
                 guardar_reporte_anomalia(factura_id, establecimiento, metricas)
                 print(f"✅ Reporte de anomalías guardado")
@@ -2144,7 +2290,6 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
 
                 except Exception as e:
                     print(f"⚠️ Error guardando imagen: {e}")
-
 
             productos_guardados = 0
             productos_fallidos = 0
@@ -2197,54 +2342,65 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                             precio=int(precio),
                             establecimiento=establecimiento,
                             cursor=cursor,
-                            conn=conn
+                            conn=conn,
                         )
 
                         # ✅ FIX: Validar que se creó correctamente
                         if not producto_maestro_id:
-                            print(f"   ⚠️ SKIP: No se pudo crear producto maestro para '{nombre}'")
+                            print(
+                                f"   ⚠️ SKIP: No se pudo crear producto maestro para '{nombre}'"
+                            )
                             productos_fallidos += 1
                             continue
 
-                        print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
+                        print(
+                            f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}"
+                        )
 
                     # Guardar en items_factura
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO items_factura (
                                 factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            factura_id,
-                            usuario_id,
-                            producto_maestro_id,
-                            codigo or None,
-                            nombre,
-                            cantidad,
-                            precio,
-                        ))
+                        """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                producto_maestro_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
                     else:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO items_factura (
                                 factura_id, usuario_id, producto_maestro_id,
                                 codigo_leido, nombre_leido, cantidad, precio_pagado
                             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            factura_id,
-                            usuario_id,
-                            producto_maestro_id,
-                            codigo or None,
-                            nombre,
-                            cantidad,
-                            precio,
-                        ))
+                        """,
+                            (
+                                factura_id,
+                                usuario_id,
+                                producto_maestro_id,
+                                codigo or None,
+                                nombre,
+                                cantidad,
+                                precio,
+                            ),
+                        )
 
                     productos_guardados += 1
 
                 except Exception as e:
                     print(f"❌ Error guardando '{nombre}': {str(e)}")
                     import traceback
+
                     traceback.print_exc()
                     productos_fallidos += 1
 
@@ -2306,20 +2462,25 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 items_data = []
                 for producto in productos_unicos:
                     # Buscar producto_maestro_id de cada item guardado
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         SELECT producto_maestro_id, codigo_leido
                         FROM items_factura
                         WHERE factura_id = %s
                           AND nombre_leido = %s
                         LIMIT 1
-                    """, (factura_id, producto.get('nombre', '')))
+                    """,
+                        (factura_id, producto.get("nombre", "")),
+                    )
 
                     item_data = cursor.fetchone()
                     if item_data:
-                        items_data.append({
-                            'producto_maestro_id': item_data[0],
-                            'codigo_leido': item_data[1]
-                        })
+                        items_data.append(
+                            {
+                                "producto_maestro_id": item_data[0],
+                                "codigo_leido": item_data[1],
+                            }
+                        )
 
                 resultado_analytics = actualizar_todas_las_tablas_analiticas(
                     cursor=cursor,
@@ -2327,26 +2488,31 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                     factura_id=factura_id,
                     usuario_id=usuario_id,
                     establecimiento_id=establecimiento_id,
-                    items_procesados=items_data
+                    items_procesados=items_data,
                 )
 
                 print(f"✅ Tablas analíticas actualizadas:")
                 print(f"   - Códigos: {resultado_analytics['codigos_actualizados']}")
                 print(f"   - Historial: {resultado_analytics['historial_compras']}")
                 print(f"   - Patrones: {resultado_analytics['patrones_compra']}")
-                print(f"   - Precios: {resultado_analytics['productos_por_establecimiento']}")
+                print(
+                    f"   - Precios: {resultado_analytics['productos_por_establecimiento']}"
+                )
 
             except Exception as e:
                 print(f"⚠️ Error actualizando tablas analíticas: {e}")
                 import traceback
+
                 traceback.print_exc()
             print(f"💰 Guardando precios para comparación...")
             try:
                 stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
-                if stats.get('error'):
+                if stats.get("error"):
                     print(f"⚠️ Error guardando precios: {stats['error']}")
                 else:
-                    print(f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos")
+                    print(
+                        f"✅ Guardados {stats.get('precios_guardados', 0)} precios en precios_productos"
+                    )
             except Exception as e:
                 print(f"⚠️ Error guardando precios: {e}")
                 traceback.print_exc()
@@ -2482,13 +2648,16 @@ async def process_video_background_task(job_id: str, video_path: str, usuario_id
                 os.remove(video_path)
             if frames_paths:
                 from video_processor import limpiar_frames_temporales
+
                 limpiar_frames_temporales(frames_paths)
         except Exception as cleanup_error:
             print(f"⚠️ Error limpiando archivos: {cleanup_error}")
 
+
 # ==========================================
 # RESTO DE ENDPOINTS (simplificados por espacio)
 # ==========================================
+
 
 @app.get("/api/admin/anomalias")
 async def get_anomalias(usuario: dict = Depends(get_current_user)):
@@ -2505,13 +2674,12 @@ async def get_anomalias(usuario: dict = Depends(get_current_user)):
                 "num_facturas": s[1],
                 "ratio_promedio": float(s[2]) if s[2] else 1.0,
                 "facturas_corregidas": s[3] or 0,
-                "promedio_duplicados": float(s[4]) if s[4] else 0
+                "promedio_duplicados": float(s[4]) if s[4] else 0,
             }
             for s in stats
         ],
-        "anomalias_pendientes": anomalias
+        "anomalias_pendientes": anomalias,
     }
-
 
 
 print("✅ Sistema de auditoría cargado")
@@ -2527,6 +2695,7 @@ print("=" * 80)
 print("📦 CARGANDO ENDPOINTS DE AUDITORÍA DIRECTAMENTE EN MAIN.PY")
 print("=" * 80)
 
+
 # Modelos Pydantic para Auditoría
 class ProductoBaseAuditoria(BaseModel):
     codigo_ean: str
@@ -2534,15 +2703,19 @@ class ProductoBaseAuditoria(BaseModel):
     marca: Optional[str] = None
     categoria: Optional[str] = None
 
+
 class ProductoCreateAuditoria(ProductoBaseAuditoria):
     pass
+
 
 class ProductoUpdateAuditoria(ProductoBaseAuditoria):
     pass
 
+
 class AuditoriaLoginRequest(BaseModel):
     email: str
     password: str
+
 
 # ============================================================================
 # ENDPOINT: LOGIN AUDITORÍA (SEPARADO DEL LOGIN PRINCIPAL)
@@ -2553,56 +2726,61 @@ class AuditoriaLoginRequest(BaseModel):
 # ============================================================
 
 
-
 @app.post("/setup/make-admin")
 async def make_admin(email: str = "santiago@tscamp.co"):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         UPDATE usuarios
         SET rol = 'admin'
         WHERE email = %s
         RETURNING id, email, rol
-    """, (email,))
+    """,
+        (email,),
+    )
     user = cursor.fetchone()
     conn.commit()
     conn.close()
 
     if user:
-        return {"success": True, "user": {"id": user[0], "email": user[1], "rol": user[2]}}
+        return {
+            "success": True,
+            "user": {"id": user[0], "email": user[1], "rol": user[2]},
+        }
     return {"success": False, "error": "Usuario no encontrado"}
+
 
 # ============================================================
 # ENDPOINTS AUDITORÍA - PRODUCTOS REFERENCIA
 # ============================================================
 
+
 @app.get("/api/productos-referencia/{codigo_ean}")
-async def get_producto_referencia(
-    codigo_ean: str,
-    authorization: str = Header(None)
-):
+async def get_producto_referencia(codigo_ean: str, authorization: str = Header(None)):
     """Obtener producto de referencia por código EAN"""
     print(f"🔍 [AUDITORÍA] Buscando producto referencia: {codigo_ean}")
 
     # Validar token JWT
-    if not authorization or not authorization.startswith('Bearer '):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-    token = authorization.replace('Bearer ', '')
+    token = authorization.replace("Bearer ", "")
     user_data = verify_jwt_token(token)
 
     if not user_data:
         raise HTTPException(status_code=401, detail="Token inválido")
 
     # Validar rol de auditor/admin
-    if user_data.get('rol') not in ['admin', 'auditor']:
+    if user_data.get("rol") not in ["admin", "auditor"]:
         raise HTTPException(status_code=403, detail="Sin permisos de auditoría")
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 id,
                 codigo_ean,
@@ -2615,7 +2793,9 @@ async def get_producto_referencia(
                 updated_at
             FROM productos_referencia
             WHERE codigo_ean = %s
-        """, (codigo_ean,))
+        """,
+            (codigo_ean,),
+        )
 
         producto = cursor.fetchone()
 
@@ -2633,7 +2813,7 @@ async def get_producto_referencia(
             "presentacion": producto[5],
             "unidad_medida": producto[6],
             "created_at": producto[7].isoformat() if producto[7] else None,
-            "updated_at": producto[8].isoformat() if producto[8] else None
+            "updated_at": producto[8].isoformat() if producto[8] else None,
         }
 
     except HTTPException:
@@ -2647,59 +2827,66 @@ async def get_producto_referencia(
 
 @app.post("/api/productos-referencia")
 async def crear_producto_referencia(
-    request: Request,
-    authorization: str = Header(None)
+    request: Request, authorization: str = Header(None)
 ):
     """Crear nuevo producto de referencia"""
     print(f"📝 [AUDITORÍA] Creando nuevo producto referencia")
 
     # Validar token JWT
-    if not authorization or not authorization.startswith('Bearer '):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-    token = authorization.replace('Bearer ', '')
+    token = authorization.replace("Bearer ", "")
     user_data = verify_jwt_token(token)
 
     if not user_data:
         raise HTTPException(status_code=401, detail="Token inválido")
 
     # Validar rol de auditor/admin
-    if user_data.get('rol') not in ['admin', 'auditor']:
+    if user_data.get("rol") not in ["admin", "auditor"]:
         raise HTTPException(status_code=403, detail="Sin permisos de auditoría")
 
     # Obtener datos del body
     body = await request.json()
 
-    codigo_ean = body.get('codigo_ean')
-    nombre = body.get('nombre')
-    marca = body.get('marca', '')
-    categoria = body.get('categoria', '')
-    presentacion = body.get('presentacion', '')
-    unidad_medida = body.get('unidad_medida', '')
+    codigo_ean = body.get("codigo_ean")
+    nombre = body.get("nombre")
+    marca = body.get("marca", "")
+    categoria = body.get("categoria", "")
+    presentacion = body.get("presentacion", "")
+    unidad_medida = body.get("unidad_medida", "")
 
     if not codigo_ean or not nombre:
-        raise HTTPException(status_code=400, detail="Código EAN y nombre son requeridos")
+        raise HTTPException(
+            status_code=400, detail="Código EAN y nombre son requeridos"
+        )
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
         # Verificar si ya existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id FROM productos_referencia
             WHERE codigo_ean = %s
-        """, (codigo_ean,))
+        """,
+            (codigo_ean,),
+        )
 
         if cursor.fetchone():
             raise HTTPException(status_code=409, detail="Producto ya existe")
 
         # Insertar nuevo producto
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO productos_referencia
             (codigo_ean, nombre, marca, categoria, presentacion, unidad_medida)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, codigo_ean, nombre, created_at
-        """, (codigo_ean, nombre, marca, categoria, presentacion, unidad_medida))
+        """,
+            (codigo_ean, nombre, marca, categoria, presentacion, unidad_medida),
+        )
 
         producto = cursor.fetchone()
         conn.commit()
@@ -2714,7 +2901,7 @@ async def crear_producto_referencia(
             "categoria": categoria,
             "presentacion": presentacion,
             "unidad_medida": unidad_medida,
-            "created_at": producto[3].isoformat() if producto[3] else None
+            "created_at": producto[3].isoformat() if producto[3] else None,
         }
 
     except HTTPException:
@@ -2729,25 +2916,23 @@ async def crear_producto_referencia(
 
 @app.put("/api/productos-referencia/{codigo_ean}")
 async def actualizar_producto_referencia(
-    codigo_ean: str,
-    request: Request,
-    authorization: str = Header(None)
+    codigo_ean: str, request: Request, authorization: str = Header(None)
 ):
     """Actualizar producto de referencia existente"""
     print(f"✏️ [AUDITORÍA] Actualizando producto: {codigo_ean}")
 
     # Validar token JWT
-    if not authorization or not authorization.startswith('Bearer '):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-    token = authorization.replace('Bearer ', '')
+    token = authorization.replace("Bearer ", "")
     user_data = verify_jwt_token(token)
 
     if not user_data:
         raise HTTPException(status_code=401, detail="Token inválido")
 
     # Validar rol de auditor/admin
-    if user_data.get('rol') not in ['admin', 'auditor']:
+    if user_data.get("rol") not in ["admin", "auditor"]:
         raise HTTPException(status_code=403, detail="Sin permisos de auditoría")
 
     body = await request.json()
@@ -2757,10 +2942,13 @@ async def actualizar_producto_referencia(
 
     try:
         # Verificar si existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id FROM productos_referencia
             WHERE codigo_ean = %s
-        """, (codigo_ean,))
+        """,
+            (codigo_ean,),
+        )
 
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -2769,21 +2957,21 @@ async def actualizar_producto_referencia(
         updates = []
         params = []
 
-        if 'nombre' in body:
+        if "nombre" in body:
             updates.append("nombre = %s")
-            params.append(body['nombre'])
-        if 'marca' in body:
+            params.append(body["nombre"])
+        if "marca" in body:
             updates.append("marca = %s")
-            params.append(body['marca'])
-        if 'categoria' in body:
+            params.append(body["marca"])
+        if "categoria" in body:
             updates.append("categoria = %s")
-            params.append(body['categoria'])
-        if 'presentacion' in body:
+            params.append(body["categoria"])
+        if "presentacion" in body:
             updates.append("presentacion = %s")
-            params.append(body['presentacion'])
-        if 'unidad_medida' in body:
+            params.append(body["presentacion"])
+        if "unidad_medida" in body:
             updates.append("unidad_medida = %s")
-            params.append(body['unidad_medida'])
+            params.append(body["unidad_medida"])
 
         if not updates:
             raise HTTPException(status_code=400, detail="No hay datos para actualizar")
@@ -2812,7 +3000,7 @@ async def actualizar_producto_referencia(
             "categoria": producto[4],
             "presentacion": producto[5],
             "unidad_medida": producto[6],
-            "updated_at": producto[7].isoformat() if producto[7] else None
+            "updated_at": producto[7].isoformat() if producto[7] else None,
         }
 
     except HTTPException:
@@ -2824,18 +3012,21 @@ async def actualizar_producto_referencia(
     finally:
         conn.close()
 
+
 @app.get("/fix-rol")
 async def fix_rol():
     """Endpoint temporal para arreglar rol del usuario"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         UPDATE usuarios
         SET rol = 'admin'
         WHERE email = 'santiago@tscamp.co'
         RETURNING id, email, rol
-    """, )
+    """,
+    )
 
     user = cursor.fetchone()
     conn.commit()
@@ -2844,14 +3035,9 @@ async def fix_rol():
     if user:
         return {
             "success": True,
-            "user": {
-                "id": user[0],
-                "email": user[1],
-                "rol": user[2]
-            }
+            "user": {"id": user[0], "email": user[1], "rol": user[2]},
         }
     return {"success": False, "error": "Usuario no encontrado"}
-
 
 
 from consolidacion_productos import procesar_item_con_consolidacion
@@ -2867,11 +3053,9 @@ import psycopg2.extras
 # Reemplazar en main.py desde @app.post("/api/v2/procesar-factura")
 # ============================================================================
 
+
 @app.post("/api/v2/procesar-factura")
-async def procesar_factura_v2(
-    request: Request,
-    background_tasks: BackgroundTasks
-):
+async def procesar_factura_v2(request: Request, background_tasks: BackgroundTasks):
     """
     Endpoint V2 - Acepta VIDEOS o JSON
     ✅ Compatible con formato móvil
@@ -2879,9 +3063,9 @@ async def procesar_factura_v2(
     conn = None
 
     try:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("📥 RECIBIENDO SOLICITUD /api/v2/procesar-factura")
-        print("="*80)
+        print("=" * 80)
 
         # 1. AUTENTICACIÓN
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -2893,7 +3077,7 @@ async def procesar_factura_v2(
 
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-            user_id = payload.get('user_id')
+            user_id = payload.get("user_id")
             if not user_id:
                 raise HTTPException(status_code=401, detail="Token inválido")
             print(f"👤 Usuario autenticado: ID {user_id}")
@@ -2913,15 +3097,15 @@ async def procesar_factura_v2(
             form_data = await request.form()
             print(f"   Form keys: {list(form_data.keys())}")
 
-            if 'video' not in form_data:
+            if "video" not in form_data:
                 raise HTTPException(
                     status_code=400,
-                    detail="Se esperaba un archivo 'video' en el form-data"
+                    detail="Se esperaba un archivo 'video' en el form-data",
                 )
 
-            video = form_data.get('video')
+            video = form_data.get("video")
 
-            temp_video = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
             content = await video.read()
             temp_video.write(content)
             temp_video.close()
@@ -2934,11 +3118,14 @@ async def procesar_factura_v2(
 
             job_id = str(uuid.uuid4())
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO processing_jobs (
                     id, usuario_id, status, created_at
                 ) VALUES (%s, %s, 'pending', CURRENT_TIMESTAMP)
-            """, (job_id, user_id))
+            """,
+                (job_id, user_id),
+            )
 
             conn.commit()
             cursor.close()
@@ -2947,17 +3134,14 @@ async def procesar_factura_v2(
             print(f"✅ Job creado: {job_id}")
 
             background_tasks.add_task(
-                process_video_background_task,
-                job_id,
-                temp_video.name,
-                user_id
+                process_video_background_task, job_id, temp_video.name, user_id
             )
 
             return {
                 "success": True,
                 "job_id": job_id,
                 "message": "Video recibido, procesando en background",
-                "status": "pending"
+                "status": "pending",
             }
 
         # 4. ✅ SI ES JSON (IMÁGENES INDIVIDUALES)
@@ -2966,13 +3150,13 @@ async def procesar_factura_v2(
 
             datos_factura = await request.json()
 
-            if 'items' not in datos_factura:
+            if "items" not in datos_factura:
                 raise HTTPException(status_code=400, detail="Falta el campo 'items'")
 
-            items = datos_factura.get('items', [])
-            establecimiento = datos_factura.get('establecimiento', 'Desconocido')
-            total = float(datos_factura.get('total', 0))
-            fecha = datos_factura.get('fecha')
+            items = datos_factura.get("items", [])
+            establecimiento = datos_factura.get("establecimiento", "Desconocido")
+            total = float(datos_factura.get("total", 0))
+            fecha = datos_factura.get("fecha")
 
             print(f"📦 Items recibidos: {len(items)}")
             print(f"🏪 Establecimiento: {establecimiento}")
@@ -2980,37 +3164,36 @@ async def procesar_factura_v2(
 
             # Procesar establecimiento
             establecimiento, cadena = procesar_establecimiento(
-                establecimiento_raw=establecimiento,
-                productos=items,
-                total=total
+                establecimiento_raw=establecimiento, productos=items, total=total
             )
 
             establecimiento_id = obtener_o_crear_establecimiento_id(
-                conn=None,
-                establecimiento=establecimiento,
-                cadena=cadena
+                conn=None, establecimiento=establecimiento, cadena=cadena
             )
 
             # Crear factura
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO facturas (
                     usuario_id, establecimiento_id, establecimiento, cadena,
                     total_factura, fecha_factura, fecha_cargue,
                     productos_detectados, estado_validacion
                 ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, 'procesado')
                 RETURNING id
-            """, (
-                user_id,
-                establecimiento_id,
-                establecimiento,
-                cadena,
-                total,
-                fecha or datetime.now().date(),
-                len(items)
-            ))
+            """,
+                (
+                    user_id,
+                    establecimiento_id,
+                    establecimiento,
+                    cadena,
+                    total,
+                    fecha or datetime.now().date(),
+                    len(items),
+                ),
+            )
 
             factura_id = cursor.fetchone()[0]
             conn.commit()
@@ -3023,10 +3206,10 @@ async def procesar_factura_v2(
 
             for item in items:
                 try:
-                    codigo = item.get('codigo', '')
-                    nombre = item.get('nombre', '')
-                    precio = float(item.get('precio', 0))
-                    cantidad = int(item.get('cantidad', 1))
+                    codigo = item.get("codigo", "")
+                    nombre = item.get("nombre", "")
+                    precio = float(item.get("precio", 0))
+                    cantidad = int(item.get("cantidad", 1))
 
                     if not nombre or precio <= 0:
                         items_fallidos += 1
@@ -3042,7 +3225,7 @@ async def procesar_factura_v2(
                             precio=int(precio),
                             establecimiento=establecimiento,
                             cursor=cursor,
-                            conn=conn
+                            conn=conn,
                         )
 
                         if not producto_maestro_id:
@@ -3051,20 +3234,23 @@ async def procesar_factura_v2(
                             continue
 
                     # Guardar item
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         INSERT INTO items_factura (
                             factura_id, usuario_id, producto_maestro_id,
                             codigo_leido, nombre_leido, cantidad, precio_pagado
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        factura_id,
-                        user_id,
-                        producto_maestro_id,
-                        codigo or None,
-                        nombre,
-                        cantidad,
-                        precio
-                    ))
+                    """,
+                        (
+                            factura_id,
+                            user_id,
+                            producto_maestro_id,
+                            codigo or None,
+                            nombre,
+                            cantidad,
+                            precio,
+                        ),
+                    )
 
                     items_procesados += 1
 
@@ -3074,11 +3260,14 @@ async def procesar_factura_v2(
                     continue
 
             # Actualizar contador
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE facturas
                 SET productos_guardados = %s
                 WHERE id = %s
-            """, (items_procesados, factura_id))
+            """,
+                (items_procesados, factura_id),
+            )
 
             conn.commit()
             cursor.close()
@@ -3093,13 +3282,12 @@ async def procesar_factura_v2(
                 "factura_id": factura_id,
                 "items_procesados": items_procesados,
                 "items_fallidos": items_fallidos,
-                "message": "Factura procesada correctamente"
+                "message": "Factura procesada correctamente",
             }
 
         else:
             raise HTTPException(
-                status_code=400,
-                detail=f"Content-Type no soportado: {content_type}"
+                status_code=400, detail=f"Content-Type no soportado: {content_type}"
             )
 
     except HTTPException:
@@ -3107,6 +3295,7 @@ async def procesar_factura_v2(
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -3115,7 +3304,9 @@ async def procesar_factura_v2(
 # ENDPOINT 2: CREAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
 @app.post("/api/admin/auditoria/producto")
-async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_user: dict = Depends(get_current_user)):
+async def crear_producto_auditoria(
+    producto: ProductoCreateAuditoria, current_user: dict = Depends(get_current_user)
+):
     """Crear un nuevo producto en la base de datos"""
     print(f"➕ [AUDITORÍA] Creando producto: {producto.codigo_ean} - {producto.nombre}")
     try:
@@ -3123,7 +3314,10 @@ async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_us
         cursor = conn.cursor()
 
         # Verificar si ya existe
-        cursor.execute("SELECT id FROM productos_maestros WHERE codigo_ean = %s", (producto.codigo_ean,))
+        cursor.execute(
+            "SELECT id FROM productos_maestros WHERE codigo_ean = %s",
+            (producto.codigo_ean,),
+        )
         if cursor.fetchone():
             cursor.close()
             conn.close()
@@ -3131,21 +3325,27 @@ async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_us
             raise HTTPException(status_code=400, detail="Producto ya existe")
 
         # Crear producto
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO productos_maestros (
             codigo_ean, nombre_normalizado, marca, categoria,
             auditado_manualmente, validaciones_manuales
             ) VALUES (%s, %s, %s, %s, TRUE, 1)
             RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
-            """, (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria))
+            """,
+            (producto.codigo_ean, producto.nombre, producto.marca, producto.categoria),
+        )
 
         row = cursor.fetchone()
 
         # Registrar auditoría
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
             VALUES (%s, %s, 'crear', %s)
-        """, (current_user['id'], row[0], datetime.now()))
+        """,
+            (current_user["id"], row[0], datetime.now()),
+        )
 
         conn.commit()
         cursor.close()
@@ -3154,16 +3354,16 @@ async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_us
         print(f"✅ [AUDITORÍA] Producto creado exitosamente: ID {row[0]}")
 
         return {
-            'mensaje': 'Producto creado',
-            'producto': {
-                'id': row[0],
-                'codigo_ean': row[1],
-                'nombre': row[2],
-                'marca': row[3],
-                'categoria': row[4],
-                'auditado_manualmente': row[5],
-                'validaciones_manuales': row[6]
-            }
+            "mensaje": "Producto creado",
+            "producto": {
+                "id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],
+                "marca": row[3],
+                "categoria": row[4],
+                "auditado_manualmente": row[5],
+                "validaciones_manuales": row[6],
+            },
         }
 
     except HTTPException:
@@ -3177,19 +3377,26 @@ async def crear_producto_auditoria(producto: ProductoCreateAuditoria, current_us
 # ENDPOINT 3: ACTUALIZAR PRODUCTO - ✅ CORREGIDO
 # ==========================================
 @app.put("/api/admin/auditoria/producto/{producto_id}")
-async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpdateAuditoria, current_user: dict = Depends(get_current_user)):
+async def actualizar_producto_auditoria(
+    producto_id: int,
+    producto: ProductoUpdateAuditoria,
+    current_user: dict = Depends(get_current_user),
+):
     """Actualizar un producto existente"""
     print(f"✏️ [AUDITORÍA] Actualizando producto ID: {producto_id}")
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE productos_maestros
             SET nombre_normalizado = %s, marca = %s, categoria = %s
             WHERE id = %s
             RETURNING id, codigo_ean, nombre_normalizado, marca, categoria, auditado_manualmente, validaciones_manuales
-            """, (producto.nombre, producto.marca, producto.categoria, producto_id))
+            """,
+            (producto.nombre, producto.marca, producto.categoria, producto_id),
+        )
 
         row = cursor.fetchone()
 
@@ -3199,10 +3406,13 @@ async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpda
             raise HTTPException(status_code=404, detail="No encontrado")
 
         # Registrar auditoría
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
             VALUES (%s, %s, 'actualizar', %s)
-        """, (current_user['id'], producto_id, datetime.now()))
+        """,
+            (current_user["id"], producto_id, datetime.now()),
+        )
 
         conn.commit()
         cursor.close()
@@ -3211,16 +3421,16 @@ async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpda
         print(f"✅ [AUDITORÍA] Producto actualizado: {row[2]}")
 
         return {
-            'mensaje': 'Actualizado',
-            'producto': {
-                'id': row[0],
-                'codigo_ean': row[1],
-                'nombre': row[2],
-                'marca': row[3],
-                'categoria': row[4],
-                'auditado_manualmente': row[5],
-                'validaciones_manuales': row[6]
-            }
+            "mensaje": "Actualizado",
+            "producto": {
+                "id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],
+                "marca": row[3],
+                "categoria": row[4],
+                "auditado_manualmente": row[5],
+                "validaciones_manuales": row[6],
+            },
         }
 
     except HTTPException:
@@ -3234,20 +3444,25 @@ async def actualizar_producto_auditoria(producto_id: int, producto: ProductoUpda
 # ENDPOINT 4: VALIDAR PRODUCTO
 # ==========================================
 @app.post("/api/admin/auditoria/validar/{producto_id}")
-async def validar_producto_auditoria(producto_id: int, current_user: dict = Depends(get_current_user)):
+async def validar_producto_auditoria(
+    producto_id: int, current_user: dict = Depends(get_current_user)
+):
     """Validar manualmente un producto"""
     print(f"✅ [AUDITORÍA] Validando producto ID: {producto_id}")
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE productos_maestros
             SET auditado_manualmente = TRUE,
                 validaciones_manuales = validaciones_manuales + 1,
                 ultima_validacion = %s
             WHERE id = %s
-        """, (datetime.now(), producto_id))
+        """,
+            (datetime.now(), producto_id),
+        )
 
         if cursor.rowcount == 0:
             cursor.close()
@@ -3255,10 +3470,13 @@ async def validar_producto_auditoria(producto_id: int, current_user: dict = Depe
             raise HTTPException(status_code=404, detail="No encontrado")
 
         # Registrar auditoría
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO auditoria_productos (usuario_id, producto_maestro_id, accion, fecha)
             VALUES (%s, %s, 'validar', %s)
-        """, (current_user['id'], producto_id, datetime.now()))
+        """,
+            (current_user["id"], producto_id, datetime.now()),
+        )
 
         conn.commit()
         cursor.close()
@@ -3266,7 +3484,7 @@ async def validar_producto_auditoria(producto_id: int, current_user: dict = Depe
 
         print(f"✅ [AUDITORÍA] Producto validado exitosamente")
 
-        return {'mensaje': 'Validado'}
+        return {"mensaje": "Validado"}
 
     except HTTPException:
         raise
@@ -3279,49 +3497,57 @@ async def validar_producto_auditoria(producto_id: int, current_user: dict = Depe
 # ENDPOINT 5: ESTADÍSTICAS
 # ==========================================
 @app.get("/api/admin/auditoria/estadisticas")
-async def obtener_estadisticas_auditoria(current_user: dict = Depends(get_current_user)):
+async def obtener_estadisticas_auditoria(
+    current_user: dict = Depends(get_current_user),
+):
     """Obtener estadísticas de auditoría del usuario"""
     print(f"📊 [AUDITORÍA] Obteniendo estadísticas para usuario {current_user['id']}")
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT accion, COUNT(*)
             FROM auditoria_productos
             WHERE usuario_id = %s
             GROUP BY accion
-        """, (current_user['id'],))
+        """,
+            (current_user["id"],),
+        )
 
         stats = {
-            'productos_creados': 0,
-            'productos_actualizados': 0,
-            'productos_validados': 0,
-            'total_acciones': 0
+            "productos_creados": 0,
+            "productos_actualizados": 0,
+            "productos_validados": 0,
+            "total_acciones": 0,
         }
 
         for row in cursor.fetchall():
-            if row[0] == 'crear':
-                stats['productos_creados'] = row[1]
-            elif row[0] == 'actualizar':
-                stats['productos_actualizados'] = row[1]
-            elif row[0] == 'validar':
-                stats['productos_validados'] = row[1]
-            stats['total_acciones'] += row[1]
+            if row[0] == "crear":
+                stats["productos_creados"] = row[1]
+            elif row[0] == "actualizar":
+                stats["productos_actualizados"] = row[1]
+            elif row[0] == "validar":
+                stats["productos_validados"] = row[1]
+            stats["total_acciones"] += row[1]
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT accion, producto_maestro_id, fecha
             FROM auditoria_productos
             WHERE usuario_id = %s
             ORDER BY fecha DESC
             LIMIT 10
-        """, (current_user['id'],))
+        """,
+            (current_user["id"],),
+        )
 
-        stats['ultimas_acciones'] = [
+        stats["ultimas_acciones"] = [
             {
-                'accion': r[0],
-                'producto_maestro_id': r[1],
-                'fecha': r[2].isoformat() if r[2] else None
+                "accion": r[0],
+                "producto_maestro_id": r[1],
+                "fecha": r[2].isoformat() if r[2] else None,
             }
             for r in cursor.fetchall()
         ]
@@ -3342,6 +3568,7 @@ print("=" * 80)
 print("✅ ENDPOINTS DE AUDITORÍA CORREGIDOS Y CARGADOS")
 print("=" * 80)
 
+
 @app.get("/admin/force-update-inventario/{factura_id}/{usuario_id}")
 async def force_update_inventario(factura_id: int, usuario_id: int):
     """
@@ -3359,17 +3586,23 @@ async def force_update_inventario(factura_id: int, usuario_id: int):
         cursor = conn.cursor()
 
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, establecimiento, total_factura, productos_guardados
                 FROM facturas
                 WHERE id = %s AND usuario_id = %s
-            """, (factura_id, usuario_id))
+            """,
+                (factura_id, usuario_id),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, establecimiento, total_factura, productos_guardados
                 FROM facturas
                 WHERE id = ? AND usuario_id = ?
-            """, (factura_id, usuario_id))
+            """,
+                (factura_id, usuario_id),
+            )
 
         factura = cursor.fetchone()
 
@@ -3378,7 +3611,7 @@ async def force_update_inventario(factura_id: int, usuario_id: int):
             conn.close()
             return {
                 "success": False,
-                "error": f"Factura {factura_id} no encontrada para usuario {usuario_id}"
+                "error": f"Factura {factura_id} no encontrada para usuario {usuario_id}",
             }
 
         print(f"✅ Factura encontrada:")
@@ -3388,17 +3621,23 @@ async def force_update_inventario(factura_id: int, usuario_id: int):
 
         # Verificar items
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(*), COUNT(producto_maestro_id)
                 FROM items_factura
                 WHERE factura_id = %s
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(*), COUNT(producto_maestro_id)
                 FROM items_factura
                 WHERE factura_id = ?
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
         items_stats = cursor.fetchone()
         print(f"📦 Items en BD:")
@@ -3416,10 +3655,10 @@ async def force_update_inventario(factura_id: int, usuario_id: int):
                     "id": factura[0],
                     "establecimiento": factura[1],
                     "total": float(factura[2]) if factura[2] else 0,
-                    "productos_guardados": factura[3]
+                    "productos_guardados": factura[3],
                 },
                 "total_items": items_stats[0],
-                "items_con_producto_maestro": items_stats[1]
+                "items_con_producto_maestro": items_stats[1],
             }
 
         # Forzar actualización
@@ -3434,17 +3673,23 @@ async def force_update_inventario(factura_id: int, usuario_id: int):
             cursor = conn.cursor()
 
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT COUNT(*)
                     FROM inventario_usuario
                     WHERE usuario_id = %s
-                """, (usuario_id,))
+                """,
+                    (usuario_id,),
+                )
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT COUNT(*)
                     FROM inventario_usuario
                     WHERE usuario_id = ?
-                """, (usuario_id,))
+                """,
+                    (usuario_id,),
+                )
 
             total_inventario = cursor.fetchone()[0]
             cursor.close()
@@ -3457,27 +3702,24 @@ async def force_update_inventario(factura_id: int, usuario_id: int):
                     "id": factura[0],
                     "establecimiento": factura[1],
                     "total": float(factura[2]) if factura[2] else 0,
-                    "productos_guardados": factura[3]
+                    "productos_guardados": factura[3],
                 },
                 "items_procesados": items_stats[1],
-                "productos_en_inventario": total_inventario
+                "productos_en_inventario": total_inventario,
             }
         else:
             return {
                 "success": False,
                 "error": "actualizar_inventario_desde_factura retornó False",
-                "mensaje": "Revisa los logs para ver el error específico"
+                "mensaje": "Revisa los logs para ver el error específico",
             }
 
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/admin/debug-inventario/{usuario_id}")
@@ -3491,23 +3733,30 @@ async def debug_inventario(usuario_id: int):
 
         # Contar productos en inventario
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(*)
                 FROM inventario_usuario
                 WHERE usuario_id = %s
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(*)
                 FROM inventario_usuario
                 WHERE usuario_id = ?
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
 
         total_inventario = cursor.fetchone()[0]
 
         # Obtener últimas facturas
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     f.id,
                     f.establecimiento,
@@ -3522,9 +3771,12 @@ async def debug_inventario(usuario_id: int):
                 GROUP BY f.id, f.establecimiento, f.total_factura, f.productos_guardados, f.fecha_cargue
                 ORDER BY f.fecha_cargue DESC
                 LIMIT 5
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     f.id,
                     f.establecimiento,
@@ -3539,23 +3791,28 @@ async def debug_inventario(usuario_id: int):
                 GROUP BY f.id, f.establecimiento, f.total_factura, f.productos_guardados, f.fecha_cargue
                 ORDER BY f.fecha_cargue DESC
                 LIMIT 5
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
 
         facturas = []
         for row in cursor.fetchall():
-            facturas.append({
-                "id": row[0],
-                "establecimiento": row[1],
-                "total": float(row[2]) if row[2] else 0,
-                "productos_guardados": row[3],
-                "fecha": str(row[4]) if row[4] else None,
-                "items_en_bd": row[5],
-                "items_con_producto_maestro": row[6]
-            })
+            facturas.append(
+                {
+                    "id": row[0],
+                    "establecimiento": row[1],
+                    "total": float(row[2]) if row[2] else 0,
+                    "productos_guardados": row[3],
+                    "fecha": str(row[4]) if row[4] else None,
+                    "items_en_bd": row[5],
+                    "items_con_producto_maestro": row[6],
+                }
+            )
 
         # Ver muestra del inventario
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     iu.producto_maestro_id,
                     pm.nombre_normalizado,
@@ -3568,9 +3825,12 @@ async def debug_inventario(usuario_id: int):
                 WHERE iu.usuario_id = %s
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 10
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     iu.producto_maestro_id,
                     pm.nombre_normalizado,
@@ -3583,18 +3843,22 @@ async def debug_inventario(usuario_id: int):
                 WHERE iu.usuario_id = ?
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 10
-            """, (usuario_id,))
+            """,
+                (usuario_id,),
+            )
 
         inventario_muestra = []
         for row in cursor.fetchall():
-            inventario_muestra.append({
-                "producto_maestro_id": row[0],
-                "nombre": row[1],
-                "cantidad": float(row[2]) if row[2] else 0,
-                "precio": float(row[3]) if row[3] else 0,
-                "establecimiento": row[4],
-                "fecha_compra": str(row[5]) if row[5] else None
-            })
+            inventario_muestra.append(
+                {
+                    "producto_maestro_id": row[0],
+                    "nombre": row[1],
+                    "cantidad": float(row[2]) if row[2] else 0,
+                    "precio": float(row[3]) if row[3] else 0,
+                    "establecimiento": row[4],
+                    "fecha_compra": str(row[5]) if row[5] else None,
+                }
+            )
 
         cursor.close()
         conn.close()
@@ -3605,17 +3869,15 @@ async def debug_inventario(usuario_id: int):
             "total_productos_inventario": total_inventario,
             "total_facturas": len(facturas),
             "facturas_recientes": facturas,
-            "inventario_muestra": inventario_muestra
+            "inventario_muestra": inventario_muestra,
         }
 
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 
 print("✅ Endpoints de mantenimiento agregados:")
@@ -3642,11 +3904,14 @@ async def auditoria_login(request: Request):
         cursor = conn.cursor()
 
         # Buscar usuario
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, email, password_hash, nombre, rol
             FROM usuarios
             WHERE email = %s
-        """, (email,))
+        """,
+            (email,),
+        )
 
         usuario = cursor.fetchone()
         conn.close()
@@ -3659,20 +3924,22 @@ async def auditoria_login(request: Request):
 
         # Verificar contraseña
         from database import verify_password
+
         if not verify_password(password, password_hash):
             print(f"⚠️ [AUDITORÍA] Contraseña incorrecta: {email}")
             raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
         # Verificar rol (debe ser admin o auditor)
-        if rol not in ['admin', 'auditor']:
+        if rol not in ["admin", "auditor"]:
             print(f"⚠️ [AUDITORÍA] Usuario sin permisos: {email} (rol: {rol})")
             raise HTTPException(
                 status_code=403,
-                detail=f"Sin permisos de auditoría. Tu rol es: {rol}. Contacta al administrador."
+                detail=f"Sin permisos de auditoría. Tu rol es: {rol}. Contacta al administrador.",
             )
 
         # Generar token JWT
         from auth import create_jwt_token
+
         token = create_jwt_token(user_id, user_email, rol)
 
         print(f"✅ [AUDITORÍA] Login exitoso: {email} (rol: {rol})")
@@ -3681,12 +3948,7 @@ async def auditoria_login(request: Request):
             "success": True,
             "message": "Login exitoso",
             "token": token,
-            "user": {
-                "id": user_id,
-                "email": user_email,
-                "nombre": nombre,
-                "rol": rol
-            }
+            "user": {"id": user_id, "email": user_email, "nombre": nombre, "rol": rol},
         }
 
     except HTTPException:
@@ -3694,8 +3956,10 @@ async def auditoria_login(request: Request):
     except Exception as e:
         print(f"❌ [AUDITORÍA] Error en login: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/fix-mi-rol")
 async def fix_mi_rol():
@@ -3703,12 +3967,14 @@ async def fix_mi_rol():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         UPDATE usuarios
         SET rol = 'admin'
         WHERE email = 'santiago@tscamp.co'
         RETURNING id, email, rol
-    """)
+    """
+    )
 
     user = cursor.fetchone()
     conn.commit()
@@ -3717,7 +3983,7 @@ async def fix_mi_rol():
     if user:
         return {
             "success": True,
-            "mensaje": f"Usuario actualizado: {user[1]} → rol: {user[2]}"
+            "mensaje": f"Usuario actualizado: {user[1]} → rol: {user[2]}",
         }
     return {"success": False, "error": "Usuario no encontrado"}
 
@@ -3726,6 +3992,7 @@ async def fix_mi_rol():
 # ENDPOINTS PARA CONSULTAR CÓDIGOS POR ESTABLECIMIENTO
 # Agregar a main.py
 # ============================================================================
+
 
 @app.get("/api/v2/productos/{producto_id}/codigos")
 async def get_codigos_producto(producto_id: int):
@@ -3736,7 +4003,8 @@ async def get_codigos_producto(producto_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 ce.id,
                 ce.codigo_local,
@@ -3750,19 +4018,23 @@ async def get_codigos_producto(producto_id: int):
             WHERE ce.producto_maestro_id = %s
               AND ce.activo = TRUE
             ORDER BY ce.veces_visto DESC
-        """, (producto_id,))
+        """,
+            (producto_id,),
+        )
 
         codigos = []
         for row in cursor.fetchall():
-            codigos.append({
-                "id": row[0],
-                "codigo": row[1],
-                "tipo": row[2],
-                "establecimiento": row[3],
-                "veces_visto": row[4],
-                "primera_vez": row[5].isoformat() if row[5] else None,
-                "ultima_vez": row[6].isoformat() if row[6] else None
-            })
+            codigos.append(
+                {
+                    "id": row[0],
+                    "codigo": row[1],
+                    "tipo": row[2],
+                    "establecimiento": row[3],
+                    "veces_visto": row[4],
+                    "primera_vez": row[5].isoformat() if row[5] else None,
+                    "ultima_vez": row[6].isoformat() if row[6] else None,
+                }
+            )
 
         cursor.close()
         conn.close()
@@ -3771,7 +4043,7 @@ async def get_codigos_producto(producto_id: int):
             "success": True,
             "producto_id": producto_id,
             "codigos": codigos,
-            "total": len(codigos)
+            "total": len(codigos),
         }
 
     except Exception as e:
@@ -3789,18 +4061,22 @@ async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100
         cursor = conn.cursor()
 
         # Info del establecimiento
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT nombre_normalizado, cadena
             FROM establecimientos
             WHERE id = %s
-        """, (establecimiento_id,))
+        """,
+            (establecimiento_id,),
+        )
 
         establecimiento = cursor.fetchone()
         if not establecimiento:
             raise HTTPException(status_code=404, detail="Establecimiento no encontrado")
 
         # Códigos del establecimiento
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 ce.codigo_local,
                 ce.tipo_codigo,
@@ -3814,21 +4090,26 @@ async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100
               AND ce.activo = TRUE
             ORDER BY ce.veces_visto DESC
             LIMIT %s
-        """, (establecimiento_id, limite))
+        """,
+            (establecimiento_id, limite),
+        )
 
         codigos = []
         for row in cursor.fetchall():
-            codigos.append({
-                "codigo_local": row[0],
-                "tipo": row[1],
-                "producto": row[2],
-                "codigo_ean": row[3] or "N/A",
-                "veces_visto": row[4],
-                "ultima_vez": row[5].isoformat() if row[5] else None
-            })
+            codigos.append(
+                {
+                    "codigo_local": row[0],
+                    "tipo": row[1],
+                    "producto": row[2],
+                    "codigo_ean": row[3] or "N/A",
+                    "veces_visto": row[4],
+                    "ultima_vez": row[5].isoformat() if row[5] else None,
+                }
+            )
 
         # Estadísticas
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 COUNT(*) as total,
                 COUNT(CASE WHEN tipo_codigo = 'plu_local' THEN 1 END) as plu_locales,
@@ -3836,7 +4117,9 @@ async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100
                 COUNT(CASE WHEN tipo_codigo = 'ean' THEN 1 END) as eans
             FROM codigos_establecimiento
             WHERE establecimiento_id = %s AND activo = TRUE
-        """, (establecimiento_id,))
+        """,
+            (establecimiento_id,),
+        )
 
         stats = cursor.fetchone()
 
@@ -3848,15 +4131,15 @@ async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100
             "establecimiento": {
                 "id": establecimiento_id,
                 "nombre": establecimiento[0],
-                "cadena": establecimiento[1]
+                "cadena": establecimiento[1],
             },
             "codigos": codigos,
             "estadisticas": {
                 "total_codigos": stats[0],
                 "plu_locales": stats[1],
                 "plu_estandares": stats[2],
-                "eans": stats[3]
-            }
+                "eans": stats[3],
+            },
         }
 
     except HTTPException:
@@ -3876,12 +4159,15 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
         cursor = conn.cursor()
 
         # Buscar por EAN primero (universal)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, nombre_consolidado, codigo_ean, marca
             FROM productos_maestros_v2
             WHERE codigo_ean = %s
             LIMIT 1
-        """, (codigo,))
+        """,
+            (codigo,),
+        )
 
         producto = cursor.fetchone()
 
@@ -3896,13 +4182,14 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
                     "id": producto[0],
                     "nombre": producto[1],
                     "codigo_ean": producto[2],
-                    "marca": producto[3]
-                }
+                    "marca": producto[3],
+                },
             }
 
         # Buscar por código local
         if establecimiento_id:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     pm.id,
                     pm.nombre_consolidado,
@@ -3915,9 +4202,12 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
                   AND ce.establecimiento_id = %s
                   AND ce.activo = TRUE
                 LIMIT 1
-            """, (codigo, establecimiento_id))
+            """,
+                (codigo, establecimiento_id),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     pm.id,
                     pm.nombre_consolidado,
@@ -3929,7 +4219,9 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
                 WHERE ce.codigo_local = %s
                   AND ce.activo = TRUE
                 LIMIT 1
-            """, (codigo,))
+            """,
+                (codigo,),
+            )
 
         producto = cursor.fetchone()
         cursor.close()
@@ -3945,14 +4237,14 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
                     "nombre": producto[1],
                     "codigo_ean": producto[2] or "N/A",
                     "marca": producto[3],
-                    "tipo_codigo": producto[4]
-                }
+                    "tipo_codigo": producto[4],
+                },
             }
 
         return {
             "success": True,
             "encontrado": False,
-            "mensaje": f"No se encontró producto con código {codigo}"
+            "mensaje": f"No se encontró producto con código {codigo}",
         }
 
     except Exception as e:
@@ -3967,6 +4259,7 @@ print("✅ Endpoints de códigos por establecimiento registrados")
 # Agregar a main.py temporalmente
 # ============================================================================
 
+
 @app.get("/admin/setup-codigos-establecimiento")
 async def setup_codigos_establecimiento():
     """
@@ -3974,11 +4267,14 @@ async def setup_codigos_establecimiento():
     Ejecutar visitando: https://tu-app.railway.app/admin/setup-codigos-establecimiento
     """
     try:
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("🔧 FORZANDO CREACIÓN DE SISTEMA DE CÓDIGOS")
-        print("="*70)
+        print("=" * 70)
 
-        from database import crear_tabla_codigos_establecimiento, verificar_sistema_codigos
+        from database import (
+            crear_tabla_codigos_establecimiento,
+            verificar_sistema_codigos,
+        )
 
         # Intentar crear
         resultado = crear_tabla_codigos_establecimiento()
@@ -3990,24 +4286,21 @@ async def setup_codigos_establecimiento():
             return {
                 "success": True,
                 "mensaje": "Sistema de códigos instalado correctamente",
-                "verificacion": verificacion
+                "verificacion": verificacion,
             }
         else:
             return {
                 "success": False,
-                "error": "No se pudo crear el sistema (ver logs del servidor)"
+                "error": "No se pudo crear el sistema (ver logs del servidor)",
             }
 
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
 
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/admin/verificar-codigos")
@@ -4023,18 +4316,16 @@ async def verificar_codigos():
         return {
             "success": True,
             "sistema_instalado": existe,
-            "mensaje": "Sistema instalado correctamente" if existe else "Sistema NO instalado"
+            "mensaje": (
+                "Sistema instalado correctamente" if existe else "Sistema NO instalado"
+            ),
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 
 print("✅ Endpoints de setup agregados")
-
 
 
 @app.get("/admin/setup-categorias")
@@ -4044,9 +4335,9 @@ async def setup_categorias():
     Para tablas que YA TIENEN categoria_id pero la tabla categorias no existe
     """
     try:
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("🏗️ CREANDO TABLA CATEGORIAS (Versión Simple)")
-        print("="*70)
+        print("=" * 70)
 
         from database import get_db_connection
 
@@ -4055,7 +4346,8 @@ async def setup_categorias():
 
         # 1. Crear tabla categorias
         print("1️⃣ Creando tabla categorias...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS categorias (
                 id SERIAL PRIMARY KEY,
                 nombre VARCHAR(100) UNIQUE NOT NULL,
@@ -4067,38 +4359,42 @@ async def setup_categorias():
                 fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         conn.commit()
         print("   ✅ Tabla creada")
 
         # 2. Insertar categorías básicas
         print("2️⃣ Insertando categorías básicas...")
         categorias_basicas = [
-            ('Lácteos', 'Leche, yogurt, queso y derivados', '🥛', 1),
-            ('Carnes', 'Carnes rojas, pollo, pescado', '🥩', 2),
-            ('Frutas y Verduras', 'Productos frescos', '🍎', 3),
-            ('Panadería', 'Pan, pasteles, repostería', '🍞', 4),
-            ('Bebidas', 'Jugos, gaseosas, agua', '🥤', 5),
-            ('Despensa', 'Granos, pastas, enlatados', '🥫', 6),
-            ('Aseo Personal', 'Jabones, shampoo, cuidado personal', '🧴', 7),
-            ('Aseo Hogar', 'Limpieza y desinfección', '🧹', 8),
-            ('Snacks', 'Galletas, papas, dulces', '🍪', 9),
-            ('Congelados', 'Productos congelados', '🧊', 10),
-            ('Farmacia', 'Medicamentos y cuidado de salud', '💊', 11),
-            ('Bebé', 'Productos para bebés', '👶', 12),
-            ('Mascotas', 'Alimentos y cuidado de mascotas', '🐕', 13),
-            ('Licores', 'Bebidas alcohólicas', '🍺', 14),
-            ('Otros', 'Productos varios', '📦', 99)
+            ("Lácteos", "Leche, yogurt, queso y derivados", "🥛", 1),
+            ("Carnes", "Carnes rojas, pollo, pescado", "🥩", 2),
+            ("Frutas y Verduras", "Productos frescos", "🍎", 3),
+            ("Panadería", "Pan, pasteles, repostería", "🍞", 4),
+            ("Bebidas", "Jugos, gaseosas, agua", "🥤", 5),
+            ("Despensa", "Granos, pastas, enlatados", "🥫", 6),
+            ("Aseo Personal", "Jabones, shampoo, cuidado personal", "🧴", 7),
+            ("Aseo Hogar", "Limpieza y desinfección", "🧹", 8),
+            ("Snacks", "Galletas, papas, dulces", "🍪", 9),
+            ("Congelados", "Productos congelados", "🧊", 10),
+            ("Farmacia", "Medicamentos y cuidado de salud", "💊", 11),
+            ("Bebé", "Productos para bebés", "👶", 12),
+            ("Mascotas", "Alimentos y cuidado de mascotas", "🐕", 13),
+            ("Licores", "Bebidas alcohólicas", "🍺", 14),
+            ("Otros", "Productos varios", "📦", 99),
         ]
 
         insertadas = 0
         for nombre, desc, icono, orden in categorias_basicas:
             try:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO categorias (nombre, descripcion, icono, orden)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (nombre) DO NOTHING
-                """, (nombre, desc, icono, orden))
+                """,
+                    (nombre, desc, icono, orden),
+                )
                 if cursor.rowcount > 0:
                     insertadas += 1
             except Exception as e:
@@ -4109,36 +4405,43 @@ async def setup_categorias():
 
         # 3. Verificar columna categoria_id (ya debe existir)
         print("3️⃣ Verificando columna categoria_id...")
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'productos_maestros_v2'
               AND column_name = 'categoria_id'
-        """)
+        """
+        )
 
         if cursor.fetchone():
             print("   ✓ Columna categoria_id ya existe")
         else:
             print("   ➕ Agregando columna categoria_id...")
-            cursor.execute("""
+            cursor.execute(
+                """
                 ALTER TABLE productos_maestros_v2
                 ADD COLUMN categoria_id INTEGER REFERENCES categorias(id)
-            """)
+            """
+            )
             conn.commit()
             print("   ✅ Columna agregada")
 
         # 4. Crear índice
         print("4️⃣ Creando índices...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_productos_v2_categoria
             ON productos_maestros_v2(categoria_id)
-        """)
+        """
+        )
         conn.commit()
         print("   ✅ Índice creado")
 
         # 5. Crear vista
         print("5️⃣ Creando vista v_productos_con_categoria...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE OR REPLACE VIEW v_productos_con_categoria AS
             SELECT
                 pm.id,
@@ -4152,7 +4455,8 @@ async def setup_categorias():
                 pm.fecha_creacion
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
-        """)
+        """
+        )
         conn.commit()
         print("   ✅ Vista creada")
 
@@ -4160,18 +4464,22 @@ async def setup_categorias():
         cursor.execute("SELECT COUNT(*) FROM categorias WHERE activo = TRUE")
         total_categorias = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros_v2 WHERE categoria_id IS NOT NULL")
+        cursor.execute(
+            "SELECT COUNT(*) FROM productos_maestros_v2 WHERE categoria_id IS NOT NULL"
+        )
         productos_con_categoria = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros_v2 WHERE categoria_id IS NULL")
+        cursor.execute(
+            "SELECT COUNT(*) FROM productos_maestros_v2 WHERE categoria_id IS NULL"
+        )
         productos_sin_categoria = cursor.fetchone()[0]
 
         cursor.close()
         conn.close()
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("✅ SETUP COMPLETADO")
-        print("="*70)
+        print("=" * 70)
 
         return {
             "success": True,
@@ -4181,23 +4489,21 @@ async def setup_categorias():
                 "total_categorias": total_categorias,
                 "productos_con_categoria": productos_con_categoria,
                 "productos_sin_categoria": productos_sin_categoria,
-                "categorias_insertadas": insertadas
-            }
+                "categorias_insertadas": insertadas,
+            },
         }
 
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
 
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 print("✅ Endpoint de categorías corregido (para tablas con categoria_id existente)")
+
 
 @app.get("/admin/verificar-categorias")
 async def verificar_categorias():
@@ -4211,12 +4517,14 @@ async def verificar_categorias():
         cursor = conn.cursor()
 
         # Verificar tabla
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = 'categorias'
             )
-        """)
+        """
+        )
         tabla_existe = cursor.fetchone()[0]
 
         if not tabla_existe:
@@ -4225,21 +4533,24 @@ async def verificar_categorias():
             return {
                 "success": False,
                 "instalado": False,
-                "mensaje": "Tabla categorias no existe. Ejecuta /admin/setup-categorias"
+                "mensaje": "Tabla categorias no existe. Ejecuta /admin/setup-categorias",
             }
 
         # Obtener estadísticas
         cursor.execute("SELECT COUNT(*) FROM categorias WHERE activo = TRUE")
         total_categorias = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM productos_maestros_v2 WHERE categoria_id IS NOT NULL")
+        cursor.execute(
+            "SELECT COUNT(*) FROM productos_maestros_v2 WHERE categoria_id IS NOT NULL"
+        )
         productos_con_categoria = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM productos_maestros_v2")
         total_productos = cursor.fetchone()[0]
 
         # Listar categorías
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT c.nombre, COUNT(pm.id) as productos
             FROM categorias c
             LEFT JOIN productos_maestros_v2 pm ON c.id = pm.categoria_id
@@ -4247,19 +4558,21 @@ async def verificar_categorias():
             GROUP BY c.nombre
             ORDER BY productos DESC
             LIMIT 10
-        """)
+        """
+        )
 
         top_categorias = []
         for row in cursor.fetchall():
-            top_categorias.append({
-                "nombre": row[0],
-                "productos": row[1]
-            })
+            top_categorias.append({"nombre": row[0], "productos": row[1]})
 
         cursor.close()
         conn.close()
 
-        porcentaje_categorizados = (productos_con_categoria / total_productos * 100) if total_productos > 0 else 0
+        porcentaje_categorizados = (
+            (productos_con_categoria / total_productos * 100)
+            if total_productos > 0
+            else 0
+        )
 
         return {
             "success": True,
@@ -4269,16 +4582,13 @@ async def verificar_categorias():
                 "total_productos": total_productos,
                 "productos_con_categoria": productos_con_categoria,
                 "productos_sin_categoria": total_productos - productos_con_categoria,
-                "porcentaje_categorizados": round(porcentaje_categorizados, 1)
+                "porcentaje_categorizados": round(porcentaje_categorizados, 1),
             },
-            "top_categorias": top_categorias
+            "top_categorias": top_categorias,
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 
 print("✅ Endpoints de categorías agregados:")
@@ -4288,6 +4598,7 @@ print("   GET /admin/verificar-categorias")
 # ============================================================================
 # AGREGAR ESTE ENDPOINT A main.py - VERSIÓN ULTRA SIMPLE
 # ============================================================================
+
 
 @app.get("/admin/fix-categorias-final")
 async def fix_categorias_final():
@@ -4304,7 +4615,8 @@ async def fix_categorias_final():
         resultados = []
 
         # 1. Crear tabla
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS categorias (
                 id SERIAL PRIMARY KEY,
                 nombre VARCHAR(100) UNIQUE NOT NULL,
@@ -4314,29 +4626,40 @@ async def fix_categorias_final():
                 activo BOOLEAN DEFAULT TRUE,
                 fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         conn.commit()
         resultados.append("✅ Tabla categorias verificada")
 
         # 2. Insertar categorías
         categorias = [
-            ('Lácteos', '🥛', 1), ('Carnes', '🥩', 2),
-            ('Frutas y Verduras', '🍎', 3), ('Panadería', '🍞', 4),
-            ('Bebidas', '🥤', 5), ('Despensa', '🥫', 6),
-            ('Aseo Personal', '🧴', 7), ('Aseo Hogar', '🧹', 8),
-            ('Snacks', '🍪', 9), ('Congelados', '🧊', 10),
-            ('Farmacia', '💊', 11), ('Bebé', '👶', 12),
-            ('Mascotas', '🐕', 13), ('Licores', '🍺', 14),
-            ('Otros', '📦', 99)
+            ("Lácteos", "🥛", 1),
+            ("Carnes", "🥩", 2),
+            ("Frutas y Verduras", "🍎", 3),
+            ("Panadería", "🍞", 4),
+            ("Bebidas", "🥤", 5),
+            ("Despensa", "🥫", 6),
+            ("Aseo Personal", "🧴", 7),
+            ("Aseo Hogar", "🧹", 8),
+            ("Snacks", "🍪", 9),
+            ("Congelados", "🧊", 10),
+            ("Farmacia", "💊", 11),
+            ("Bebé", "👶", 12),
+            ("Mascotas", "🐕", 13),
+            ("Licores", "🍺", 14),
+            ("Otros", "📦", 99),
         ]
 
         insertadas = 0
         for nombre, icono, orden in categorias:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO categorias (nombre, icono, orden)
                 VALUES (%s, %s, %s)
                 ON CONFLICT (nombre) DO NOTHING
-            """, (nombre, icono, orden))
+            """,
+                (nombre, icono, orden),
+            )
             if cursor.rowcount > 0:
                 insertadas += 1
 
@@ -4344,10 +4667,12 @@ async def fix_categorias_final():
         resultados.append(f"✅ {insertadas} categorías nuevas insertadas")
 
         # 3. Crear índice
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_productos_v2_categoria
             ON productos_maestros_v2(categoria_id)
-        """)
+        """
+        )
         conn.commit()
         resultados.append("✅ Índice creado")
 
@@ -4355,10 +4680,12 @@ async def fix_categorias_final():
         cursor.execute("SELECT COUNT(*) FROM categorias")
         total = cursor.fetchone()[0]
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*) FROM productos_maestros_v2
             WHERE categoria_id IS NOT NULL
-        """)
+        """
+        )
         con_cat = cursor.fetchone()[0]
 
         cursor.close()
@@ -4371,19 +4698,21 @@ async def fix_categorias_final():
             "estadisticas": {
                 "total_categorias": total,
                 "productos_con_categoria": con_cat,
-                "categorias_insertadas": insertadas
-            }
+                "categorias_insertadas": insertadas,
+            },
         }
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
 
-from inventory_consolidator import obtener_inventario_consolidado, obtener_estadisticas_stock
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+from inventory_consolidator import (
+    obtener_inventario_consolidado,
+    obtener_estadisticas_stock,
+)
+
 
 @app.get("/api/v2/inventario-consolidado/{usuario_id}")
 async def get_inventario_consolidado(usuario_id: int):
@@ -4421,12 +4750,13 @@ async def get_inventario_consolidado(usuario_id: int):
             "productos": inventario,
             "estadisticas": estadisticas,
             "total": len(inventario),
-            "consolidados": estadisticas['productos_consolidados']
+            "consolidados": estadisticas["productos_consolidados"],
         }
 
     except Exception as e:
         print(f"❌ Error en get_inventario_consolidado: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -4436,6 +4766,7 @@ async def get_inventario_consolidado(usuario_id: int):
 # ═══════════════════════════════════════════════════════════════
 
 # Si quieres agregar un parámetro opcional al endpoint existente:
+
 
 @app.get("/api/v2/inventario/{usuario_id}")
 async def get_inventario(usuario_id: int, consolidado: bool = False):
@@ -4465,7 +4796,7 @@ async def get_inventario(usuario_id: int, consolidado: bool = False):
                 "success": True,
                 "productos": inventario,
                 "estadisticas": estadisticas,
-                "consolidado": True
+                "consolidado": True,
             }
 
         # ❌ CÓDIGO EXISTENTE - NO MODIFICAR
@@ -4474,13 +4805,17 @@ async def get_inventario(usuario_id: int, consolidado: bool = False):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 from fastapi import HTTPException, Depends
+
 # ============================================================================
 # MODELOS PYDANTIC
 # ============================================================================
 
+
 class ProductoReferenciaCreate(BaseModel):
     """Modelo para crear producto de referencia"""
+
     codigo_ean: str
     nombre: str
     marca: Optional[str] = None
@@ -4488,8 +4823,10 @@ class ProductoReferenciaCreate(BaseModel):
     presentacion: Optional[str] = None
     unidad_medida: Optional[str] = "unidades"
 
+
 class ProductoReferenciaUpdate(BaseModel):
     """Modelo para actualizar producto de referencia"""
+
     nombre: Optional[str] = None
     marca: Optional[str] = None
     categoria: Optional[str] = None
@@ -4500,10 +4837,10 @@ class ProductoReferenciaUpdate(BaseModel):
 # ENDPOINT 1: BUSCAR PRODUCTO POR EAN
 # ============================================================================
 
+
 @app.get("/api/productos-referencia/{codigo_ean}")
 async def buscar_producto_referencia(
-    codigo_ean: str,
-    current_user: dict = Depends(get_current_user)
+    codigo_ean: str, current_user: dict = Depends(get_current_user)
 ):
     """
     Busca un producto en productos_referencia por su código EAN
@@ -4523,7 +4860,8 @@ async def buscar_producto_referencia(
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 id,
                 codigo_ean,
@@ -4536,7 +4874,9 @@ async def buscar_producto_referencia(
                 updated_at
             FROM productos_referencia
             WHERE codigo_ean = %s
-        """, (codigo_ean,))
+        """,
+            (codigo_ean,),
+        )
 
         producto = cursor.fetchone()
 
@@ -4572,10 +4912,10 @@ async def buscar_producto_referencia(
 # ENDPOINT 2: CREAR PRODUCTO NUEVO
 # ============================================================================
 
+
 @app.post("/api/productos-referencia")
 async def crear_producto_referencia(
-    producto: ProductoReferenciaCreate,
-    current_user: dict = Depends(get_current_user)
+    producto: ProductoReferenciaCreate, current_user: dict = Depends(get_current_user)
 ):
     """
     Crea un nuevo producto en productos_referencia
@@ -4590,10 +4930,14 @@ async def crear_producto_referencia(
 
     # Validaciones
     if len(producto.codigo_ean) < 8:
-        raise HTTPException(status_code=400, detail="Código EAN inválido (mínimo 8 dígitos)")
+        raise HTTPException(
+            status_code=400, detail="Código EAN inválido (mínimo 8 dígitos)"
+        )
 
     if len(producto.nombre.strip()) < 2:
-        raise HTTPException(status_code=400, detail="Nombre muy corto (mínimo 2 caracteres)")
+        raise HTTPException(
+            status_code=400, detail="Nombre muy corto (mínimo 2 caracteres)"
+        )
 
     conn = get_db_connection()
     if not conn:
@@ -4603,23 +4947,26 @@ async def crear_producto_referencia(
 
     try:
         # Verificar si ya existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, nombre
             FROM productos_referencia
             WHERE codigo_ean = %s
-        """, (producto.codigo_ean,))
+        """,
+            (producto.codigo_ean,),
+        )
 
         existente = cursor.fetchone()
 
         if existente:
             print(f"   ⚠️ Producto {producto.codigo_ean} YA existe: {existente[1]}")
             raise HTTPException(
-                status_code=409,
-                detail=f"Producto ya existe: {existente[1]}"
+                status_code=409, detail=f"Producto ya existe: {existente[1]}"
             )
 
         # Crear producto
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO productos_referencia (
                 codigo_ean,
                 nombre,
@@ -4635,14 +4982,16 @@ async def crear_producto_referencia(
             )
             RETURNING id, codigo_ean, nombre, marca, categoria,
                       presentacion, unidad_medida, created_at
-        """, (
-            producto.codigo_ean,
-            producto.nombre.strip().upper(),
-            producto.marca.strip() if producto.marca else None,
-            producto.categoria.strip() if producto.categoria else None,
-            producto.presentacion.strip() if producto.presentacion else None,
-            producto.unidad_medida
-        ))
+        """,
+            (
+                producto.codigo_ean,
+                producto.nombre.strip().upper(),
+                producto.marca.strip() if producto.marca else None,
+                producto.categoria.strip() if producto.categoria else None,
+                producto.presentacion.strip() if producto.presentacion else None,
+                producto.unidad_medida,
+            ),
+        )
 
         nuevo_producto = cursor.fetchone()
         conn.commit()
@@ -4652,16 +5001,17 @@ async def crear_producto_referencia(
         # Registrar en auditoría
         try:
             from database import registrar_auditoria
+
             registrar_auditoria(
-                usuario_id=current_user['id'],
-                accion='crear',
+                usuario_id=current_user["id"],
+                accion="crear",
                 datos_nuevos={
-                    'codigo_ean': producto.codigo_ean,
-                    'nombre': producto.nombre,
-                    'marca': producto.marca,
-                    'categoria': producto.categoria
+                    "codigo_ean": producto.codigo_ean,
+                    "nombre": producto.nombre,
+                    "marca": producto.marca,
+                    "categoria": producto.categoria,
                 },
-                razon='Producto creado desde app de escaneo'
+                razon="Producto creado desde app de escaneo",
             )
         except:
             pass  # No fallar si auditoría falla
@@ -4675,7 +5025,7 @@ async def crear_producto_referencia(
             "presentacion": nuevo_producto[5],
             "unidad_medida": nuevo_producto[6],
             "created_at": nuevo_producto[7].isoformat() if nuevo_producto[7] else None,
-            "message": "Producto creado exitosamente"
+            "message": "Producto creado exitosamente",
         }
 
     except HTTPException:
@@ -4685,6 +5035,7 @@ async def crear_producto_referencia(
         conn.rollback()
         print(f"❌ Error creando producto: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
     finally:
@@ -4696,11 +5047,12 @@ async def crear_producto_referencia(
 # ENDPOINT 3: ACTUALIZAR PRODUCTO
 # ============================================================================
 
+
 @app.put("/api/productos-referencia/{codigo_ean}")
 async def actualizar_producto_referencia(
     codigo_ean: str,
     producto: ProductoReferenciaUpdate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Actualiza un producto existente en productos_referencia
@@ -4721,11 +5073,14 @@ async def actualizar_producto_referencia(
 
     try:
         # Verificar que existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, nombre, marca, categoria, presentacion
             FROM productos_referencia
             WHERE codigo_ean = %s
-        """, (codigo_ean,))
+        """,
+            (codigo_ean,),
+        )
 
         existente = cursor.fetchone()
 
@@ -4735,10 +5090,10 @@ async def actualizar_producto_referencia(
 
         # Preparar datos anteriores para auditoría
         datos_anteriores = {
-            'nombre': existente[1],
-            'marca': existente[2],
-            'categoria': existente[3],
-            'presentacion': existente[4]
+            "nombre": existente[1],
+            "marca": existente[2],
+            "categoria": existente[3],
+            "presentacion": existente[4],
         }
 
         # Construir UPDATE dinámico (solo campos proporcionados)
@@ -4759,7 +5114,9 @@ async def actualizar_producto_referencia(
 
         if producto.presentacion is not None:
             campos.append("presentacion = %s")
-            valores.append(producto.presentacion.strip() if producto.presentacion else None)
+            valores.append(
+                producto.presentacion.strip() if producto.presentacion else None
+            )
 
         if not campos:
             raise HTTPException(status_code=400, detail="No hay datos para actualizar")
@@ -4786,19 +5143,20 @@ async def actualizar_producto_referencia(
         # Registrar en auditoría
         try:
             from database import registrar_auditoria
+
             datos_nuevos = {
-                'nombre': actualizado[2],
-                'marca': actualizado[3],
-                'categoria': actualizado[4],
-                'presentacion': actualizado[5]
+                "nombre": actualizado[2],
+                "marca": actualizado[3],
+                "categoria": actualizado[4],
+                "presentacion": actualizado[5],
             }
 
             registrar_auditoria(
-                usuario_id=current_user['id'],
-                accion='actualizar',
+                usuario_id=current_user["id"],
+                accion="actualizar",
                 datos_anteriores=datos_anteriores,
                 datos_nuevos=datos_nuevos,
-                razon='Producto actualizado desde app de escaneo'
+                razon="Producto actualizado desde app de escaneo",
             )
         except:
             pass
@@ -4812,7 +5170,7 @@ async def actualizar_producto_referencia(
             "presentacion": actualizado[5],
             "unidad_medida": actualizado[6],
             "updated_at": actualizado[7].isoformat() if actualizado[7] else None,
-            "message": "Producto actualizado exitosamente"
+            "message": "Producto actualizado exitosamente",
         }
 
     except HTTPException:
@@ -4822,6 +5180,7 @@ async def actualizar_producto_referencia(
         conn.rollback()
         print(f"❌ Error actualizando producto: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
     finally:
@@ -4833,10 +5192,10 @@ async def actualizar_producto_referencia(
 # ENDPOINT BONUS: LISTAR PRODUCTOS (para debugging)
 # ============================================================================
 
+
 @app.get("/api/productos-referencia")
 async def listar_productos_referencia(
-    limite: int = 20,
-    current_user: dict = Depends(get_current_user)
+    limite: int = 20, current_user: dict = Depends(get_current_user)
 ):
     """Lista los últimos productos de referencia creados"""
 
@@ -4847,31 +5206,33 @@ async def listar_productos_referencia(
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 id, codigo_ean, nombre, marca, categoria,
                 presentacion, created_at
             FROM productos_referencia
             ORDER BY created_at DESC
             LIMIT %s
-        """, (limite,))
+        """,
+            (limite,),
+        )
 
         productos = []
         for row in cursor.fetchall():
-            productos.append({
-                "id": row[0],
-                "codigo_ean": row[1],
-                "nombre": row[2],
-                "marca": row[3],
-                "categoria": row[4],
-                "presentacion": row[5],
-                "created_at": row[6].isoformat() if row[6] else None
-            })
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "categoria": row[4],
+                    "presentacion": row[5],
+                    "created_at": row[6].isoformat() if row[6] else None,
+                }
+            )
 
-        return {
-            "total": len(productos),
-            "productos": productos
-        }
+        return {"total": len(productos), "productos": productos}
 
     except Exception as e:
         print(f"❌ Error listando productos: {e}")
@@ -4896,6 +5257,7 @@ print("=" * 80)
 
 print("✅ Endpoint /admin/fix-categorias-final agregado")
 
+
 @app.get("/admin/migrar-aprendizaje")
 async def migrar_aprendizaje():
     """
@@ -4908,18 +5270,17 @@ async def migrar_aprendizaje():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        resultado = {
-            "success": False,
-            "pasos": []
-        }
+        resultado = {"success": False, "pasos": []}
 
         # Verificar tabla
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = 'correcciones_aprendidas'
             )
-        """)
+        """
+        )
 
         if not cursor.fetchone()[0]:
             resultado["error"] = "Tabla correcciones_aprendidas no existe"
@@ -4930,65 +5291,81 @@ async def migrar_aprendizaje():
         resultado["pasos"].append("✅ Tabla existe")
 
         # ELIMINAR constraint viejo si existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT constraint_name
             FROM information_schema.table_constraints
             WHERE table_name = 'correcciones_aprendidas'
               AND constraint_type = 'UNIQUE'
-        """)
+        """
+        )
 
         constraints = cursor.fetchall()
         for (constraint_name,) in constraints:
-            cursor.execute(f"ALTER TABLE correcciones_aprendidas DROP CONSTRAINT IF EXISTS {constraint_name}")
-            resultado["pasos"].append(f"🗑️  Eliminado constraint viejo: {constraint_name}")
+            cursor.execute(
+                f"ALTER TABLE correcciones_aprendidas DROP CONSTRAINT IF EXISTS {constraint_name}"
+            )
+            resultado["pasos"].append(
+                f"🗑️  Eliminado constraint viejo: {constraint_name}"
+            )
 
         # Agregar columna computed si no existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'correcciones_aprendidas'
               AND column_name = 'establecimiento_key'
-        """)
+        """
+        )
 
         if not cursor.fetchone():
-            cursor.execute("""
+            cursor.execute(
+                """
                 ALTER TABLE correcciones_aprendidas
                 ADD COLUMN establecimiento_key VARCHAR(100)
                 GENERATED ALWAYS AS (COALESCE(establecimiento, '')) STORED
-            """)
+            """
+            )
             resultado["pasos"].append("➕ Agregada columna establecimiento_key")
         else:
             resultado["pasos"].append("✅ Columna establecimiento_key ya existe")
 
         # Limpiar duplicados
-        cursor.execute("""
+        cursor.execute(
+            """
             DELETE FROM correcciones_aprendidas a
             USING correcciones_aprendidas b
             WHERE a.id < b.id
               AND a.ocr_normalizado = b.ocr_normalizado
               AND COALESCE(a.establecimiento, '') = COALESCE(b.establecimiento, '')
-        """)
+        """
+        )
 
         duplicados = cursor.rowcount
         resultado["pasos"].append(f"🗑️  {duplicados} duplicados eliminados")
 
         # Crear constraint correcto
-        cursor.execute("""
+        cursor.execute(
+            """
             ALTER TABLE correcciones_aprendidas
             ADD CONSTRAINT unique_correccion
             UNIQUE (ocr_normalizado, establecimiento_key)
-        """)
+        """
+        )
 
         conn.commit()
         resultado["pasos"].append("✅ Constraint creado correctamente")
 
         # Verificar
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT constraint_name
             FROM information_schema.table_constraints
             WHERE table_name = 'correcciones_aprendidas'
               AND constraint_name = 'unique_correccion'
-        """)
+        """
+        )
 
         if cursor.fetchone():
             resultado["success"] = True
@@ -5004,11 +5381,8 @@ async def migrar_aprendizaje():
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/admin/verificar-aprendizaje")
@@ -5021,37 +5395,45 @@ async def verificar_aprendizaje():
         cursor = conn.cursor()
 
         # Verificar constraint
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT constraint_name, constraint_type
             FROM information_schema.table_constraints
             WHERE table_name = 'correcciones_aprendidas'
               AND constraint_name = 'unique_correccion'
-        """)
+        """
+        )
 
         constraint = cursor.fetchone()
 
         # Contar registros
-        cursor.execute("SELECT COUNT(*) FROM correcciones_aprendidas WHERE activo = TRUE")
+        cursor.execute(
+            "SELECT COUNT(*) FROM correcciones_aprendidas WHERE activo = TRUE"
+        )
         total = cursor.fetchone()[0]
 
         # Ver últimos 5
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT ocr_normalizado, nombre_validado, establecimiento, confianza, veces_confirmado
             FROM correcciones_aprendidas
             WHERE activo = TRUE
             ORDER BY fecha_ultima_confirmacion DESC
             LIMIT 5
-        """)
+        """
+        )
 
         ultimos = []
         for row in cursor.fetchall():
-            ultimos.append({
-                "ocr": row[0],
-                "validado": row[1],
-                "establecimiento": row[2],
-                "confianza": float(row[3]) if row[3] else 0,
-                "veces": row[4]
-            })
+            ultimos.append(
+                {
+                    "ocr": row[0],
+                    "validado": row[1],
+                    "establecimiento": row[2],
+                    "confianza": float(row[3]) if row[3] else 0,
+                    "veces": row[4],
+                }
+            )
 
         cursor.close()
         conn.close()
@@ -5061,21 +5443,17 @@ async def verificar_aprendizaje():
             "constraint_existe": constraint is not None,
             "productos_aprendidos": total,
             "sistema_listo": constraint is not None,
-            "ultimos_5": ultimos
+            "ultimos_5": ultimos,
         }
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 @app.post("/admin/corregir-aprendizaje/{aprendizaje_id}")
-async def corregir_aprendizaje(
-    aprendizaje_id: int,
-    nombre_correcto: str
-):
+async def corregir_aprendizaje(aprendizaje_id: int, nombre_correcto: str):
     """
     Corregir un producto mal aprendido
 
@@ -5090,20 +5468,23 @@ async def corregir_aprendizaje(
         cursor = conn.cursor()
 
         # Actualizar el nombre validado
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE correcciones_aprendidas
             SET nombre_validado = %s,
                 fecha_ultima_confirmacion = CURRENT_TIMESTAMP
             WHERE id = %s
             RETURNING ocr_normalizado, establecimiento
-        """, (nombre_correcto.upper().strip(), aprendizaje_id))
+        """,
+            (nombre_correcto.upper().strip(), aprendizaje_id),
+        )
 
         resultado = cursor.fetchone()
 
         if not resultado:
             return {
                 "success": False,
-                "error": f"No se encontró aprendizaje con ID {aprendizaje_id}"
+                "error": f"No se encontró aprendizaje con ID {aprendizaje_id}",
             }
 
         conn.commit()
@@ -5111,13 +5492,16 @@ async def corregir_aprendizaje(
         ocr_norm, establecimiento = resultado
 
         # Actualizar productos_maestros que usen este nombre
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE productos_maestros pm
             SET nombre_normalizado = %s
             FROM items_factura if_
             WHERE pm.id = if_.producto_maestro_id
               AND if_.nombre_leido = %s
-        """, (nombre_correcto.upper().strip(), ocr_norm))
+        """,
+            (nombre_correcto.upper().strip(), ocr_norm),
+        )
 
         productos_actualizados = cursor.rowcount
         conn.commit()
@@ -5129,22 +5513,18 @@ async def corregir_aprendizaje(
             "success": True,
             "mensaje": f"Aprendizaje corregido: '{ocr_norm}' → '{nombre_correcto}'",
             "productos_actualizados": productos_actualizados,
-            "establecimiento": establecimiento
+            "establecimiento": establecimiento,
         }
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/admin/listar-aprendizaje")
 async def listar_aprendizaje(
-    limite: int = 20,
-    orden: str = "fecha"  # "fecha" o "confianza" o "veces"
+    limite: int = 20, orden: str = "fecha"  # "fecha" o "confianza" o "veces"
 ):
     """
     Listar productos aprendidos con opción de filtrado
@@ -5163,7 +5543,8 @@ async def listar_aprendizaje(
         else:
             order_by = "fecha_ultima_confirmacion DESC"
 
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT
                 id,
                 ocr_original,
@@ -5181,41 +5562,40 @@ async def listar_aprendizaje(
             WHERE activo = TRUE
             ORDER BY {order_by}
             LIMIT %s
-        """, (limite,))
+        """,
+            (limite,),
+        )
 
         productos = []
         for row in cursor.fetchall():
-            productos.append({
-                "id": row[0],
-                "ocr_original": row[1],
-                "ocr_normalizado": row[2],
-                "nombre_validado": row[3],
-                "establecimiento": row[4],
-                "codigo_ean": row[5],
-                "confianza": float(row[6]) if row[6] else 0,
-                "veces_confirmado": row[7],
-                "veces_rechazado": row[8],
-                "fecha_primera_vez": row[9].isoformat() if row[9] else None,
-                "fecha_ultima_confirmacion": row[10].isoformat() if row[10] else None,
-                "activo": row[11]
-            })
+            productos.append(
+                {
+                    "id": row[0],
+                    "ocr_original": row[1],
+                    "ocr_normalizado": row[2],
+                    "nombre_validado": row[3],
+                    "establecimiento": row[4],
+                    "codigo_ean": row[5],
+                    "confianza": float(row[6]) if row[6] else 0,
+                    "veces_confirmado": row[7],
+                    "veces_rechazado": row[8],
+                    "fecha_primera_vez": row[9].isoformat() if row[9] else None,
+                    "fecha_ultima_confirmacion": (
+                        row[10].isoformat() if row[10] else None
+                    ),
+                    "activo": row[11],
+                }
+            )
 
         cursor.close()
         conn.close()
 
-        return {
-            "success": True,
-            "total": len(productos),
-            "productos": productos
-        }
+        return {"success": True, "total": len(productos), "productos": productos}
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.delete("/admin/eliminar-aprendizaje/{aprendizaje_id}")
@@ -5229,19 +5609,22 @@ async def eliminar_aprendizaje(aprendizaje_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE correcciones_aprendidas
             SET activo = FALSE
             WHERE id = %s
             RETURNING ocr_normalizado, nombre_validado
-        """, (aprendizaje_id,))
+        """,
+            (aprendizaje_id,),
+        )
 
         resultado = cursor.fetchone()
 
         if not resultado:
             return {
                 "success": False,
-                "error": f"No se encontró aprendizaje con ID {aprendizaje_id}"
+                "error": f"No se encontró aprendizaje con ID {aprendizaje_id}",
             }
 
         conn.commit()
@@ -5252,11 +5635,12 @@ async def eliminar_aprendizaje(aprendizaje_id: int):
 
         return {
             "success": True,
-            "mensaje": f"Aprendizaje desactivado: '{ocr_norm}' → '{nombre_val}'"
+            "mensaje": f"Aprendizaje desactivado: '{ocr_norm}' → '{nombre_val}'",
         }
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
 
 @app.get("/admin/reparar-secuencia")
 async def reparar_secuencia():
@@ -5274,9 +5658,11 @@ async def reparar_secuencia():
         max_id = cursor.fetchone()[0] or 0
 
         # Reiniciar la secuencia
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT setval('productos_maestros_id_seq', {max_id}, true)
-        """)
+        """
+        )
 
         # Verificar
         cursor.execute("SELECT last_value FROM productos_maestros_id_seq")
@@ -5290,16 +5676,15 @@ async def reparar_secuencia():
             "success": True,
             "mensaje": "Secuencia reparada",
             "max_id_actual": max_id,
-            "siguiente_id": nuevo_valor + 1
+            "siguiente_id": nuevo_valor + 1,
         }
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 @app.get("/admin/encontrar-duplicados")
 async def encontrar_duplicados(limite: int = 50):
     """
@@ -5313,12 +5698,15 @@ async def encontrar_duplicados(limite: int = 50):
         cursor = conn.cursor()
 
         # Obtener todos los productos
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, nombre_normalizado, codigo_ean, precio_promedio_global
             FROM productos_maestros
             ORDER BY id DESC
             LIMIT %s
-        """, (limite * 2,))
+        """,
+            (limite * 2,),
+        )
 
         productos = cursor.fetchall()
         duplicados = []
@@ -5331,28 +5719,32 @@ async def encontrar_duplicados(limite: int = 50):
 
                 # Mismo EAN = duplicado
                 if ean1 and ean2 and ean1 == ean2:
-                    duplicados.append({
-                        "id1": id1,
-                        "nombre1": nombre1,
-                        "id2": id2,
-                        "nombre2": nombre2,
-                        "similitud": 1.0,
-                        "razon": "Mismo EAN"
-                    })
+                    duplicados.append(
+                        {
+                            "id1": id1,
+                            "nombre1": nombre1,
+                            "id2": id2,
+                            "nombre2": nombre2,
+                            "similitud": 1.0,
+                            "razon": "Mismo EAN",
+                        }
+                    )
                     continue
 
                 # Similitud de nombre
                 sim = calcular_similitud(nombre1, nombre2)
 
                 if sim >= 0.90:
-                    duplicados.append({
-                        "id1": id1,
-                        "nombre1": nombre1,
-                        "id2": id2,
-                        "nombre2": nombre2,
-                        "similitud": round(sim, 2),
-                        "razon": "Nombre similar"
-                    })
+                    duplicados.append(
+                        {
+                            "id1": id1,
+                            "nombre1": nombre1,
+                            "id2": id2,
+                            "nombre2": nombre2,
+                            "similitud": round(sim, 2),
+                            "razon": "Nombre similar",
+                        }
+                    )
 
         cursor.close()
         conn.close()
@@ -5360,22 +5752,18 @@ async def encontrar_duplicados(limite: int = 50):
         return {
             "success": True,
             "total_duplicados": len(duplicados),
-            "duplicados": duplicados[:limite]
+            "duplicados": duplicados[:limite],
         }
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.post("/admin/fusionar-productos")
 async def fusionar_productos(
-    producto_principal_id: int,
-    productos_duplicados: list[int]
+    producto_principal_id: int, productos_duplicados: list[int]
 ):
     """
     Fusiona productos duplicados en uno solo
@@ -5397,26 +5785,35 @@ async def fusionar_productos(
 
         for dup_id in productos_duplicados:
             # Actualizar items_factura
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE items_factura
                 SET producto_maestro_id = %s
                 WHERE producto_maestro_id = %s
-            """, (producto_principal_id, dup_id))
+            """,
+                (producto_principal_id, dup_id),
+            )
 
             items_actualizados = cursor.rowcount
 
             # Actualizar inventario_usuario
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE inventario_usuario
                 SET producto_maestro_id = %s
                 WHERE producto_maestro_id = %s
-            """, (producto_principal_id, dup_id))
+            """,
+                (producto_principal_id, dup_id),
+            )
 
             # Eliminar producto duplicado
-            cursor.execute("""
+            cursor.execute(
+                """
                 DELETE FROM productos_maestros
                 WHERE id = %s
-            """, (dup_id,))
+            """,
+                (dup_id,),
+            )
 
             fusionados += 1
 
@@ -5426,16 +5823,14 @@ async def fusionar_productos(
 
         return {
             "success": True,
-            "mensaje": f"{fusionados} productos fusionados en ID {producto_principal_id}"
+            "mensaje": f"{fusionados} productos fusionados en ID {producto_principal_id}",
         }
 
     except Exception as e:
         import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
@@ -5449,9 +5844,8 @@ if __name__ == "__main__":  # ← AGREGAR :
     print("=" * 60)
 
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8080)
-
-
 
 
 # ==========================================
@@ -5592,6 +5986,8 @@ async def get_pending_jobs(usuario_id: int = 1):
         return JSONResponse(
             status_code=500, content={"success": False, "error": str(e)}
         )
+
+
 # ==========================================
 # ENDPOINTS DE AUDITORÍA
 # ==========================================
@@ -6106,15 +6502,17 @@ async def admin_productos():
         for row in cursor.fetchall():
             precio_pesos = float(row[3]) if row[3] else 0
 
-            productos.append({
-                "id": row[0],
-                "nombre": row[1],
-                "codigo_ean": row[2],
-                "precio_promedio": precio_pesos,
-                "categoria": row[4],
-                "marca": row[5],
-                "veces_comprado": row[6] or 0,
-            })
+            productos.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "codigo_ean": row[2],
+                    "precio_promedio": precio_pesos,
+                    "categoria": row[4],
+                    "marca": row[5],
+                    "veces_comprado": row[6] or 0,
+                }
+            )
 
         conn.close()
 
@@ -6172,6 +6570,7 @@ async def get_duplicados():
         print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/admin/aprendizaje/stats")
 async def get_aprendizaje_stats():
     """Estadísticas del sistema de aprendizaje"""
@@ -6186,10 +6585,12 @@ async def get_aprendizaje_stats():
         stats = mgr.obtener_estadisticas()
 
         # Calcular ahorro
-        if stats.get('total_confirmaciones', 0) > 0:
+        if stats.get("total_confirmaciones", 0) > 0:
             # Cada confirmación = $0.005 USD ahorrado
-            ahorro_usd = (stats['total_confirmaciones'] - stats['total_activas']) * 0.005
-            stats['ahorro_estimado_usd'] = round(ahorro_usd, 2)
+            ahorro_usd = (
+                stats["total_confirmaciones"] - stats["total_activas"]
+            ) * 0.005
+            stats["ahorro_estimado_usd"] = round(ahorro_usd, 2)
 
         cursor.close()
         conn.close()
@@ -6364,6 +6765,7 @@ async def get_my_invoices(page: int = 1, limit: int = 20, usuario_id: int = 1):
 
 print("✅ Todos los endpoints administrativos y de debug cargados")
 
+
 @app.get("/debug/fix-status")
 async def check_fix_status():
     """Verificar si el fix está presente"""
@@ -6373,16 +6775,16 @@ async def check_fix_status():
 
         source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
 
-        tiene_fix_1 = 'fetchone() retornó None' in source_code
-        tiene_fix_2 = 'fallback manual' in source_code.lower()
-        tiene_fix_3 = 'if not resultado:' in source_code
+        tiene_fix_1 = "fetchone() retornó None" in source_code
+        tiene_fix_2 = "fallback manual" in source_code.lower()
+        tiene_fix_3 = "if not resultado:" in source_code
 
         fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
 
         # Intentar leer archivo de status
         status_file = None
         try:
-            with open('/tmp/fix_status.txt', 'r') as f:
+            with open("/tmp/fix_status.txt", "r") as f:
                 status_file = f.read()
         except:
             pass
@@ -6392,17 +6794,263 @@ async def check_fix_status():
             "verificaciones": {
                 "string_fetchone": tiene_fix_1,
                 "string_fallback": tiene_fix_2,
-                "string_if_not": tiene_fix_3
+                "string_if_not": tiene_fix_3,
             },
             "status_file": status_file,
             "version_esperada": "V6.1",
-            "mensaje": "✅ FIX PRESENTE" if fix_completo else "❌ FIX AUSENTE"
+            "mensaje": "✅ FIX PRESENTE" if fix_completo else "❌ FIX AUSENTE",
         }
 
     except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.post("/admin/reprocesar-todas-facturas")
+async def reprocesar_todas_facturas(limite: int = 1000):
+    """
+    Reprocesa TODAS las facturas existentes para actualizar tablas analíticas
+    ⚠️ Proceso pesado - usar con cuidado
+    """
+    try:
+        from database import get_db_connection
+        from analytics_updater import actualizar_todas_las_tablas_analiticas
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("\n" + "=" * 80)
+        print("🔄 REPROCESAMIENTO MASIVO DE FACTURAS")
+        print("=" * 80)
+
+        # Obtener todas las facturas
+        cursor.execute(
+            """
+            SELECT f.id, f.usuario_id, f.establecimiento_id
+            FROM facturas f
+            ORDER BY f.id DESC
+            LIMIT %s
+        """,
+            (limite,),
+        )
+
+        facturas = cursor.fetchall()
+        total_facturas = len(facturas)
+
+        print(f"📊 Total de facturas a procesar: {total_facturas}")
+
+        procesadas = 0
+        errores = 0
+
+        for factura_id, usuario_id, establecimiento_id in facturas:
+            try:
+                print(f"\n🔄 Procesando factura {factura_id}...")
+
+                # Obtener items de la factura
+                cursor.execute(
+                    """
+                    SELECT producto_maestro_id, codigo_leido
+                    FROM items_factura
+                    WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
+                """,
+                    (factura_id,),
+                )
+
+                items_data = []
+                for row in cursor.fetchall():
+                    items_data.append(
+                        {"producto_maestro_id": row[0], "codigo_leido": row[1] or ""}
+                    )
+
+                if not items_data:
+                    print(f"   ⚠️ Factura {factura_id} sin items válidos")
+                    continue
+
+                # Actualizar tablas analíticas
+                resultado = actualizar_todas_las_tablas_analiticas(
+                    cursor=cursor,
+                    conn=conn,
+                    factura_id=factura_id,
+                    usuario_id=usuario_id,
+                    establecimiento_id=establecimiento_id,
+                    items_procesados=items_data,
+                )
+
+                procesadas += 1
+
+                if procesadas % 10 == 0:
+                    print(f"\n📊 Progreso: {procesadas}/{total_facturas} facturas")
+                    conn.commit()  # Commit cada 10 facturas
+
+            except Exception as e:
+                errores += 1
+                print(f"❌ Error en factura {factura_id}: {e}")
+                continue
+
+        # Commit final
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print("\n" + "=" * 80)
+        print("✅ REPROCESAMIENTO COMPLETADO")
+        print(f"   Total: {total_facturas}")
+        print(f"   Procesadas: {procesadas}")
+        print(f"   Errores: {errores}")
+        print("=" * 80)
+
         return {
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "success": True,
+            "total_facturas": total_facturas,
+            "procesadas": procesadas,
+            "errores": errores,
+            "porcentaje": (
+                round((procesadas / total_facturas * 100), 2)
+                if total_facturas > 0
+                else 0
+            ),
         }
 
-# Force rebuild 11/12/2025 14:11:42
+    except Exception as e:
+        print(f"❌ Error en reprocesamiento masivo: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/admin/diagnostico-general")
+async def diagnostico_general():
+    """Estado general del sistema"""
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # Total facturas
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        stats["total_facturas"] = cursor.fetchone()[0]
+
+        # Items con producto_maestro_id
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(producto_maestro_id) as con_producto
+            FROM items_factura
+        """
+        )
+        row = cursor.fetchone()
+        stats["total_items"] = row[0]
+        stats["items_con_producto"] = row[1]
+        stats["items_sin_producto"] = row[0] - row[1]
+
+        # Productos maestros
+        cursor.execute("SELECT COUNT(*) FROM productos_maestros")
+        stats["total_productos_maestros"] = cursor.fetchone()[0]
+
+        # Tablas analíticas
+        cursor.execute("SELECT COUNT(*) FROM historial_compras_usuario")
+        stats["registros_historial"] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM patrones_compra")
+        stats["registros_patrones"] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
+        stats["registros_productos_est"] = cursor.fetchone()[0]
+
+        # Productos con códigos actualizados
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM productos_maestros
+            WHERE codigo_ean IS NOT NULL AND codigo_ean != ''
+        """
+        )
+        stats["productos_con_codigo"] = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, "timestamp": datetime.now().isoformat(), **stats}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/admin/verificar-analytics")
+async def verificar_analytics():
+    """Verificar estado de tablas analíticas"""
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultado = {}
+
+        # Historial de compras por usuario
+        cursor.execute(
+            """
+            SELECT usuario_id, COUNT(*) as compras
+            FROM historial_compras_usuario
+            GROUP BY usuario_id
+            ORDER BY compras DESC
+            LIMIT 10
+        """
+        )
+        resultado["top_usuarios"] = [
+            {"usuario_id": row[0], "compras": row[1]} for row in cursor.fetchall()
+        ]
+
+        # Patrones de compra más frecuentes
+        cursor.execute(
+            """
+            SELECT
+                pm.nombre_normalizado,
+                pc.frecuencia_compra,
+                pc.ultima_compra
+            FROM patrones_compra pc
+            JOIN productos_maestros pm ON pc.producto_maestro_id = pm.id
+            ORDER BY pc.frecuencia_compra DESC
+            LIMIT 10
+        """
+        )
+        resultado["productos_frecuentes"] = [
+            {
+                "producto": row[0],
+                "frecuencia": row[1],
+                "ultima_compra": str(row[2]) if row[2] else None,
+            }
+            for row in cursor.fetchall()
+        ]
+
+        # Productos por establecimiento
+        cursor.execute(
+            """
+            SELECT
+                e.nombre_normalizado,
+                COUNT(DISTINCT ppe.producto_maestro_id) as productos_unicos
+            FROM productos_por_establecimiento ppe
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            GROUP BY e.nombre_normalizado
+            ORDER BY productos_unicos DESC
+        """
+        )
+        resultado["productos_por_tienda"] = [
+            {"establecimiento": row[0], "productos": row[1]}
+            for row in cursor.fetchall()
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, **resultado}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+print("✅ Endpoints de depuración agregados")
