@@ -1,12 +1,12 @@
 # productos_api_v2.py
 # API de productos con manejo de PLUs y establecimientos
-# Versión 2.2 - Fix columna nombre
+# Versión 3.0 - Usa productos_maestros_v2
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import logging
 from datetime import datetime
-import json
 import psycopg2
 from psycopg2 import extras
 import os
@@ -16,7 +16,20 @@ from urllib.parse import urlparse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/productos", tags=["productos_v2"])
+# ⭐ CAMBIO: Prefijo correcto para v2
+router = APIRouter(prefix="/api/v2/productos", tags=["productos_v2"])
+
+
+# Modelo para actualización
+class ProductoUpdate(BaseModel):
+    codigo_ean: Optional[str] = None
+    nombre_consolidado: Optional[str] = None
+    marca: Optional[str] = None
+    categoria_id: Optional[int] = None
+    peso_neto: Optional[float] = None
+    unidad_medida: Optional[str] = None
+    estado: Optional[str] = None
+
 
 # Función de conexión a la base de datos
 def get_db_connection():
@@ -29,7 +42,6 @@ def get_db_connection():
 
         logger.info("🔗 Intentando conectar a PostgreSQL (psycopg2)...")
 
-        # Parsear la URL
         parsed = urlparse(database_url)
         logger.info(f"🔍 Parseando DATABASE_URL:")
         logger.info(f"   Host: {parsed.hostname}")
@@ -42,7 +54,7 @@ def get_db_connection():
             port=parsed.port or 5432,
             database=parsed.path[1:] if parsed.path else None,
             user=parsed.username,
-            password=parsed.password
+            password=parsed.password,
         )
 
         logger.info("✅ Conexión PostgreSQL exitosa (psycopg2)")
@@ -51,25 +63,27 @@ def get_db_connection():
         logger.error(f"❌ Error conectando a PostgreSQL: {str(e)}")
         raise
 
+
 # =====================================================
-# ENDPOINT PRINCIPAL: LISTADO DE PRODUCTOS CON PLUs
+# ENDPOINT PRINCIPAL: LISTADO DE PRODUCTOS
 # =====================================================
-@router.get("")
+@router.get("/")
 async def obtener_productos(
-    pagina: int = Query(1, ge=1),
-    limite: int = Query(50, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     busqueda: Optional[str] = None,
+    filtro: Optional[str] = None,
     marca: Optional[str] = None,
-    categoria: Optional[str] = None,
-    subcategoria: Optional[str] = None,
-    con_ean: Optional[bool] = None,
-    con_plu: Optional[bool] = None,
-    establecimiento_id: Optional[int] = None
+    estado: Optional[str] = None,
 ):
     """
-    Obtener productos con información de PLUs agregada
+    Obtener productos de productos_maestros_v2 con información de PLUs
     """
-    logger.info(f"📦 [API] Obteniendo productos - Página {pagina}")
+    logger.info(f"📦 [API] Obteniendo productos - Skip {skip}, Limit {limit}")
+    if busqueda:
+        logger.info(f"🔍 Búsqueda: {busqueda}")
+    if filtro:
+        logger.info(f"🏷️ Filtro: {filtro}")
 
     conn = None
     cursor = None
@@ -77,96 +91,89 @@ async def obtener_productos(
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
-        # Query mejorada con PLUs - CORREGIDA sin e.nombre
+        # Query principal usando productos_maestros_v2
         query = """
             WITH producto_plus AS (
                 SELECT
                     ppe.producto_maestro_id,
-                    STRING_AGG(
-                        ppe.codigo_plu || ' (' ||
-                        COALESCE(e.nombre_normalizado, 'Est. ' || e.id::text) ||
-                        ')',
-                        ', '
-                        ORDER BY COALESCE(e.nombre_normalizado, '')
-                    ) as plus_texto,
+                    json_agg(
+                        json_build_object(
+                            'codigo_plu', ppe.codigo_plu,
+                            'establecimiento', COALESCE(e.nombre_normalizado, 'Desconocido'),
+                            'precio', ppe.precio_unitario
+                        )
+                    ) as plus_info,
                     COUNT(DISTINCT ppe.establecimiento_id) as num_establecimientos
                 FROM productos_por_establecimiento ppe
                 LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
-                WHERE ppe.codigo_plu IS NOT NULL
                 GROUP BY ppe.producto_maestro_id
+            ),
+            producto_stats AS (
+                SELECT
+                    producto_maestro_id,
+                    COUNT(*) as veces_comprado,
+                    AVG(precio_unitario) as precio_promedio
+                FROM items_factura
+                WHERE producto_maestro_id IS NOT NULL
+                GROUP BY producto_maestro_id
             )
             SELECT
                 pm.id,
                 pm.codigo_ean,
-                pm.nombre_normalizado,
-                pm.nombre_comercial,
+                pm.nombre_consolidado as nombre,
                 pm.marca,
-                pm.categoria,
-                pm.subcategoria,
-                pm.presentacion,
-                pm.total_reportes,
-                pm.precio_promedio_global,
-                pp.plus_texto as codigo_plu,
-                COALESCE(pp.num_establecimientos, 0) as num_establecimientos
-            FROM productos_maestros pm
+                pm.categoria_id,
+                pm.peso_neto,
+                pm.unidad_medida,
+                pm.confianza_datos,
+                pm.veces_visto,
+                pm.estado,
+                pm.fecha_primera_vez,
+                pm.fecha_ultima_actualizacion,
+                COALESCE(pp.plus_info, '[]'::json) as plus,
+                COALESCE(pp.num_establecimientos, 0) as num_establecimientos,
+                COALESCE(ps.veces_comprado, 0) as veces_comprado,
+                COALESCE(ps.precio_promedio, 0)::integer as precio_promedio
+            FROM productos_maestros_v2 pm
             LEFT JOIN producto_plus pp ON pp.producto_maestro_id = pm.id
+            LEFT JOIN producto_stats ps ON ps.producto_maestro_id = pm.id
             WHERE 1=1
         """
 
         params = []
-        param_counter = 1
 
-        # Agregar filtros
-        if busqueda:
-            query += f" AND (pm.nombre_normalizado ILIKE %s OR pm.nombre_comercial ILIKE %s OR pm.codigo_ean = %s)"
-            busqueda_param = f"%{busqueda}%"
-            params.extend([busqueda_param, busqueda_param, busqueda])
-            param_counter += 3
+        # Filtro de búsqueda
+        if busqueda and busqueda.strip():
+            query += " AND (pm.nombre_consolidado ILIKE %s OR pm.codigo_ean ILIKE %s OR pm.marca ILIKE %s)"
+            busqueda_param = f"%{busqueda.strip()}%"
+            params.extend([busqueda_param, busqueda_param, busqueda_param])
 
+        # Filtros especiales
+        if filtro:
+            if filtro == "sin_marca":
+                query += " AND (pm.marca IS NULL OR pm.marca = '')"
+            elif filtro == "sin_ean":
+                query += " AND (pm.codigo_ean IS NULL OR pm.codigo_ean = '')"
+            elif filtro == "sin_categoria":
+                query += " AND pm.categoria_id IS NULL"
+            elif filtro == "pendiente":
+                query += " AND pm.estado = 'pendiente'"
+            elif filtro == "conflicto":
+                query += " AND pm.estado = 'conflicto'"
+
+        # Filtro por marca específica
         if marca:
-            query += f" AND pm.marca ILIKE %s"
+            query += " AND pm.marca ILIKE %s"
             params.append(f"%{marca}%")
-            param_counter += 1
 
-        if categoria:
-            query += f" AND pm.categoria ILIKE %s"
-            params.append(f"%{categoria}%")
-            param_counter += 1
+        # Filtro por estado
+        if estado:
+            query += " AND pm.estado = %s"
+            params.append(estado)
 
-        if subcategoria:
-            query += f" AND pm.subcategoria ILIKE %s"
-            params.append(f"%{subcategoria}%")
-            param_counter += 1
-
-        if con_ean is not None:
-            if con_ean:
-                query += " AND pm.codigo_ean IS NOT NULL"
-            else:
-                query += " AND pm.codigo_ean IS NULL"
-
-        if con_plu is not None:
-            if con_plu:
-                query += " AND pp.plus_texto IS NOT NULL"
-            else:
-                query += " AND pp.plus_texto IS NULL"
-
-        if establecimiento_id:
-            query += f"""
-                AND pm.id IN (
-                    SELECT producto_maestro_id
-                    FROM productos_por_establecimiento
-                    WHERE establecimiento_id = %s
-                )
-            """
-            params.append(establecimiento_id)
-            param_counter += 1
-
-        # Ordenamiento
-        query += " ORDER BY pm.total_reportes DESC NULLS LAST, pm.id DESC"
-
-        # Paginación
-        offset = (pagina - 1) * limite
-        query += f" LIMIT {limite} OFFSET {offset}"
+        # Ordenamiento y paginación
+        query += " ORDER BY pm.veces_visto DESC NULLS LAST, pm.id DESC"
+        query += f" LIMIT {limit} OFFSET {skip}"
 
         logger.info(f"🔍 [API] Ejecutando query con {len(params)} parámetros")
         cursor.execute(query, params)
@@ -174,86 +181,305 @@ async def obtener_productos(
 
         # Contar total
         count_query = """
-            WITH producto_plus AS (
-                SELECT
-                    ppe.producto_maestro_id,
-                    STRING_AGG(ppe.codigo_plu::text, ',') as plus_texto
-                FROM productos_por_establecimiento ppe
-                WHERE ppe.codigo_plu IS NOT NULL
-                GROUP BY ppe.producto_maestro_id
-            )
-            SELECT COUNT(*)
-            FROM productos_maestros pm
-            LEFT JOIN producto_plus pp ON pp.producto_maestro_id = pm.id
+            SELECT COUNT(*) as total
+            FROM productos_maestros_v2 pm
             WHERE 1=1
         """
-
-        # Aplicar los mismos filtros para el conteo
         count_params = []
-        if busqueda:
-            count_query += f" AND (pm.nombre_normalizado ILIKE %s OR pm.nombre_comercial ILIKE %s OR pm.codigo_ean = %s)"
-            count_params.extend([busqueda_param, busqueda_param, busqueda])
+
+        if busqueda and busqueda.strip():
+            count_query += " AND (pm.nombre_consolidado ILIKE %s OR pm.codigo_ean ILIKE %s OR pm.marca ILIKE %s)"
+            count_params.extend([busqueda_param, busqueda_param, busqueda_param])
+
+        if filtro:
+            if filtro == "sin_marca":
+                count_query += " AND (pm.marca IS NULL OR pm.marca = '')"
+            elif filtro == "sin_ean":
+                count_query += " AND (pm.codigo_ean IS NULL OR pm.codigo_ean = '')"
+            elif filtro == "sin_categoria":
+                count_query += " AND pm.categoria_id IS NULL"
+            elif filtro == "pendiente":
+                count_query += " AND pm.estado = 'pendiente'"
+            elif filtro == "conflicto":
+                count_query += " AND pm.estado = 'conflicto'"
 
         if marca:
-            count_query += f" AND pm.marca ILIKE %s"
+            count_query += " AND pm.marca ILIKE %s"
             count_params.append(f"%{marca}%")
 
-        if categoria:
-            count_query += f" AND pm.categoria ILIKE %s"
-            count_params.append(f"%{categoria}%")
-
-        if subcategoria:
-            count_query += f" AND pm.subcategoria ILIKE %s"
-            count_params.append(f"%{subcategoria}%")
-
-        if con_ean is not None:
-            if con_ean:
-                count_query += " AND pm.codigo_ean IS NOT NULL"
-            else:
-                count_query += " AND pm.codigo_ean IS NULL"
-
-        if con_plu is not None:
-            if con_plu:
-                count_query += " AND pp.plus_texto IS NOT NULL"
-            else:
-                count_query += " AND pp.plus_texto IS NULL"
-
-        if establecimiento_id:
-            count_query += f"""
-                AND pm.id IN (
-                    SELECT producto_maestro_id
-                    FROM productos_por_establecimiento
-                    WHERE establecimiento_id = %s
-                )
-            """
-            count_params.append(establecimiento_id)
+        if estado:
+            count_query += " AND pm.estado = %s"
+            count_params.append(estado)
 
         cursor.execute(count_query, count_params)
-        total = cursor.fetchone()['count']
-
-        # Log de debug
-        if productos and len(productos) > 0:
-            primer_producto = productos[0]
-            logger.info(f"✅ [API] Producto 1: ID={primer_producto['id']}, PLU={primer_producto.get('codigo_plu', 'N/A')}, Nombre={primer_producto['nombre_normalizado']}")
+        total = cursor.fetchone()["total"]
 
         logger.info(f"✅ [API] Respuesta: {len(productos)} productos de {total} total")
 
-        return {
-            "productos": productos,
-            "total": total,
-            "pagina": pagina,
-            "limite": limite,
-            "total_paginas": (total + limite - 1) // limite
-        }
+        return {"productos": productos, "total": total, "skip": skip, "limit": limit}
 
     except Exception as e:
         logger.error(f"❌ [API] Error: {str(e)}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
+
+
+# =====================================================
+# ENDPOINT: OBTENER DETALLE DE UN PRODUCTO
+# =====================================================
+@router.get("/{producto_id}")
+async def obtener_producto_detalle(producto_id: int):
+    """
+    Obtener información completa de un producto
+    """
+    logger.info(f"📦 [API] Obteniendo detalle del producto {producto_id}")
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+        # Obtener producto de productos_maestros_v2
+        query = """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado as nombre_normalizado,
+                pm.nombre_consolidado as nombre_comercial,
+                pm.marca,
+                pm.categoria_id,
+                pm.peso_neto,
+                pm.unidad_medida,
+                pm.confianza_datos,
+                pm.veces_visto,
+                pm.estado,
+                pm.fecha_primera_vez,
+                pm.fecha_ultima_actualizacion,
+                '' as subcategoria,
+                '' as presentacion,
+                (
+                    SELECT COUNT(DISTINCT establecimiento_id)
+                    FROM productos_por_establecimiento
+                    WHERE producto_maestro_id = pm.id
+                ) as num_establecimientos,
+                (
+                    SELECT COUNT(*)
+                    FROM items_factura
+                    WHERE producto_maestro_id = pm.id
+                ) as veces_comprado,
+                (
+                    SELECT AVG(precio_unitario)::integer
+                    FROM items_factura
+                    WHERE producto_maestro_id = pm.id
+                ) as precio_promedio
+            FROM productos_maestros_v2 pm
+            WHERE pm.id = %s
+        """
+
+        cursor.execute(query, (producto_id,))
+        producto = cursor.fetchone()
+
+        if not producto:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Obtener PLUs
+        plus_query = """
+            SELECT
+                ppe.codigo_plu,
+                ppe.establecimiento_id,
+                COALESCE(e.nombre_normalizado, 'Desconocido') as nombre_establecimiento,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion as ultima_vez_visto
+            FROM productos_por_establecimiento ppe
+            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE ppe.producto_maestro_id = %s
+            ORDER BY e.nombre_normalizado
+        """
+
+        cursor.execute(plus_query, (producto_id,))
+        plus = cursor.fetchall()
+
+        producto["plus"] = plus
+
+        logger.info(f"✅ [API] Detalle obtenido para producto {producto_id}")
+
+        return dict(producto)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [API] Error obteniendo detalle: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# =====================================================
+# ENDPOINT: ACTUALIZAR PRODUCTO
+# =====================================================
+@router.put("/{producto_id}")
+async def actualizar_producto(producto_id: int, datos: Dict[str, Any]):
+    """
+    Actualizar información de un producto en productos_maestros_v2
+    """
+    logger.info(f"📝 [API] Actualizando producto {producto_id}")
+    logger.info(f"📝 [API] Datos recibidos: {datos}")
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+        # Mapeo de campos del frontend a la tabla v2
+        campo_mapping = {
+            "codigo_ean": "codigo_ean",
+            "nombre_normalizado": "nombre_consolidado",
+            "nombre_consolidado": "nombre_consolidado",
+            "nombre_comercial": "nombre_consolidado",  # Usa el mismo campo
+            "marca": "marca",
+            "categoria": "categoria_id",  # Nota: ahora es categoria_id
+            "categoria_id": "categoria_id",
+            "subcategoria": None,  # No existe en v2
+            "presentacion": None,  # No existe en v2
+            "peso_neto": "peso_neto",
+            "unidad_medida": "unidad_medida",
+            "estado": "estado",
+        }
+
+        # Filtrar campos válidos
+        campos_actualizar = {}
+        for key, value in datos.items():
+            if key in campo_mapping and campo_mapping[key] is not None:
+                db_field = campo_mapping[key]
+                # Manejar categoria como texto (temporal hasta que tengas la tabla de categorías)
+                if key == "categoria" and isinstance(value, str):
+                    # Por ahora, ignorar categoría texto ya que necesita categoria_id
+                    logger.info(
+                        f"⚠️ Ignorando categoría texto '{value}', se necesita categoria_id"
+                    )
+                    continue
+                campos_actualizar[db_field] = value
+
+        if not campos_actualizar:
+            raise HTTPException(
+                status_code=400, detail="No hay campos válidos para actualizar"
+            )
+
+        # Construir query
+        set_clauses = []
+        valores = []
+        for campo, valor in campos_actualizar.items():
+            set_clauses.append(f"{campo} = %s")
+            valores.append(valor)
+
+        set_clause = ", ".join(set_clauses)
+        valores.append(producto_id)
+
+        query = f"""
+            UPDATE productos_maestros_v2
+            SET {set_clause}, fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id
+        """
+
+        logger.info(f"📝 [API] Query: {query}")
+        logger.info(f"📝 [API] Valores: {valores}")
+
+        cursor.execute(query, valores)
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        conn.commit()
+
+        logger.info(f"✅ [API] Producto {producto_id} actualizado exitosamente")
+
+        # Devolver el producto actualizado
+        return await obtener_producto_detalle(producto_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ [API] Error actualizando producto: {str(e)}")
+        import traceback
+
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# =====================================================
+# ENDPOINT: ELIMINAR PRODUCTO
+# =====================================================
+@router.delete("/{producto_id}")
+async def eliminar_producto(producto_id: int):
+    """
+    Eliminar un producto de productos_maestros_v2
+    """
+    logger.info(f"🗑️ [API] Eliminando producto {producto_id}")
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que existe
+        cursor.execute(
+            "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Eliminar PLUs asociados primero
+        cursor.execute(
+            "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+
+        # Eliminar producto
+        cursor.execute(
+            "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
+        )
+
+        conn.commit()
+
+        logger.info(f"✅ [API] Producto {producto_id} eliminado")
+
+        return {"message": f"Producto {producto_id} eliminado correctamente"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"❌ [API] Error eliminando producto: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 # =====================================================
 # ENDPOINT: OBTENER PLUs DE UN PRODUCTO
@@ -276,7 +502,7 @@ async def obtener_plus_producto(producto_id: int):
                 ppe.id,
                 ppe.codigo_plu,
                 ppe.establecimiento_id,
-                e.nombre_normalizado as establecimiento_nombre,
+                COALESCE(e.nombre_normalizado, 'Desconocido') as establecimiento_nombre,
                 ppe.precio_unitario,
                 ppe.fecha_creacion,
                 ppe.fecha_actualizacion
@@ -289,13 +515,11 @@ async def obtener_plus_producto(producto_id: int):
         cursor.execute(query, (producto_id,))
         plus = cursor.fetchall()
 
-        logger.info(f"✅ [API] Encontrados {len(plus)} PLUs para producto {producto_id}")
+        logger.info(
+            f"✅ [API] Encontrados {len(plus)} PLUs para producto {producto_id}"
+        )
 
-        return {
-            "producto_id": producto_id,
-            "plus": plus,
-            "total": len(plus)
-        }
+        return {"producto_id": producto_id, "plus": plus, "total": len(plus)}
 
     except Exception as e:
         logger.error(f"❌ [API] Error obteniendo PLUs: {str(e)}")
@@ -306,424 +530,5 @@ async def obtener_plus_producto(producto_id: int):
         if conn:
             conn.close()
 
-# =====================================================
-# ENDPOINT: ACTUALIZAR PLUs DE UN PRODUCTO
-# =====================================================
-@router.put("/{producto_id}/plus")
-async def actualizar_plus_producto(producto_id: int, plus_data: List[Dict]):
-    """
-    Actualizar PLUs de un producto
-    Formato esperado: [{"establecimiento_id": 1, "codigo_plu": "12345", "precio_unitario": 5000}]
-    """
-    logger.info(f"📝 [API] Actualizando PLUs del producto {producto_id}")
-    logger.info(f"📝 [API] Datos recibidos: {plus_data}")
 
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Comenzar transacción
-        conn.autocommit = False
-
-        # Primero, eliminar PLUs existentes que no están en la nueva lista
-        establecimiento_ids = [p['establecimiento_id'] for p in plus_data if p.get('establecimiento_id')]
-
-        if establecimiento_ids:
-            delete_query = """
-                DELETE FROM productos_por_establecimiento
-                WHERE producto_maestro_id = %s
-                AND establecimiento_id NOT IN %s
-            """
-            cursor.execute(delete_query, (producto_id, tuple(establecimiento_ids)))
-        else:
-            # Si no hay PLUs nuevos, eliminar todos
-            delete_query = """
-                DELETE FROM productos_por_establecimiento
-                WHERE producto_maestro_id = %s
-            """
-            cursor.execute(delete_query, (producto_id,))
-
-        # Insertar o actualizar PLUs
-        for plu_item in plus_data:
-            if not plu_item.get('establecimiento_id') or not plu_item.get('codigo_plu'):
-                continue
-
-            upsert_query = """
-                INSERT INTO productos_por_establecimiento
-                    (producto_maestro_id, establecimiento_id, codigo_plu, precio_unitario, fecha_actualizacion)
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (producto_maestro_id, establecimiento_id)
-                DO UPDATE SET
-                    codigo_plu = EXCLUDED.codigo_plu,
-                    precio_unitario = EXCLUDED.precio_unitario,
-                    fecha_actualizacion = CURRENT_TIMESTAMP
-            """
-
-            cursor.execute(upsert_query, (
-                producto_id,
-                plu_item['establecimiento_id'],
-                plu_item['codigo_plu'],
-                plu_item.get('precio_unitario')
-            ))
-
-        # Confirmar transacción
-        conn.commit()
-
-        logger.info(f"✅ [API] PLUs actualizados para producto {producto_id}")
-
-        # Devolver los PLUs actualizados
-        return await obtener_plus_producto(producto_id)
-
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        logger.error(f"❌ [API] Error actualizando PLUs: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn:
-            conn.autocommit = True
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-# =====================================================
-# ENDPOINT: DETECTAR DUPLICADOS
-# =====================================================
-@router.get("/duplicados")
-async def obtener_duplicados(
-    umbral_similitud: float = Query(0.8, ge=0, le=1),
-    limite: int = Query(50, ge=1, le=100)
-):
-    """
-    Detectar productos potencialmente duplicados
-    """
-    logger.info(f"🔍 [API] Detectando duplicados con umbral {umbral_similitud}")
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-
-        # Query para encontrar duplicados por nombre similar y misma marca
-        query = """
-            WITH duplicados AS (
-                SELECT
-                    p1.id as id1,
-                    p1.nombre_normalizado as nombre1,
-                    p1.codigo_ean as ean1,
-                    p1.marca as marca1,
-                    p2.id as id2,
-                    p2.nombre_normalizado as nombre2,
-                    p2.codigo_ean as ean2,
-                    p2.marca as marca2,
-                    similarity(p1.nombre_normalizado, p2.nombre_normalizado) as similitud
-                FROM productos_maestros p1
-                CROSS JOIN productos_maestros p2
-                WHERE p1.id < p2.id
-                AND p1.marca = p2.marca
-                AND similarity(p1.nombre_normalizado, p2.nombre_normalizado) >= %s
-            )
-            SELECT * FROM duplicados
-            ORDER BY similitud DESC
-            LIMIT %s
-        """
-
-        cursor.execute(query, (umbral_similitud, limite))
-        duplicados = cursor.fetchall()
-
-        logger.info(f"✅ [API] Encontrados {len(duplicados)} posibles duplicados")
-
-        return {
-            "duplicados": duplicados,
-            "total": len(duplicados),
-            "umbral_similitud": umbral_similitud
-        }
-
-    except Exception as e:
-        logger.error(f"❌ [API] Error detectando duplicados: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-# =====================================================
-# ENDPOINT: ANALIZAR DUPLICADOS COMPLEJOS
-# =====================================================
-@router.post("/duplicados/detectar")
-async def detectar_duplicados_complejos(configuracion: Dict[str, Any]):
-    """
-    Detectar duplicados con configuración avanzada
-    """
-    logger.info(f"🔍 [API] Análisis complejo de duplicados")
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-
-        # Configuración por defecto
-        config = {
-            "similitud_nombre": configuracion.get("similitud_nombre", 0.8),
-            "misma_marca": configuracion.get("misma_marca", True),
-            "misma_categoria": configuracion.get("misma_categoria", False),
-            "diferencia_precio_max": configuracion.get("diferencia_precio_max", None),
-            "limite": configuracion.get("limite", 100)
-        }
-
-        # Construir query dinámicamente
-        conditions = ["p1.id < p2.id"]
-        params = []
-
-        # Similitud de nombre
-        conditions.append("similarity(p1.nombre_normalizado, p2.nombre_normalizado) >= %s")
-        params.append(config["similitud_nombre"])
-
-        # Misma marca
-        if config["misma_marca"]:
-            conditions.append("p1.marca = p2.marca")
-
-        # Misma categoría
-        if config["misma_categoria"]:
-            conditions.append("p1.categoria = p2.categoria")
-
-        # Diferencia de precio
-        if config["diferencia_precio_max"]:
-            conditions.append("""
-                ABS(COALESCE(p1.precio_promedio_global, 0) -
-                    COALESCE(p2.precio_promedio_global, 0)) <= %s
-            """)
-            params.append(config["diferencia_precio_max"])
-
-        where_clause = " AND ".join(conditions)
-
-        query = f"""
-            WITH duplicados AS (
-                SELECT
-                    p1.id as id1,
-                    p1.nombre_normalizado as nombre1,
-                    p1.codigo_ean as ean1,
-                    p1.marca as marca1,
-                    p1.categoria as categoria1,
-                    p1.precio_promedio_global as precio1,
-                    p1.total_reportes as reportes1,
-                    p2.id as id2,
-                    p2.nombre_normalizado as nombre2,
-                    p2.codigo_ean as ean2,
-                    p2.marca as marca2,
-                    p2.categoria as categoria2,
-                    p2.precio_promedio_global as precio2,
-                    p2.total_reportes as reportes2,
-                    similarity(p1.nombre_normalizado, p2.nombre_normalizado) as similitud
-                FROM productos_maestros p1
-                CROSS JOIN productos_maestros p2
-                WHERE {where_clause}
-            )
-            SELECT * FROM duplicados
-            ORDER BY similitud DESC
-            LIMIT %s
-        """
-
-        params.append(config["limite"])
-
-        cursor.execute(query, params)
-        duplicados = cursor.fetchall()
-
-        # Agrupar duplicados por clusters
-        clusters = []
-        productos_procesados = set()
-
-        for dup in duplicados:
-            if dup['id1'] not in productos_procesados and dup['id2'] not in productos_procesados:
-                cluster = {
-                    "productos": [
-                        {
-                            "id": dup['id1'],
-                            "nombre": dup['nombre1'],
-                            "ean": dup['ean1'],
-                            "marca": dup['marca1'],
-                            "categoria": dup['categoria1'],
-                            "precio": dup['precio1'],
-                            "reportes": dup['reportes1']
-                        },
-                        {
-                            "id": dup['id2'],
-                            "nombre": dup['nombre2'],
-                            "ean": dup['ean2'],
-                            "marca": dup['marca2'],
-                            "categoria": dup['categoria2'],
-                            "precio": dup['precio2'],
-                            "reportes": dup['reportes2']
-                        }
-                    ],
-                    "similitud": dup['similitud']
-                }
-                clusters.append(cluster)
-                productos_procesados.add(dup['id1'])
-                productos_procesados.add(dup['id2'])
-
-        logger.info(f"✅ [API] Encontrados {len(clusters)} clusters de duplicados")
-
-        return {
-            "clusters": clusters,
-            "total_clusters": len(clusters),
-            "configuracion": config
-        }
-
-    except Exception as e:
-        logger.error(f"❌ [API] Error en análisis de duplicados: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-# =====================================================
-# ENDPOINT: OBTENER DETALLE DE UN PRODUCTO
-# =====================================================
-@router.get("/{producto_id}")
-async def obtener_producto_detalle(producto_id: int):
-    """
-    Obtener información completa de un producto incluyendo PLUs
-    """
-    logger.info(f"📦 [API] Obteniendo detalle del producto {producto_id}")
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-
-        # Obtener información del producto
-        query = """
-            SELECT
-                pm.*,
-                (
-                    SELECT COUNT(DISTINCT establecimiento_id)
-                    FROM productos_por_establecimiento
-                    WHERE producto_maestro_id = pm.id
-                ) as num_establecimientos,
-                (
-                    SELECT COUNT(*)
-                    FROM items_factura
-                    WHERE producto_maestro_id = pm.id
-                ) as veces_comprado
-            FROM productos_maestros pm
-            WHERE pm.id = %s
-        """
-
-        cursor.execute(query, (producto_id,))
-        producto = cursor.fetchone()
-
-        if not producto:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        # Obtener PLUs
-        plus_query = """
-            SELECT
-                ppe.codigo_plu,
-                ppe.establecimiento_id,
-                e.nombre_normalizado as establecimiento_nombre,
-                ppe.precio_unitario,
-                ppe.fecha_actualizacion
-            FROM productos_por_establecimiento ppe
-            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            WHERE ppe.producto_maestro_id = %s
-            ORDER BY e.nombre_normalizado
-        """
-
-        cursor.execute(plus_query, (producto_id,))
-        plus = cursor.fetchall()
-
-        producto['plus'] = plus
-
-        logger.info(f"✅ [API] Detalle obtenido para producto {producto_id}")
-
-        return producto
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ [API] Error obteniendo detalle: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-# =====================================================
-# ENDPOINT: ACTUALIZAR PRODUCTO
-# =====================================================
-@router.put("/{producto_id}")
-async def actualizar_producto(producto_id: int, datos_producto: Dict[str, Any]):
-    """
-    Actualizar información de un producto
-    """
-    logger.info(f"📝 [API] Actualizando producto {producto_id}")
-    logger.info(f"📝 [API] Datos: {datos_producto}")
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Campos permitidos para actualización
-        campos_permitidos = [
-            'codigo_ean', 'nombre_normalizado', 'nombre_comercial',
-            'marca', 'categoria', 'subcategoria', 'presentacion'
-        ]
-
-        # Filtrar solo campos permitidos
-        campos_actualizar = {k: v for k, v in datos_producto.items() if k in campos_permitidos}
-
-        if not campos_actualizar:
-            raise HTTPException(status_code=400, detail="No hay campos válidos para actualizar")
-
-        # Construir query dinámicamente
-        set_clause = ", ".join([f"{campo} = %s" for campo in campos_actualizar.keys()])
-        valores = list(campos_actualizar.values())
-        valores.append(producto_id)
-
-        query = f"""
-            UPDATE productos_maestros
-            SET {set_clause}, fecha_actualizacion = CURRENT_TIMESTAMP
-            WHERE id = %s
-            RETURNING id
-        """
-
-        cursor.execute(query, valores)
-        resultado = cursor.fetchone()
-
-        if not resultado:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        conn.commit()
-
-        logger.info(f"✅ [API] Producto {producto_id} actualizado exitosamente")
-
-        # Devolver el producto actualizado
-        return await obtener_producto_detalle(producto_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        logger.error(f"❌ [API] Error actualizando producto: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-logger.info("✅ productos_v2_router inicializado correctamente")
+logger.info("✅ productos_v2_router inicializado correctamente con /api/v2/productos")
