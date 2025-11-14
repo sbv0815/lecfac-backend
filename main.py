@@ -2107,13 +2107,24 @@ async def process_video_background_task(
             raise Exception(f"Error importando módulos: {e}")
 
         # Extraer frames
+        # Extraer frames - OPTIMIZADO
         print(f"🎬 Extrayendo frames...")
-        frames_paths = extraer_frames_video(video_path, intervalo=1.0)
+        frames_paths = extraer_frames_video(video_path, intervalo=5.0)
+
+        # LIMITAR a máximo 5 frames para evitar duplicados y rate limits
+        MAX_FRAMES = 5
+        if len(frames_paths) > MAX_FRAMES:
+            print(f"⚠️ Limitando de {len(frames_paths)} a {MAX_FRAMES} frames")
+            # Tomar frames distribuidos uniformemente
+            indices = [
+                int(i * len(frames_paths) / MAX_FRAMES) for i in range(MAX_FRAMES)
+            ]
+            frames_paths = [frames_paths[i] for i in indices]
 
         if not frames_paths:
             raise Exception("No se extrajeron frames del video")
 
-        print(f"✅ {len(frames_paths)} frames extraídos")
+        print(f"✅ {len(frames_paths)} frames a procesar")
 
         # Procesar frames con Claude
         print(f"🤖 Procesando con Claude...")
