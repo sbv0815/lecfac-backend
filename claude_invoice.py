@@ -1,15 +1,12 @@
 """
-claude_invoice.py - VERSIÓN 5.0 - UNIVERSAL PARA TODOS LOS FORMATOS
+claude_invoice.py - VERSIÓN 5.1 - ANTI-INVENCIÓN + MULTI-FORMATO
 ========================================================================
 
-🎯 VERSIÓN 5.0 - SOPORTE MULTI-FORMATO:
-- ✅ OLÍMPICA: PLU + Nombre en línea, descuentos separados
-- ✅ ÉXITO/CARULLA: Formato línea doble (info + producto)
-- ✅ FARMATODO: Código arriba, nombre abajo
-- ✅ SUPERMERCADOS PEQUEÑOS: Sin PLU, solo cantidad + nombre + precio
-- ✅ Agrupación inteligente por PLU
-- ✅ Detección automática de formato
-- ✅ Correcciones OCR mejoradas
+🎯 VERSIÓN 5.1 - CORRECCIONES CRÍTICAS:
+- ✅ Reglas estrictas para NO inventar productos
+- ✅ Validación de cantidad x precio = total
+- ✅ Mejor manejo de formato FARMATODO
+- ✅ Límite de productos por factura
 """
 
 import anthropic
@@ -61,6 +58,7 @@ PALABRAS_BASURA = [
     "empaque",
     "bsa p empacar",
     "bsa p/empacar",
+    "biodegradable",  # ← Nuevo
 ]
 
 
@@ -108,7 +106,6 @@ def normalizar_nombre_producto(nombre: str) -> str:
 
 
 CORRECCIONES_OCR = {
-    # Errores comunes
     "QSO": "QUESO",
     "BCO": "BLANCO",
     "GRL": "GRANEL",
@@ -121,26 +118,14 @@ CORRECCIONES_OCR = {
     "LECH": "LECHE",
     "ALQUERI": "ALQUERIA",
     "COLANT": "COLANTA",
-    # Doña Pepa y similares
     "DODAPEPA": "DONA PEPA",
     "DONAPEPA": "DONA PEPA",
     "DONAPAPA": "DONA PEPA",
     "DOBRAPEPA": "DONA PEPA",
     "DODA": "DONA",
     "DODO": "DONA",
-    # Carnes y otros
     "MOL": "MOLIDA",
     "ESP": "ESPECIAL",
-    "CONTRAMUSLO": "CONTRAMUSLO",
-    "MOZARELLA": "MOZZARELLA",
-    "PERA": "PERA",
-    # Frutas
-    "PLATANO VERDE SE": "PLATANO VERDE SELECCION",
-    "PLATANO MADURO S": "PLATANO MADURO SELECCION",
-    "TOMATE CHONTO SE": "TOMATE CHONTO SELECCION",
-    "LIMON TAHITI A G": "LIMON TAHITI A GRANEL",
-    "CEBOLLA BLANCA B": "CEBOLLA BLANCA",
-    # Limpieza
     "BSA": "BOLSA",
     "P/EMPACAR": "PARA EMPACAR",
 }
@@ -153,12 +138,10 @@ def corregir_nombre_producto(nombre: str) -> str:
 
     nombre_upper = nombre.upper()
 
-    # Primero intentar corrección de frase completa
     for error, correccion in CORRECCIONES_OCR.items():
         if error in nombre_upper:
             nombre_upper = nombre_upper.replace(error, correccion)
 
-    # Luego palabra por palabra
     palabras = nombre_upper.split()
     palabras_corregidas = []
 
@@ -183,7 +166,7 @@ def limpiar_precio_colombiano(precio_str):
     precio_str = str(precio_str).strip()
     precio_str = precio_str.replace(" ", "").replace("$", "").replace("COP", "")
     precio_str = precio_str.replace(",", "").replace(".", "")
-    precio_str = precio_str.rstrip("AaEeDd")  # Quitar sufijos de Éxito/Carulla
+    precio_str = precio_str.rstrip("AaEeDd")
 
     try:
         return max(0, int(float(precio_str)))
@@ -223,7 +206,7 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 
 
 # ==============================================================================
-# PROCESAMIENTO CON CLAUDE VISION - V5.0 UNIVERSAL
+# PROCESAMIENTO CON CLAUDE VISION - V5.1
 # ==============================================================================
 
 
@@ -233,17 +216,16 @@ def parse_invoice_with_claude(
     aplicar_aprendizaje: bool = True,
 ) -> Dict:
     """
-    Procesa factura con Claude Vision API - V5.0 UNIVERSAL
-    Soporta múltiples formatos de facturas colombianas
+    Procesa factura con Claude Vision API - V5.1
+    Con reglas estrictas anti-invención
     """
     try:
         print("=" * 80)
-        print("🤖 CLAUDE INVOICE V5.0 - UNIVERSAL MULTI-FORMATO")
+        print("🤖 CLAUDE INVOICE V5.1 - ANTI-INVENCIÓN + MULTI-FORMATO")
         if establecimiento_preseleccionado:
             print(f"🏪 ESTABLECIMIENTO: {establecimiento_preseleccionado.upper()}")
         print("=" * 80)
 
-        # Leer imagen
         with open(image_path, "rb") as f:
             image_data = base64.b64encode(f.read()).decode("utf-8")
 
@@ -257,156 +239,119 @@ def parse_invoice_with_claude(
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        # ========== PROMPT V5.0 UNIVERSAL ==========
-
         establecimiento_info = (
             f'"{establecimiento_preseleccionado.upper()}"'
             if establecimiento_preseleccionado
             else '"NOMBRE_DEL_ESTABLECIMIENTO"'
         )
 
-        prompt = f"""Eres un experto en extracción de datos de facturas colombianas. Tu trabajo es identificar CADA producto comprado con su código (si existe), nombre COMPLETO y precio FINAL.
+        # ========== PROMPT V5.1 CON REGLAS ANTI-INVENCIÓN ==========
+        prompt = f"""Eres un experto en extracción de datos de facturas colombianas.
 
-# 🎯 MISIÓN CRÍTICA
+# ⚠️ REGLA #1: NO INVENTAR PRODUCTOS
 
-Extraer TODOS los productos de la factura. Cada producto debe tener:
-1. **Código** (PLU o EAN) - A la IZQUIERDA (puede no existir)
-2. **Nombre COMPLETO** - En el CENTRO
-3. **Precio FINAL** - A la DERECHA (después de descuentos)
-4. **Cantidad** - Puede ser unidades (1, 2, 3...) o peso en kg (0.680, 1.515...)
+**CRÍTICO:** Solo extraer productos que CLARAMENTE aparecen en la imagen.
+- Si no puedes leer claramente un producto, NO LO INCLUYAS
+- Si hay duda sobre el nombre, código o precio, OMÍTELO
+- NUNCA crear variantes o fragmentos de productos
+- Cada producto físico = UNA SOLA entrada en la lista
 
-# 📋 FORMATOS DE FACTURAS COLOMBIANAS
+**VALIDACIÓN OBLIGATORIA:**
+- Suma de (precio × cantidad) debe aproximarse al TOTAL de la factura
+- Si la suma difiere más del 20% del total, REVISAR extracción
+- Máximo 50 productos por factura típica
 
-## FORMATO 1: OLÍMPICA
+# 🎯 MISIÓN
+
+Extraer CADA producto REAL con:
+1. **Código** (PLU/EAN) - Número a la IZQUIERDA
+2. **Nombre COMPLETO** - Texto descriptivo
+3. **Precio UNITARIO** - Precio por 1 unidad
+4. **Cantidad** - Cuántas unidades o kg
+
+# 📋 FORMATOS DE FACTURAS
+
+## OLÍMPICA
 ```
 1393170 ARROZ DODAPEPA 3KG            *
 02 un      16.650    1         16.650
 1393170 AHORRO (R)DONAPEPA         3.350-
     PRECIO FINAL                  13.300
 ```
-- PLU: 1393170
-- Nombre: ARROZ DONA PEPA 3KG (corregir DODAPEPA)
-- Precio FINAL: 13,300 (NO 16,650)
-- Cantidad: 1
+Extraer: PLU=1393170, Nombre=ARROZ DONA PEPA 3KG, Precio=13300, Cant=1
+**NOTA:** Si el mismo PLU aparece 2 veces = 2 unidades del MISMO producto
 
-**REGLA OLÍMPICA:** Si hay "AHORRO" y "PRECIO FINAL", usar el PRECIO FINAL.
-
-## FORMATO 2: ÉXITO / CARULLA
+## ÉXITO / CARULLA
 ```
 13 1/u x 27.800 V.Ahorro 5.560
 187687  MINI LYNE                      22.240A
 ```
-- Primera línea: información (cantidad, precio original, ahorro)
-- Segunda línea: PLU + Nombre + Precio FINAL
-- PLU: 187687
-- Nombre: MINI LYNE
-- Precio: 22,240 (ignorar la "A" al final)
-- Cantidad: 1
-```
-18 0.460/KGM x 7.980 V.Ahorro 734
-1234    Pera                           2.937
-```
-- Cantidad: 0.460 kg
-- Precio total: 2,937
+Extraer: PLU=187687, Nombre=MINI LYNE, Precio=22240, Cant=1
 
-## FORMATO 3: FARMATODO
+## FARMATODO (⚠️ FORMATO ESPECIAL)
 ```
+PROTECTOR CAREFREE SIN FRAGANCIA LARGOS X40UN
 101047110    2        7.650      15.300
-GOMA DE MASCAR TRIDENT FRESH HERBAL...
 ```
-- Primera línea: Código + Cantidad + Precio Unit + Total
-- Segunda línea: Nombre del producto
-- Código: 101047110
-- Nombre: GOMA DE MASCAR TRIDENT FRESH HERBAL
-- Precio unitario: 7,650
-- Cantidad: 2
+- Línea 1: NOMBRE del producto
+- Línea 2: Código + Cantidad + Precio Unit + Total
+Extraer: Código=101047110, Nombre=PROTECTOR CAREFREE..., Precio=7650, Cant=2
 
-## FORMATO 4: SUPERMERCADOS PEQUEÑOS (Sin código)
+**IMPORTANTE FARMATODO:**
+- El NOMBRE está ARRIBA del código
+- El código tiene 9 dígitos típicamente
+- "Ahorro" es línea separada, IGNORAR
+
+## SIN CÓDIGO
 ```
-1    QUESO PERA ANDES A    3200    3.200
-1    HUEVO SANTA REYES     24950   24.950
+1    QUESO PERA ANDES    3200    3.200
 ```
-- Cantidad + Nombre + Precio unitario + Total
-- NO tienen código PLU/EAN
-- Código: "" (vacío)
-- Nombre: QUESO PERA ANDES
-- Precio: 3,200
+Extraer: Código="", Nombre=QUESO PERA ANDES, Precio=3200, Cant=1
 
-# ⚠️ REGLAS CRÍTICAS
+# ❌ IGNORAR ESTAS LÍNEAS
 
-1. **CÓDIGO SIEMPRE A LA IZQUIERDA**
-   - Si hay número de 4-7 dígitos al inicio = PLU
-   - Si hay número de 8-13 dígitos = EAN
-   - Si no hay código = dejar vacío ""
+- "Ahorro" (solo descuento)
+- "Bolsa Biodegradable" (empaque)
+- "SUBTOTAL", "TOTAL", "IVA"
+- Líneas con solo números
+- Fragmentos de texto sin sentido
 
-2. **PRECIO SIEMPRE A LA DERECHA**
-   - Usar el número de la DERECHA
-   - Ignorar sufijos como "A", "E", "D" (son códigos internos)
-   - Si hay descuento, usar PRECIO FINAL (el menor)
+# ✅ CORRECCIONES OBLIGATORIAS
 
-3. **NOMBRE EN EL CENTRO**
-   - Capturar nombre COMPLETO del producto
-   - Incluir marca, tipo, presentación
-   - Corregir errores OCR obvios:
-     * DODAPEPA → DONA PEPA
-     * BANAN → BANANO
-     * QSO → QUESO
-     * GRL → GRANEL
-
-4. **AGRUPAR POR CÓDIGO**
-   - Si el mismo PLU aparece múltiples veces, SUMAR cantidades
-   - Cada código único = UN producto en la lista
-
-5. **IGNORAR ESTAS LÍNEAS:**
-   - "AHORRO", "DESCUENTO", "V.Ahorro" (solo info)
-   - "PRECIO FINAL" (texto, no producto)
-   - "SUBTOTAL", "TOTAL", "IVA"
-   - "DOMICILIO WEB", "DISPLAY"
-   - "BOLSA", "BSA P/EMPACAR" (materiales)
+- DODAPEPA → DONA PEPA
+- BANAN → BANANO
+- QSO → QUESO
+- GRL → GRANEL
 
 # 📝 FORMATO DE RESPUESTA
 
-Responde SOLO con JSON válido (sin markdown):
+SOLO JSON válido, sin markdown:
 
 {"{"}
   "establecimiento": {establecimiento_info},
   "fecha": "YYYY-MM-DD",
-  "total": TOTAL_FACTURA_ENTERO,
+  "total": TOTAL_FACTURA,
   "productos": [
     {"{"}
-      "codigo": "PLU_O_EAN_O_VACIO",
-      "nombre": "NOMBRE_COMPLETO_CORREGIDO",
-      "precio": PRECIO_UNITARIO_FINAL_ENTERO,
-      "cantidad": CANTIDAD_DECIMAL,
-      "unidad": "un" | "kg"
+      "codigo": "CODIGO_O_VACIO",
+      "nombre": "NOMBRE_COMPLETO",
+      "precio": PRECIO_UNITARIO,
+      "cantidad": CANTIDAD,
+      "unidad": "un"
     {"}"}
   ]
 {"}"}
 
-# 🎯 EJEMPLOS DE EXTRACCIÓN CORRECTA
+# 🔍 VERIFICACIÓN FINAL
 
-**OLÍMPICA:**
-- 1393170 ARROZ DODAPEPA 3KG, Precio Final 13,300, Cant 2
-  → {{"codigo": "1393170", "nombre": "ARROZ DONA PEPA 3KG", "precio": 13300, "cantidad": 2, "unidad": "un"}}
+Antes de responder, verifica:
+1. ¿Cada producto tiene nombre claro y legible? ✓
+2. ¿Los precios son razonables (500-500,000 pesos)? ✓
+3. ¿La suma aproxima al total de la factura? ✓
+4. ¿No hay productos duplicados o inventados? ✓
 
-**ÉXITO:**
-- 3323923 Brownie Mini Ark, 14.800A
-  → {{"codigo": "3323923", "nombre": "BROWNIE MINI ARK", "precio": 14800, "cantidad": 1, "unidad": "un"}}
+**ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:**"""
 
-- 1220 Mango, 0.750 kg, 5.280
-  → {{"codigo": "1220", "nombre": "MANGO", "precio": 7040, "cantidad": 0.750, "unidad": "kg"}}
-
-**FARMATODO:**
-- 101047110, GOMA DE MASCAR TRIDENT, 7.650 x 2 = 15.300
-  → {{"codigo": "101047110", "nombre": "GOMA DE MASCAR TRIDENT FRESH HERBAL", "precio": 7650, "cantidad": 2, "unidad": "un"}}
-
-**SIN CÓDIGO:**
-- QUESO PERA ANDES A, 3200
-  → {{"codigo": "", "nombre": "QUESO PERA ANDES", "precio": 3200, "cantidad": 1, "unidad": "un"}}
-
-**ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON VÁLIDO:**"""
-
-        # Llamada a Claude
         print("📸 Enviando imagen a Claude Vision API...")
 
         message = client.messages.create(
@@ -450,11 +395,10 @@ Responde SOLO con JSON válido (sin markdown):
         json_str = json_str.strip()
         data = json.loads(json_str)
 
-        # Forzar establecimiento si fue preseleccionado
         if establecimiento_preseleccionado:
             data["establecimiento"] = establecimiento_preseleccionado.upper()
 
-        # Validar y corregir fecha
+        # Validar fecha
         if "fecha" in data and data["fecha"]:
             try:
                 fecha_str = str(data["fecha"])
@@ -470,9 +414,10 @@ Responde SOLO con JSON válido (sin markdown):
             except:
                 pass
 
-        # ========== POST-PROCESAMIENTO ==========
+        # ========== POST-PROCESAMIENTO CON VALIDACIÓN ==========
         productos_finales = []
         productos_por_codigo = {}
+        suma_total = 0
 
         print(f"\n🔧 POST-PROCESAMIENTO:")
 
@@ -499,12 +444,20 @@ Responde SOLO con JSON válido (sin markdown):
             # Limpiar precio
             precio_limpio = limpiar_precio_colombiano(precio)
 
-            # Validar precio mínimo
+            # Validar precio mínimo y máximo
             if precio_limpio < 100:
-                print(f"   ⚠️  Precio bajo: '{nombre_final}' - ${precio_limpio}")
+                print(f"   ⚠️  Precio muy bajo: '{nombre_final}' - ${precio_limpio}")
                 continue
 
-            # Agrupar por código si existe
+            if precio_limpio > 10000000:  # 10 millones
+                print(f"   ⚠️  Precio muy alto: '{nombre_final}' - ${precio_limpio:,}")
+                continue
+
+            # Calcular subtotal
+            subtotal = int(precio_limpio * cantidad)
+            suma_total += subtotal
+
+            # Agrupar por código
             if codigo and len(codigo) >= 3:
                 if codigo in productos_por_codigo:
                     productos_por_codigo[codigo]["cantidad"] += cantidad
@@ -538,18 +491,34 @@ Responde SOLO con JSON válido (sin markdown):
 
         data["productos"] = productos_finales
 
+        # ========== VALIDACIÓN DE TOTAL ==========
+        total_declarado = data.get("total", 0)
+
+        print(f"\n🔍 VALIDACIÓN:")
+        print(f"   Total declarado: ${total_declarado:,}")
+        print(f"   Suma calculada: ${suma_total:,}")
+
+        if total_declarado > 0:
+            diferencia_pct = abs(suma_total - total_declarado) / total_declarado * 100
+            print(f"   Diferencia: {diferencia_pct:.1f}%")
+
+            if diferencia_pct > 50:
+                print(
+                    f"   ⚠️  ALERTA: Diferencia muy grande, posible error en extracción"
+                )
+
         # ========== ESTADÍSTICAS ==========
         con_ean = sum(1 for p in productos_finales if len(p.get("codigo", "")) >= 8)
         con_plu = sum(1 for p in productos_finales if 3 <= len(p.get("codigo", "")) < 8)
         sin_codigo = sum(1 for p in productos_finales if not p.get("codigo"))
 
         print(f"\n" + "=" * 80)
-        print(f"📊 RESULTADOS OCR V5.0 UNIVERSAL:")
+        print(f"📊 RESULTADOS OCR V5.1:")
         print(f"   🏪 Establecimiento: {data.get('establecimiento', 'N/A')}")
         print(f"   📅 Fecha: {data.get('fecha', 'N/A')}")
-        print(f"   💰 Total factura: ${data.get('total', 0):,}")
+        print(f"   💰 Total factura: ${total_declarado:,}")
         print(f"   📦 Productos únicos: {len(productos_finales)}")
-        print(f"\n📊 CÓDIGOS DETECTADOS:")
+        print(f"\n📊 CÓDIGOS:")
         print(f"   📦 EAN (8+ dígitos): {con_ean}")
         print(f"   🏷️  PLU (3-7 dígitos): {con_plu}")
         print(f"   ❓ Sin código: {sin_codigo}")
@@ -557,8 +526,9 @@ Responde SOLO con JSON válido (sin markdown):
         print(f"\n📋 PRODUCTOS EXTRAÍDOS:")
         for i, prod in enumerate(productos_finales, 1):
             codigo_str = prod["codigo"] if prod["codigo"] else "SIN-COD"
+            subtotal = int(prod["precio"] * prod["cantidad"])
             print(
-                f"   {i:2}. {codigo_str:10} | {prod['nombre'][:35]:35} | ${prod['precio']:,} x {prod['cantidad']}"
+                f"   {i:2}. {codigo_str:12} | {prod['nombre'][:30]:30} | ${prod['precio']:,} x {prod['cantidad']} = ${subtotal:,}"
             )
 
         print("=" * 80)
@@ -568,13 +538,15 @@ Responde SOLO con JSON válido (sin markdown):
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-v5.0-universal",
+                    "metodo": "claude-vision-v5.1-antiinvencion",
                     "modelo": "claude-sonnet-4-20250514",
                     "establecimiento_confirmado": bool(establecimiento_preseleccionado),
                     "productos_unicos": len(productos_finales),
                     "con_ean": con_ean,
                     "con_plu": con_plu,
                     "sin_codigo": sin_codigo,
+                    "suma_calculada": suma_total,
+                    "total_declarado": total_declarado,
                 },
             },
         }
@@ -593,16 +565,6 @@ Responde SOLO con JSON válido (sin markdown):
         return {"success": False, "error": f"Error: {str(e)}"}
 
 
-# ==============================================================================
-# INICIALIZACIÓN
-# ==============================================================================
 print("=" * 80)
-print("✅ claude_invoice.py V5.0 UNIVERSAL CARGADO")
-print("=" * 80)
-print("🎯 FORMATOS SOPORTADOS:")
-print("   ✅ OLÍMPICA: PLU + descuentos separados")
-print("   ✅ ÉXITO/CARULLA: Línea doble con V.Ahorro")
-print("   ✅ FARMATODO: Código arriba, nombre abajo")
-print("   ✅ SUPERMERCADOS PEQUEÑOS: Sin código")
-print("   ✅ ARA/D1/JUMBO: Códigos EAN-13")
+print("✅ claude_invoice.py V5.1 - ANTI-INVENCIÓN + MULTI-FORMATO")
 print("=" * 80)
