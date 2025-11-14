@@ -246,43 +246,6 @@ function mostrarProductos(productos) {
     });
 }
 
-// Producto sin PLUs - mostrar fila normal
-const precioHTML = p.precio_promedio ?
-    `$${p.precio_promedio.toLocaleString('es-CO')}` :
-    '<span style="color: #999;">-</span>';
-
-const estadoBadges = [];
-if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
-if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
-if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
-const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
-
-const row = `
-                <tr>
-                    <td class="checkbox-cell">
-                        <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
-                    </td>
-                    <td>${p.id}</td>
-                    <td>${p.codigo_ean || '-'}</td>
-                    <td colspan="2" style="color: #999; font-style: italic; text-align: center;">Sin PLUs registrados</td>
-                    <td>${p.nombre || '-'}</td>
-                    <td>${p.marca || '-'}</td>
-                    <td>${p.categoria || '-'}</td>
-                    <td>${precioHTML}</td>
-                    <td>${p.veces_comprado || 0}</td>
-                    <td>${estadoHTML}</td>
-                    <td>
-                        <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
-                            ✏️
-                        </button>
-                        <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
-                            🗑️
-                        </button>
-                    </td>
-                </tr>
-            `;
-tbody.insertAdjacentHTML("beforeend", row);
-
 
 // =============================================================
 // Actualizar estadísticas y paginación
