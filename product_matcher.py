@@ -288,14 +288,16 @@ def marcar_para_revision_admin(
                 nombre_sugerido,
                 codigo_producto,
                 establecimiento,
+                motivo_revision,
                 razon_revision,
                 estado,
                 fecha_creacion
-            ) VALUES (%s, %s, %s, %s, %s, %s, 'pendiente', CURRENT_TIMESTAMP)
+             ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'pendiente', CURRENT_TIMESTAMP)
             ON CONFLICT (producto_maestro_id)
             DO UPDATE SET
                 nombre_ocr_original = EXCLUDED.nombre_ocr_original,
                 nombre_sugerido = EXCLUDED.nombre_sugerido,
+                 motivo_revision = EXCLUDED.motivo_revision,
                 razon_revision = EXCLUDED.razon_revision,
                 fecha_creacion = CURRENT_TIMESTAMP,
                 estado = 'pendiente'
@@ -306,6 +308,7 @@ def marcar_para_revision_admin(
                 nombre_sugerido[:200] if nombre_sugerido else "",
                 codigo[:50] if codigo else "",
                 establecimiento[:100] if establecimiento else "",
+                razon[:500] if razon else "Sin especificar",
                 razon[:500] if razon else "Sin especificar",
             ),
         )
@@ -602,7 +605,7 @@ def buscar_o_crear_producto_inteligente(
             SELECT id, nombre_normalizado
             FROM productos_maestros
             WHERE revisado_admin = TRUE
-            AND nombre_normalizado ILIKE {param}
+            AND nombre_normalizado ILIKE %s
             ORDER BY fecha_revision DESC
             LIMIT 1
         """,
