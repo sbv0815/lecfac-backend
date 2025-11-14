@@ -596,16 +596,24 @@ def buscar_o_crear_producto_inteligente(
     if establecimiento_id:
         print(f"   Establecimiento ID: {establecimiento_id}")
 
-        # ═══════════════════════════════════════════════════════════════
+    # ✅ FIX: Definir variables ANTES de usarlas
+    nombre_normalizado = normalizar_nombre_producto(nombre, True)
+    tipo_codigo = clasificar_codigo_tipo(codigo)
+    cadena = detectar_cadena(establecimiento)
+
+    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
+    param = "%s" if is_postgresql else "?"
+
+    # ═══════════════════════════════════════════════════════════════
     # PASO 1.5: BUSCAR PRODUCTO YA REVISADO POR ADMIN
     # ═══════════════════════════════════════════════════════════════
     try:
         cursor.execute(
-            f"""
+            """
             SELECT id, nombre_normalizado
             FROM productos_maestros
             WHERE revisado_admin = TRUE
-            AND nombre_normalizado ILIKE %s
+              AND nombre_normalizado ILIKE %s
             ORDER BY fecha_revision DESC
             LIMIT 1
         """,
@@ -623,12 +631,7 @@ def buscar_o_crear_producto_inteligente(
         print(f"   ⚠️ Error buscando productos revisados: {e}")
 
     try:
-        nombre_normalizado = normalizar_nombre_producto(nombre, True)
-        tipo_codigo = clasificar_codigo_tipo(codigo)
-        cadena = detectar_cadena(establecimiento)
-
-        is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-        param = "%s" if is_postgresql else "?"
+        # ✅ Variables ya definidas arriba, no repetir
 
         # ═══════════════════════════════════════════════════════════════
         # PASO 0: CONSOLIDACIÓN PLU (OPCIONAL)
