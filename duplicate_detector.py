@@ -1,7 +1,6 @@
 """
-duplicate_detector.py - VERSIÓN FINAL CON LÓGICA DE CÓDIGO
-Detecta duplicados REALES vs compras múltiples legítimas
-PRIORIDAD: Código EAN/PLU > Nombre
+duplicate_detector.py - VERSIÓN CORREGIDA PARA VIDEO
+NO suma cantidades de múltiples frames, toma cantidad = 1
 """
 
 import os
@@ -15,25 +14,19 @@ def normalizar_nombre_simple(nombre: str) -> str:
     return nombre.strip().lower()
 
 
-def detectar_duplicados_automaticamente(productos: List[Dict], total_factura: float) -> Dict:
+def detectar_duplicados_automaticamente(
+    productos: List[Dict], total_factura: float
+) -> Dict:
     """
-    Detecta duplicados REALES en una factura usando CÓDIGO como clave primaria
+    VERSIÓN CORREGIDA - Para videos de facturas
+    NO suma cantidades de múltiples frames, toma cantidad = 1 por defecto
 
-    LÓGICA ACTUALIZADA:
-    1. Si tiene código EAN/PLU → usar código como identificador único
-    2. Si NO tiene código → usar nombre normalizado
-    3. Si mismo identificador aparece múltiples veces con mismo precio → CONSOLIDAR cantidades
-    4. Si mismo identificador pero precios diferentes → MANTENER separados (puede ser descuento)
-
-    Args:
-        productos: Lista de productos con estructura {codigo, nombre, valor, cantidad}
-        total_factura: Total de la factura para validación
-
-    Returns:
-        Dict con productos_limpios, duplicados_detectados, metricas
+    Cuando grabas un video de la factura, cada frame detecta los mismos productos.
+    Esto NO significa que compraste 10 unidades, sino que el mismo producto
+    apareció en 10 frames diferentes.
     """
     print(f"\n{'='*80}")
-    print(f"🔍 DETECTOR DE DUPLICADOS - LÓGICA BASADA EN CÓDIGO")
+    print(f"🔍 DETECTOR DE DUPLICADOS - VERSIÓN CORREGIDA PARA VIDEO")
     print(f"{'='*80}")
     print(f"📦 Productos recibidos: {len(productos)}")
     print(f"💰 Total factura: ${total_factura:,.0f}")
@@ -48,11 +41,11 @@ def detectar_duplicados_automaticamente(productos: List[Dict], total_factura: fl
                 "productos_despues_limpieza": 0,
                 "duplicados_consolidados": 0,
                 "productos_con_codigo": 0,
-                "productos_sin_codigo": 0
-            }
+                "productos_sin_codigo": 0,
+            },
         }
 
-    # PASO 1: Agrupar productos por CÓDIGO (prioritario) o NOMBRE
+    # PASO 1: Agrupar productos por CÓDIGO o NOMBRE
     grupos_productos = {}
     productos_con_codigo = 0
     productos_sin_codigo = 0
@@ -63,141 +56,109 @@ def detectar_duplicados_automaticamente(productos: List[Dict], total_factura: fl
         valor = float(prod.get("valor", 0))
         cantidad = int(prod.get("cantidad", 1))
 
-        # Validar si el producto tiene datos mínimos
         if not nombre and not codigo:
             print(f"   ⚠️ Producto {idx+1} sin nombre ni código, omitiendo")
             continue
 
-        # LÓGICA DE IDENTIFICACIÓN ÚNICA:
-        # 1. Si tiene código EAN (8+ dígitos) → usar código
-        # 2. Si tiene PLU (3-7 dígitos) → usar código con prefijo
-        # 3. Si NO tiene código → usar nombre normalizado
-
-        if codigo and codigo.isdigit():
-            if len(codigo) >= 8:
-                # Código EAN estándar
-                clave = f"EAN:{codigo}"
-                tipo_clave = "EAN"
-                productos_con_codigo += 1
-            elif len(codigo) >= 3:
-                # Código PLU (productos frescos)
-                clave = f"PLU:{codigo}"
-                tipo_clave = "PLU"
-                productos_con_codigo += 1
-            else:
-                # Código muy corto, usar nombre
-                clave = f"NOMBRE:{normalizar_nombre_simple(nombre)}"
-                tipo_clave = "NOMBRE"
-                productos_sin_codigo += 1
+        # Determinar clave única
+        if codigo and codigo.isdigit() and len(codigo) >= 3:
+            clave = f"CODE:{codigo}"
+            productos_con_codigo += 1
         else:
-            # Sin código válido, usar nombre
-            clave = f"NOMBRE:{normalizar_nombre_simple(nombre)}"
-            tipo_clave = "NOMBRE"
+            clave = f"NAME:{normalizar_nombre_simple(nombre)}"
             productos_sin_codigo += 1
 
         if clave not in grupos_productos:
-            grupos_productos[clave] = {
-                "tipo_identificacion": tipo_clave,
-                "items": []
-            }
+            grupos_productos[clave] = []
 
-        grupos_productos[clave]["items"].append({
-            "idx_original": idx,
-            "codigo": codigo,
-            "nombre": nombre,
-            "valor": valor,
-            "cantidad": cantidad
-        })
+        grupos_productos[clave].append(
+            {"codigo": codigo, "nombre": nombre, "valor": valor, "cantidad": cantidad}
+        )
 
     print(f"\n📊 Análisis de agrupación:")
     print(f"   Grupos únicos identificados: {len(grupos_productos)}")
-    print(f"   Productos con código EAN/PLU: {productos_con_codigo}")
-    print(f"   Productos sin código (por nombre): {productos_sin_codigo}")
+    print(f"   Productos con código: {productos_con_codigo}")
+    print(f"   Productos sin código: {productos_sin_codigo}")
 
-    # PASO 2: Procesar cada grupo y consolidar
+    # PASO 2: ✅ CORRECCIÓN PRINCIPAL - NO sumar cantidades
     productos_consolidados = []
-    duplicados_consolidados = 0
+    duplicados_eliminados = 0
 
-    for clave, grupo in grupos_productos.items():
-        items = grupo["items"]
-        tipo_id = grupo["tipo_identificacion"]
-
+    for clave, items in grupos_productos.items():
         if len(items) == 1:
-            # Solo una ocurrencia, mantener tal cual
+            # Solo una ocurrencia, mantener tal cual pero forzar cantidad=1
             item = items[0]
-            productos_consolidados.append({
-                "codigo": item["codigo"],
-                "nombre": item["nombre"],
-                "valor": item["valor"],
-                "cantidad": item["cantidad"]
-            })
+            productos_consolidados.append(
+                {
+                    "codigo": item["codigo"],
+                    "nombre": item["nombre"],
+                    "valor": item["valor"],
+                    "cantidad": 1,  # ✅ FORZAR cantidad = 1
+                }
+            )
         else:
-            # Múltiples ocurrencias del mismo producto
-            print(f"\n🔍 Analizando: {clave} ({tipo_id})")
-            print(f"   Ocurrencias: {len(items)}")
+            # Múltiples ocurrencias del MISMO producto (de diferentes frames)
+            print(f"\n🔍 Consolidando: {clave}")
+            print(f"   Ocurrencias en frames: {len(items)}")
 
-            # Obtener info del primer item
+            # Tomar el primero como referencia
             primer_item = items[0]
-            codigo_producto = primer_item["codigo"]
-            nombre_producto = primer_item["nombre"]
 
-            # Agrupar por precio (para detectar descuentos)
-            grupos_por_precio = {}
-            for item in items:
-                precio = item["valor"]
-                if precio not in grupos_por_precio:
-                    grupos_por_precio[precio] = []
-                grupos_por_precio[precio].append(item)
+            # Verificar si todos tienen el mismo precio
+            precios_unicos = set(item["valor"] for item in items)
 
-            if len(grupos_por_precio) == 1:
-                # CASO 1: Todas las ocurrencias tienen el mismo precio
-                # → Es compra múltiple del mismo producto
-                precio = list(grupos_por_precio.keys())[0]
-                cantidad_total = sum(item["cantidad"] for item in items)
+            if len(precios_unicos) == 1:
+                # Mismo precio en todos los frames = mismo producto
+                # ✅ CAMBIO CLAVE: Cantidad = 1, NO suma de frames
+                productos_consolidados.append(
+                    {
+                        "codigo": primer_item["codigo"],
+                        "nombre": primer_item["nombre"],
+                        "valor": primer_item["valor"],
+                        "cantidad": 1,  # ✅ FORZAR cantidad = 1
+                    }
+                )
 
-                print(f"   ✅ COMPRA MÚLTIPLE CONSOLIDADA")
-                print(f"      Producto: {nombre_producto}")
-                print(f"      Código: {codigo_producto}")
-                print(f"      Precio unitario: ${precio:,.0f}")
-                print(f"      Ocurrencias consolidadas: {len(items)}")
-                print(f"      Cantidad total: {cantidad_total}")
-                print(f"      Total línea: ${precio * cantidad_total:,.0f}")
-
-                productos_consolidados.append({
-                    "codigo": codigo_producto,
-                    "nombre": nombre_producto,
-                    "valor": precio,
-                    "cantidad": cantidad_total
-                })
-
-                duplicados_consolidados += len(items) - 1
+                duplicados_eliminados += len(items) - 1
+                print(f"   ✅ Consolidado: {primer_item['nombre']}")
+                print(f"      Precio: ${primer_item['valor']:,.0f}")
+                print(f"      Frames eliminados: {len(items) - 1}")
+                print(f"      Cantidad final: 1")
             else:
-                # CASO 2: Mismo producto pero diferentes precios
-                # Puede ser: descuento, promoción, o error de lectura
-                print(f"   ⚠️ MISMO PRODUCTO, PRECIOS DIFERENTES")
-                print(f"      Precios encontrados: {list(grupos_por_precio.keys())}")
-                print(f"      Acción: Consolidar por precio")
+                # Precios diferentes = puede ser descuento o error de OCR
+                print(f"   ⚠️ Precios diferentes detectados: {precios_unicos}")
+                print(f"      Acción: Tomar el precio más frecuente")
 
-                # Consolidar cada grupo de precio por separado
-                for precio, items_precio in grupos_por_precio.items():
-                    cantidad_grupo = sum(item["cantidad"] for item in items_precio)
+                # Contar frecuencia de precios
+                precio_frecuencia = {}
+                for item in items:
+                    p = item["valor"]
+                    precio_frecuencia[p] = precio_frecuencia.get(p, 0) + 1
 
-                    productos_consolidados.append({
-                        "codigo": codigo_producto,
-                        "nombre": nombre_producto,
-                        "valor": precio,
-                        "cantidad": cantidad_grupo
-                    })
+                # Tomar el precio más frecuente
+                precio_mas_comun = max(
+                    precio_frecuencia.keys(), key=lambda x: precio_frecuencia[x]
+                )
 
-                    if len(items_precio) > 1:
-                        duplicados_consolidados += len(items_precio) - 1
+                productos_consolidados.append(
+                    {
+                        "codigo": primer_item["codigo"],
+                        "nombre": primer_item["nombre"],
+                        "valor": precio_mas_comun,
+                        "cantidad": 1,  # ✅ FORZAR cantidad = 1
+                    }
+                )
 
-                    print(f"         Precio ${precio:,.0f} x{cantidad_grupo}")
+                duplicados_eliminados += len(items) - 1
+                print(f"      Precio seleccionado: ${precio_mas_comun:,.0f}")
+                print(f"      Cantidad final: 1")
 
-    # PASO 3: Validar contra el total de la factura
+    # PASO 3: Validar totales
     suma_productos = sum(p["valor"] * p["cantidad"] for p in productos_consolidados)
     diferencia = abs(suma_productos - total_factura)
-    diferencia_porcentaje = (diferencia / total_factura * 100) if total_factura > 0 else 0
+    diferencia_porcentaje = (
+        (diferencia / total_factura * 100) if total_factura > 0 else 0
+    )
 
     print(f"\n💰 Validación de totales:")
     print(f"   Suma productos: ${suma_productos:,.0f}")
@@ -207,39 +168,35 @@ def detectar_duplicados_automaticamente(productos: List[Dict], total_factura: fl
     if diferencia_porcentaje > 10:
         print(f"   ⚠️ ADVERTENCIA: Diferencia significativa (>{10}%)")
     elif diferencia_porcentaje > 5:
-        print(f"   ⚠️ Diferencia moderada ({diferencia_porcentaje:.2f}%)")
+        print(f"   ⚠️ Diferencia moderada")
     else:
         print(f"   ✅ Totales validados correctamente")
 
-    # PASO 4: Preparar resultado final
-    hay_duplicados = duplicados_consolidados > 0
-
+    # PASO 4: Resultado final
     resultado = {
         "productos_limpios": productos_consolidados,
-        "duplicados_detectados": hay_duplicados,
+        "duplicados_detectados": duplicados_eliminados > 0,
         "productos_eliminados": [],
         "metricas": {
             "productos_originales": len(productos),
             "productos_despues_limpieza": len(productos_consolidados),
-            "duplicados_consolidados": duplicados_consolidados,
+            "duplicados_consolidados": duplicados_eliminados,
             "productos_con_codigo": productos_con_codigo,
             "productos_sin_codigo": productos_sin_codigo,
             "diferencia_total": diferencia,
             "diferencia_porcentaje": diferencia_porcentaje,
             "suma_productos": suma_productos,
-            "total_factura": total_factura
-        }
+            "total_factura": total_factura,
+        },
     }
 
     print(f"\n{'='*80}")
-    print(f"✅ DETECCIÓN Y CONSOLIDACIÓN COMPLETADA")
+    print(f"✅ CONSOLIDACIÓN COMPLETADA")
     print(f"{'='*80}")
     print(f"📊 Resumen:")
-    print(f"   Productos en factura original: {len(productos)}")
-    print(f"   Productos después de consolidar: {len(productos_consolidados)}")
-    print(f"   Líneas consolidadas: {duplicados_consolidados}")
-    print(f"   Productos identificados por código: {productos_con_codigo}")
-    print(f"   Productos identificados por nombre: {productos_sin_codigo}")
+    print(f"   Productos originales (de todos los frames): {len(productos)}")
+    print(f"   Productos únicos finales: {len(productos_consolidados)}")
+    print(f"   Duplicados de frames eliminados: {duplicados_eliminados}")
     print(f"{'='*80}\n")
 
     return resultado
@@ -247,17 +204,8 @@ def detectar_duplicados_automaticamente(productos: List[Dict], total_factura: fl
 
 def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
     """
-    Limpia y consolida items duplicados en la BD usando CÓDIGO como identificador
-
-    Esta función opera DESPUÉS de que los items fueron guardados en la BD.
-    Usa el código EAN/PLU como identificador primario.
-
-    Args:
-        factura_id: ID de la factura
-        conn: Conexión a la base de datos
-
-    Returns:
-        int: Número de items consolidados
+    Limpia y consolida items duplicados en la BD
+    VERSIÓN CORREGIDA: NO suma cantidades, toma 1
     """
     cursor = conn.cursor()
 
@@ -266,46 +214,45 @@ def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
         print(f"🔍 CONSOLIDANDO ITEMS EN BD - FACTURA {factura_id}")
         print(f"{'='*80}")
 
-        # ESTRATEGIA:
-        # 1. Buscar items con mismo código_leido y precio_pagado
-        # 2. Si hay múltiples, consolidar sumando cantidades
-
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            # Buscar grupos duplicados por CÓDIGO
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     COALESCE(codigo_leido, 'SIN_CODIGO') as codigo_grupo,
                     nombre_leido,
                     precio_pagado,
                     COUNT(*) as ocurrencias,
-                    SUM(cantidad) as cantidad_total,
                     ARRAY_AGG(id ORDER BY id) as ids,
                     producto_maestro_id
                 FROM items_factura
                 WHERE factura_id = %s
                 GROUP BY COALESCE(codigo_leido, 'SIN_CODIGO'), nombre_leido, precio_pagado, producto_maestro_id
                 HAVING COUNT(*) > 1
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     COALESCE(codigo_leido, 'SIN_CODIGO') as codigo_grupo,
                     nombre_leido,
                     precio_pagado,
                     COUNT(*) as ocurrencias,
-                    SUM(cantidad) as cantidad_total,
                     GROUP_CONCAT(id) as ids,
                     producto_maestro_id
                 FROM items_factura
                 WHERE factura_id = ?
                 GROUP BY COALESCE(codigo_leido, 'SIN_CODIGO'), nombre_leido, precio_pagado, producto_maestro_id
                 HAVING COUNT(*) > 1
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
         grupos_duplicados = cursor.fetchall()
 
         if not grupos_duplicados:
-            print(f"✅ No se encontraron items para consolidar")
+            print(f"✅ No se encontraron items duplicados")
             print(f"{'='*80}\n")
             return 0
 
@@ -314,11 +261,10 @@ def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
         print(f"\n📦 Grupos a consolidar: {len(grupos_duplicados)}")
 
         for grupo in grupos_duplicados:
-            codigo, nombre, precio, ocurrencias, cantidad_total, ids, producto_id = grupo
+            codigo, nombre, precio, ocurrencias, ids, producto_id = grupo
 
-            # Convertir ids a lista
             if isinstance(ids, str):
-                ids_list = [int(x) for x in ids.split(',')]
+                ids_list = [int(x) for x in ids.split(",")]
             else:
                 ids_list = list(ids)
 
@@ -326,39 +272,49 @@ def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
             print(f"      Código: {codigo if codigo != 'SIN_CODIGO' else 'Sin código'}")
             print(f"      Producto: {nombre}")
             print(f"      Precio: ${precio:,.0f}")
-            print(f"      {ocurrencias} líneas → 1 línea con cantidad {cantidad_total}")
+            print(f"      {ocurrencias} líneas → 1 línea con cantidad = 1")
 
-            # Mantener el primer item, actualizar su cantidad
             primer_id = ids_list[0]
             otros_ids = ids_list[1:]
 
             if os.environ.get("DATABASE_TYPE") == "postgresql":
-                # Actualizar cantidad del primer item
-                cursor.execute("""
+                # ✅ CORRECCIÓN: Cantidad = 1, NO suma
+                cursor.execute(
+                    """
                     UPDATE items_factura
-                    SET cantidad = %s
+                    SET cantidad = 1
                     WHERE id = %s
-                """, (cantidad_total, primer_id))
+                """,
+                    (primer_id,),
+                )
 
-                # Eliminar los demás items
                 if otros_ids:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         DELETE FROM items_factura
                         WHERE id = ANY(%s)
-                    """, (otros_ids,))
+                    """,
+                        (otros_ids,),
+                    )
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     UPDATE items_factura
-                    SET cantidad = ?
+                    SET cantidad = 1
                     WHERE id = ?
-                """, (cantidad_total, primer_id))
+                """,
+                    (primer_id,),
+                )
 
                 if otros_ids:
-                    placeholders = ','.join('?' * len(otros_ids))
-                    cursor.execute(f"""
+                    placeholders = ",".join("?" * len(otros_ids))
+                    cursor.execute(
+                        f"""
                         DELETE FROM items_factura
                         WHERE id IN ({placeholders})
-                    """, otros_ids)
+                    """,
+                        otros_ids,
+                    )
 
             items_consolidados += len(otros_ids)
             print(f"      ✅ Consolidado exitosamente")
@@ -367,7 +323,7 @@ def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
 
         print(f"\n{'='*80}")
         print(f"✅ CONSOLIDACIÓN COMPLETADA")
-        print(f"   Items consolidados: {items_consolidados}")
+        print(f"   Items eliminados: {items_consolidados}")
         print(f"{'='*80}\n")
 
         return items_consolidados
@@ -375,6 +331,7 @@ def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
     except Exception as e:
         print(f"❌ Error consolidando items: {e}")
         import traceback
+
         traceback.print_exc()
         conn.rollback()
         return 0
@@ -383,31 +340,17 @@ def limpiar_items_duplicados_db(factura_id: int, conn) -> int:
 
 
 def detectar_y_consolidar_en_bd(factura_id: int, conn) -> Dict:
-    """
-    Wrapper para consolidación en BD con estadísticas
-
-    Returns:
-        Dict con estadísticas de la consolidación
-    """
+    """Wrapper para consolidación en BD"""
     items_consolidados = limpiar_items_duplicados_db(factura_id, conn)
-
     return {
         "success": True,
         "items_consolidados": items_consolidados,
-        "factura_id": factura_id
+        "factura_id": factura_id,
     }
 
 
-# ==========================================
-# FUNCIÓN DE DIAGNÓSTICO
-# ==========================================
-
 def diagnosticar_factura(factura_id: int, conn) -> Dict:
-    """
-    Diagnostica una factura para ver cómo están agrupados los items
-
-    Útil para debugging y entender qué está pasando con los duplicados
-    """
+    """Diagnostica una factura para debugging"""
     cursor = conn.cursor()
 
     try:
@@ -416,93 +359,38 @@ def diagnosticar_factura(factura_id: int, conn) -> Dict:
         print(f"{'='*80}")
 
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT
-                    id,
-                    codigo_leido,
-                    nombre_leido,
-                    precio_pagado,
-                    cantidad,
-                    producto_maestro_id
+            cursor.execute(
+                """
+                SELECT id, codigo_leido, nombre_leido, precio_pagado, cantidad, producto_maestro_id
                 FROM items_factura
                 WHERE factura_id = %s
                 ORDER BY id
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
-                SELECT
-                    id,
-                    codigo_leido,
-                    nombre_leido,
-                    precio_pagado,
-                    cantidad,
-                    producto_maestro_id
+            cursor.execute(
+                """
+                SELECT id, codigo_leido, nombre_leido, precio_pagado, cantidad, producto_maestro_id
                 FROM items_factura
                 WHERE factura_id = ?
                 ORDER BY id
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
         items = cursor.fetchall()
 
-        print(f"\n📦 Items en la factura: {len(items)}")
-        print(f"\n{'ID':<6} {'Código':<15} {'Nombre':<30} {'Precio':<12} {'Cant':<6} {'Prod_ID':<8}")
-        print(f"{'-'*6} {'-'*15} {'-'*30} {'-'*12} {'-'*6} {'-'*8}")
-
+        print(f"\n📦 Items: {len(items)}")
         for item in items:
             item_id, codigo, nombre, precio, cantidad, prod_id = item
-            codigo_str = codigo if codigo else "N/A"
-            nombre_str = (nombre[:27] + "...") if len(nombre) > 30 else nombre
-            print(f"{item_id:<6} {codigo_str:<15} {nombre_str:<30} ${precio:<11,.0f} {cantidad:<6} {prod_id or 'N/A':<8}")
+            print(
+                f"   {item_id}: {codigo or 'N/A'} | {nombre[:30]} | ${precio:,.0f} x{cantidad}"
+            )
 
-        # Agrupar por código
-        print(f"\n📊 Agrupación por código:")
-
-        if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
-                SELECT
-                    codigo_leido,
-                    COUNT(*) as ocurrencias,
-                    SUM(cantidad) as cantidad_total,
-                    STRING_AGG(nombre_leido, ' | ') as nombres
-                FROM items_factura
-                WHERE factura_id = %s
-                GROUP BY codigo_leido
-                HAVING COUNT(*) > 1
-            """, (factura_id,))
-        else:
-            cursor.execute("""
-                SELECT
-                    codigo_leido,
-                    COUNT(*) as ocurrencias,
-                    SUM(cantidad) as cantidad_total,
-                    GROUP_CONCAT(nombre_leido, ' | ') as nombres
-                FROM items_factura
-                WHERE factura_id = ?
-                GROUP BY codigo_leido
-                HAVING COUNT(*) > 1
-            """, (factura_id,))
-
-        grupos = cursor.fetchall()
-
-        if grupos:
-            for codigo, ocurrencias, cantidad_total, nombres in grupos:
-                print(f"\n   Código: {codigo}")
-                print(f"   Ocurrencias: {ocurrencias}")
-                print(f"   Cantidad total: {cantidad_total}")
-                print(f"   Nombres: {nombres}")
-        else:
-            print(f"   ✅ No hay productos con múltiples líneas")
-
-        print(f"\n{'='*80}\n")
-
-        return {
-            "success": True,
-            "total_items": len(items),
-            "grupos_duplicados": len(grupos)
-        }
+        return {"success": True, "total_items": len(items)}
 
     except Exception as e:
-        print(f"❌ Error en diagnóstico: {e}")
         return {"success": False, "error": str(e)}
     finally:
         cursor.close()
