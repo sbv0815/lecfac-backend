@@ -192,79 +192,72 @@ function mostrarProductos(productos) {
     }
 
     productos.forEach((p) => {
-        // Si el producto tiene PLUs, mostrar una fila por cada PLU
+        // SIMPLIFICADO: Una fila por producto, sin rowspan
+        const precioHTML = p.precio_promedio ?
+            `$${p.precio_promedio.toLocaleString('es-CO')}` :
+            '<span style="color: #999;">-</span>';
+
+        // Mostrar PLUs como badges en una sola celda
+        let plusHTML = '<span style="color: #999;">Sin PLUs</span>';
+        let establecimientosHTML = '-';
+
         if (p.plus && p.plus.length > 0) {
-            p.plus.forEach((plu, index) => {
-                const esPrimeraFila = index === 0;
-                const numFilas = p.plus.length;
+            plusHTML = p.plus.map(plu =>
+                `<span class="badge badge-info">${plu.codigo_plu}</span>`
+            ).join(' ');
 
-                // Renderizar precio
-                const precioHTML = plu.precio ?
-                    `$${parseInt(plu.precio).toLocaleString('es-CO')}` :
-                    (p.precio_promedio ?
-                        `$${p.precio_promedio.toLocaleString('es-CO')}` :
-                        '<span style="color: #999;">-</span>');
+            establecimientosHTML = p.plus.map(plu =>
+                `<span class="badge badge-success">🏪 ${plu.establecimiento}</span>`
+            ).join(' ');
+        }
 
-                // Renderizar estado (solo en primera fila)
-                let estadoHTML = '';
-                if (esPrimeraFila) {
-                    const estadoBadges = [];
-                    if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
-                    if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
-                    if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
-                    estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
-                }
+        const estadoBadges = [];
+        if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning">Sin EAN</span>');
+        if (!p.marca) estadoBadges.push('<span class="badge badge-warning">Sin Marca</span>');
+        if (!p.categoria) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
+        const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge badge-success">Completo</span>';
 
-                const row = `
-                    <tr>
-                        ${esPrimeraFila ? `
-                            <td class="checkbox-cell" rowspan="${numFilas}">
-                                <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
-                            </td>
-                            <td rowspan="${numFilas}">${p.id}</td>
-                            <td rowspan="${numFilas}">${p.codigo_ean || '-'}</td>
-                        ` : ''}
+        const row = `
+            <tr>
+                <td class="checkbox-cell">
+                    <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
+                </td>
+                <td>${p.id}</td>
+                <td>${p.codigo_ean || '-'}</td>
+                <td>${plusHTML}</td>
+                <td>${establecimientosHTML}</td>
+                <td>${p.nombre || '-'}</td>
+                <td>${p.marca || '-'}</td>
+                <td>${p.categoria || '-'}</td>
+                <td>${precioHTML}</td>
+                <td>${p.veces_comprado || 0}</td>
+                <td>${estadoHTML}</td>
+                <td>
+                    <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
+                        ✏️
+                    </button>
+                    <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
+                        🗑️
+                    </button>
+                </td>
+            </tr>
+        `;
+        tbody.insertAdjacentHTML("beforeend", row);
+    });
+}
 
-                        <td><span class="badge" style="background: #1e40af; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">${plu.codigo_plu}</span></td>
-                        <td><span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">🏪 ${plu.establecimiento}</span></td>
+// Producto sin PLUs - mostrar fila normal
+const precioHTML = p.precio_promedio ?
+    `$${p.precio_promedio.toLocaleString('es-CO')}` :
+    '<span style="color: #999;">-</span>';
 
-                        ${esPrimeraFila ? `
-                            <td rowspan="${numFilas}">${p.nombre || '-'}</td>
-                            <td rowspan="${numFilas}">${p.marca || '-'}</td>
-                            <td rowspan="${numFilas}">${p.categoria || '-'}</td>
-                        ` : ''}
+const estadoBadges = [];
+if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
+if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
+if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
+const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
 
-                        <td>${precioHTML}</td>
-
-                        ${esPrimeraFila ? `
-                            <td rowspan="${numFilas}">${p.veces_comprado || 0}</td>
-                            <td rowspan="${numFilas}">${estadoHTML}</td>
-                            <td rowspan="${numFilas}">
-                                <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
-                                    ✏️
-                                </button>
-                                <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
-                                    🗑️
-                                </button>
-                            </td>
-                        ` : ''}
-                    </tr>
-                `;
-                tbody.insertAdjacentHTML("beforeend", row);
-            });
-        } else {
-            // Producto sin PLUs - mostrar fila normal
-            const precioHTML = p.precio_promedio ?
-                `$${p.precio_promedio.toLocaleString('es-CO')}` :
-                '<span style="color: #999;">-</span>';
-
-            const estadoBadges = [];
-            if (!p.codigo_ean) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin EAN</span>');
-            if (!p.marca) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Marca</span>');
-            if (!p.categoria) estadoBadges.push('<span class="badge" style="background: #d97706; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Sin Categoría</span>');
-            const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge" style="background: #059669; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px;">Completo</span>';
-
-            const row = `
+const row = `
                 <tr>
                     <td class="checkbox-cell">
                         <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
@@ -288,10 +281,8 @@ function mostrarProductos(productos) {
                     </td>
                 </tr>
             `;
-            tbody.insertAdjacentHTML("beforeend", row);
-        }
-    });
-}
+tbody.insertAdjacentHTML("beforeend", row);
+
 
 // =============================================================
 // Actualizar estadísticas y paginación
