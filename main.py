@@ -2514,7 +2514,7 @@ async def process_video_background_task(
                         SELECT producto_maestro_id, codigo_leido
                         FROM items_factura
                         WHERE factura_id = %s
-                          AND nombre_leido = %s
+                        AND nombre_leido = %s
                         LIMIT 1
                     """,
                         (factura_id, producto.get("nombre", "")),
@@ -4314,7 +4314,7 @@ async def get_codigos_establecimiento(establecimiento_id: int, limite: int = 100
             FROM codigos_establecimiento ce
             JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
             WHERE ce.establecimiento_id = %s
-              AND ce.activo = TRUE
+            AND ce.activo = TRUE
             ORDER BY ce.veces_visto DESC
             LIMIT %s
         """,
@@ -4426,8 +4426,8 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
                 FROM codigos_establecimiento ce
                 JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
                 WHERE ce.codigo_local = %s
-                  AND ce.establecimiento_id = %s
-                  AND ce.activo = TRUE
+                AND ce.establecimiento_id = %s
+                AND ce.activo = TRUE
                 LIMIT 1
             """,
                 (codigo, establecimiento_id),
@@ -4444,7 +4444,7 @@ async def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None
                 FROM codigos_establecimiento ce
                 JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
                 WHERE ce.codigo_local = %s
-                  AND ce.activo = TRUE
+                AND ce.activo = TRUE
                 LIMIT 1
             """,
                 (codigo,),
@@ -4637,7 +4637,7 @@ async def setup_categorias():
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'productos_maestros_v2'
-              AND column_name = 'categoria_id'
+            AND column_name = 'categoria_id'
         """
         )
 
@@ -5725,7 +5725,7 @@ async def corregir_aprendizaje(aprendizaje_id: int, nombre_correcto: str):
             SET nombre_normalizado = %s
             FROM items_factura if_
             WHERE pm.id = if_.producto_maestro_id
-              AND if_.nombre_leido = %s
+            AND if_.nombre_leido = %s
         """,
             (nombre_correcto.upper().strip(), ocr_norm),
         )
@@ -5747,6 +5747,301 @@ async def corregir_aprendizaje(aprendizaje_id: int, nombre_correcto: str):
         import traceback
 
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+# ============================================================
+# ADMIN: PANEL DE ANOMALÍAS Y CORRECCIÓN
+# ============================================================
+
+
+@app.get("/api/admin/anomalias")
+async def obtener_anomalias():
+    """
+    Obtiene todos los productos con problemas de datos
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                codigo_ean,
+                nombre_normalizado,
+                marca,
+                categoria,
+                precio_promedio_global,
+                total_reportes,
+                LENGTH(nombre_normalizado) as chars_nombre,
+                CASE
+                    WHEN LENGTH(nombre_normalizado) < 8 THEN 'nombre_corto'
+                    WHEN nombre_normalizado ~ '^[A-Z0-9 ]+$' AND LENGTH(nombre_normalizado) < 15 THEN 'nombre_truncado'
+                    WHEN marca IS NULL OR marca = '' THEN 'sin_marca'
+                    WHEN categoria IS NULL OR categoria = '' THEN 'sin_categoria'
+                    WHEN codigo_ean IS NULL OR codigo_ean = '' THEN 'sin_ean'
+                    WHEN LENGTH(codigo_ean) NOT IN (8, 12, 13, 14) THEN 'ean_invalido'
+                    WHEN precio_promedio_global = 0 THEN 'sin_precio'
+                    ELSE 'ok'
+                END as tipo_problema
+            FROM productos_maestros
+            ORDER BY
+                CASE
+                    WHEN LENGTH(nombre_normalizado) < 8 THEN 1
+                    WHEN marca IS NULL THEN 2
+                    WHEN categoria IS NULL THEN 3
+                    ELSE 4
+                END,
+                id DESC
+        """
+        )
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "categoria": row[4],
+                    "precio_promedio": row[5],
+                    "veces_comprado": row[6],
+                    "chars_nombre": row[7],
+                    "tipo_problema": row[8],
+                }
+            )
+
+        # Estadísticas
+        total = len(productos)
+        problematicos = len([p for p in productos if p["tipo_problema"] != "ok"])
+        sin_marca = len([p for p in productos if p["tipo_problema"] == "sin_marca"])
+        sin_categoria = len(
+            [p for p in productos if p["tipo_problema"] == "sin_categoria"]
+        )
+        nombres_cortos = len(
+            [
+                p
+                for p in productos
+                if p["tipo_problema"] in ["nombre_corto", "nombre_truncado"]
+            ]
+        )
+        sin_ean = len([p for p in productos if p["tipo_problema"] == "sin_ean"])
+
+        return {
+            "success": True,
+            "productos": productos,
+            "estadisticas": {
+                "total": total,
+                "problematicos": problematicos,
+                "completos": total - problematicos,
+                "sin_marca": sin_marca,
+                "sin_categoria": sin_categoria,
+                "nombres_cortos": nombres_cortos,
+                "sin_ean": sin_ean,
+                "porcentaje_calidad": (
+                    round((total - problematicos) / total * 100, 1) if total > 0 else 0
+                ),
+            },
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo anomalías: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/api/admin/producto/{producto_id}/corregir")
+async def corregir_producto(producto_id: int, datos: dict):
+    """
+    Corrige un producto específico
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Construir query dinámico
+        campos = []
+        valores = []
+
+        if "nombre_normalizado" in datos:
+            campos.append("nombre_normalizado = %s")
+            valores.append(datos["nombre_normalizado"])
+
+        if "marca" in datos:
+            campos.append("marca = %s")
+            valores.append(datos["marca"])
+
+        if "categoria" in datos:
+            campos.append("categoria = %s")
+            valores.append(datos["categoria"])
+
+        if "codigo_ean" in datos:
+            campos.append("codigo_ean = %s")
+            valores.append(datos["codigo_ean"])
+
+        if "verificado" in datos:
+            campos.append("verificado = %s")
+            valores.append(datos["verificado"])
+
+        if not campos:
+            return {"success": False, "error": "No hay campos para actualizar"}
+
+        campos.append("ultima_actualizacion = CURRENT_TIMESTAMP")
+        valores.append(producto_id)
+
+        query = f"""
+            UPDATE productos_maestros
+            SET {', '.join(campos)}
+            WHERE id = %s
+        """
+
+        cursor.execute(query, valores)
+        conn.commit()
+
+        print(f"✅ Producto {producto_id} corregido")
+
+        return {
+            "success": True,
+            "mensaje": f"Producto {producto_id} actualizado correctamente",
+        }
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error corrigiendo producto: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/admin/correccion-masiva")
+async def correccion_masiva(datos: dict):
+    """
+    Aplica correcciones a múltiples productos
+    Ejemplo: {"ids": [1,2,3], "marca": "ALPINA", "categoria": "Lácteos"}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        ids = datos.get("ids", [])
+        if not ids:
+            return {"success": False, "error": "No se especificaron IDs"}
+
+        campos = []
+        valores = []
+
+        if "marca" in datos and datos["marca"]:
+            campos.append("marca = %s")
+            valores.append(datos["marca"])
+
+        if "categoria" in datos and datos["categoria"]:
+            campos.append("categoria = %s")
+            valores.append(datos["categoria"])
+
+        if "verificado" in datos:
+            campos.append("verificado = %s")
+            valores.append(datos["verificado"])
+
+        if not campos:
+            return {"success": False, "error": "No hay campos para actualizar"}
+
+        campos.append("ultima_actualizacion = CURRENT_TIMESTAMP")
+
+        # Crear placeholders para los IDs
+        id_placeholders = ",".join(["%s"] * len(ids))
+
+        query = f"""
+            UPDATE productos_maestros
+            SET {', '.join(campos)}
+            WHERE id IN ({id_placeholders})
+        """
+
+        cursor.execute(query, valores + ids)
+        affected = cursor.rowcount
+        conn.commit()
+
+        print(f"✅ {affected} productos actualizados masivamente")
+
+        return {"success": True, "productos_actualizados": affected}
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error en corrección masiva: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/admin/sugerencias-marca")
+async def sugerencias_marca():
+    """
+    Obtiene las marcas más comunes para autocompletar
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT marca, COUNT(*) as cantidad
+            FROM productos_maestros
+            WHERE marca IS NOT NULL AND marca != ''
+            GROUP BY marca
+            ORDER BY cantidad DESC
+            LIMIT 50
+        """
+        )
+
+        marcas = [{"marca": row[0], "cantidad": row[1]} for row in cursor.fetchall()]
+
+        return {"success": True, "marcas": marcas}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/admin/sugerencias-categoria")
+async def sugerencias_categoria():
+    """
+    Obtiene las categorías más comunes
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT categoria, COUNT(*) as cantidad
+            FROM productos_maestros
+            WHERE categoria IS NOT NULL AND categoria != ''
+            GROUP BY categoria
+            ORDER BY cantidad DESC
+            LIMIT 50
+        """
+        )
+
+        categorias = [
+            {"categoria": row[0], "cantidad": row[1]} for row in cursor.fetchall()
+        ]
+
+        return {"success": True, "categorias": categorias}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+print("✅ Endpoints de administración registrados")
 
 
 @app.get("/admin/listar-aprendizaje")

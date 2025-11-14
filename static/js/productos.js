@@ -613,6 +613,12 @@ function toggleProductSelection(id) {
 
     document.getElementById('btn-fusionar').disabled = selected < 2;
     document.getElementById('btn-deseleccionar').disabled = selected === 0;
+
+    // Habilitar corrección masiva si hay al menos 1 seleccionado
+    const btnCorreccion = document.getElementById('btn-correccion-masiva');
+    if (btnCorreccion) {
+        btnCorreccion.disabled = selected === 0;
+    }
 }
 
 function deseleccionarTodos() {
@@ -911,6 +917,366 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     console.log("✅ Sistema inicializado correctamente con establecimientos por PLU");
 });
+// =============================================================
+// 🔧 FUNCIONES DE ADMINISTRACIÓN Y CORRECCIÓN
+// =============================================================
+
+let anomaliasCache = [];
+let marcasSugeridas = [];
+let categoriasSugeridas = [];
+
+// =============================================================
+// CARGAR ANOMALÍAS (Tab Calidad de Datos)
+// =============================================================
+async function cargarAnomalias() {
+    const apiBase = getApiBase();
+    const container = document.getElementById('calidad-stats');
+    const recomendaciones = document.getElementById('recomendaciones');
+
+    if (!container) return;
+
+    container.innerHTML = '<div class="loading"></div> Analizando datos...';
+
+    try {
+        const response = await fetch(`${apiBase}/api/admin/anomalias`);
+        if (!response.ok) throw new Error('Error cargando anomalías');
+
+        const data = await response.json();
+        anomaliasCache = data.productos || [];
+        const stats = data.estadisticas;
+
+        // Mostrar estadísticas
+        container.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-value">${stats.total}</div>
+                <div class="stat-label">Total Productos</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #d1fae5, #a7f3d0);">
+                <div class="stat-value" style="color: #059669;">${stats.completos}</div>
+                <div class="stat-label">✅ Completos</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-value">${stats.problematicos}</div>
+                <div class="stat-label">⚠️ Con Problemas</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: #2563eb;">${stats.porcentaje_calidad}%</div>
+                <div class="stat-label">Calidad General</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-value">${stats.sin_marca}</div>
+                <div class="stat-label">Sin Marca</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-value">${stats.sin_categoria}</div>
+                <div class="stat-label">Sin Categoría</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="stat-value">${stats.nombres_cortos}</div>
+                <div class="stat-label">Nombres Truncados</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-value">${stats.sin_ean}</div>
+                <div class="stat-label">Sin EAN</div>
+            </div>
+        `;
+
+        // Mostrar recomendaciones y lista de problemas
+        if (recomendaciones) {
+            let html = '';
+
+            // Barra de progreso
+            html += `
+                <div style="margin-bottom: 30px;">
+                    <h3>📊 Progreso de Calidad</h3>
+                    <div style="background: #e5e7eb; border-radius: 10px; height: 30px; overflow: hidden; margin-top: 10px;">
+                        <div style="background: linear-gradient(90deg, #059669, #10b981); height: 100%; width: ${stats.porcentaje_calidad}%;
+                                    display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                            ${stats.porcentaje_calidad}%
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Lista de productos problemáticos
+            const problematicos = anomaliasCache.filter(p => p.tipo_problema !== 'ok').slice(0, 50);
+
+            if (problematicos.length > 0) {
+                html += `
+                    <h3>🔧 Productos que Requieren Atención (${problematicos.length})</h3>
+                    <div style="margin-top: 15px; max-height: 600px; overflow-y: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #f3f4f6;">
+                                    <th style="padding: 10px; text-align: left;">ID</th>
+                                    <th style="padding: 10px; text-align: left;">Nombre</th>
+                                    <th style="padding: 10px; text-align: left;">Problema</th>
+                                    <th style="padding: 10px; text-align: left;">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                problematicos.forEach(p => {
+                    const problemaBadge = {
+                        'nombre_corto': '<span class="badge badge-error">Nombre muy corto</span>',
+                        'nombre_truncado': '<span class="badge badge-warning">Nombre truncado</span>',
+                        'sin_marca': '<span class="badge badge-warning">Sin marca</span>',
+                        'sin_categoria': '<span class="badge badge-warning">Sin categoría</span>',
+                        'sin_ean': '<span class="badge badge-info">Sin EAN</span>',
+                        'ean_invalido': '<span class="badge badge-error">EAN inválido</span>',
+                        'sin_precio': '<span class="badge badge-warning">Sin precio</span>'
+                    }[p.tipo_problema] || '<span class="badge">Desconocido</span>';
+
+                    html += `
+                        <tr style="border-bottom: 1px solid #e5e7eb;">
+                            <td style="padding: 10px;">${p.id}</td>
+                            <td style="padding: 10px;">
+                                <strong>${p.nombre || 'Sin nombre'}</strong>
+                                <br><small style="color: #666;">EAN: ${p.codigo_ean || 'N/A'} | Marca: ${p.marca || 'N/A'}</small>
+                            </td>
+                            <td style="padding: 10px;">${problemaBadge}</td>
+                            <td style="padding: 10px;">
+                                <button class="btn-small btn-primary" onclick="editarProductoRapido(${p.id})">
+                                    ✏️ Corregir
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div style="text-align: center; padding: 40px; color: #059669;">
+                        <h3>🎉 ¡Excelente!</h3>
+                        <p>Todos los productos están completos</p>
+                    </div>
+                `;
+            }
+
+            recomendaciones.innerHTML = html;
+        }
+
+        console.log(`✅ ${anomaliasCache.length} productos analizados`);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        container.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+    }
+}
+
+// =============================================================
+// EDICIÓN RÁPIDA INLINE
+// =============================================================
+async function editarProductoRapido(id) {
+    // Usa la función existente de editar
+    await editarProducto(id);
+}
+
+// =============================================================
+// CORRECCIÓN MASIVA
+// =============================================================
+async function aplicarCorreccionMasiva() {
+    const checkboxes = document.querySelectorAll('#productos-body input[type="checkbox"]:checked');
+    const ids = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+    if (ids.length === 0) {
+        alert('Selecciona al menos un producto');
+        return;
+    }
+
+    const marca = prompt('Marca para todos los seleccionados (dejar vacío para no cambiar):');
+    const categoria = prompt('Categoría para todos los seleccionados (dejar vacío para no cambiar):');
+
+    if (!marca && !categoria) {
+        alert('Debes especificar al menos marca o categoría');
+        return;
+    }
+
+    const datos = { ids };
+    if (marca) datos.marca = marca.toUpperCase();
+    if (categoria) datos.categoria = categoria;
+
+    try {
+        const apiBase = getApiBase();
+        const response = await fetch(`${apiBase}/api/admin/correccion-masiva`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datos)
+        });
+
+        if (!response.ok) throw new Error('Error en corrección masiva');
+
+        const result = await response.json();
+        mostrarAlerta(`✅ ${result.productos_actualizados} productos actualizados`, 'success');
+
+        deseleccionarTodos();
+        cargarProductos(paginaActual);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        mostrarAlerta(`Error: ${error.message}`, 'error');
+    }
+}
+
+// =============================================================
+// CARGAR SUGERENCIAS (autocompletado)
+// =============================================================
+async function cargarSugerencias() {
+    const apiBase = getApiBase();
+
+    try {
+        // Cargar marcas
+        const resMarcas = await fetch(`${apiBase}/api/admin/sugerencias-marca`);
+        if (resMarcas.ok) {
+            const data = await resMarcas.json();
+            marcasSugeridas = data.marcas || [];
+            console.log(`✅ ${marcasSugeridas.length} marcas cargadas`);
+        }
+
+        // Cargar categorías
+        const resCat = await fetch(`${apiBase}/api/admin/sugerencias-categoria`);
+        if (resCat.ok) {
+            const data = await resCat.json();
+            categoriasSugeridas = data.categorias || [];
+            console.log(`✅ ${categoriasSugeridas.length} categorías cargadas`);
+        }
+
+    } catch (error) {
+        console.warn('No se pudieron cargar sugerencias:', error);
+    }
+}
+
+// =============================================================
+// DETECTAR DUPLICADOS
+// =============================================================
+async function detectarDuplicados() {
+    const container = document.getElementById('duplicados-container');
+    if (!container) return;
+
+    container.innerHTML = '<div class="loading"></div> Analizando duplicados...';
+
+    const apiBase = getApiBase();
+
+    try {
+        // Por ahora, detectar duplicados localmente
+        const response = await fetch(`${apiBase}/api/admin/anomalias`);
+        if (!response.ok) throw new Error('Error');
+
+        const data = await response.json();
+        const productos = data.productos || [];
+
+        // Agrupar por nombre similar
+        const grupos = {};
+        productos.forEach(p => {
+            const nombreBase = (p.nombre || '').substring(0, 10).toUpperCase();
+            if (!grupos[nombreBase]) grupos[nombreBase] = [];
+            grupos[nombreBase].push(p);
+        });
+
+        // Filtrar grupos con más de 1 producto
+        const duplicados = Object.entries(grupos)
+            .filter(([key, items]) => items.length > 1)
+            .slice(0, 20);
+
+        if (duplicados.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #059669;">
+                    <h3>✅ No se encontraron duplicados obvios</h3>
+                    <p>Los productos parecen estar bien diferenciados</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `<h3>⚠️ Posibles Duplicados Encontrados (${duplicados.length} grupos)</h3>`;
+
+        duplicados.forEach(([nombre, items]) => {
+            html += `
+                <div class="duplicado-item">
+                    <div class="duplicado-header">
+                        <strong>Grupo: "${nombre}..."</strong>
+                        <span class="badge badge-warning">${items.length} productos</span>
+                    </div>
+                    <div class="productos-duplicados">
+            `;
+
+            items.forEach((p, i) => {
+                html += `
+                    <div class="producto-dup-card ${i === 0 ? 'principal' : ''}">
+                        <strong>ID ${p.id}:</strong> ${p.nombre}<br>
+                        <small>EAN: ${p.codigo_ean || 'N/A'} | Marca: ${p.marca || 'N/A'}</small>
+                        <button class="btn-small btn-primary" style="float: right;" onclick="editarProducto(${p.id})">
+                            ✏️ Editar
+                        </button>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        container.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+    }
+}
+
+// =============================================================
+// SOBRESCRIBIR switchTab PARA CARGAR DATOS
+// =============================================================
+const originalSwitchTab = window.switchTab;
+window.switchTab = function (tabName) {
+    // Llamar función original
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+    event.target.classList.add('active');
+
+    // Cargar datos específicos del tab
+    if (tabName === 'calidad') {
+        cargarAnomalias();
+    } else if (tabName === 'duplicados') {
+        // El usuario debe hacer clic en "Analizar"
+    }
+};
+
+// =============================================================
+// INICIALIZACIÓN ADICIONAL
+// =============================================================
+document.addEventListener("DOMContentLoaded", async function () {
+    // Cargar sugerencias para autocompletado
+    await cargarSugerencias();
+
+    console.log("✅ Módulo de administración inicializado");
+});
+
+// =============================================================
+// EXPORTAR NUEVAS FUNCIONES
+// =============================================================
+window.cargarAnomalias = cargarAnomalias;
+window.editarProductoRapido = editarProductoRapido;
+window.aplicarCorreccionMasiva = aplicarCorreccionMasiva;
+window.detectarDuplicados = detectarDuplicados;
+window.cargarSugerencias = cargarSugerencias;
+// Alias para el botón en la pestaña de duplicados
+window.cargarDuplicados = detectarDuplicados;
+
+console.log('✅ Funciones de administración cargadas');
 
 // =============================================================
 // Exportar funciones
