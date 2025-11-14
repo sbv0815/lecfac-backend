@@ -1,28 +1,11 @@
 """
-product_matcher.py - VERSIÓN 8.0 - Sistema con Jerarquía de Validación
+product_matcher.py - VERSIÓN 8.1 - Búsqueda por PLU Prioritaria
 ========================================================================
-Sistema de matching con validación por fuentes confiables
 
-🎯 FLUJO COMPLETO V8.0:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1️⃣ Productos Referencia (OFICIAL)  → Datos oficiales con EAN (99% conf)
-2️⃣ Historial PLU                   → PLUs frecuentes en BD (80% conf)
-3️⃣ Aprendizaje Automático          → Correcciones validadas (70%+ conf)
-4️⃣ OCR Corregido                   → Claude + correcciones estáticas (60% conf)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CAMBIOS V8.0:
-- ✅ Búsqueda en historial de PLUs por establecimiento
-- ✅ Marcado para revisión admin cuando confianza < 80%
-- ✅ Sistema de jerarquía de fuentes de verdad
-- ✅ NO aprende automáticamente sin validación
-- ✅ Mejor tracking de por qué se eligió cada nombre
-
-FILOSOFÍA:
-- Solo aprender de fuentes CONFIABLES (referencia oficial o admin)
-- Marcar para revisión cuando hay dudas
-- Historial de PLU como segunda fuente de verdad
-- NO inventar ni adivinar
+🎯 CAMBIOS V8.1:
+- ✅ Busca por PLU ANTES de buscar por nombre similar
+- ✅ Evita mezclar productos con mismo nombre pero diferente PLU
+- ✅ Fix: variable nombre_normalizado definida antes de usarse
 """
 
 import re
@@ -148,13 +131,7 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
     try:
         cursor.execute(
             f"""
-            SELECT
-                codigo_ean,
-                nombre,
-                marca,
-                categoria,
-                presentacion,
-                unidad_medida
+            SELECT codigo_ean, nombre, marca, categoria, presentacion, unidad_medida
             FROM productos_referencia
             WHERE codigo_ean = {param}
             LIMIT 1
@@ -167,7 +144,6 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
         if not resultado:
             return None
 
-        # Extraer campos
         ean = resultado[0]
         nombre = resultado[1] or ""
         marca = resultado[2] or ""
@@ -175,9 +151,7 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
         presentacion = resultado[4] or ""
         unidad_medida = resultado[5] or ""
 
-        # Construir nombre completo
         partes = []
-
         if marca:
             partes.append(marca.upper().strip())
         if nombre:
@@ -208,32 +182,18 @@ def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str
 def buscar_nombre_por_plu_historial(
     codigo_plu: str, establecimiento_id: int, cursor
 ) -> Optional[Dict[str, Any]]:
-    """
-    Busca el nombre más común para un PLU en el historial de compras
-
-    Args:
-        codigo_plu: Código PLU a buscar
-        establecimiento_id: ID del establecimiento
-        cursor: Cursor de BD
-
-    Returns:
-        Dict con nombre más común y estadísticas, o None
-    """
+    """Busca el nombre más común para un PLU en el historial de compras"""
     if not codigo_plu or not establecimiento_id:
         return None
 
     try:
         cursor.execute(
             """
-            SELECT
-                pm.nombre_normalizado,
-                COUNT(*) as frecuencia,
-                MAX(if2.fecha_creacion) as ultima_vez
+            SELECT pm.nombre_normalizado, COUNT(*) as frecuencia, MAX(if2.fecha_creacion) as ultima_vez
             FROM items_factura if2
             JOIN productos_maestros pm ON if2.producto_maestro_id = pm.id
             JOIN facturas f ON if2.factura_id = f.id
-            WHERE if2.codigo_leido = %s
-              AND f.establecimiento_id = %s
+            WHERE if2.codigo_leido = %s AND f.establecimiento_id = %s
             GROUP BY pm.nombre_normalizado
             ORDER BY frecuencia DESC, ultima_vez DESC
             LIMIT 1
@@ -250,9 +210,7 @@ def buscar_nombre_por_plu_historial(
                 "frecuencia": frecuencia,
                 "ultima_vez": resultado[2],
                 "fuente": "historial_plu",
-                "confianza": min(
-                    0.85, 0.65 + (frecuencia * 0.05)
-                ),  # Más frecuencia = más confianza
+                "confianza": min(0.85, 0.65 + (frecuencia * 0.05)),
             }
 
         return None
@@ -272,32 +230,19 @@ def marcar_para_revision_admin(
     establecimiento: str,
     razon: str,
 ) -> bool:
-    """
-    Marca un producto para revisión por administrador
-
-    Returns:
-        True si se marcó correctamente, False si hubo error
-    """
+    """Marca un producto para revisión por administrador"""
     try:
-        # Verificar si la tabla existe y tiene las columnas necesarias
         cursor.execute(
             """
             INSERT INTO productos_revision_admin (
-                producto_maestro_id,
-                nombre_ocr_original,
-                nombre_sugerido,
-                codigo_producto,
-                establecimiento,
-                motivo_revision,
-                razon_revision,
-                estado,
-                fecha_creacion
-             ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'pendiente', CURRENT_TIMESTAMP)
+                producto_maestro_id, nombre_ocr_original, nombre_sugerido, codigo_producto,
+                establecimiento, motivo_revision, razon_revision, estado, fecha_creacion
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'pendiente', CURRENT_TIMESTAMP)
             ON CONFLICT (producto_maestro_id)
             DO UPDATE SET
                 nombre_ocr_original = EXCLUDED.nombre_ocr_original,
                 nombre_sugerido = EXCLUDED.nombre_sugerido,
-                 motivo_revision = EXCLUDED.motivo_revision,
+                motivo_revision = EXCLUDED.motivo_revision,
                 razon_revision = EXCLUDED.razon_revision,
                 fecha_creacion = CURRENT_TIMESTAMP,
                 estado = 'pendiente'
@@ -317,7 +262,6 @@ def marcar_para_revision_admin(
         return True
     except Exception as e:
         print(f"      ⚠️ Error marcando para revisión: {e}")
-        # No hacer rollback para no perder el producto
         return False
 
 
@@ -334,39 +278,22 @@ def validar_nombre_con_sistema_completo(
     cursor=None,
     establecimiento_id: int = None,
 ) -> dict:
-    """
-    V8.0: Sistema con jerarquía de validación
-
-    FLUJO:
-    1️⃣ Productos Referencia (EAN oficial) → Nombre oficial (99% conf)
-    2️⃣ Historial PLU → Nombre más frecuente (80% conf)
-    3️⃣ Aprendizaje Automático → Correcciones validadas (70%+ conf)
-    4️⃣ OCR Corregido → Sin validación externa (60% conf)
-
-    Marca para revisión admin si:
-    - EAN no está en productos_referencia
-    - PLU es nuevo o poco frecuente
-    - Hay discrepancia entre OCR y historial
-    """
+    """V8.1: Sistema con jerarquía de validación"""
 
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
     marcar_revision = False
     razon_revision = ""
 
-    # ═══════════════════════════════════════════════════════════════
-    # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (FUENTE OFICIAL - 99%)
-    # ═══════════════════════════════════════════════════════════════
+    # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (99%)
     if tipo_codigo == "EAN" and codigo and cursor:
         producto_oficial = buscar_en_productos_referencia(codigo, cursor)
 
         if producto_oficial:
             print(f"   ✅ ENCONTRADO EN PRODUCTOS REFERENCIA")
             print(f"   📝 Nombre oficial: {producto_oficial['nombre_oficial']}")
-            print(f"   🏷️  Marca: {producto_oficial.get('marca', 'N/A')}")
             print(f"   🎯 Confianza: 99% (fuente oficial)")
 
-            # Guardar en aprendizaje con máxima confianza
             if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
                 try:
                     aprendizaje_mgr.guardar_correccion_aprendida(
@@ -391,31 +318,23 @@ def validar_nombre_con_sistema_completo(
                 "razon_revision": "",
             }
         else:
-            # EAN no está en referencia → Marcar para agregar
             marcar_revision = True
-            razon_revision = f"EAN {codigo} no está en productos_referencia - agregar datos oficiales"
+            razon_revision = f"EAN {codigo} no está en productos_referencia"
 
-    # ═══════════════════════════════════════════════════════════════
-    # PASO 2: BUSCAR PLU EN HISTORIAL (80% conf)
-    # ═══════════════════════════════════════════════════════════════
+    # PASO 2: BUSCAR PLU EN HISTORIAL (80%)
     if tipo_codigo == "PLU" and codigo and cursor and establecimiento_id:
         resultado_plu = buscar_nombre_por_plu_historial(
             codigo, establecimiento_id, cursor
         )
 
         if resultado_plu and resultado_plu["frecuencia"] >= 2:
-            # PLU visto al menos 2 veces antes
             print(f"   ✅ PLU ENCONTRADO EN HISTORIAL")
             print(f"   📝 Nombre histórico: {resultado_plu['nombre']}")
             print(f"   📊 Frecuencia: {resultado_plu['frecuencia']} veces")
             print(f"   🎯 Confianza: {resultado_plu['confianza']:.0%}")
 
-            # Si el nombre OCR es MUY diferente al histórico, revisar
             similitud = calcular_similitud(nombre_corregido, resultado_plu["nombre"])
             if similitud < 0.70:
-                print(
-                    f"   ⚠️ Discrepancia: OCR='{nombre_corregido[:30]}' vs Historial='{resultado_plu['nombre'][:30]}'"
-                )
                 marcar_revision = True
                 razon_revision = (
                     f"Discrepancia OCR vs Historial (similitud {similitud:.0%})"
@@ -429,20 +348,15 @@ def validar_nombre_con_sistema_completo(
                     "alta" if resultado_plu["confianza"] >= 0.80 else "media"
                 ),
                 "fuente": "historial_plu",
-                "detalles": f"PLU {codigo} visto {resultado_plu['frecuencia']} veces en establecimiento",
+                "detalles": f"PLU {codigo} visto {resultado_plu['frecuencia']} veces",
                 "necesita_revision": marcar_revision,
                 "razon_revision": razon_revision,
             }
         elif tipo_codigo == "PLU":
-            # PLU nuevo o poco frecuente
             marcar_revision = True
-            razon_revision = (
-                f"PLU {codigo} es nuevo o poco frecuente (menos de 2 apariciones)"
-            )
+            razon_revision = f"PLU {codigo} es nuevo (menos de 2 apariciones)"
 
-    # ═══════════════════════════════════════════════════════════════
-    # PASO 3: BUSCAR EN APRENDIZAJE AUTOMÁTICO (70%+ conf)
-    # ═══════════════════════════════════════════════════════════════
+    # PASO 3: BUSCAR EN APRENDIZAJE (70%+)
     if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
         try:
             correccion = aprendizaje_mgr.buscar_correccion_aprendida(
@@ -453,7 +367,6 @@ def validar_nombre_con_sistema_completo(
 
             if correccion and correccion["confianza"] >= 0.80:
                 confianza = correccion["confianza"]
-
                 aprendizaje_mgr.incrementar_confianza(correccion["id"], True)
 
                 print(f"   ✅ ENCONTRADO EN APRENDIZAJE")
@@ -466,7 +379,7 @@ def validar_nombre_con_sistema_completo(
                     "confianza": confianza,
                     "categoria_confianza": "alta" if confianza >= 0.85 else "media",
                     "fuente": "aprendizaje",
-                    "detalles": f"Validado {correccion['veces_confirmado']} veces previamente",
+                    "detalles": f"Validado {correccion['veces_confirmado']} veces",
                     "aprendizaje_id": correccion["id"],
                     "necesita_revision": False,
                     "razon_revision": "",
@@ -474,23 +387,17 @@ def validar_nombre_con_sistema_completo(
         except Exception as e:
             print(f"   ⚠️ Error consultando aprendizaje: {e}")
 
-    # ═══════════════════════════════════════════════════════════════
-    # PASO 4: USAR NOMBRE OCR CORREGIDO (60% conf - SIN VALIDACIÓN)
-    # ═══════════════════════════════════════════════════════════════
+    # PASO 4: USAR NOMBRE OCR (60%)
     print(f"   📝 USANDO NOMBRE OCR CORREGIDO (sin validación externa)")
 
-    # Determinar confianza basada en tipo de código
     tiene_ean = tipo_codigo == "EAN"
     confianza = 0.65 if tiene_ean else 0.60
     categoria = "media" if confianza >= 0.65 else "baja"
 
-    # Marcar para revisión si no hay fuente confiable
     if not marcar_revision:
         marcar_revision = True
-        razon_revision = "Producto nuevo sin validación externa - requiere revisión"
+        razon_revision = "Producto nuevo sin validación externa"
 
-    # ⚠️ NO guardar en aprendizaje automáticamente
-    # Solo guardar cuando admin valide o cuando se confirme por otra fuente
     print(f"   ⚠️ NO se guarda en aprendizaje (requiere validación)")
 
     return {
@@ -499,7 +406,7 @@ def validar_nombre_con_sistema_completo(
         "confianza": confianza,
         "categoria_confianza": categoria,
         "fuente": "ocr_corregido",
-        "detalles": "Sin validación externa - usar correcciones estáticas",
+        "detalles": "Sin validación externa",
         "necesita_revision": marcar_revision,
         "razon_revision": razon_revision,
     }
@@ -508,10 +415,7 @@ def validar_nombre_con_sistema_completo(
 def crear_producto_en_ambas_tablas(
     cursor, conn, nombre_normalizado, codigo_ean=None, marca=None, categoria=None
 ):
-    """
-    Crea producto en productos_maestros con manejo robusto de errores
-    V8.0 - Sin cambios respecto a V7.0
-    """
+    """Crea producto en productos_maestros"""
     try:
         if not nombre_normalizado or not nombre_normalizado.strip():
             print(f"   ❌ ERROR: nombre_normalizado vacío")
@@ -557,12 +461,6 @@ def crear_producto_en_ambas_tablas(
         print(f"   ✅ Producto creado exitosamente: ID {producto_id}")
         return producto_id
 
-    except IndexError as e:
-        print(f"   ❌ IndexError en crear_producto_en_ambas_tablas: {e}")
-        traceback.print_exc()
-        conn.rollback()
-        return None
-
     except Exception as e:
         print(f"   ❌ Error en crear_producto_en_ambas_tablas: {e}")
         traceback.print_exc()
@@ -583,20 +481,18 @@ def buscar_o_crear_producto_inteligente(
     establecimiento_id: int = None,
 ) -> Optional[int]:
     """
-    Función principal de matching de productos V8.0
-    Incluye jerarquía de validación y marcado para revisión admin
+    Función principal de matching de productos V8.1
+    ✅ NUEVO: Busca por PLU ANTES de buscar por nombre similar
     """
     import os
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V8.0:")
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V8.1:")
     print(f"   Código: {codigo or 'Sin código'}")
     print(f"   Nombre: {nombre[:50]}")
     print(f"   Precio: ${precio:,}")
     print(f"   Establecimiento: {establecimiento}")
-    if establecimiento_id:
-        print(f"   Establecimiento ID: {establecimiento_id}")
 
-    # ✅ FIX: Definir variables ANTES de usarlas
+    # Definir variables ANTES de usarlas
     nombre_normalizado = normalizar_nombre_producto(nombre, True)
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
@@ -605,7 +501,52 @@ def buscar_o_crear_producto_inteligente(
     param = "%s" if is_postgresql else "?"
 
     # ═══════════════════════════════════════════════════════════════
-    # PASO 1.5: BUSCAR PRODUCTO YA REVISADO POR ADMIN
+    # PASO 0: BUSCAR POR PLU EXACTO (NUEVO EN V8.1)
+    # ═══════════════════════════════════════════════════════════════
+    if tipo_codigo == "PLU" and codigo:
+        try:
+            # Buscar producto con este PLU exacto en items_factura
+            cursor.execute(
+                """
+                SELECT DISTINCT pm.id, pm.nombre_normalizado
+                FROM items_factura if2
+                JOIN productos_maestros pm ON if2.producto_maestro_id = pm.id
+                WHERE if2.codigo_leido = %s
+                LIMIT 1
+            """,
+                (codigo,),
+            )
+            resultado = cursor.fetchone()
+
+            if resultado and len(resultado) >= 2:
+                producto_id = resultado[0]
+                nombre_existente = resultado[1]
+                print(f"   ✅ Encontrado por PLU exacto: ID={producto_id}")
+                print(f"   📝 Nombre existente: {nombre_existente}")
+                return producto_id
+        except Exception as e:
+            print(f"   ⚠️ Error buscando por PLU: {e}")
+
+    # ═══════════════════════════════════════════════════════════════
+    # PASO 1: BUSCAR POR EAN EXISTENTE
+    # ═══════════════════════════════════════════════════════════════
+    if tipo_codigo == "EAN" and codigo:
+        try:
+            cursor.execute(
+                f"SELECT id, nombre_normalizado FROM productos_maestros WHERE codigo_ean = {param}",
+                (codigo,),
+            )
+            resultado = cursor.fetchone()
+
+            if resultado and len(resultado) >= 1:
+                producto_id = resultado[0]
+                print(f"   ✅ Encontrado por EAN: ID={producto_id}")
+                return producto_id
+        except Exception as e:
+            print(f"   ⚠️ Error buscando por EAN: {e}")
+
+    # ═══════════════════════════════════════════════════════════════
+    # PASO 1.5: BUSCAR PRODUCTO REVISADO POR ADMIN
     # ═══════════════════════════════════════════════════════════════
     try:
         cursor.execute(
@@ -631,102 +572,55 @@ def buscar_o_crear_producto_inteligente(
         print(f"   ⚠️ Error buscando productos revisados: {e}")
 
     try:
-        # ✅ Variables ya definidas arriba, no repetir
-
         # ═══════════════════════════════════════════════════════════════
-        # PASO 0: CONSOLIDACIÓN PLU (OPCIONAL)
+        # PASO 2: BUSCAR POR NOMBRE SIMILAR (solo si no tiene código)
         # ═══════════════════════════════════════════════════════════════
-        if PLU_CONSOLIDATOR_AVAILABLE and ENABLE_PLU_CONSOLIDATION:
-            nombre_consolidado_plu = aplicar_consolidacion_plu(
-                codigo=codigo,
-                nombre_ocr=nombre_normalizado,
-                tipo_codigo=tipo_codigo,
-                establecimiento=cadena,
-                cursor=cursor,
-            )
+        # ⚠️ IMPORTANTE: Solo buscar por nombre si NO tiene código
+        # Esto evita mezclar productos con mismo nombre pero diferente PLU
 
-            if nombre_consolidado_plu:
-                print(f"   🎯 Usando nombre consolidado por PLU")
+        if not codigo or tipo_codigo == "DESCONOCIDO":
+            try:
+                search_pattern = f"%{nombre_normalizado[:50]}%"
                 cursor.execute(
                     f"""
-                    SELECT id FROM productos_maestros
-                    WHERE nombre_normalizado = {param}
-                      AND codigo_ean = {param}
-                    LIMIT 1
+                    SELECT id, nombre_normalizado, codigo_ean
+                    FROM productos_maestros
+                    WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
+                    LIMIT 10
                 """,
-                    (nombre_consolidado_plu, codigo),
+                    (search_pattern,),
                 )
 
-                resultado = cursor.fetchone()
-                if resultado and len(resultado) >= 1:
-                    producto_id = resultado[0]
-                    print(f"   ✅ Producto consolidado encontrado: ID={producto_id}")
-                    return producto_id
+                candidatos = cursor.fetchall()
 
-        # ═══════════════════════════════════════════════════════════════
-        # PASO 1: BUSCAR POR EAN EXISTENTE
-        # ═══════════════════════════════════════════════════════════════
-        if tipo_codigo == "EAN" and codigo:
-            try:
-                cursor.execute(
-                    f"SELECT id, nombre_normalizado FROM productos_maestros WHERE codigo_ean = {param}",
-                    (codigo,),
-                )
-                resultado = cursor.fetchone()
+                for candidato in candidatos:
+                    if not candidato or len(candidato) < 3:
+                        continue
 
-                if resultado and len(resultado) >= 1:
-                    producto_id = resultado[0]
-                    print(f"   ✅ Encontrado por EAN: ID={producto_id}")
-                    return producto_id
+                    cand_id = candidato[0]
+                    cand_nombre = candidato[1]
+
+                    if not cand_id or not cand_nombre:
+                        continue
+
+                    similitud = calcular_similitud(nombre_normalizado, cand_nombre)
+
+                    if similitud >= 0.90:
+                        producto_id = cand_id
+                        print(
+                            f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})"
+                        )
+                        return producto_id
+
             except Exception as e:
-                print(f"   ⚠️ Error buscando por EAN: {e}")
-
-        # ═══════════════════════════════════════════════════════════════
-        # PASO 2: BUSCAR POR NOMBRE SIMILAR
-        # ═══════════════════════════════════════════════════════════════
-        try:
-            search_pattern = f"%{nombre_normalizado[:50]}%"
-            cursor.execute(
-                f"""
-                SELECT id, nombre_normalizado, codigo_ean
-                FROM productos_maestros
-                WHERE nombre_normalizado {('ILIKE' if is_postgresql else 'LIKE')} {param}
-                LIMIT 10
-            """,
-                (search_pattern,),
-            )
-
-            candidatos = cursor.fetchall()
-
-            for candidato in candidatos:
-                if not candidato or len(candidato) < 3:
-                    continue
-
-                cand_id = candidato[0]
-                cand_nombre = candidato[1]
-
-                if not cand_id or not cand_nombre:
-                    continue
-
-                similitud = calcular_similitud(nombre_normalizado, cand_nombre)
-
-                if similitud >= 0.90:
-                    producto_id = cand_id
-                    print(
-                        f"   ✅ Encontrado por similitud: ID={producto_id} (sim={similitud:.2f})"
-                    )
-                    return producto_id
-
-        except Exception as e:
-            print(f"   ⚠️ Error buscando por similitud: {e}")
-            traceback.print_exc()
+                print(f"   ⚠️ Error buscando por similitud: {e}")
+                traceback.print_exc()
 
         # ═══════════════════════════════════════════════════════════════
         # PASO 3: NO ENCONTRADO → VALIDAR Y CREAR
         # ═══════════════════════════════════════════════════════════════
         print(f"   ℹ️  Producto no encontrado → Validando con sistema completo...")
 
-        # Inicializar AprendizajeManager
         aprendizaje_mgr = None
 
         if APRENDIZAJE_AVAILABLE:
@@ -735,7 +629,6 @@ def buscar_o_crear_producto_inteligente(
             except Exception as e:
                 print(f"   ⚠️ Error AprendizajeManager: {e}")
 
-        # Validar con sistema completo V8.0
         resultado_validacion = validar_nombre_con_sistema_completo(
             nombre_ocr_original=nombre,
             nombre_corregido=nombre_normalizado,
@@ -754,7 +647,26 @@ def buscar_o_crear_producto_inteligente(
         print(f"   📊 Fuente: {resultado_validacion['fuente']}")
         print(f"   🎯 Confianza: {resultado_validacion['confianza']:.0%}")
 
-        # Crear producto
+        # Para PLUs, agregar el código al nombre si es nuevo
+        # Esto ayuda a distinguir productos con mismo nombre pero diferente PLU
+        if tipo_codigo == "PLU" and codigo:
+            # Verificar si ya existe un producto con el mismo nombre pero diferente PLU
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM productos_maestros
+                WHERE nombre_normalizado = %s
+            """,
+                (nombre_final,),
+            )
+            existe = cursor.fetchone()
+            if existe and existe[0] > 0:
+                # Ya existe un producto con este nombre, agregar PLU para diferenciar
+                nombre_final_con_plu = f"{nombre_final} PLU{codigo}"
+                print(
+                    f"   ⚠️ Nombre duplicado, diferenciando con PLU: {nombre_final_con_plu}"
+                )
+                nombre_final = nombre_final_con_plu
+
         producto_id = crear_producto_en_ambas_tablas(
             cursor=cursor,
             conn=conn,
@@ -768,7 +680,6 @@ def buscar_o_crear_producto_inteligente(
             print(f"   ❌ SKIP: No se pudo crear '{nombre_final}'")
             return None
 
-        # ✅ NUEVO: Marcar para revisión si necesario
         if resultado_validacion.get("necesita_revision", False) and producto_id:
             try:
                 marcar_para_revision_admin(
@@ -797,23 +708,12 @@ def buscar_o_crear_producto_inteligente(
 # MENSAJE DE CARGA
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
-print("✅ product_matcher.py V8.0 - Sistema con Jerarquía de Validación")
+print("✅ product_matcher.py V8.1 - Búsqueda por PLU Prioritaria")
 print("=" * 80)
-print("🎯 FLUJO DE VALIDACIÓN:")
-print("   1️⃣ Productos Referencia (EAN oficial) → 99% confianza")
-print("   2️⃣ Historial PLU (frecuencia en BD) → 80% confianza")
-print("   3️⃣ Aprendizaje Automático (validados) → 70%+ confianza")
-print("   4️⃣ OCR Corregido (sin validación) → 60% confianza")
+print("🎯 CAMBIOS V8.1:")
+print("   ✅ Busca por PLU ANTES de buscar por nombre similar")
+print("   ✅ Evita mezclar productos con mismo nombre pero diferente PLU")
+print("   ✅ Diferencia productos duplicados agregando PLU al nombre")
 print("=" * 80)
-print("📋 REVISIÓN ADMIN:")
-print("   • EANs no en productos_referencia → Agregar datos oficiales")
-print("   • PLUs nuevos o poco frecuentes → Validar nombre")
-print("   • Discrepancias OCR vs Historial → Resolver conflicto")
-print("   • Productos sin validación externa → Confirmar nombre")
-print("=" * 80)
-print(f"❌ Perplexity: DESHABILITADO (inventaba texto)")
-print(
-    f"{'✅' if PLU_CONSOLIDATOR_AVAILABLE and ENABLE_PLU_CONSOLIDATION else '⚠️ '} Consolidación PLU: {'ACTIVA' if ENABLE_PLU_CONSOLIDATION else 'INACTIVA'}"
-)
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("=" * 80)
