@@ -1,12 +1,14 @@
 """
-claude_invoice.py - VERSIÓN 5.1 - ANTI-INVENCIÓN + MULTI-FORMATO
+claude_invoice.py - VERSIÓN 6.0 - LECTURA EXACTA COMO HUMANO
 ========================================================================
 
-🎯 VERSIÓN 5.1 - CORRECCIONES CRÍTICAS:
-- ✅ Reglas estrictas para NO inventar productos
-- ✅ Validación de cantidad x precio = total
-- ✅ Mejor manejo de formato FARMATODO
-- ✅ Límite de productos por factura
+🎯 VERSIÓN 6.0 - LECTURA INTELIGENTE:
+- ✅ Detecta formato automáticamente (Éxito, Olímpica, Farmatodo, etc.)
+- ✅ Lee EXACTAMENTE lo que está en la factura
+- ✅ NO inventa productos ni cantidades
+- ✅ Respeta PLUs diferentes = productos diferentes
+- ✅ NO agrupa por PLU (cada línea es un ítem)
+- ✅ Validación: suma de precios ≈ total factura
 """
 
 import anthropic
@@ -58,7 +60,8 @@ PALABRAS_BASURA = [
     "empaque",
     "bsa p empacar",
     "bsa p/empacar",
-    "biodegradable",  # ← Nuevo
+    "biodegradable",
+    "total item",
 ]
 
 
@@ -127,7 +130,8 @@ CORRECCIONES_OCR = {
     "MOL": "MOLIDA",
     "ESP": "ESPECIAL",
     "BSA": "BOLSA",
-    "P/EMPACAR": "PARA EMPACAR",
+    "LECHEE": "LECHE",
+    "CREMAA": "CREMA",
 }
 
 
@@ -206,7 +210,7 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 
 
 # ==============================================================================
-# PROCESAMIENTO CON CLAUDE VISION - V5.1
+# PROCESAMIENTO CON CLAUDE VISION - V6.0 LECTURA EXACTA
 # ==============================================================================
 
 
@@ -216,12 +220,12 @@ def parse_invoice_with_claude(
     aplicar_aprendizaje: bool = True,
 ) -> Dict:
     """
-    Procesa factura con Claude Vision API - V5.1
-    Con reglas estrictas anti-invención
+    Procesa factura con Claude Vision API - V6.0
+    Lee EXACTAMENTE como un humano leería la factura
     """
     try:
         print("=" * 80)
-        print("🤖 CLAUDE INVOICE V5.1 - ANTI-INVENCIÓN + MULTI-FORMATO")
+        print("🤖 CLAUDE INVOICE V6.0 - LECTURA EXACTA COMO HUMANO")
         if establecimiento_preseleccionado:
             print(f"🏪 ESTABLECIMIENTO: {establecimiento_preseleccionado.upper()}")
         print("=" * 80)
@@ -245,112 +249,198 @@ def parse_invoice_with_claude(
             else '"NOMBRE_DEL_ESTABLECIMIENTO"'
         )
 
-        # ========== PROMPT V5.1 CON REGLAS ANTI-INVENCIÓN ==========
-        prompt = f"""Eres un experto en extracción de datos de facturas colombianas.
+        # ========== PROMPT V6.0 - LECTURA EXACTA ==========
+        prompt = f"""Eres un experto en leer facturas colombianas. Tu trabajo es leer EXACTAMENTE lo que está escrito, sin inventar ni modificar nada.
 
-# ⚠️ REGLA #1: NO INVENTAR PRODUCTOS
+# 🔍 PASO 1: IDENTIFICA EL FORMATO DE LA FACTURA
 
-**CRÍTICO:** Solo extraer productos que CLARAMENTE aparecen en la imagen.
-- Si no puedes leer claramente un producto, NO LO INCLUYAS
-- Si hay duda sobre el nombre, código o precio, OMÍTELO
-- NUNCA crear variantes o fragmentos de productos
-- Cada producto físico = UNA SOLA entrada en la lista
+Mira el ENCABEZADO de la factura para identificar el formato:
 
-**VALIDACIÓN OBLIGATORIA:**
-- Suma de (precio × cantidad) debe aproximarse al TOTAL de la factura
-- Si la suma difiere más del 20% del total, REVISAR extracción
-- Máximo 50 productos por factura típica
-
-# 🎯 MISIÓN
-
-Extraer CADA producto REAL con:
-1. **Código** (PLU/EAN) - Número a la IZQUIERDA
-2. **Nombre COMPLETO** - Texto descriptivo
-3. **Precio UNITARIO** - Precio por 1 unidad
-4. **Cantidad** - Cuántas unidades o kg
-
-# 📋 FORMATOS DE FACTURAS
-
-## OLÍMPICA
+**FORMATO A - ÉXITO/CARULLA:**
+Si ves: "PLU    DETALLE    PRECIO"
 ```
-1393170 ARROZ DODAPEPA 3KG            *
-02 un      16.650    1         16.650
-1393170 AHORRO (R)DONAPEPA         3.350-
-    PRECIO FINAL                  13.300
+1 1/u x 11.450 V.Ahorro 0
+1413568 Huevo Rojo AA 15    11.450
 ```
-Extraer: PLU=1393170, Nombre=ARROZ DONA PEPA 3KG, Precio=13300, Cant=1
-**NOTA:** Si el mismo PLU aparece 2 veces = 2 unidades del MISMO producto
 
-## ÉXITO / CARULLA
+**FORMATO B - OLÍMPICA:**
+Si ves: "# UM  Vr. Unit  Cant  Vr. Total"
 ```
-13 1/u x 27.800 V.Ahorro 5.560
-187687  MINI LYNE                      22.240A
+1393170 ARROZ DODAPEPA 3KG    *
+02 un      16.650    1    16.650
 ```
-Extraer: PLU=187687, Nombre=MINI LYNE, Precio=22240, Cant=1
 
-## FARMATODO (⚠️ FORMATO ESPECIAL)
+**FORMATO C - FARMATODO:**
+Si ves: "Artículo  Cantidad  Precio  Importe"
 ```
-PROTECTOR CAREFREE SIN FRAGANCIA LARGOS X40UN
-101047110    2        7.650      15.300
+PROTECTOR CAREFREE SIN FRAGANCIA
+101047110    2    7.650    15.300
 ```
-- Línea 1: NOMBRE del producto
-- Línea 2: Código + Cantidad + Precio Unit + Total
-Extraer: Código=101047110, Nombre=PROTECTOR CAREFREE..., Precio=7650, Cant=2
 
-**IMPORTANTE FARMATODO:**
-- El NOMBRE está ARRIBA del código
-- El código tiene 9 dígitos típicamente
-- "Ahorro" es línea separada, IGNORAR
-
-## SIN CÓDIGO
+**FORMATO D - SUPERMERCADOS PEQUEÑOS:**
+Si ves: "UND  DESCRIPCION  PRECIO  TOTAL"
 ```
 1    QUESO PERA ANDES    3200    3.200
 ```
-Extraer: Código="", Nombre=QUESO PERA ANDES, Precio=3200, Cant=1
 
-# ❌ IGNORAR ESTAS LÍNEAS
+# 📋 CÓMO LEER CADA FORMATO
 
-- "Ahorro" (solo descuento)
-- "Bolsa Biodegradable" (empaque)
-- "SUBTOTAL", "TOTAL", "IVA"
-- Líneas con solo números
-- Fragmentos de texto sin sentido
+## FORMATO A - ÉXITO/CARULLA (El más común)
 
-# ✅ CORRECCIONES OBLIGATORIAS
+Cada producto tiene DOS líneas:
+```
+1 1/u x 11.450 V.Ahorro 0        ← LÍNEA 1: INFO
+1413568 Huevo Rojo AA 15  11.450  ← LÍNEA 2: PRODUCTO
+```
 
-- DODAPEPA → DONA PEPA
-- BANAN → BANANO
-- QSO → QUESO
-- GRL → GRANEL
+**LÍNEA 1 - INFO:**
+- "1" al INICIO = NÚMERO DE LÍNEA (NO ES CANTIDAD, IGNORAR)
+- "1/u" = CANTIDAD (1 unidad)
+- "0.500/KGM" = CANTIDAD en kg (0.5 kg)
+- "11.450" = Precio unitario
+- "V.Ahorro 0" = Sin descuento
+
+**LÍNEA 2 - PRODUCTO:**
+- "1413568" = PLU (código de 6-7 dígitos)
+- "Huevo Rojo AA 15" = NOMBRE del producto
+- "11.450" = PRECIO FINAL
+
+**⚠️ REGLA CRÍTICA:** El PRIMER número de la línea 1 es el NÚMERO DE LÍNEA, NO la cantidad.
+- "1 1/u" = Línea 1, Cantidad 1
+- "2 1/u" = Línea 2, Cantidad 1
+- "3 1/u" = Línea 3, Cantidad 1
+- "4 0.500/KGM" = Línea 4, Cantidad 0.5 kg
+
+## FORMATO B - OLÍMPICA
+
+```
+1393170 ARROZ DODAPEPA 3KG    *
+02 un      16.650    1    16.650
+1393170 AHORRO (R)DONAPEPA    3.350-
+    PRECIO FINAL              13.300
+```
+
+- PLU + Nombre en primera línea
+- Precio y cantidad en segunda línea
+- Si hay AHORRO, usar PRECIO FINAL
+
+## FORMATO C - FARMATODO
+
+```
+PROTECTOR CAREFREE SIN FRAGANCIA LARGOS X40UN
+101047110    2    7.650    15.300
+```
+
+- NOMBRE arriba
+- Código + Cantidad + Precio Unit + Total abajo
+
+## FORMATO D - SIN CÓDIGO
+
+```
+1    QUESO PERA ANDES    3200    3.200
+```
+
+- Cantidad + Nombre + Precio Unit + Total
+- NO hay código PLU
+
+# ⚠️ REGLAS ABSOLUTAS
+
+1. **CADA LÍNEA DE PRODUCTO = UN ÍTEM SEPARADO**
+   Si el mismo PLU aparece 2 veces en la factura, son 2 ítems separados.
+   ```
+   3266709 Bizcochos De Sol    11.050A
+   3266709 Bizcochos De Sol    11.050A
+   ```
+   = 2 ítems, cada uno con cantidad 1, mismo PLU
+
+2. **PLUs DIFERENTES = PRODUCTOS DIFERENTES**
+   ```
+   3313023 Crema Leche Semi    10.750
+   3313024 Crema Leche Semi     5.240
+   ```
+   = 2 productos DIFERENTES (aunque nombre similar)
+
+3. **LEER EXACTAMENTE LO QUE DICE**
+   - Si dice "Huevo Rojo AA 15" → escribir "HUEVO ROJO AA 15"
+   - Si dice "Bizcochos De Sol" → escribir "BIZCOCHOS DE SOL"
+   - NO inventar presentaciones ni marcas
+
+4. **VALIDAR CON EL TOTAL**
+   - Suma de todos los precios ≈ SUBTOTAL de la factura
+   - Si "Total Item: 5" → debe haber 5 productos en la lista
+
+5. **IGNORAR LÍNEAS QUE NO SON PRODUCTOS**
+   - "SUBTOTAL", "TOTAL", "IVA"
+   - "DESCUENTO", "AHORRO" (líneas informativas)
+   - "Total Item: X" (resumen)
 
 # 📝 FORMATO DE RESPUESTA
 
-SOLO JSON válido, sin markdown:
+IMPORTANTE: Responde SOLO con JSON válido, sin markdown ni explicaciones.
 
 {"{"}
   "establecimiento": {establecimiento_info},
   "fecha": "YYYY-MM-DD",
-  "total": TOTAL_FACTURA,
+  "total": TOTAL_FACTURA_ENTERO,
   "productos": [
     {"{"}
-      "codigo": "CODIGO_O_VACIO",
-      "nombre": "NOMBRE_COMPLETO",
-      "precio": PRECIO_UNITARIO,
-      "cantidad": CANTIDAD,
+      "codigo": "PLU_O_EAN",
+      "nombre": "NOMBRE_EXACTO_DEL_PRODUCTO",
+      "precio": PRECIO_UNITARIO_ENTERO,
+      "cantidad": CANTIDAD_DECIMAL,
       "unidad": "un"
     {"}"}
   ]
 {"}"}
 
-# 🔍 VERIFICACIÓN FINAL
+# 🎯 EJEMPLO COMPLETO DE EXTRACCIÓN
 
-Antes de responder, verifica:
-1. ¿Cada producto tiene nombre claro y legible? ✓
-2. ¿Los precios son razonables (500-500,000 pesos)? ✓
-3. ¿La suma aproxima al total de la factura? ✓
-4. ¿No hay productos duplicados o inventados? ✓
+**FACTURA ÉXITO:**
+```
+PLU    DETALLE    PRECIO
+1 1/u x 11.450 V.Ahorro 0
+1413568 Huevo Rojo AA 15     11.450
+2 1/u x 11.050 V.Ahorro 0
+3266709 Bizcochos De Sol     11.050A
+3 1/u x 11.050 V.Ahorro 0
+3266709 Bizcochos De Sol     11.050A
+4 1/u x 10.750 V.Ahorro 0
+3313023 Crema Leche Semi     10.750
+5 1/u x 5.240 V.Ahorro 0
+3313024 Crema Leche Semi      5.240
+Total Item: 5
+SUBTOTAL: 49.540
+```
 
-**ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON:**"""
+**EXTRACCIÓN CORRECTA:**
+{"{"}
+  "establecimiento": "EXITO",
+  "fecha": "2025-10-03",
+  "total": 49540,
+  "productos": [
+    {{"codigo": "1413568", "nombre": "HUEVO ROJO AA 15", "precio": 11450, "cantidad": 1, "unidad": "un"}},
+    {{"codigo": "3266709", "nombre": "BIZCOCHOS DE SOL", "precio": 11050, "cantidad": 1, "unidad": "un"}},
+    {{"codigo": "3266709", "nombre": "BIZCOCHOS DE SOL", "precio": 11050, "cantidad": 1, "unidad": "un"}},
+    {{"codigo": "3313023", "nombre": "CREMA LECHE SEMI", "precio": 10750, "cantidad": 1, "unidad": "un"}},
+    {{"codigo": "3313024", "nombre": "CREMA LECHE SEMI", "precio": 5240, "cantidad": 1, "unidad": "un"}}
+  ]
+{"}"}
+
+**VALIDACIÓN:**
+- 5 productos = Total Item: 5 ✓
+- 11450 + 11050 + 11050 + 10750 + 5240 = 49540 ✓
+- Cada PLU leído correctamente ✓
+
+# ✅ VERIFICACIÓN FINAL
+
+Antes de responder:
+1. ¿Identifiqué correctamente el formato? ✓
+2. ¿Leí cada PLU exactamente como aparece? ✓
+3. ¿La cantidad es 1 por defecto (no el número de línea)? ✓
+4. ¿La suma de precios ≈ total de la factura? ✓
+5. ¿No inventé ningún producto? ✓
+
+**ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON VÁLIDO:**"""
 
         print("📸 Enviando imagen a Claude Vision API...")
 
@@ -414,12 +504,12 @@ Antes de responder, verifica:
             except:
                 pass
 
-        # ========== POST-PROCESAMIENTO CON VALIDACIÓN ==========
+        # ========== POST-PROCESAMIENTO MÍNIMO ==========
+        # NO agrupar por PLU - cada línea es un ítem separado
         productos_finales = []
-        productos_por_codigo = {}
         suma_total = 0
 
-        print(f"\n🔧 POST-PROCESAMIENTO:")
+        print(f"\n🔧 POST-PROCESAMIENTO (lectura exacta):")
 
         for prod in data.get("productos", []):
             codigo = str(prod.get("codigo", "")).strip()
@@ -434,22 +524,22 @@ Antes de responder, verifica:
                 print(f"   🗑️  Ignorado: '{nombre[:40]}' - {razon}")
                 continue
 
-            # Corregir nombre
+            # Corregir errores OCR obvios
             nombre_corregido = corregir_nombre_producto(nombre)
             nombre_final = normalizar_nombre_producto(nombre_corregido)
 
-            if nombre_final != nombre:
+            if nombre_final != nombre.upper():
                 print(f"   📝 Corregido: '{nombre[:30]}' → '{nombre_final[:30]}'")
 
             # Limpiar precio
             precio_limpio = limpiar_precio_colombiano(precio)
 
-            # Validar precio mínimo y máximo
+            # Validar precio
             if precio_limpio < 100:
                 print(f"   ⚠️  Precio muy bajo: '{nombre_final}' - ${precio_limpio}")
                 continue
 
-            if precio_limpio > 10000000:  # 10 millones
+            if precio_limpio > 10000000:
                 print(f"   ⚠️  Precio muy alto: '{nombre_final}' - ${precio_limpio:,}")
                 continue
 
@@ -457,37 +547,17 @@ Antes de responder, verifica:
             subtotal = int(precio_limpio * cantidad)
             suma_total += subtotal
 
-            # Agrupar por código
-            if codigo and len(codigo) >= 3:
-                if codigo in productos_por_codigo:
-                    productos_por_codigo[codigo]["cantidad"] += cantidad
-                    print(
-                        f"   📦 Agrupado {codigo}: +{cantidad} = {productos_por_codigo[codigo]['cantidad']}"
-                    )
-                else:
-                    productos_por_codigo[codigo] = {
-                        "codigo": codigo,
-                        "nombre": nombre_final,
-                        "precio": precio_limpio,
-                        "cantidad": cantidad,
-                        "unidad": unidad,
-                        "nombre_ocr_original": nombre,
-                    }
-            else:
-                productos_finales.append(
-                    {
-                        "codigo": "",
-                        "nombre": nombre_final,
-                        "precio": precio_limpio,
-                        "cantidad": cantidad,
-                        "unidad": unidad,
-                        "nombre_ocr_original": nombre,
-                    }
-                )
-
-        # Agregar productos agrupados
-        for codigo, prod_data in productos_por_codigo.items():
-            productos_finales.append(prod_data)
+            # Agregar producto (SIN agrupar por PLU)
+            productos_finales.append(
+                {
+                    "codigo": codigo,
+                    "nombre": nombre_final,
+                    "precio": precio_limpio,
+                    "cantidad": cantidad,
+                    "unidad": unidad,
+                    "nombre_ocr_original": nombre,
+                }
+            )
 
         data["productos"] = productos_finales
 
@@ -499,36 +569,36 @@ Antes de responder, verifica:
         print(f"   Suma calculada: ${suma_total:,}")
 
         if total_declarado > 0:
-            diferencia_pct = abs(suma_total - total_declarado) / total_declarado * 100
-            print(f"   Diferencia: {diferencia_pct:.1f}%")
+            diferencia = abs(suma_total - total_declarado)
+            diferencia_pct = diferencia / total_declarado * 100
+            print(f"   Diferencia: ${diferencia:,} ({diferencia_pct:.1f}%)")
 
-            if diferencia_pct > 50:
-                print(
-                    f"   ⚠️  ALERTA: Diferencia muy grande, posible error en extracción"
-                )
+            if diferencia_pct > 10:
+                print(f"   ⚠️  ALERTA: Diferencia mayor al 10%, revisar extracción")
+            else:
+                print(f"   ✅ Validación correcta")
 
         # ========== ESTADÍSTICAS ==========
-        con_ean = sum(1 for p in productos_finales if len(p.get("codigo", "")) >= 8)
-        con_plu = sum(1 for p in productos_finales if 3 <= len(p.get("codigo", "")) < 8)
+        con_codigo = sum(1 for p in productos_finales if p.get("codigo"))
         sin_codigo = sum(1 for p in productos_finales if not p.get("codigo"))
 
+        # Contar PLUs únicos
+        plus_unicos = set(p.get("codigo") for p in productos_finales if p.get("codigo"))
+
         print(f"\n" + "=" * 80)
-        print(f"📊 RESULTADOS OCR V5.1:")
+        print(f"📊 RESULTADOS OCR V6.0 - LECTURA EXACTA:")
         print(f"   🏪 Establecimiento: {data.get('establecimiento', 'N/A')}")
         print(f"   📅 Fecha: {data.get('fecha', 'N/A')}")
         print(f"   💰 Total factura: ${total_declarado:,}")
-        print(f"   📦 Productos únicos: {len(productos_finales)}")
-        print(f"\n📊 CÓDIGOS:")
-        print(f"   📦 EAN (8+ dígitos): {con_ean}")
-        print(f"   🏷️  PLU (3-7 dígitos): {con_plu}")
+        print(f"   📦 Ítems totales: {len(productos_finales)}")
+        print(f"   🏷️  PLUs únicos: {len(plus_unicos)}")
         print(f"   ❓ Sin código: {sin_codigo}")
 
-        print(f"\n📋 PRODUCTOS EXTRAÍDOS:")
+        print(f"\n📋 PRODUCTOS EXTRAÍDOS (exactamente como en factura):")
         for i, prod in enumerate(productos_finales, 1):
             codigo_str = prod["codigo"] if prod["codigo"] else "SIN-COD"
-            subtotal = int(prod["precio"] * prod["cantidad"])
             print(
-                f"   {i:2}. {codigo_str:12} | {prod['nombre'][:30]:30} | ${prod['precio']:,} x {prod['cantidad']} = ${subtotal:,}"
+                f"   {i:2}. PLU:{codigo_str:10} | {prod['nombre'][:35]:35} | ${prod['precio']:,} x {prod['cantidad']}"
             )
 
         print("=" * 80)
@@ -538,12 +608,11 @@ Antes de responder, verifica:
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-v5.1-antiinvencion",
+                    "metodo": "claude-vision-v6.0-lectura-exacta",
                     "modelo": "claude-sonnet-4-20250514",
                     "establecimiento_confirmado": bool(establecimiento_preseleccionado),
-                    "productos_unicos": len(productos_finales),
-                    "con_ean": con_ean,
-                    "con_plu": con_plu,
+                    "items_totales": len(productos_finales),
+                    "plus_unicos": len(plus_unicos),
                     "sin_codigo": sin_codigo,
                     "suma_calculada": suma_total,
                     "total_declarado": total_declarado,
@@ -566,5 +635,12 @@ Antes de responder, verifica:
 
 
 print("=" * 80)
-print("✅ claude_invoice.py V5.1 - ANTI-INVENCIÓN + MULTI-FORMATO")
+print("✅ claude_invoice.py V6.0 - LECTURA EXACTA COMO HUMANO")
+print("=" * 80)
+print("🎯 CARACTERÍSTICAS:")
+print("   ✅ Detecta formato automáticamente")
+print("   ✅ Lee EXACTAMENTE lo que está en la factura")
+print("   ✅ NO agrupa por PLU (cada línea = un ítem)")
+print("   ✅ Respeta PLUs diferentes = productos diferentes")
+print("   ✅ Valida suma vs total de factura")
 print("=" * 80)
