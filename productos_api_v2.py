@@ -112,7 +112,7 @@ async def obtener_productos(
                 SELECT
                     producto_maestro_id,
                     COUNT(*) as veces_comprado,
-                    AVG(precio_unitario) as precio_promedio
+                    AVG(precio_pagado) as precio_promedio
                 FROM items_factura
                 WHERE producto_maestro_id IS NOT NULL
                 GROUP BY producto_maestro_id
@@ -276,7 +276,7 @@ async def obtener_producto_detalle(producto_id: int):
                     WHERE producto_maestro_id = pm.id
                 ) as veces_comprado,
                 (
-                    SELECT AVG(precio_unitario)::integer
+                    SELECT AVG(precio_pagado)::integer
                     FROM items_factura
                     WHERE producto_maestro_id = pm.id
                 ) as precio_promedio
