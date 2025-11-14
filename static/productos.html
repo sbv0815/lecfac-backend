@@ -644,6 +644,7 @@
 
             <!-- Actions Bar -->
             <!-- Actions Bar -->
+            <!-- Actions Bar -->
             <div class="actions-bar">
                 <div class="actions-left">
                     <span class="selected-count" id="selected-count">0 seleccionados</span>
@@ -657,67 +658,52 @@
                         ✖️ Deseleccionar
                     </button>
                 </div>
-
-                <!-- Table -->
-                <div class="productos-table">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th class="checkbox-cell">
-                                    <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
-                                </th>
-                                <th>ID</th>
-                                <th>EAN</th>
-                                <th>PLU</th>
-                                <th>Establecimiento</th> <!-- ⭐ NUEVA COLUMNA -->
-                                <th>Nombre</th>
-                                <th>Marca</th>
-                                <th>Categoría</th>
-                                <th>Precio</th>
-                                <th>Compras</th>
-                                <th>Estado</th>
-                                <th style="width: 150px;">Acciones</th>
-                            </tr>
-                        </thead>
-
-                        <tbody id="productos-body">
-                            <tr>
-                                <td colspan="11" style="text-align: center; padding: 40px;">
-                                    <div class="loading"></div>
-                                    <p style="margin-top: 10px;">Cargando productos...</p>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <div class="pagination" id="pagination"></div>
-            </div>
-
-            <!-- TAB 2: DUPLICADOS -->
-            <div id="tab-duplicados" class="tab-content">
-                <div class="alert alert-info">
-                    <strong>🔍 Detección de Duplicados</strong><br>
-                    El sistema detecta automáticamente productos duplicados por:
-                    <ul style="margin-top: 10px; margin-left: 20px;">
-                        <li>Mismo código EAN pero diferentes IDs (🔴 Crítico)</li>
-                        <li>Mismo PLU en el mismo establecimiento (🔴 Crítico)</li>
-                        <li>Nombres muy similares (🟡 Revisar)</li>
-                    </ul>
-                </div>
-
-                <div style="text-align: center; margin: 30px 0;">
-                    <button class="btn-primary" onclick="cargarDuplicados()"
-                        style="font-size: 16px; padding: 15px 30px;">
-                        🔍 Analizar Todos los Productos
+                <div>
+                    <button class="btn-warning" onclick="detectarDuplicados()">
+                        🔍 Detectar Duplicados
                     </button>
                 </div>
-
-                <div id="duplicados-container">
-                    <!-- Duplicados se cargan aquí -->
-                </div>
             </div>
+
+            <!-- Table -->
+            <div class="productos-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="checkbox-cell">
+                                <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                            </th>
+                            <th>ID</th>
+                            <th>EAN</th>
+                            <th>PLU</th>
+                            <th>Establecimiento</th>
+                            <th>Nombre</th>
+                            <th>Marca</th>
+                            <th>Categoría</th>
+                            <th>Precio</th>
+                            <th>Compras</th>
+                            <th>Estado</th>
+                            <th style="width: 150px;">Acciones</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="productos-body">
+                        <tr>
+                            <td colspan="12" style="text-align: center; padding: 40px;">
+                                <div class="loading"></div>
+                                <p style="margin-top: 10px;">Cargando productos...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination" id="pagination"></div>
+        </div>
+
+        <!-- TAB 2: DUPLICADOS -->
+        <div id="tab-duplicados" class="tab-content">
 
             <!-- TAB 3: CALIDAD DE DATOS -->
             <div id="tab-calidad" class="tab-content">
