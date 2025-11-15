@@ -1,11 +1,11 @@
 """
-product_matcher.py - VERSIÓN 9.0 - Usa productos_maestros_v2
+product_matcher.py - VERSIÓN 9.1 - GUARDA PLUs CORRECTAMENTE
 ========================================================================
 
-🎯 CAMBIOS V9.0:
+🎯 CAMBIOS V9.1:
 - ✅ Usa productos_maestros_v2 en lugar de productos_maestros
 - ✅ NO agrega PLU al nombre del producto
-- ✅ Guarda PLUs en productos_por_establecimiento
+- ✅ GUARDA PLUs en productos_por_establecimiento (FIX CRÍTICO)
 - ✅ Campos correctos: nombre_consolidado, categoria_id, estado
 """
 
@@ -188,7 +188,6 @@ def buscar_nombre_por_plu_historial(
         return None
 
     try:
-        # ⭐ CAMBIO: Usa productos_maestros_v2
         cursor.execute(
             """
             SELECT pm.nombre_consolidado, COUNT(*) as frecuencia, MAX(if2.fecha_creacion) as ultima_vez
@@ -420,7 +419,7 @@ def validar_nombre_con_sistema_completo(
 
 def crear_producto_en_v2(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None):
     """
-    ⭐ VERSIÓN 9.0: Crea producto en productos_maestros_v2 (tabla nueva)
+    ⭐ VERSIÓN 9.1: Crea producto en productos_maestros_v2 (tabla nueva)
     """
     try:
         if not nombre_normalizado or not nombre_normalizado.strip():
@@ -434,7 +433,6 @@ def crear_producto_en_v2(cursor, conn, nombre_normalizado, codigo_ean=None, marc
 
         print(f"   📝 Creando producto en V2: {nombre_final}")
 
-        # ⭐ USAR productos_maestros_v2
         cursor.execute(
             """
             INSERT INTO productos_maestros_v2 (
@@ -472,6 +470,44 @@ def crear_producto_en_v2(cursor, conn, nombre_normalizado, codigo_ean=None, marc
         return None
 
 
+def guardar_plu_en_establecimiento(
+    cursor,
+    conn,
+    producto_id: int,
+    establecimiento_id: int,
+    codigo_plu: str,
+    precio: int,
+) -> bool:
+    """
+    ⭐ NUEVO V9.1: Guarda el PLU en productos_por_establecimiento
+    """
+    if not producto_id or not establecimiento_id or not codigo_plu:
+        return False
+
+    try:
+        cursor.execute(
+            """
+            INSERT INTO productos_por_establecimiento (
+                producto_maestro_id, establecimiento_id, codigo_plu,
+                precio_unitario, fecha_actualizacion
+            ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (producto_maestro_id, establecimiento_id)
+            DO UPDATE SET
+                codigo_plu = EXCLUDED.codigo_plu,
+                precio_unitario = EXCLUDED.precio_unitario,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+        """,
+            (producto_id, establecimiento_id, codigo_plu, precio),
+        )
+        conn.commit()
+        print(f"   💾 PLU {codigo_plu} guardado en productos_por_establecimiento")
+        return True
+    except Exception as e:
+        print(f"   ⚠️ Error guardando PLU en establecimiento: {e}")
+        traceback.print_exc()
+        return False
+
+
 def buscar_o_crear_producto_inteligente(
     codigo: str,
     nombre: str,
@@ -485,17 +521,19 @@ def buscar_o_crear_producto_inteligente(
     establecimiento_id: int = None,
 ) -> Optional[int]:
     """
-    ⭐ VERSIÓN 9.0: Función principal - USA productos_maestros_v2
+    ⭐ VERSIÓN 9.1: Función principal - USA productos_maestros_v2
     ✅ NO agrega PLU al nombre
     ✅ Busca en tabla V2
+    ✅ GUARDA PLU en productos_por_establecimiento
     """
     import os
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.0 (tabla V2):")
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.1 (tabla V2):")
     print(f"   Código: {codigo or 'Sin código'}")
     print(f"   Nombre: {nombre[:50]}")
     print(f"   Precio: ${precio:,}")
     print(f"   Establecimiento: {establecimiento}")
+    print(f"   Establecimiento ID: {establecimiento_id}")
 
     # Definir variables ANTES de usarlas
     nombre_normalizado = normalizar_nombre_producto(nombre, True)
@@ -527,7 +565,7 @@ def buscar_o_crear_producto_inteligente(
                     f"   ✅ Encontrado por PLU en productos_por_establecimiento: ID={producto_id}"
                 )
 
-                # Actualizar veces_visto
+                # Actualizar veces_visto y precio
                 cursor.execute(
                     """
                     UPDATE productos_maestros_v2
@@ -537,6 +575,17 @@ def buscar_o_crear_producto_inteligente(
                 """,
                     (producto_id,),
                 )
+
+                # Actualizar precio en productos_por_establecimiento
+                cursor.execute(
+                    """
+                    UPDATE productos_por_establecimiento
+                    SET precio_unitario = %s, fecha_actualizacion = CURRENT_TIMESTAMP
+                    WHERE producto_maestro_id = %s AND establecimiento_id = %s
+                """,
+                    (precio, producto_id, establecimiento_id),
+                )
+
                 conn.commit()
                 return producto_id
         except Exception as e:
@@ -547,7 +596,6 @@ def buscar_o_crear_producto_inteligente(
     # ═══════════════════════════════════════════════════════════════
     if tipo_codigo == "EAN" and codigo:
         try:
-            # ⭐ CAMBIO: Buscar en productos_maestros_v2
             cursor.execute(
                 f"SELECT id, nombre_consolidado FROM productos_maestros_v2 WHERE codigo_ean = {param}",
                 (codigo,),
@@ -569,6 +617,13 @@ def buscar_o_crear_producto_inteligente(
                     (producto_id,),
                 )
                 conn.commit()
+
+                # ⭐ NUEVO: También guardar en productos_por_establecimiento si tiene establecimiento_id
+                if establecimiento_id:
+                    guardar_plu_en_establecimiento(
+                        cursor, conn, producto_id, establecimiento_id, codigo, precio
+                    )
+
                 return producto_id
         except Exception as e:
             print(f"   ⚠️ Error buscando por EAN: {e}")
@@ -580,7 +635,6 @@ def buscar_o_crear_producto_inteligente(
         if not codigo or tipo_codigo == "DESCONOCIDO":
             try:
                 search_pattern = f"%{nombre_normalizado[:50]}%"
-                # ⭐ CAMBIO: Buscar en productos_maestros_v2
                 cursor.execute(
                     f"""
                     SELECT id, nombre_consolidado, codigo_ean
@@ -622,6 +676,18 @@ def buscar_o_crear_producto_inteligente(
                             (producto_id,),
                         )
                         conn.commit()
+
+                        # ⭐ NUEVO: Guardar PLU si existe
+                        if codigo and establecimiento_id:
+                            guardar_plu_en_establecimiento(
+                                cursor,
+                                conn,
+                                producto_id,
+                                establecimiento_id,
+                                codigo,
+                                precio,
+                            )
+
                         return producto_id
 
             except Exception as e:
@@ -674,6 +740,12 @@ def buscar_o_crear_producto_inteligente(
             print(f"   ❌ SKIP: No se pudo crear '{nombre_final}'")
             return None
 
+        # ⭐ NUEVO V9.1: GUARDAR PLU EN productos_por_establecimiento
+        if codigo and establecimiento_id:
+            guardar_plu_en_establecimiento(
+                cursor, conn, producto_id, establecimiento_id, codigo, precio
+            )
+
         if resultado_validacion.get("necesita_revision", False) and producto_id:
             try:
                 marcar_para_revision_admin(
@@ -702,12 +774,13 @@ def buscar_o_crear_producto_inteligente(
 # MENSAJE DE CARGA
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
-print("✅ product_matcher.py V9.0 - USA productos_maestros_v2")
+print("✅ product_matcher.py V9.1 - GUARDA PLUs CORRECTAMENTE")
 print("=" * 80)
-print("🎯 CAMBIOS V9.0:")
+print("🎯 CAMBIOS V9.1:")
 print("   ✅ Busca y crea en productos_maestros_v2 (tabla nueva)")
 print("   ✅ NO agrega PLU al nombre del producto")
-print("   ✅ Busca PLUs en productos_por_establecimiento primero")
+print("   ✅ GUARDA PLUs en productos_por_establecimiento (FIX CRÍTICO)")
+print("   ✅ Actualiza precios en productos_por_establecimiento")
 print("   ✅ Actualiza veces_visto y fecha_ultima_actualizacion")
 print("=" * 80)
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
