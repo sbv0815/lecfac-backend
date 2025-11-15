@@ -81,6 +81,7 @@ def get_postgresql_connection():
 
         if PSYCOPG_VERSION == 3:
             import psycopg
+
             conn = psycopg.connect(database_url)
         else:
             import psycopg2
@@ -96,7 +97,9 @@ def get_postgresql_connection():
 
             # Validar que tenemos todos los componentes necesarios
             if not url.hostname:
-                raise ValueError(f"DATABASE_URL inválida - hostname es None. URL: {database_url[:50]}...")
+                raise ValueError(
+                    f"DATABASE_URL inválida - hostname es None. URL: {database_url[:50]}..."
+                )
 
             conn = psycopg2.connect(
                 host=url.hostname,
@@ -105,8 +108,8 @@ def get_postgresql_connection():
                 password=url.password,
                 port=url.port or 5432,
                 connect_timeout=10,
-                sslmode='prefer',
-                options='-c search_path=public'
+                sslmode="prefer",
+                options="-c search_path=public",
             )
 
         print(f"✅ Conexión PostgreSQL exitosa (psycopg{PSYCOPG_VERSION})")
@@ -115,6 +118,7 @@ def get_postgresql_connection():
     except Exception as e:
         print(f"❌ ERROR CONECTANDO A POSTGRESQL: {e}")
         import traceback
+
         traceback.print_exc()
         return get_sqlite_connection()
 
@@ -448,10 +452,10 @@ def create_postgresql_tables():
         columnas_pm = [row[0] for row in cursor.fetchall()]
 
         columnas_pm_requeridas = {
-            'producto_canonico_id': 'INTEGER REFERENCES productos_canonicos(id)',
-            'auditado_manualmente': 'BOOLEAN DEFAULT FALSE',
-            'validaciones_manuales': 'INTEGER DEFAULT 0',
-            'ultima_validacion': 'TIMESTAMP',
+            "producto_canonico_id": "INTEGER REFERENCES productos_canonicos(id)",
+            "auditado_manualmente": "BOOLEAN DEFAULT FALSE",
+            "validaciones_manuales": "INTEGER DEFAULT 0",
+            "ultima_validacion": "TIMESTAMP",
         }
 
         for columna, tipo in columnas_pm_requeridas.items():
@@ -499,7 +503,7 @@ def create_postgresql_tables():
                 "producto_canonico_id": "INTEGER REFERENCES productos_canonicos(id)",
                 "variante_id": "INTEGER REFERENCES productos_variantes(id)",
                 "establecimiento_id": "INTEGER REFERENCES establecimientos(id)",
-                "producto_maestro_id": "INTEGER"
+                "producto_maestro_id": "INTEGER",
             }
 
             for columna, tipo in columnas_nuevas.items():
@@ -628,7 +632,7 @@ def create_postgresql_tables():
             )
             columnas_items = [row[0] for row in cursor.fetchall()]
 
-            if 'producto_canonico_id' not in columnas_items:
+            if "producto_canonico_id" not in columnas_items:
                 try:
                     cursor.execute(
                         """
@@ -637,12 +641,14 @@ def create_postgresql_tables():
                     """
                     )
                     conn.commit()
-                    print("   ✅ Columna 'producto_canonico_id' agregada a items_factura")
+                    print(
+                        "   ✅ Columna 'producto_canonico_id' agregada a items_factura"
+                    )
                 except Exception as e:
                     print(f"   ⚠️ producto_canonico_id: {e}")
                     conn.rollback()
 
-            if 'variante_id' not in columnas_items:
+            if "variante_id" not in columnas_items:
                 try:
                     cursor.execute(
                         """
@@ -749,24 +755,24 @@ def create_postgresql_tables():
             columnas_inv = [row[0] for row in cursor.fetchall()]
 
             columnas_inv_requeridas = {
-                'producto_canonico_id': 'INTEGER REFERENCES productos_canonicos(id)',
-                'precio_ultima_compra': 'INTEGER',
-                'precio_promedio': 'INTEGER',
-                'precio_minimo': 'INTEGER',
-                'precio_maximo': 'INTEGER',
-                'establecimiento': 'TEXT',
-                'establecimiento_id': 'INTEGER REFERENCES establecimientos(id)',
-                'ubicacion': 'TEXT',
-                'marca': 'TEXT',
-                'cantidad_por_unidad': 'DECIMAL(10, 2)',
-                'fecha_creacion': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
-                'numero_compras': 'INTEGER DEFAULT 0',
-                'cantidad_total_comprada': 'DECIMAL(10, 2) DEFAULT 0',
-                'ultima_factura_id': 'INTEGER REFERENCES facturas(id)',
-                'establecimiento_nombre': 'VARCHAR(255)',
-                'establecimiento_ubicacion': 'VARCHAR(255)',
-                'total_gastado': 'DECIMAL(12,2) DEFAULT 0.0',
-                'dias_desde_ultima_compra': 'INTEGER DEFAULT 0',
+                "producto_canonico_id": "INTEGER REFERENCES productos_canonicos(id)",
+                "precio_ultima_compra": "INTEGER",
+                "precio_promedio": "INTEGER",
+                "precio_minimo": "INTEGER",
+                "precio_maximo": "INTEGER",
+                "establecimiento": "TEXT",
+                "establecimiento_id": "INTEGER REFERENCES establecimientos(id)",
+                "ubicacion": "TEXT",
+                "marca": "TEXT",
+                "cantidad_por_unidad": "DECIMAL(10, 2)",
+                "fecha_creacion": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "numero_compras": "INTEGER DEFAULT 0",
+                "cantidad_total_comprada": "DECIMAL(10, 2) DEFAULT 0",
+                "ultima_factura_id": "INTEGER REFERENCES facturas(id)",
+                "establecimiento_nombre": "VARCHAR(255)",
+                "establecimiento_ubicacion": "VARCHAR(255)",
+                "total_gastado": "DECIMAL(12,2) DEFAULT 0.0",
+                "dias_desde_ultima_compra": "INTEGER DEFAULT 0",
             }
 
             for columna, tipo in columnas_inv_requeridas.items():
@@ -779,7 +785,9 @@ def create_postgresql_tables():
                         """
                         )
                         conn.commit()
-                        print(f"   ✅ Columna '{columna}' agregada a inventario_usuario")
+                        print(
+                            f"   ✅ Columna '{columna}' agregada a inventario_usuario"
+                        )
                     except Exception as e:
                         print(f"   ⚠️ {columna}: {e}")
                         conn.rollback()
@@ -988,7 +996,8 @@ def create_postgresql_tables():
         print("🔧 Configurando tabla auditoria_productos...")
 
         # Crear tabla base sin producto_canonico_id primero
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS auditoria_productos (
                 id SERIAL PRIMARY KEY,
                 usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
@@ -999,36 +1008,44 @@ def create_postgresql_tables():
                 razon TEXT,
                 fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         print("✓ Tabla 'auditoria_productos' creada/verificada")
 
         # Verificar y agregar columna producto_canonico_id si no existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'auditoria_productos'
-        """)
+        """
+        )
         columnas_auditoria = [row[0] for row in cursor.fetchall()]
 
-        if 'producto_canonico_id' not in columnas_auditoria:
+        if "producto_canonico_id" not in columnas_auditoria:
             try:
                 print("   ➕ Agregando columna producto_canonico_id...")
-                cursor.execute("""
+                cursor.execute(
+                    """
                     ALTER TABLE auditoria_productos
                     ADD COLUMN producto_canonico_id INTEGER REFERENCES productos_canonicos(id)
-                """)
+                """
+                )
                 conn.commit()
-                print("   ✅ Columna 'producto_canonico_id' agregada a auditoria_productos")
+                print(
+                    "   ✅ Columna 'producto_canonico_id' agregada a auditoria_productos"
+                )
             except Exception as e:
                 print(f"   ⚠️ producto_canonico_id: {e}")
                 conn.rollback()
         else:
             print("   ✓ Columna 'producto_canonico_id' ya existe")
-    # En database.py, después de crear productos_por_establecimiento
-# (busca la línea ~450 aproximadamente)
+        # En database.py, después de crear productos_por_establecimiento
+        # (busca la línea ~450 aproximadamente)
 
-# 3.6. HISTORIAL DE CAMBIOS EN PRODUCTOS
-        cursor.execute("""
+        # 3.6. HISTORIAL DE CAMBIOS EN PRODUCTOS
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS historial_cambios_productos (
                 id SERIAL PRIMARY KEY,
 
@@ -1052,24 +1069,26 @@ def create_postgresql_tables():
                 origen VARCHAR(50) DEFAULT 'admin',
                 ip_address VARCHAR(45)
             )
-        """)
+        """
+        )
         print("✓ Tabla 'historial_cambios_productos' creada")
 
         # Índices de historial_cambios_productos
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_historial_producto ON historial_cambios_productos(producto_maestro_id)",
-            "historial_cambios_productos.producto"
+            "historial_cambios_productos.producto",
         )
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_historial_fecha ON historial_cambios_productos(fecha_cambio)",
-            "historial_cambios_productos.fecha"
+            "historial_cambios_productos.fecha",
         )
 
         # ============================================
         # TABLA PRODUCTOS_REFERENCIA (PARA AUDITORÍA)
         # ============================================
         print("🏷️ Creando tabla productos_referencia (sistema de auditoría)...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS productos_referencia (
                 id SERIAL PRIMARY KEY,
                 codigo_ean VARCHAR(50) UNIQUE NOT NULL,
@@ -1084,17 +1103,18 @@ def create_postgresql_tables():
                 CHECK (LENGTH(nombre) >= 2),
                 CHECK (LENGTH(codigo_ean) >= 8)
             )
-        """)
+        """
+        )
         print("✓ Tabla 'productos_referencia' creada")
 
         # Índices para productos_referencia
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_prod_ref_ean ON productos_referencia(codigo_ean)",
-            "productos_referencia.codigo_ean"
+            "productos_referencia.codigo_ean",
         )
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_prod_ref_nombre ON productos_referencia(nombre)",
-            "productos_referencia.nombre"
+            "productos_referencia.nombre",
         )
 
         # ============================================
@@ -1102,7 +1122,8 @@ def create_postgresql_tables():
         # ============================================
         print("📦 Manteniendo tablas legacy...")
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS productos (
                 id SERIAL PRIMARY KEY,
                 factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
@@ -1110,9 +1131,11 @@ def create_postgresql_tables():
                 nombre VARCHAR(100),
                 valor INTEGER
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS productos_maestro (
                 id SERIAL PRIMARY KEY,
                 codigo_ean VARCHAR(13) UNIQUE NOT NULL,
@@ -1126,9 +1149,11 @@ def create_postgresql_tables():
                 ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CHECK (LENGTH(codigo_ean) >= 3)
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS productos_catalogo (
                 id SERIAL PRIMARY KEY,
                 codigo_ean VARCHAR(13) UNIQUE,
@@ -1138,9 +1163,11 @@ def create_postgresql_tables():
                 total_reportes INTEGER DEFAULT 1,
                 ultimo_reporte TIMESTAMP
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS precios_historicos (
                 id SERIAL PRIMARY KEY,
                 producto_id INTEGER NOT NULL REFERENCES productos_maestro(id),
@@ -1154,9 +1181,11 @@ def create_postgresql_tables():
                 outlier BOOLEAN DEFAULT FALSE,
                 CHECK (precio > 0)
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS historial_compras_usuario (
                 id SERIAL PRIMARY KEY,
                 usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -1167,9 +1196,11 @@ def create_postgresql_tables():
                 cadena VARCHAR(50),
                 factura_id INTEGER REFERENCES facturas(id)
             )
-        """)
+        """
+        )
 
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS ocr_logs (
                 id SERIAL PRIMARY KEY,
                 factura_id INTEGER REFERENCES facturas(id),
@@ -1178,7 +1209,8 @@ def create_postgresql_tables():
                 details TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
         print("✓ Tablas legacy creadas")
 
@@ -1328,15 +1360,15 @@ def create_postgresql_tables():
         # Índices de auditoria
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_auditoria_usuario ON auditoria_productos(usuario_id)",
-            "auditoria_productos.usuario"
+            "auditoria_productos.usuario",
         )
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_auditoria_maestro ON auditoria_productos(producto_maestro_id)",
-            "auditoria_productos.maestro"
+            "auditoria_productos.maestro",
         )
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_auditoria_canonico ON auditoria_productos(producto_canonico_id)",
-            "auditoria_productos.canonico"
+            "auditoria_productos.canonico",
         )
 
         conn.commit()
@@ -1347,6 +1379,7 @@ def create_postgresql_tables():
     except Exception as e:
         print(f"❌ Error creando tablas PostgreSQL: {e}")
         import traceback
+
         traceback.print_exc()
         if conn:
             conn.rollback()
@@ -1423,6 +1456,7 @@ def create_sqlite_tables():
 # ============================================
 # FUNCIONES AUXILIARES
 # ============================================
+
 
 def normalizar_nombre_establecimiento(nombre_raw: str) -> str:
     """Normaliza el nombre de un establecimiento"""
@@ -1696,6 +1730,7 @@ Esta versión:
 ✅ Calcula estadísticas correctamente
 """
 
+
 def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
     """
     Actualiza el inventario del usuario con datos LIMPIOS del catálogo maestro
@@ -1708,7 +1743,9 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
     Returns:
         bool: True si se actualizó correctamente
     """
-    print(f"📦 Actualizando inventario para usuario {usuario_id} desde factura {factura_id}")
+    print(
+        f"📦 Actualizando inventario para usuario {usuario_id} desde factura {factura_id}"
+    )
 
     conn = None
     try:
@@ -1723,17 +1760,23 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         # 1. Obtener datos de la factura
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT establecimiento_id, establecimiento, fecha_factura
                 FROM facturas
                 WHERE id = %s
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT establecimiento_id, establecimiento, fecha_factura
                 FROM facturas
                 WHERE id = ?
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
         factura_data = cursor.fetchone()
 
@@ -1750,12 +1793,19 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         # Convertir fecha
         if isinstance(fecha_factura_raw, str):
             from datetime import datetime
+
             fecha_compra = datetime.strptime(fecha_factura_raw, "%Y-%m-%d").date()
         elif hasattr(fecha_factura_raw, "date"):
             from datetime import date
-            fecha_compra = fecha_factura_raw if isinstance(fecha_factura_raw, date) else fecha_factura_raw.date()
+
+            fecha_compra = (
+                fecha_factura_raw
+                if isinstance(fecha_factura_raw, date)
+                else fecha_factura_raw.date()
+            )
         else:
             from datetime import date
+
             fecha_compra = fecha_factura_raw or date.today()
 
         print(f"   🏪 Establecimiento: {establecimiento_nombre}")
@@ -1763,43 +1813,47 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         # 2. Obtener items CON datos del producto maestro (JOIN)
         if os.environ.get("DATABASE_TYPE") == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     i.producto_maestro_id,
                     i.codigo_leido,
                     i.nombre_leido,
                     i.precio_pagado,
                     i.cantidad,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     pm.codigo_ean,
                     pm.marca,
-                    pm.categoria,
-                    pm.subcategoria,
-                    pm.presentacion
+                    NULL as categoria,
+                    NULL as subcategoria,
+                    NULL as presentacion
                 FROM items_factura i
-                INNER JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
+                INNER JOIN productos_maestros_v2 pm ON i.producto_maestro_id = pm.id
                 WHERE i.factura_id = %s
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     i.producto_maestro_id,
                     i.codigo_leido,
                     i.nombre_leido,
                     i.precio_pagado,
                     i.cantidad,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     pm.codigo_ean,
                     pm.marca,
-                    pm.categoria,
-                    pm.subcategoria,
-                    pm.presentacion
+                    NULL as categoria,
+                    NULL as subcategoria,
+                    NULL as presentacion
                 FROM items_factura i
-                INNER JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
+                INNER JOIN productos_maestros_v2 pm ON i.producto_maestro_id = pm.id
                 WHERE i.factura_id = ?
-            """, (factura_id,))
-
-        items = cursor.fetchall()
+            """,
+                (factura_id,),
+            )
 
         if not items:
             print(f"⚠️ No hay items con producto_maestro_id en factura {factura_id}")
@@ -1831,7 +1885,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
             try:
                 # 3.1 Verificar si ya existe en inventario
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         SELECT
                             id,
                             cantidad_actual,
@@ -1844,9 +1899,12 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                             fecha_ultima_compra
                         FROM inventario_usuario
                         WHERE usuario_id = %s AND producto_maestro_id = %s
-                    """, (usuario_id, producto_maestro_id))
+                    """,
+                        (usuario_id, producto_maestro_id),
+                    )
                 else:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         SELECT
                             id,
                             cantidad_actual,
@@ -1859,7 +1917,9 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                             fecha_ultima_compra
                         FROM inventario_usuario
                         WHERE usuario_id = ? AND producto_maestro_id = ?
-                    """, (usuario_id, producto_maestro_id))
+                    """,
+                        (usuario_id, producto_maestro_id),
+                    )
 
                 inventario_existente = cursor.fetchone()
 
@@ -1882,7 +1942,11 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                     nuevo_num_compras = num_compras + 1
                     nueva_cantidad_total = cantidad_total + cantidad
                     nuevo_total_gastado = total_gastado + (precio * cantidad)
-                    nuevo_precio_promedio = int(nuevo_total_gastado / nueva_cantidad_total if nueva_cantidad_total > 0 else precio)
+                    nuevo_precio_promedio = int(
+                        nuevo_total_gastado / nueva_cantidad_total
+                        if nueva_cantidad_total > 0
+                        else precio
+                    )
                     nuevo_precio_min = min(precio_min_actual, precio)
                     nuevo_precio_max = max(precio_max_actual, precio)
 
@@ -1891,10 +1955,17 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                     if fecha_ultima_compra_anterior:
                         try:
                             from datetime import datetime, date
+
                             if isinstance(fecha_ultima_compra_anterior, str):
-                                fecha_anterior = datetime.strptime(fecha_ultima_compra_anterior, "%Y-%m-%d").date()
+                                fecha_anterior = datetime.strptime(
+                                    fecha_ultima_compra_anterior, "%Y-%m-%d"
+                                ).date()
                             elif hasattr(fecha_ultima_compra_anterior, "date"):
-                                fecha_anterior = fecha_ultima_compra_anterior if isinstance(fecha_ultima_compra_anterior, date) else fecha_ultima_compra_anterior.date()
+                                fecha_anterior = (
+                                    fecha_ultima_compra_anterior
+                                    if isinstance(fecha_ultima_compra_anterior, date)
+                                    else fecha_ultima_compra_anterior.date()
+                                )
                             else:
                                 fecha_anterior = fecha_ultima_compra_anterior
                             dias_desde_ultima = (fecha_compra - fecha_anterior).days
@@ -1903,7 +1974,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
                     # ✅ UPDATE con datos LIMPIOS
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             UPDATE inventario_usuario
                             SET cantidad_actual = %s,
                                 precio_ultima_compra = %s,
@@ -1921,25 +1993,28 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 marca = %s,
                                 fecha_ultima_actualizacion = CURRENT_TIMESTAMP
                             WHERE id = %s
-                        """, (
-                            nueva_cantidad,
-                            precio,
-                            nuevo_precio_promedio,
-                            nuevo_precio_min,
-                            nuevo_precio_max,
-                            establecimiento_nombre,
-                            establecimiento_id,
-                            fecha_compra,
-                            nuevo_num_compras,
-                            nueva_cantidad_total,
-                            nuevo_total_gastado,
-                            factura_id,
-                            dias_desde_ultima,
-                            marca,
-                            inv_id
-                        ))
+                        """,
+                            (
+                                nueva_cantidad,
+                                precio,
+                                nuevo_precio_promedio,
+                                nuevo_precio_min,
+                                nuevo_precio_max,
+                                establecimiento_nombre,
+                                establecimiento_id,
+                                fecha_compra,
+                                nuevo_num_compras,
+                                nueva_cantidad_total,
+                                nuevo_total_gastado,
+                                factura_id,
+                                dias_desde_ultima,
+                                marca,
+                                inv_id,
+                            ),
+                        )
                     else:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             UPDATE inventario_usuario
                             SET cantidad_actual = ?,
                                 precio_ultima_compra = ?,
@@ -1956,33 +2031,38 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 dias_desde_ultima_compra = ?,
                                 marca = ?
                             WHERE id = ?
-                        """, (
-                            nueva_cantidad,
-                            precio,
-                            nuevo_precio_promedio,
-                            nuevo_precio_min,
-                            nuevo_precio_max,
-                            establecimiento_nombre,
-                            establecimiento_id,
-                            fecha_compra,
-                            nuevo_num_compras,
-                            nueva_cantidad_total,
-                            nuevo_total_gastado,
-                            factura_id,
-                            dias_desde_ultima,
-                            marca,
-                            inv_id
-                        ))
+                        """,
+                            (
+                                nueva_cantidad,
+                                precio,
+                                nuevo_precio_promedio,
+                                nuevo_precio_min,
+                                nuevo_precio_max,
+                                establecimiento_nombre,
+                                establecimiento_id,
+                                fecha_compra,
+                                nuevo_num_compras,
+                                nueva_cantidad_total,
+                                nuevo_total_gastado,
+                                factura_id,
+                                dias_desde_ultima,
+                                marca,
+                                inv_id,
+                            ),
+                        )
 
                     actualizados += 1
-                    print(f"      ✅ {nombre_correcto}: {cantidad_actual} → {nueva_cantidad}")
+                    print(
+                        f"      ✅ {nombre_correcto}: {cantidad_actual} → {nueva_cantidad}"
+                    )
 
                 else:
                     # ========================================
                     # CREAR NUEVO
                     # ========================================
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO inventario_usuario (
                                 usuario_id,
                                 producto_maestro_id,
@@ -2006,26 +2086,29 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                 %s, %s, %s, %s, %s, %s, 'unidades', 0
                             )
-                        """, (
-                            usuario_id,
-                            producto_maestro_id,
-                            cantidad,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            establecimiento_nombre,
-                            establecimiento_id,
-                            fecha_compra,
-                            1,
-                            cantidad,
-                            precio * cantidad,
-                            factura_id,
-                            cantidad * 0.3,
-                            marca
-                        ))
+                        """,
+                            (
+                                usuario_id,
+                                producto_maestro_id,
+                                cantidad,
+                                precio,
+                                precio,
+                                precio,
+                                precio,
+                                establecimiento_nombre,
+                                establecimiento_id,
+                                fecha_compra,
+                                1,
+                                cantidad,
+                                precio * cantidad,
+                                factura_id,
+                                cantidad * 0.3,
+                                marca,
+                            ),
+                        )
                     else:
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO inventario_usuario (
                                 usuario_id,
                                 producto_maestro_id,
@@ -2049,24 +2132,26 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                                 ?, ?, ?, ?, ?, ?, 'unidades', 0
                             )
-                        """, (
-                            usuario_id,
-                            producto_maestro_id,
-                            cantidad,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            establecimiento_nombre,
-                            establecimiento_id,
-                            fecha_compra,
-                            1,
-                            cantidad,
-                            precio * cantidad,
-                            factura_id,
-                            cantidad * 0.3,
-                            marca
-                        ))
+                        """,
+                            (
+                                usuario_id,
+                                producto_maestro_id,
+                                cantidad,
+                                precio,
+                                precio,
+                                precio,
+                                precio,
+                                establecimiento_nombre,
+                                establecimiento_id,
+                                fecha_compra,
+                                1,
+                                cantidad,
+                                precio * cantidad,
+                                factura_id,
+                                cantidad * 0.3,
+                                marca,
+                            ),
+                        )
 
                     creados += 1
                     print(f"      ➕ {nombre_correcto}: nuevo ({cantidad} unidades)")
@@ -2076,6 +2161,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
             except Exception as e:
                 print(f"      ❌ Error con producto {producto_maestro_id}: {e}")
                 import traceback
+
                 traceback.print_exc()
                 conn.rollback()
                 continue
@@ -2091,6 +2177,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
     except Exception as e:
         print(f"❌ Error actualizando inventario: {e}")
         import traceback
+
         traceback.print_exc()
         if conn:
             try:
@@ -2127,6 +2214,7 @@ print("   Compatible con psycopg3")
 # ============================================
 # FUNCIONES DE AUDITORÍA
 # ============================================
+
 
 def obtener_productos_requieren_auditoria(limite=20, usuario_id=None):
     """
@@ -2210,19 +2298,21 @@ def obtener_productos_requieren_auditoria(limite=20, usuario_id=None):
 
             productos = []
             for row in cursor.fetchall():
-                productos.append({
-                    'id': row[0],
-                    'codigo_ean': row[1],
-                    'nombre_normalizado': row[2],
-                    'marca': row[3],
-                    'categoria': row[4],
-                    'subcategoria': row[5],
-                    'total_reportes': row[6],
-                    'auditado_manualmente': row[7],
-                    'validaciones_manuales': row[8],
-                    'prioridad': row[9],
-                    'razon': row[10]
-                })
+                productos.append(
+                    {
+                        "id": row[0],
+                        "codigo_ean": row[1],
+                        "nombre_normalizado": row[2],
+                        "marca": row[3],
+                        "categoria": row[4],
+                        "subcategoria": row[5],
+                        "total_reportes": row[6],
+                        "auditado_manualmente": row[7],
+                        "validaciones_manuales": row[8],
+                        "prioridad": row[9],
+                        "razon": row[10],
+                    }
+                )
 
             cursor.close()
             conn.close()
@@ -2252,14 +2342,16 @@ def obtener_productos_requieren_auditoria(limite=20, usuario_id=None):
 
             productos = []
             for row in cursor.fetchall():
-                productos.append({
-                    'id': row[0],
-                    'codigo_ean': row[1],
-                    'nombre_normalizado': row[2],
-                    'marca': row[3],
-                    'categoria': row[4],
-                    'total_reportes': row[5]
-                })
+                productos.append(
+                    {
+                        "id": row[0],
+                        "codigo_ean": row[1],
+                        "nombre_normalizado": row[2],
+                        "marca": row[3],
+                        "categoria": row[4],
+                        "total_reportes": row[5],
+                    }
+                )
 
             cursor.close()
             conn.close()
@@ -2273,8 +2365,15 @@ def obtener_productos_requieren_auditoria(limite=20, usuario_id=None):
         return []
 
 
-def registrar_auditoria(usuario_id, producto_maestro_id=None, producto_canonico_id=None, accion="validar",
-                        datos_anteriores=None, datos_nuevos=None, razon=None):
+def registrar_auditoria(
+    usuario_id,
+    producto_maestro_id=None,
+    producto_canonico_id=None,
+    accion="validar",
+    datos_anteriores=None,
+    datos_nuevos=None,
+    razon=None,
+):
     """
     Registra una acción de auditoría en la base de datos
 
@@ -2301,7 +2400,8 @@ def registrar_auditoria(usuario_id, producto_maestro_id=None, producto_canonico_
         import json
 
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO auditoria_productos (
                     usuario_id,
                     producto_maestro_id,
@@ -2313,15 +2413,17 @@ def registrar_auditoria(usuario_id, producto_maestro_id=None, producto_canonico_
                     fecha
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 RETURNING id
-            """, (
-                usuario_id,
-                producto_maestro_id,
-                producto_canonico_id,
-                accion,
-                json.dumps(datos_anteriores) if datos_anteriores else None,
-                json.dumps(datos_nuevos) if datos_nuevos else None,
-                razon
-            ))
+            """,
+                (
+                    usuario_id,
+                    producto_maestro_id,
+                    producto_canonico_id,
+                    accion,
+                    json.dumps(datos_anteriores) if datos_anteriores else None,
+                    json.dumps(datos_nuevos) if datos_nuevos else None,
+                    razon,
+                ),
+            )
 
             auditoria_id = cursor.fetchone()[0]
             conn.commit()
@@ -2331,7 +2433,8 @@ def registrar_auditoria(usuario_id, producto_maestro_id=None, producto_canonico_
 
         else:
             # SQLite version
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO auditoria_productos (
                     usuario_id,
                     producto_maestro_id,
@@ -2341,15 +2444,17 @@ def registrar_auditoria(usuario_id, producto_maestro_id=None, producto_canonico_
                     datos_nuevos,
                     razon
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                usuario_id,
-                producto_maestro_id,
-                producto_canonico_id,
-                accion,
-                json.dumps(datos_anteriores) if datos_anteriores else None,
-                json.dumps(datos_nuevos) if datos_nuevos else None,
-                razon
-            ))
+            """,
+                (
+                    usuario_id,
+                    producto_maestro_id,
+                    producto_canonico_id,
+                    accion,
+                    json.dumps(datos_anteriores) if datos_anteriores else None,
+                    json.dumps(datos_nuevos) if datos_nuevos else None,
+                    razon,
+                ),
+            )
 
             auditoria_id = cursor.lastrowid
             conn.commit()
@@ -2370,6 +2475,7 @@ def registrar_auditoria(usuario_id, producto_maestro_id=None, producto_canonico_
 # FUNCIONES DE PRECIOS
 # ============================================
 
+
 def guardar_precio_producto(
     producto_maestro_id: int,
     establecimiento_id: int,
@@ -2377,7 +2483,7 @@ def guardar_precio_producto(
     fecha_registro: date,
     usuario_id: int,
     factura_id: int,
-    verificado: bool = False
+    verificado: bool = False,
 ) -> Optional[int]:
     """
     Guarda un precio de producto en la tabla precios_productos
@@ -2410,14 +2516,23 @@ def guardar_precio_producto(
 
         if database_type == "postgresql":
             # Verificar si ya existe un registro IDÉNTICO
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id FROM precios_productos
                 WHERE producto_maestro_id = %s
                   AND establecimiento_id = %s
                   AND fecha_registro = %s
                   AND usuario_id = %s
                   AND factura_id = %s
-            """, (producto_maestro_id, establecimiento_id, fecha_registro, usuario_id, factura_id))
+            """,
+                (
+                    producto_maestro_id,
+                    establecimiento_id,
+                    fecha_registro,
+                    usuario_id,
+                    factura_id,
+                ),
+            )
 
             existe = cursor.fetchone()
 
@@ -2426,7 +2541,8 @@ def guardar_precio_producto(
                 return existe[0]
 
             # Insertar nuevo registro
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO precios_productos (
                     producto_maestro_id,
                     establecimiento_id,
@@ -2443,15 +2559,17 @@ def guardar_precio_producto(
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 RETURNING id
-            """, (
-                producto_maestro_id,
-                establecimiento_id,
-                precio,
-                fecha_registro,
-                usuario_id,
-                factura_id,
-                verificado
-            ))
+            """,
+                (
+                    producto_maestro_id,
+                    establecimiento_id,
+                    precio,
+                    fecha_registro,
+                    usuario_id,
+                    factura_id,
+                    verificado,
+                ),
+            )
 
             precio_id = cursor.fetchone()[0]
             conn.commit()
@@ -2459,7 +2577,9 @@ def guardar_precio_producto(
             # Actualizar estadísticas del producto maestro
             actualizar_estadisticas_producto(producto_maestro_id)
 
-            print(f"✅ Precio guardado: Producto {producto_maestro_id} = ${precio:,} en establecimiento {establecimiento_id}")
+            print(
+                f"✅ Precio guardado: Producto {producto_maestro_id} = ${precio:,} en establecimiento {establecimiento_id}"
+            )
 
             cursor.close()
             conn.close()
@@ -2467,14 +2587,23 @@ def guardar_precio_producto(
 
         else:
             # SQLite version
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id FROM precios_productos
                 WHERE producto_maestro_id = ?
                   AND establecimiento_id = ?
                   AND fecha_registro = ?
                   AND usuario_id = ?
                   AND factura_id = ?
-            """, (producto_maestro_id, establecimiento_id, fecha_registro, usuario_id, factura_id))
+            """,
+                (
+                    producto_maestro_id,
+                    establecimiento_id,
+                    fecha_registro,
+                    usuario_id,
+                    factura_id,
+                ),
+            )
 
             existe = cursor.fetchone()
 
@@ -2482,7 +2611,8 @@ def guardar_precio_producto(
                 print(f"⚠️ Precio ya registrado (ID: {existe[0]})")
                 return existe[0]
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO precios_productos (
                     producto_maestro_id,
                     establecimiento_id,
@@ -2493,15 +2623,17 @@ def guardar_precio_producto(
                     verificado,
                     es_outlier
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-            """, (
-                producto_maestro_id,
-                establecimiento_id,
-                precio,
-                fecha_registro,
-                usuario_id,
-                factura_id,
-                verificado
-            ))
+            """,
+                (
+                    producto_maestro_id,
+                    establecimiento_id,
+                    precio,
+                    fecha_registro,
+                    usuario_id,
+                    factura_id,
+                    verificado,
+                ),
+            )
 
             precio_id = cursor.lastrowid
             conn.commit()
@@ -2513,6 +2645,7 @@ def guardar_precio_producto(
     except Exception as e:
         print(f"❌ Error guardando precio: {e}")
         import traceback
+
         traceback.print_exc()
         if conn:
             conn.rollback()
@@ -2546,7 +2679,8 @@ def actualizar_estadisticas_producto(producto_maestro_id: int) -> bool:
 
     try:
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE productos_maestros
                 SET precio_promedio_global = (
                         SELECT CAST(AVG(precio) AS INTEGER)
@@ -2573,8 +2707,15 @@ def actualizar_estadisticas_producto(producto_maestro_id: int) -> bool:
                     ),
                     ultima_actualizacion = CURRENT_TIMESTAMP
                 WHERE id = %s
-            """, (producto_maestro_id, producto_maestro_id, producto_maestro_id,
-                  producto_maestro_id, producto_maestro_id))
+            """,
+                (
+                    producto_maestro_id,
+                    producto_maestro_id,
+                    producto_maestro_id,
+                    producto_maestro_id,
+                    producto_maestro_id,
+                ),
+            )
 
             conn.commit()
             cursor.close()
@@ -2583,7 +2724,8 @@ def actualizar_estadisticas_producto(producto_maestro_id: int) -> bool:
 
         else:
             # SQLite version
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE productos_maestros
                 SET precio_promedio_global = (
                         SELECT CAST(AVG(precio) AS INTEGER)
@@ -2607,8 +2749,15 @@ def actualizar_estadisticas_producto(producto_maestro_id: int) -> bool:
                     ),
                     ultima_actualizacion = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (producto_maestro_id, producto_maestro_id, producto_maestro_id,
-                  producto_maestro_id, producto_maestro_id))
+            """,
+                (
+                    producto_maestro_id,
+                    producto_maestro_id,
+                    producto_maestro_id,
+                    producto_maestro_id,
+                    producto_maestro_id,
+                ),
+            )
 
             conn.commit()
             cursor.close()
@@ -2625,9 +2774,7 @@ def actualizar_estadisticas_producto(producto_maestro_id: int) -> bool:
 
 
 def consultar_precios_producto(
-    producto_maestro_id: int,
-    limite: int = 10,
-    dias_antiguedad_maxima: int = 30
+    producto_maestro_id: int, limite: int = 10, dias_antiguedad_maxima: int = 30
 ) -> List[Dict[str, Any]]:
     """
     Consulta los precios más recientes de un producto en diferentes establecimientos
@@ -2649,7 +2796,8 @@ def consultar_precios_producto(
 
     try:
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 WITH ultimos_precios AS (
                     SELECT DISTINCT ON (establecimiento_id)
                         pp.establecimiento_id,
@@ -2680,22 +2828,26 @@ def consultar_precios_producto(
                 FROM ultimos_precios
                 ORDER BY precio ASC, dias_antiguedad ASC
                 LIMIT %s
-            """, (producto_maestro_id, dias_antiguedad_maxima, limite))
+            """,
+                (producto_maestro_id, dias_antiguedad_maxima, limite),
+            )
 
             resultados = []
             for row in cursor.fetchall():
-                resultados.append({
-                    'establecimiento_id': row[0],
-                    'establecimiento_nombre': row[1],
-                    'cadena': row[2],
-                    'ciudad': row[3],
-                    'precio': row[4],
-                    'fecha_registro': row[5],
-                    'dias_antiguedad': row[6],
-                    'ahorro_vs_mas_caro': row[7],
-                    'diferencia_vs_mas_barato': row[8],
-                    'porcentaje_mas_caro': float(row[9]) if row[9] else 0.0
-                })
+                resultados.append(
+                    {
+                        "establecimiento_id": row[0],
+                        "establecimiento_nombre": row[1],
+                        "cadena": row[2],
+                        "ciudad": row[3],
+                        "precio": row[4],
+                        "fecha_registro": row[5],
+                        "dias_antiguedad": row[6],
+                        "ahorro_vs_mas_caro": row[7],
+                        "diferencia_vs_mas_barato": row[8],
+                        "porcentaje_mas_caro": float(row[9]) if row[9] else 0.0,
+                    }
+                )
 
             cursor.close()
             conn.close()
@@ -2703,7 +2855,8 @@ def consultar_precios_producto(
 
         else:
             # SQLite version (simplificada)
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     pp.establecimiento_id,
                     e.nombre_normalizado,
@@ -2717,21 +2870,25 @@ def consultar_precios_producto(
                   AND julianday('now') - julianday(pp.fecha_registro) <= ?
                 ORDER BY pp.fecha_registro DESC
                 LIMIT ?
-            """, (producto_maestro_id, dias_antiguedad_maxima, limite))
+            """,
+                (producto_maestro_id, dias_antiguedad_maxima, limite),
+            )
 
             resultados = []
             for row in cursor.fetchall():
-                resultados.append({
-                    'establecimiento_id': row[0],
-                    'establecimiento_nombre': row[1],
-                    'cadena': row[2],
-                    'precio': row[3],
-                    'fecha_registro': row[4],
-                    'dias_antiguedad': int(row[5])
-                })
+                resultados.append(
+                    {
+                        "establecimiento_id": row[0],
+                        "establecimiento_nombre": row[1],
+                        "cadena": row[2],
+                        "precio": row[3],
+                        "fecha_registro": row[4],
+                        "dias_antiguedad": int(row[5]),
+                    }
+                )
 
             # Ordenar por precio
-            resultados.sort(key=lambda x: x['precio'])
+            resultados.sort(key=lambda x: x["precio"])
 
             cursor.close()
             conn.close()
@@ -2740,6 +2897,7 @@ def consultar_precios_producto(
     except Exception as e:
         print(f"❌ Error consultando precios: {e}")
         import traceback
+
         traceback.print_exc()
         if conn:
             cursor.close()
@@ -2766,7 +2924,8 @@ def buscar_producto_y_precios(codigo_ean: str) -> Optional[Dict[str, Any]]:
 
     try:
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     id,
                     codigo_ean,
@@ -2780,9 +2939,12 @@ def buscar_producto_y_precios(codigo_ean: str) -> Optional[Dict[str, Any]]:
                     total_reportes
                 FROM productos_maestros
                 WHERE codigo_ean = %s
-            """, (codigo_ean,))
+            """,
+                (codigo_ean,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     id,
                     codigo_ean,
@@ -2796,7 +2958,9 @@ def buscar_producto_y_precios(codigo_ean: str) -> Optional[Dict[str, Any]]:
                     total_reportes
                 FROM productos_maestros
                 WHERE codigo_ean = ?
-            """, (codigo_ean,))
+            """,
+                (codigo_ean,),
+            )
 
         producto = cursor.fetchone()
 
@@ -2809,18 +2973,18 @@ def buscar_producto_y_precios(codigo_ean: str) -> Optional[Dict[str, Any]]:
         precios = consultar_precios_producto(producto[0])
 
         resultado = {
-            'id': producto[0],
-            'codigo_ean': producto[1],
-            'nombre': producto[2],
-            'marca': producto[3],
-            'categoria': producto[4],
-            'subcategoria': producto[5],
-            'precio_promedio': producto[6],
-            'precio_minimo': producto[7],
-            'precio_maximo': producto[8],
-            'total_reportes': producto[9],
-            'precios': precios,
-            'donde_mas_barato': precios[0] if precios else None
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre": producto[2],
+            "marca": producto[3],
+            "categoria": producto[4],
+            "subcategoria": producto[5],
+            "precio_promedio": producto[6],
+            "precio_minimo": producto[7],
+            "precio_maximo": producto[8],
+            "total_reportes": producto[9],
+            "precios": precios,
+            "donde_mas_barato": precios[0] if precios else None,
         }
 
         cursor.close()
@@ -2835,7 +2999,9 @@ def buscar_producto_y_precios(codigo_ean: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -> Dict[str, int]:
+def procesar_items_factura_y_guardar_precios(
+    factura_id: int, usuario_id: int
+) -> Dict[str, int]:
     """
     Procesa todos los items de una factura y guarda sus precios en precios_productos
 
@@ -2848,7 +3014,7 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
     """
     conn = get_db_connection()
     if not conn:
-        return {'error': 'No se pudo conectar a la base de datos'}
+        return {"error": "No se pudo conectar a la base de datos"}
 
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
@@ -2856,39 +3022,48 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
     try:
         # Obtener datos de la factura
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT establecimiento_id, fecha_factura
                 FROM facturas
                 WHERE id = %s
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT establecimiento_id, fecha_factura
                 FROM facturas
                 WHERE id = ?
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
         factura = cursor.fetchone()
 
         if not factura:
             cursor.close()
             conn.close()
-            return {'error': 'Factura no encontrada'}
+            return {"error": "Factura no encontrada"}
 
         establecimiento_id = factura[0]
         fecha_factura = factura[1]
 
         # Convertir fecha_factura a date
         if isinstance(fecha_factura, str):
-            fecha_registro = datetime.strptime(fecha_factura, '%Y-%m-%d').date()
-        elif hasattr(fecha_factura, 'date'):
-            fecha_registro = fecha_factura.date() if callable(fecha_factura.date) else fecha_factura
+            fecha_registro = datetime.strptime(fecha_factura, "%Y-%m-%d").date()
+        elif hasattr(fecha_factura, "date"):
+            fecha_registro = (
+                fecha_factura.date() if callable(fecha_factura.date) else fecha_factura
+            )
         else:
             fecha_registro = fecha_factura or date.today()
 
         # Obtener items de la factura que tienen producto_maestro_id
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     producto_maestro_id,
                     precio_pagado,
@@ -2896,9 +3071,12 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
                 FROM items_factura
                 WHERE factura_id = %s
                   AND producto_maestro_id IS NOT NULL
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     producto_maestro_id,
                     precio_pagado,
@@ -2906,7 +3084,9 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
                 FROM items_factura
                 WHERE factura_id = ?
                   AND producto_maestro_id IS NOT NULL
-            """, (factura_id,))
+            """,
+                (factura_id,),
+            )
 
         items = cursor.fetchall()
 
@@ -2915,9 +3095,9 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
 
         if not items:
             return {
-                'precios_guardados': 0,
-                'errores': 0,
-                'mensaje': 'No hay items con producto_maestro_id'
+                "precios_guardados": 0,
+                "errores": 0,
+                "mensaje": "No hay items con producto_maestro_id",
             }
 
         # Guardar cada precio
@@ -2943,7 +3123,7 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
                 fecha_registro=fecha_registro,
                 usuario_id=usuario_id,
                 factura_id=factura_id,
-                verificado=False
+                verificado=False,
             )
 
             if precio_id:
@@ -2952,25 +3132,26 @@ def procesar_items_factura_y_guardar_precios(factura_id: int, usuario_id: int) -
                 errores += 1
 
         return {
-            'precios_guardados': precios_guardados,
-            'errores': errores,
-            'total_items': len(items)
+            "precios_guardados": precios_guardados,
+            "errores": errores,
+            "total_items": len(items),
         }
 
     except Exception as e:
         print(f"❌ Error procesando items de factura: {e}")
         import traceback
+
         traceback.print_exc()
         if conn:
             cursor.close()
             conn.close()
-        return {'error': str(e)}
+        return {"error": str(e)}
 
 
 def comparar_precios_establecimientos(
     producto_maestro_id: int,
     establecimiento_actual_id: int,
-    radio_km: Optional[float] = None
+    radio_km: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Compara el precio de un producto en diferentes establecimientos
@@ -2986,7 +3167,7 @@ def comparar_precios_establecimientos(
     """
     conn = get_db_connection()
     if not conn:
-        return {'error': 'No se pudo conectar a la base de datos'}
+        return {"error": "No se pudo conectar a la base de datos"}
 
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite").lower()
@@ -2994,7 +3175,8 @@ def comparar_precios_establecimientos(
     try:
         # Obtener precio actual en el establecimiento de referencia
         if database_type == "postgresql":
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT precio, fecha_registro
                 FROM precios_productos
                 WHERE producto_maestro_id = %s
@@ -3002,23 +3184,30 @@ def comparar_precios_establecimientos(
                   AND es_outlier = FALSE
                 ORDER BY fecha_registro DESC
                 LIMIT 1
-            """, (producto_maestro_id, establecimiento_actual_id))
+            """,
+                (producto_maestro_id, establecimiento_actual_id),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT precio, fecha_registro
                 FROM precios_productos
                 WHERE producto_maestro_id = ?
                   AND establecimiento_id = ?
                 ORDER BY fecha_registro DESC
                 LIMIT 1
-            """, (producto_maestro_id, establecimiento_actual_id))
+            """,
+                (producto_maestro_id, establecimiento_actual_id),
+            )
 
         precio_actual = cursor.fetchone()
 
         if not precio_actual:
             cursor.close()
             conn.close()
-            return {'error': 'No hay precio registrado para este producto en el establecimiento'}
+            return {
+                "error": "No hay precio registrado para este producto en el establecimiento"
+            }
 
         # Obtener precios en otros establecimientos
         precios = consultar_precios_producto(producto_maestro_id, limite=20)
@@ -3027,32 +3216,38 @@ def comparar_precios_establecimientos(
             cursor.close()
             conn.close()
             return {
-                'precio_actual': precio_actual[0],
-                'establecimiento_actual_id': establecimiento_actual_id,
-                'comparaciones': [],
-                'ahorro_maximo': 0,
-                'mensaje': 'No hay otros precios para comparar'
+                "precio_actual": precio_actual[0],
+                "establecimiento_actual_id": establecimiento_actual_id,
+                "comparaciones": [],
+                "ahorro_maximo": 0,
+                "mensaje": "No hay otros precios para comparar",
             }
 
         # Filtrar el establecimiento actual de las comparaciones
-        otros_precios = [p for p in precios if p['establecimiento_id'] != establecimiento_actual_id]
+        otros_precios = [
+            p for p in precios if p["establecimiento_id"] != establecimiento_actual_id
+        ]
 
         # Calcular ahorro máximo
-        precio_mas_barato = min(p['precio'] for p in precios)
+        precio_mas_barato = min(p["precio"] for p in precios)
         ahorro_maximo = precio_actual[0] - precio_mas_barato
 
         cursor.close()
         conn.close()
 
         return {
-            'precio_actual': precio_actual[0],
-            'establecimiento_actual_id': establecimiento_actual_id,
-            'fecha_precio_actual': str(precio_actual[1]),
-            'precio_mas_barato': precio_mas_barato,
-            'ahorro_maximo': ahorro_maximo if ahorro_maximo > 0 else 0,
-            'porcentaje_ahorro': round((ahorro_maximo / precio_actual[0] * 100), 1) if precio_actual[0] > 0 else 0,
-            'comparaciones': otros_precios[:10],
-            'total_establecimientos_comparados': len(otros_precios)
+            "precio_actual": precio_actual[0],
+            "establecimiento_actual_id": establecimiento_actual_id,
+            "fecha_precio_actual": str(precio_actual[1]),
+            "precio_mas_barato": precio_mas_barato,
+            "ahorro_maximo": ahorro_maximo if ahorro_maximo > 0 else 0,
+            "porcentaje_ahorro": (
+                round((ahorro_maximo / precio_actual[0] * 100), 1)
+                if precio_actual[0] > 0
+                else 0
+            ),
+            "comparaciones": otros_precios[:10],
+            "total_establecimientos_comparados": len(otros_precios),
         }
 
     except Exception as e:
@@ -3060,7 +3255,8 @@ def comparar_precios_establecimientos(
         if conn:
             cursor.close()
             conn.close()
-        return {'error': str(e)}
+        return {"error": str(e)}
+
 
 # ============================================================================
 # AGREGAR AL FINAL DE database.py (antes del if __name__ == "__main__")
@@ -3081,6 +3277,7 @@ def comparar_precios_establecimientos(
 # Reemplazar las funciones anteriores con estas
 # ============================================================================
 
+
 def crear_tabla_codigos_establecimiento():
     """
     Crear tabla codigos_establecimiento y funciones relacionadas
@@ -3094,7 +3291,8 @@ def crear_tabla_codigos_establecimiento():
 
         # 1. Crear tabla principal
         print("   1/5 Creando tabla...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS codigos_establecimiento (
                 id SERIAL PRIMARY KEY,
                 producto_maestro_id INTEGER NOT NULL,
@@ -3108,7 +3306,8 @@ def crear_tabla_codigos_establecimiento():
                 notas TEXT,
                 CONSTRAINT codigos_est_unique UNIQUE(producto_maestro_id, establecimiento_id, codigo_local)
             )
-        """)
+        """
+        )
         conn.commit()
         print("      ✅ Tabla creada")
 
@@ -3127,7 +3326,8 @@ def crear_tabla_codigos_establecimiento():
 
         # 3. Crear función identificar_tipo_codigo
         print("   3/5 Creando función identificar_tipo_codigo()...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE OR REPLACE FUNCTION identificar_tipo_codigo(codigo TEXT)
             RETURNS TEXT AS $$
             BEGIN
@@ -3152,13 +3352,15 @@ def crear_tabla_codigos_establecimiento():
                 RETURN 'otro';
             END;
             $$ LANGUAGE plpgsql IMMUTABLE;
-        """)
+        """
+        )
         conn.commit()
         print("      ✅ Función identificar_tipo_codigo() creada")
 
         # 4. Crear función registrar_codigo_establecimiento
         print("   4/5 Creando función registrar_codigo_establecimiento()...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE OR REPLACE FUNCTION registrar_codigo_establecimiento(
                 p_producto_id INTEGER,
                 p_establecimiento_id INTEGER,
@@ -3189,13 +3391,15 @@ def crear_tabla_codigos_establecimiento():
                 RETURN v_codigo_id;
             END;
             $$ LANGUAGE plpgsql;
-        """)
+        """
+        )
         conn.commit()
         print("      ✅ Función registrar_codigo_establecimiento() creada")
 
         # 5. Crear vista
         print("   5/5 Creando vista v_codigos_producto...")
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE OR REPLACE VIEW v_codigos_producto AS
             SELECT
                 ce.id,
@@ -3215,7 +3419,8 @@ def crear_tabla_codigos_establecimiento():
             JOIN establecimientos e ON ce.establecimiento_id = e.id
             WHERE ce.activo = TRUE
             ORDER BY ce.veces_visto DESC
-        """)
+        """
+        )
         conn.commit()
         print("      ✅ Vista creada")
 
@@ -3227,6 +3432,7 @@ def crear_tabla_codigos_establecimiento():
     except Exception as e:
         print(f"❌ Error creando sistema de códigos: {e}")
         import traceback
+
         traceback.print_exc()
         try:
             conn.rollback()
@@ -3248,42 +3454,52 @@ def verificar_sistema_codigos():
         print("🔍 Verificando sistema de códigos...")
 
         # Verificar tabla
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = 'codigos_establecimiento'
             )
-        """)
+        """
+        )
         tabla_existe = cursor.fetchone()[0]
         print(f"   Tabla codigos_establecimiento: {'✅' if tabla_existe else '❌'}")
 
         # Verificar función identificar_tipo_codigo
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM pg_proc
                 WHERE proname = 'identificar_tipo_codigo'
             )
-        """)
+        """
+        )
         func1_existe = cursor.fetchone()[0]
         print(f"   Función identificar_tipo_codigo: {'✅' if func1_existe else '❌'}")
 
         # Verificar función registrar_codigo_establecimiento
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM pg_proc
                 WHERE proname = 'registrar_codigo_establecimiento'
             )
-        """)
+        """
+        )
         func2_existe = cursor.fetchone()[0]
-        print(f"   Función registrar_codigo_establecimiento: {'✅' if func2_existe else '❌'}")
+        print(
+            f"   Función registrar_codigo_establecimiento: {'✅' if func2_existe else '❌'}"
+        )
 
         # Verificar vista
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.views
                 WHERE table_name = 'v_codigos_producto'
             )
-        """)
+        """
+        )
         vista_existe = cursor.fetchone()[0]
         print(f"   Vista v_codigos_producto: {'✅' if vista_existe else '❌'}")
 
@@ -3295,7 +3511,9 @@ def verificar_sistema_codigos():
         if todo_ok:
             print("✅ Sistema de códigos completamente instalado")
         else:
-            print("⚠️  Sistema de códigos incompleto - ejecutar crear_tabla_codigos_establecimiento()")
+            print(
+                "⚠️  Sistema de códigos incompleto - ejecutar crear_tabla_codigos_establecimiento()"
+            )
 
         return todo_ok
 
@@ -3320,12 +3538,14 @@ def migrar_codigos_existentes():
         print("🔄 Migrando códigos existentes...")
 
         # Verificar que todo esté instalado
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = 'codigos_establecimiento'
             )
-        """)
+        """
+        )
 
         if not cursor.fetchone()[0]:
             print("   ⚠️  Tabla no existe, saltando migración")
@@ -3334,7 +3554,8 @@ def migrar_codigos_existentes():
             return False
 
         # Migrar códigos
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO codigos_establecimiento
                 (producto_maestro_id, establecimiento_id, codigo_local, tipo_codigo, veces_visto)
             SELECT
@@ -3355,7 +3576,8 @@ def migrar_codigos_existentes():
             DO UPDATE SET
                 veces_visto = EXCLUDED.veces_visto,
                 ultima_vez_visto = NOW()
-        """)
+        """
+        )
 
         migrados = cursor.rowcount
         conn.commit()
@@ -3380,7 +3602,10 @@ def migrar_codigos_existentes():
 # FUNCIONES AUXILIARES (sin cambios)
 # ============================================================================
 
-def registrar_codigo_producto(producto_id: int, establecimiento_id: int, codigo: str) -> bool:
+
+def registrar_codigo_producto(
+    producto_id: int, establecimiento_id: int, codigo: str
+) -> bool:
     """Registrar un código local para un producto"""
     if not codigo or len(codigo) < 4:
         return False
@@ -3389,9 +3614,12 @@ def registrar_codigo_producto(producto_id: int, establecimiento_id: int, codigo:
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT registrar_codigo_establecimiento(%s, %s, %s)
-        """, (producto_id, establecimiento_id, codigo))
+        """,
+            (producto_id, establecimiento_id, codigo),
+        )
 
         codigo_id = cursor.fetchone()[0]
         conn.commit()
@@ -3417,7 +3645,8 @@ def obtener_codigos_producto(producto_id: int) -> list:
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 ce.codigo_local,
                 ce.tipo_codigo,
@@ -3430,18 +3659,22 @@ def obtener_codigos_producto(producto_id: int) -> list:
             WHERE ce.producto_maestro_id = %s
               AND ce.activo = TRUE
             ORDER BY ce.veces_visto DESC
-        """, (producto_id,))
+        """,
+            (producto_id,),
+        )
 
         codigos = []
         for row in cursor.fetchall():
-            codigos.append({
-                "codigo": row[0],
-                "tipo": row[1],
-                "establecimiento": row[2],
-                "veces_visto": row[3],
-                "primera_vez": row[4],
-                "ultima_vez": row[5]
-            })
+            codigos.append(
+                {
+                    "codigo": row[0],
+                    "tipo": row[1],
+                    "establecimiento": row[2],
+                    "veces_visto": row[3],
+                    "primera_vez": row[4],
+                    "ultima_vez": row[5],
+                }
+            )
 
         cursor.close()
         conn.close()
@@ -3464,12 +3697,15 @@ def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> d
 
     try:
         # Buscar por EAN
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, nombre_consolidado, codigo_ean
             FROM productos_maestros_v2
             WHERE codigo_ean = %s
             LIMIT 1
-        """, (codigo,))
+        """,
+            (codigo,),
+        )
 
         producto = cursor.fetchone()
         if producto:
@@ -3480,12 +3716,13 @@ def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> d
                 "producto_id": producto[0],
                 "nombre": producto[1],
                 "codigo_ean": producto[2],
-                "tipo_busqueda": "ean"
+                "tipo_busqueda": "ean",
             }
 
         # Buscar por código local
         if establecimiento_id:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT pm.id, pm.nombre_consolidado, ce.tipo_codigo
                 FROM codigos_establecimiento ce
                 JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
@@ -3493,16 +3730,21 @@ def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> d
                   AND ce.establecimiento_id = %s
                   AND ce.activo = TRUE
                 LIMIT 1
-            """, (codigo, establecimiento_id))
+            """,
+                (codigo, establecimiento_id),
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT pm.id, pm.nombre_consolidado, ce.tipo_codigo
                 FROM codigos_establecimiento ce
                 JOIN productos_maestros_v2 pm ON ce.producto_maestro_id = pm.id
                 WHERE ce.codigo_local = %s
                   AND ce.activo = TRUE
                 LIMIT 1
-            """, (codigo,))
+            """,
+                (codigo,),
+            )
 
         producto = cursor.fetchone()
         cursor.close()
@@ -3514,7 +3756,7 @@ def buscar_producto_por_codigo(codigo: str, establecimiento_id: int = None) -> d
                 "producto_id": producto[0],
                 "nombre": producto[1],
                 "tipo_codigo": producto[2],
-                "tipo_busqueda": "codigo_local"
+                "tipo_busqueda": "codigo_local",
             }
 
         return {"encontrado": False}
@@ -3535,6 +3777,7 @@ print("✅ Módulo de códigos por establecimiento cargado")
 # SISTEMA DE CONFIGURACIÓN DE CADENAS
 # ============================================
 
+
 def crear_tabla_configuracion_cadenas():
     """
     Crear tabla de configuración de cadenas comerciales
@@ -3553,12 +3796,14 @@ def crear_tabla_configuracion_cadenas():
         print("🏪 Verificando tabla configuracion_cadenas...")
 
         # Verificar si ya existe
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = 'configuracion_cadenas'
             )
-        """)
+        """
+        )
 
         if cursor.fetchone()[0]:
             print("   ✓ Tabla configuracion_cadenas ya existe")
@@ -3574,7 +3819,8 @@ def crear_tabla_configuracion_cadenas():
                 return True
 
         # Si llegamos aquí, la tabla existe pero está vacía, o no existe
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS configuracion_cadenas (
                 id SERIAL PRIMARY KEY,
                 cadena VARCHAR(100) UNIQUE NOT NULL,
@@ -3587,33 +3833,53 @@ def crear_tabla_configuracion_cadenas():
                 fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         conn.commit()
         print("   ✅ Tabla configuracion_cadenas verificada/creada")
 
         # Insertar configuración de cadenas conocidas
         cadenas_config = [
-            ('JUMBO', 'ean', '^[0-9]{13}$', 'Jumbo usa códigos EAN-13 estándar', 10),
-            ('ARA', 'ean', '^[0-9]{13}$', 'Ara usa códigos EAN-13 estándar', 10),
-            ('D1', 'ean', '^[0-9]{13}$', 'D1 usa códigos EAN-13 estándar', 10),
-            ('ALKOSTO', 'ean', '^[0-9]{13}$', 'Alkosto usa códigos EAN-13', 9),
-            ('MAKRO', 'ean', '^[0-9]{13}$', 'Makro usa códigos EAN-13', 9),
-            ('PRICESMART', 'ean', '^[0-9]{13}$', 'PriceSmart usa códigos EAN-13', 9),
-            ('CRUZ VERDE', 'ean', '^[0-9]{13}$', 'Cruz Verde usa EAN-13', 8),
-            ('FARMATODO', 'ean', '^[0-9]{13}$', 'Farmatodo usa EAN-13', 8),
-            ('LA REBAJA', 'ean', '^[0-9]{13}$', 'Drogas La Rebaja usa EAN-13', 8),
-            ('EXITO', 'plu_local', '^[0-9]{4,6}$', 'Éxito usa PLU locales 4-6 dígitos', 10),
-            ('CARULLA', 'plu_local', '^[0-9]{4,6}$', 'Carulla usa PLU locales 4-6 dígitos', 10),
-            ('OLIMPICA', 'plu_local', '^[0-9]{4,6}$', 'Olímpica usa PLU locales 4-6 dígitos', 9),
-            ('JUSTO Y BUENO', 'mixto', None, 'Justo & Bueno usa sistema mixto', 7),
-            ('EURO', 'mixto', None, 'Euro usa sistema mixto', 7),
-            ('METRO', 'mixto', None, 'Metro usa sistema mixto', 7),
+            ("JUMBO", "ean", "^[0-9]{13}$", "Jumbo usa códigos EAN-13 estándar", 10),
+            ("ARA", "ean", "^[0-9]{13}$", "Ara usa códigos EAN-13 estándar", 10),
+            ("D1", "ean", "^[0-9]{13}$", "D1 usa códigos EAN-13 estándar", 10),
+            ("ALKOSTO", "ean", "^[0-9]{13}$", "Alkosto usa códigos EAN-13", 9),
+            ("MAKRO", "ean", "^[0-9]{13}$", "Makro usa códigos EAN-13", 9),
+            ("PRICESMART", "ean", "^[0-9]{13}$", "PriceSmart usa códigos EAN-13", 9),
+            ("CRUZ VERDE", "ean", "^[0-9]{13}$", "Cruz Verde usa EAN-13", 8),
+            ("FARMATODO", "ean", "^[0-9]{13}$", "Farmatodo usa EAN-13", 8),
+            ("LA REBAJA", "ean", "^[0-9]{13}$", "Drogas La Rebaja usa EAN-13", 8),
+            (
+                "EXITO",
+                "plu_local",
+                "^[0-9]{4,6}$",
+                "Éxito usa PLU locales 4-6 dígitos",
+                10,
+            ),
+            (
+                "CARULLA",
+                "plu_local",
+                "^[0-9]{4,6}$",
+                "Carulla usa PLU locales 4-6 dígitos",
+                10,
+            ),
+            (
+                "OLIMPICA",
+                "plu_local",
+                "^[0-9]{4,6}$",
+                "Olímpica usa PLU locales 4-6 dígitos",
+                9,
+            ),
+            ("JUSTO Y BUENO", "mixto", None, "Justo & Bueno usa sistema mixto", 7),
+            ("EURO", "mixto", None, "Euro usa sistema mixto", 7),
+            ("METRO", "mixto", None, "Metro usa sistema mixto", 7),
         ]
 
         insertadas = 0
         for cadena, tipo, patron, desc, prioridad in cadenas_config:
             try:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO configuracion_cadenas
                         (cadena, tipo_codigo_principal, patron_validacion, descripcion, prioridad_deteccion)
                     VALUES (%s, %s, %s, %s, %s)
@@ -3623,7 +3889,9 @@ def crear_tabla_configuracion_cadenas():
                         descripcion = EXCLUDED.descripcion,
                         prioridad_deteccion = EXCLUDED.prioridad_deteccion,
                         fecha_actualizacion = CURRENT_TIMESTAMP
-                """, (cadena, tipo, patron, desc, prioridad))
+                """,
+                    (cadena, tipo, patron, desc, prioridad),
+                )
                 insertadas += 1
             except Exception as e:
                 print(f"   ⚠️ Error insertando {cadena}: {e}")
@@ -3633,10 +3901,12 @@ def crear_tabla_configuracion_cadenas():
 
         # Crear índice
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_config_cadenas_activo
                 ON configuracion_cadenas(activo, prioridad_deteccion DESC)
-            """)
+            """
+            )
             conn.commit()
             print("   ✅ Índice creado")
         except Exception as e:
@@ -3650,6 +3920,7 @@ def crear_tabla_configuracion_cadenas():
     except Exception as e:
         print(f"❌ Error configurando cadenas: {e}")
         import traceback
+
         traceback.print_exc()
         try:
             conn.rollback()
@@ -3677,13 +3948,16 @@ def obtener_tipo_codigo_cadena(cadena: str) -> str:
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT tipo_codigo_principal
             FROM configuracion_cadenas
             WHERE UPPER(cadena) = UPPER(%s)
               AND activo = TRUE
             LIMIT 1
-        """, (cadena,))
+        """,
+            (cadena,),
+        )
 
         resultado = cursor.fetchone()
         cursor.close()
@@ -3718,7 +3992,8 @@ def listar_configuracion_cadenas() -> list:
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT
                 cadena,
                 tipo_codigo_principal,
@@ -3728,18 +4003,21 @@ def listar_configuracion_cadenas() -> list:
                 activo
             FROM configuracion_cadenas
             ORDER BY prioridad_deteccion DESC, cadena ASC
-        """)
+        """
+        )
 
         cadenas = []
         for row in cursor.fetchall():
-            cadenas.append({
-                'cadena': row[0],
-                'tipo_codigo': row[1],
-                'patron': row[2],
-                'descripcion': row[3],
-                'prioridad': row[4],
-                'activo': row[5]
-            })
+            cadenas.append(
+                {
+                    "cadena": row[0],
+                    "tipo_codigo": row[1],
+                    "patron": row[2],
+                    "descripcion": row[3],
+                    "prioridad": row[4],
+                    "activo": row[5],
+                }
+            )
 
         cursor.close()
         conn.close()
@@ -3755,7 +4033,9 @@ def listar_configuracion_cadenas() -> list:
         return []
 
 
-def actualizar_configuracion_cadena(cadena: str, tipo_codigo: str, descripcion: str = None) -> bool:
+def actualizar_configuracion_cadena(
+    cadena: str, tipo_codigo: str, descripcion: str = None
+) -> bool:
     """
     Actualiza la configuración de una cadena existente
 
@@ -3767,7 +4047,7 @@ def actualizar_configuracion_cadena(cadena: str, tipo_codigo: str, descripcion: 
     Returns:
         bool: True si se actualizó correctamente
     """
-    if tipo_codigo not in ['ean', 'plu_local', 'plu_estandar', 'mixto']:
+    if tipo_codigo not in ["ean", "plu_local", "plu_estandar", "mixto"]:
         print(f"❌ Tipo de código inválido: {tipo_codigo}")
         return False
 
@@ -3778,13 +4058,16 @@ def actualizar_configuracion_cadena(cadena: str, tipo_codigo: str, descripcion: 
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE configuracion_cadenas
             SET tipo_codigo_principal = %s,
                 descripcion = COALESCE(%s, descripcion),
                 fecha_actualizacion = CURRENT_TIMESTAMP
             WHERE UPPER(cadena) = UPPER(%s)
-        """, (tipo_codigo, descripcion, cadena))
+        """,
+            (tipo_codigo, descripcion, cadena),
+        )
 
         if cursor.rowcount > 0:
             conn.commit()
@@ -3818,26 +4101,28 @@ def verificar_sistema_configuracion_cadenas() -> dict:
     """
     conn = get_db_connection()
     if not conn:
-        return {'error': 'No se pudo conectar a la base de datos'}
+        return {"error": "No se pudo conectar a la base de datos"}
 
     cursor = conn.cursor()
 
     try:
         # Verificar tabla
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = 'configuracion_cadenas'
             )
-        """)
+        """
+        )
         tabla_existe = cursor.fetchone()[0]
 
         if not tabla_existe:
             cursor.close()
             conn.close()
             return {
-                'instalado': False,
-                'mensaje': 'Tabla configuracion_cadenas no existe'
+                "instalado": False,
+                "mensaje": "Tabla configuracion_cadenas no existe",
             }
 
         # Contar cadenas
@@ -3848,13 +4133,15 @@ def verificar_sistema_configuracion_cadenas() -> dict:
         total = cursor.fetchone()[0]
 
         # Contar por tipo
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT tipo_codigo_principal, COUNT(*)
             FROM configuracion_cadenas
             WHERE activo = TRUE
             GROUP BY tipo_codigo_principal
             ORDER BY COUNT(*) DESC
-        """)
+        """
+        )
 
         por_tipo = {}
         for row in cursor.fetchall():
@@ -3864,11 +4151,11 @@ def verificar_sistema_configuracion_cadenas() -> dict:
         conn.close()
 
         return {
-            'instalado': True,
-            'total_cadenas': total,
-            'cadenas_activas': total_activas,
-            'por_tipo': por_tipo,
-            'mensaje': f'Sistema configurado correctamente con {total_activas} cadenas activas'
+            "instalado": True,
+            "total_cadenas": total,
+            "cadenas_activas": total_activas,
+            "por_tipo": por_tipo,
+            "mensaje": f"Sistema configurado correctamente con {total_activas} cadenas activas",
         }
 
     except Exception as e:
@@ -3878,7 +4165,7 @@ def verificar_sistema_configuracion_cadenas() -> dict:
             conn.close()
         except:
             pass
-        return {'error': str(e)}
+        return {"error": str(e)}
 
 
 def identificar_tipo_codigo_con_cadena(codigo: str, cadena: str = None) -> str:
@@ -3894,7 +4181,7 @@ def identificar_tipo_codigo_con_cadena(codigo: str, cadena: str = None) -> str:
     """
     # Validación básica
     if not codigo or len(codigo) < 4:
-        return 'invalido'
+        return "invalido"
 
     # Si tenemos la cadena, consultar su configuración
     if cadena:
@@ -3902,64 +4189,67 @@ def identificar_tipo_codigo_con_cadena(codigo: str, cadena: str = None) -> str:
 
         if tipo_esperado:
             # Validar que el código coincida con el tipo esperado
-            if tipo_esperado == 'ean':
+            if tipo_esperado == "ean":
                 if len(codigo) in (8, 13, 14) and codigo.isdigit():
-                    return 'ean'
-            elif tipo_esperado == 'plu_local':
+                    return "ean"
+            elif tipo_esperado == "plu_local":
                 if len(codigo) in (4, 5, 6) and codigo.isdigit():
-                    return 'plu_local'
-            elif tipo_esperado == 'plu_estandar':
+                    return "plu_local"
+            elif tipo_esperado == "plu_estandar":
                 if len(codigo) in (4, 5) and codigo.isdigit():
                     try:
                         if 3000 <= int(codigo) <= 4999:
-                            return 'plu_estandar'
+                            return "plu_estandar"
                     except:
                         pass
-            elif tipo_esperado == 'mixto':
+            elif tipo_esperado == "mixto":
                 # Para cadenas mixtas, usar detección automática
                 pass
 
     # Detección automática si no hay configuración o es mixta
     if len(codigo) in (8, 13, 14) and codigo.isdigit():
-        return 'ean'
+        return "ean"
 
     if len(codigo) in (4, 5) and codigo.isdigit():
         try:
             if 3000 <= int(codigo) <= 4999:
-                return 'plu_estandar'
+                return "plu_estandar"
         except:
             pass
 
     if len(codigo) in (4, 5, 6) and codigo.isdigit():
-        return 'plu_local'
+        return "plu_local"
 
     if len(codigo) == 12 and codigo.isdigit():
-        return 'upc'
+        return "upc"
 
     if codigo.isdigit():
-        return 'codigo_interno'
+        return "codigo_interno"
 
-    return 'otro'
+    return "otro"
 
 
 # ============================================
 # FUNCIONES DE TESTING
 # ============================================
 
+
 def test_configuracion_cadenas():
     """
     Prueba el sistema de configuración de cadenas
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🧪 TESTING: Sistema de Configuración de Cadenas")
-    print("="*80)
+    print("=" * 80)
 
     # Test 1: Verificar sistema
     print("\n1️⃣ Verificando sistema...")
     estado = verificar_sistema_configuracion_cadenas()
-    if estado.get('instalado'):
+    if estado.get("instalado"):
         print(f"   ✅ {estado['mensaje']}")
-        print(f"   📊 Total: {estado['total_cadenas']} | Activas: {estado['cadenas_activas']}")
+        print(
+            f"   📊 Total: {estado['total_cadenas']} | Activas: {estado['cadenas_activas']}"
+        )
         print(f"   📊 Por tipo: {estado['por_tipo']}")
     else:
         print(f"   ❌ {estado.get('mensaje', 'Error')}")
@@ -3968,16 +4258,18 @@ def test_configuracion_cadenas():
     # Test 2: Obtener tipo de código
     print("\n2️⃣ Probando detección de tipo de código...")
     tests = [
-        ('JUMBO', '7702001234567', 'ean'),
-        ('EXITO', '4030', 'plu_local'),
-        ('ARA', '7707123456789', 'ean'),
-        ('CARULLA', '5678', 'plu_local'),
+        ("JUMBO", "7702001234567", "ean"),
+        ("EXITO", "4030", "plu_local"),
+        ("ARA", "7707123456789", "ean"),
+        ("CARULLA", "5678", "plu_local"),
     ]
 
     for cadena, codigo, esperado in tests:
         tipo = identificar_tipo_codigo_con_cadena(codigo, cadena)
         resultado = "✅" if tipo == esperado else "❌"
-        print(f"   {resultado} {cadena} - Código {codigo}: {tipo} (esperado: {esperado})")
+        print(
+            f"   {resultado} {cadena} - Código {codigo}: {tipo} (esperado: {esperado})"
+        )
 
     # Test 3: Listar cadenas
     print("\n3️⃣ Listando cadenas configuradas...")
@@ -3985,13 +4277,15 @@ def test_configuracion_cadenas():
     if cadenas:
         print(f"   ✅ {len(cadenas)} cadenas encontradas")
         for c in cadenas[:5]:  # Mostrar solo las primeras 5
-            print(f"      • {c['cadena']}: {c['tipo_codigo']} (prioridad: {c['prioridad']})")
+            print(
+                f"      • {c['cadena']}: {c['tipo_codigo']} (prioridad: {c['prioridad']})"
+            )
     else:
         print("   ❌ No se encontraron cadenas")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("✅ Testing completado")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     return True
 
@@ -4020,7 +4314,9 @@ if __name__ == "__main__":
     print("🔧 LECFAC - Inicializando sistema de base de datos UNIFICADO")
     print("=" * 80)
     print("📦 Incluye:")
-    print("   ✅ Sistema de Productos Canónicos (productos_canonicos + productos_variantes)")
+    print(
+        "   ✅ Sistema de Productos Canónicos (productos_canonicos + productos_variantes)"
+    )
     print("   ✅ Sistema Legacy (productos_maestros con migración)")
     print("   ✅ Todas las funciones completas (precios, inventario, auditoría)")
     print("   ✅ Soporte dual para migración gradual")
