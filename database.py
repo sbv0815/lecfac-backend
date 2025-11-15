@@ -1855,6 +1855,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                 (factura_id,),
             )
 
+        items = cursor.fetchall()  # ← ESTA LÍNEA FALTA
+
         if not items:
             print(f"⚠️ No hay items con producto_maestro_id en factura {factura_id}")
             cursor.close()
