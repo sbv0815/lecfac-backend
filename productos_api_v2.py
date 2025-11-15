@@ -1,6 +1,6 @@
 # productos_api_v2.py
 # API de productos con manejo de PLUs y establecimientos
-# Versión 3.0 - Usa productos_maestros_v2
+# Versión 3.1 - Usa productos_maestros_v2 + Guarda PLUs
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -16,19 +16,8 @@ from urllib.parse import urlparse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ⭐ CAMBIO: Prefijo correcto para v2
+# ⭐ PREFIJO CORRECTO para v2
 router = APIRouter(prefix="/api/v2/productos", tags=["productos_v2"])
-
-
-# Modelo para actualización
-class ProductoUpdate(BaseModel):
-    codigo_ean: Optional[str] = None
-    nombre_consolidado: Optional[str] = None
-    marca: Optional[str] = None
-    categoria_id: Optional[int] = None
-    peso_neto: Optional[float] = None
-    unidad_medida: Optional[str] = None
-    estado: Optional[str] = None
 
 
 # Función de conexión a la base de datos
@@ -326,12 +315,13 @@ async def obtener_producto_detalle(producto_id: int):
 
 
 # =====================================================
-# ENDPOINT: ACTUALIZAR PRODUCTO
+# ENDPOINT: ACTUALIZAR PRODUCTO (CON PLUs)
 # =====================================================
 @router.put("/{producto_id}")
 async def actualizar_producto(producto_id: int, datos: Dict[str, Any]):
     """
     Actualizar información de un producto en productos_maestros_v2
+    Incluye guardado de PLUs
     """
     logger.info(f"📝 [API] Actualizando producto {producto_id}")
     logger.info(f"📝 [API] Datos recibidos: {datos}")
@@ -347,25 +337,23 @@ async def actualizar_producto(producto_id: int, datos: Dict[str, Any]):
             "codigo_ean": "codigo_ean",
             "nombre_normalizado": "nombre_consolidado",
             "nombre_consolidado": "nombre_consolidado",
-            "nombre_comercial": "nombre_consolidado",  # Usa el mismo campo
+            "nombre_comercial": "nombre_consolidado",
             "marca": "marca",
-            "categoria": "categoria_id",  # Nota: ahora es categoria_id
+            "categoria": "categoria_id",
             "categoria_id": "categoria_id",
-            "subcategoria": None,  # No existe en v2
-            "presentacion": None,  # No existe en v2
             "peso_neto": "peso_neto",
             "unidad_medida": "unidad_medida",
             "estado": "estado",
         }
 
-        # Filtrar campos válidos
+        # Filtrar campos válidos (excluyendo plus que se maneja aparte)
         campos_actualizar = {}
         for key, value in datos.items():
+            if key == "plus":
+                continue  # PLUs se manejan después
             if key in campo_mapping and campo_mapping[key] is not None:
                 db_field = campo_mapping[key]
-                # Manejar categoria como texto (temporal hasta que tengas la tabla de categorías)
                 if key == "categoria" and isinstance(value, str):
-                    # Por ahora, ignorar categoría texto ya que necesita categoria_id
                     logger.info(
                         f"⚠️ Ignorando categoría texto '{value}', se necesita categoria_id"
                     )
@@ -377,7 +365,7 @@ async def actualizar_producto(producto_id: int, datos: Dict[str, Any]):
                 status_code=400, detail="No hay campos válidos para actualizar"
             )
 
-        # Construir query
+        # Construir query de actualización
         set_clauses = []
         valores = []
         for campo, valor in campos_actualizar.items():
@@ -404,8 +392,41 @@ async def actualizar_producto(producto_id: int, datos: Dict[str, Any]):
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
         conn.commit()
-
         logger.info(f"✅ [API] Producto {producto_id} actualizado exitosamente")
+
+        # ⭐ GUARDAR PLUs si vienen en los datos
+        if "plus" in datos and isinstance(datos["plus"], list):
+            logger.info(f"📝 [API] Guardando {len(datos['plus'])} PLUs")
+
+            # Eliminar PLUs existentes
+            cursor.execute(
+                "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
+                (producto_id,),
+            )
+
+            # Insertar nuevos PLUs
+            for plu_item in datos["plus"]:
+                est_id = plu_item.get("establecimiento_id")
+                codigo = plu_item.get("codigo_plu")
+
+                if est_id and codigo:
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_por_establecimiento
+                        (producto_maestro_id, establecimiento_id, codigo_plu, precio_unitario, fecha_creacion, fecha_actualizacion)
+                        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                        (
+                            producto_id,
+                            int(est_id),
+                            str(codigo),
+                            plu_item.get("precio_unitario"),
+                        ),
+                    )
+                    logger.info(f"✅ PLU insertado: Est={est_id}, Código={codigo}")
+
+            conn.commit()
+            logger.info(f"✅ [API] PLUs guardados para producto {producto_id}")
 
         # Devolver el producto actualizado
         return await obtener_producto_detalle(producto_id)
