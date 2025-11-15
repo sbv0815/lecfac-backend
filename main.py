@@ -720,7 +720,7 @@ async def get_inventario_usuario(usuario_id: int):
                 """
                 SELECT
                     iu.producto_maestro_id,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     pm.codigo_ean,
                     iu.cantidad_actual,
                     iu.precio_ultima_compra,
@@ -728,7 +728,7 @@ async def get_inventario_usuario(usuario_id: int):
                     iu.establecimiento_nombre,
                     pm.categoria
                 FROM inventario_usuario iu
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 100
@@ -740,7 +740,7 @@ async def get_inventario_usuario(usuario_id: int):
                 """
                 SELECT
                     iu.producto_maestro_id,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     pm.codigo_ean,
                     iu.cantidad_actual,
                     iu.precio_ultima_compra,
@@ -748,7 +748,7 @@ async def get_inventario_usuario(usuario_id: int):
                     iu.establecimiento_nombre,
                     pm.categoria
                 FROM inventario_usuario iu
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 100
@@ -880,14 +880,14 @@ async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
                 SELECT
                     iu.usuario_id,
                     u.email,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.cantidad_actual,
                     iu.precio_ultima_compra,
                     iu.fecha_ultima_actualizacion,
                     pm.categoria
                 FROM inventario_usuario iu
                 LEFT JOIN usuarios u ON iu.usuario_id = u.id
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT %s OFFSET %s
             """,
@@ -899,14 +899,14 @@ async def get_todos_inventarios(limite: int = 50, pagina: int = 1):
                 SELECT
                     iu.usuario_id,
                     u.email,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.cantidad_actual,
                     iu.precio_ultima_compra,
                     iu.fecha_ultima_actualizacion,
                     pm.categoria
                 FROM inventario_usuario iu
                 LEFT JOIN usuarios u ON iu.usuario_id = u.id
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT ? OFFSET ?
             """,
@@ -1052,7 +1052,7 @@ async def get_admin_productos():
             SELECT
                 pm.id,
                 pm.codigo_ean,
-                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
+                COALESCE(pm.nombre_comercial, pm.nombre_consolidado, 'Sin nombre') as nombre,
                 pm.marca,
                 pm.categoria,
                 pm.subcategoria,
@@ -1066,7 +1066,7 @@ async def get_admin_productos():
                 COUNT(DISTINCT if.factura_id) as facturas_incluyen
             FROM productos_maestros pm
             LEFT JOIN items_factura if ON if.producto_maestro_id = pm.id
-            GROUP BY pm.id, pm.codigo_ean, pm.nombre_normalizado, pm.nombre_comercial,
+            GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.nombre_comercial,
                      pm.marca, pm.categoria, pm.subcategoria, pm.precio_promedio_global,
                      pm.total_reportes, pm.primera_vez_reportado, pm.ultima_actualizacion
             ORDER BY pm.total_reportes DESC, pm.id DESC
@@ -3957,13 +3957,13 @@ async def debug_inventario(usuario_id: int):
                 """
                 SELECT
                     iu.producto_maestro_id,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.cantidad_actual,
                     iu.precio_ultima_compra,
                     iu.establecimiento,
                     iu.fecha_ultima_compra
                 FROM inventario_usuario iu
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 10
@@ -3975,13 +3975,13 @@ async def debug_inventario(usuario_id: int):
                 """
                 SELECT
                     iu.producto_maestro_id,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.cantidad_actual,
                     iu.precio_ultima_compra,
                     iu.establecimiento,
                     iu.fecha_ultima_compra
                 FROM inventario_usuario iu
-                LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
                 ORDER BY iu.fecha_ultima_actualizacion DESC
                 LIMIT 10
@@ -6568,7 +6568,7 @@ async def verificar_analytics():
         cursor.execute(
             """
             SELECT
-                pm.nombre_normalizado,
+                pm.nombre_consolidado,
                 pc.veces_comprado,
                 pc.ultima_compra,
                 pc.frecuencia_dias
@@ -7511,14 +7511,14 @@ async def admin_inventarios(usuario_id: int = None, limite: int = 50, pagina: in
             SELECT
                 iu.usuario_id,
                 u.nombre,
-                pm.nombre_normalizado,
+                pm.nombre_consolidado,
                 iu.cantidad_actual,
                 pm.categoria,
                 iu.fecha_ultima_actualizacion,
                 iu.establecimiento_nombre
             FROM inventario_usuario iu
             LEFT JOIN usuarios u ON iu.usuario_id = u.id
-            LEFT JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+            LEFT JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
             WHERE 1=1
         """
 
@@ -7649,7 +7649,7 @@ async def admin_productos():
             """
             SELECT
                 pm.id,
-                COALESCE(pm.nombre_comercial, pm.nombre_normalizado, 'Sin nombre') as nombre,
+                COALESCE(pm.nombre_comercial, pm.nombre_consolidado, 'Sin nombre') as nombre,
                 pm.codigo_ean,
                 pm.precio_promedio_global,
                 pm.categoria,
