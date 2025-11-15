@@ -51,7 +51,7 @@ async def get_inventario_usuario(user_id: int):
                 SELECT
                     iu.id,
                     pm.codigo_ean,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     pm.marca,
                     pm.categoria,
                     pm.imagen_url,
@@ -83,7 +83,7 @@ async def get_inventario_usuario(user_id: int):
                     iu.dias_desde_ultima_compra,
                     iu.marca
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
                 ORDER BY
                     CASE
@@ -101,7 +101,7 @@ async def get_inventario_usuario(user_id: int):
                 SELECT
                     iu.id,
                     pm.codigo_ean,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     pm.marca,
                     pm.categoria,
                     pm.imagen_url,
@@ -133,7 +133,7 @@ async def get_inventario_usuario(user_id: int):
                     iu.dias_desde_ultima_compra,
                     iu.marca
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
                 ORDER BY
                     CASE
@@ -308,11 +308,11 @@ async def get_alertas_usuario(user_id: int, solo_activas: bool = True):
                 a.prioridad,
                 a.fecha_creacion,
                 a.fecha_expiracion,
-                pm.nombre_normalizado as producto_nombre,
+                pm.nombre_consolidado as producto_nombre,
                 pm.codigo_ean,
                 e.nombre_normalizado as establecimiento_nombre
             FROM alertas_usuario a
-            LEFT JOIN productos_maestros pm ON a.producto_maestro_id = pm.id
+            LEFT JOIN productos_maestros_v2 pm ON a.producto_maestro_id = pm.id
             LEFT JOIN establecimientos e ON a.establecimiento_id = e.id
             WHERE a.usuario_id = {}
         """.format(
@@ -772,7 +772,7 @@ async def get_estadisticas_usuario(user_id: int):
                     COUNT(*) as cantidad,
                     COALESCE(SUM(iu.cantidad_actual * iu.precio_ultima_compra), 0) as valor_total
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
                 GROUP BY pm.categoria
                 ORDER BY cantidad DESC
@@ -788,7 +788,7 @@ async def get_estadisticas_usuario(user_id: int):
                     COUNT(*) as cantidad,
                     COALESCE(SUM(iu.cantidad_actual * iu.precio_ultima_compra), 0) as valor_total
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
                 GROUP BY pm.categoria
                 ORDER BY cantidad DESC
@@ -813,7 +813,7 @@ async def get_estadisticas_usuario(user_id: int):
                 """
                 SELECT
                     iu.id,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.cantidad_actual,
                     COALESCE(
                         (iu.fecha_estimada_agotamiento::date - CURRENT_DATE),
@@ -821,7 +821,7 @@ async def get_estadisticas_usuario(user_id: int):
                      )::INTEGER as dias_estimados,
                     iu.establecimiento
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
                   AND iu.cantidad_actual <= iu.nivel_alerta * 2
                   AND iu.fecha_estimada_agotamiento IS NOT NULL
@@ -835,7 +835,7 @@ async def get_estadisticas_usuario(user_id: int):
                 """
                 SELECT
                     iu.id,
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.cantidad_actual,
                     COALESCE(
                         CAST((julianday(iu.fecha_estimada_agotamiento) - julianday('now')) AS INTEGER),
@@ -843,7 +843,7 @@ async def get_estadisticas_usuario(user_id: int):
                     ) as dias_estimados,
                     iu.establecimiento
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
                   AND iu.cantidad_actual <= iu.nivel_alerta * 2
                   AND iu.fecha_estimada_agotamiento IS NOT NULL
@@ -981,14 +981,14 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     COALESCE(SUM(itf.cantidad), 0) as cantidad_comprada,
                     COALESCE(SUM(itf.precio_pagado * itf.cantidad), 0) as total_gastado,
                     COALESCE(AVG(itf.precio_pagado), 0) as precio_promedio
                 FROM items_factura itf
-                JOIN productos_maestros pm ON itf.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON itf.producto_maestro_id = pm.id
                 WHERE itf.usuario_id = %s
-                GROUP BY pm.id, pm.nombre_normalizado
+                GROUP BY pm.id, pm.nombre_consolidado
                 ORDER BY cantidad_comprada DESC
                 LIMIT 5
                 """,
@@ -998,14 +998,14 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     COALESCE(SUM(itf.cantidad), 0) as cantidad_comprada,
                     COALESCE(SUM(itf.precio_pagado * itf.cantidad), 0) as total_gastado,
                     COALESCE(AVG(itf.precio_pagado), 0) as precio_promedio
                 FROM items_factura itf
-                JOIN productos_maestros pm ON itf.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON itf.producto_maestro_id = pm.id
                 WHERE itf.usuario_id = ?
-                GROUP BY pm.id, pm.nombre_normalizado
+                GROUP BY pm.id, pm.nombre_consolidado
                 ORDER BY cantidad_comprada DESC
                 LIMIT 5
                 """,
@@ -1086,14 +1086,14 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.precio_ultima_compra as mi_precio,
                     pm.precio_promedio_global,
                     (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
                     NULL as mejor_establecimiento,
                     NULL as mejor_precio
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = %s
                   AND iu.precio_ultima_compra IS NOT NULL
                   AND pm.precio_promedio_global IS NOT NULL
@@ -1107,14 +1107,14 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    pm.nombre_normalizado,
+                    pm.nombre_consolidado,
                     iu.precio_ultima_compra as mi_precio,
                     pm.precio_promedio_global,
                     (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
                     NULL as mejor_establecimiento,
                     NULL as mejor_precio
                 FROM inventario_usuario iu
-                JOIN productos_maestros pm ON iu.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 WHERE iu.usuario_id = ?
                   AND iu.precio_ultima_compra IS NOT NULL
                   AND pm.precio_promedio_global IS NOT NULL
@@ -1161,7 +1161,7 @@ async def get_estadisticas_usuario(user_id: int):
                     0 as ahorro_estimado
                 FROM establecimientos e
                 JOIN precios_productos pp ON e.id = pp.establecimiento_id
-                JOIN productos_maestros pm ON pp.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON pp.producto_maestro_id = pm.id
                 WHERE pp.precio IS NOT NULL
                 GROUP BY e.id, e.nombre_normalizado
                 ORDER BY precio_promedio ASC
@@ -1178,7 +1178,7 @@ async def get_estadisticas_usuario(user_id: int):
                     0 as ahorro_estimado
                 FROM establecimientos e
                 JOIN precios_productos pp ON e.id = pp.establecimiento_id
-                JOIN productos_maestros pm ON pp.producto_maestro_id = pm.id
+                JOIN productos_maestros_v2 pm ON pp.producto_maestro_id = pm.id
                 WHERE pp.precio IS NOT NULL
                 GROUP BY e.id, e.nombre_normalizado
                 ORDER BY precio_promedio ASC
