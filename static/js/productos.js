@@ -174,6 +174,9 @@ function mostrarError(error) {
 // =============================================================
 // ⭐ MOSTRAR PRODUCTOS (ACTUALIZADO CON ESTABLECIMIENTOS)
 // =============================================================
+// =============================================================
+// ⭐ MOSTRAR PRODUCTOS (CORREGIDO - Con parsing de JSON)
+// =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
     if (!tbody) return;
@@ -192,30 +195,54 @@ function mostrarProductos(productos) {
     }
 
     productos.forEach((p) => {
-        // SIMPLIFICADO: Una fila por producto, sin rowspan
-        const precioHTML = p.precio_promedio ?
-            `$${p.precio_promedio.toLocaleString('es-CO')}` :
-            '<span style="color: #999;">-</span>';
+        // Parsear plus si es string JSON
+        let plusArray = p.plus;
+        if (typeof p.plus === 'string') {
+            try {
+                plusArray = JSON.parse(p.plus);
+            } catch (e) {
+                plusArray = [];
+            }
+        }
+        if (!Array.isArray(plusArray)) {
+            plusArray = [];
+        }
 
-        // Mostrar PLUs como badges en una sola celda
+        // Mostrar PLUs como badges
         let plusHTML = '<span style="color: #999;">Sin PLUs</span>';
-        let establecimientosHTML = '-';
+        let establecimientosHTML = '<span style="color: #999;">-</span>';
 
-        if (p.plus && p.plus.length > 0) {
-            plusHTML = p.plus.map(plu =>
-                `<span class="badge badge-info">${plu.codigo_plu}</span>`
+        if (plusArray && plusArray.length > 0) {
+            plusHTML = plusArray.map(plu =>
+                `<span class="badge badge-info">${plu.codigo_plu || 'N/A'}</span>`
             ).join(' ');
 
-            establecimientosHTML = p.plus.map(plu =>
-                `<span class="badge badge-success">🏪 ${plu.establecimiento}</span>`
+            establecimientosHTML = plusArray.map(plu =>
+                `<span class="badge badge-success">🏪 ${plu.establecimiento || 'Desconocido'}</span>`
             ).join(' ');
         }
 
+        // Precio formateado
+        const precioHTML = p.precio_promedio ?
+            `$${parseInt(p.precio_promedio).toLocaleString('es-CO')}` :
+            '<span style="color: #999;">-</span>';
+
+        // Marca
+        const marcaHTML = p.marca || '<span style="color: #999;">-</span>';
+
+        // Categoría (por ahora es categoria_id, después será el nombre)
+        const categoriaHTML = p.categoria_id ?
+            `Cat. ${p.categoria_id}` :
+            '<span style="color: #999;">Sin categoría</span>';
+
+        // Estado badges
         const estadoBadges = [];
         if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning">Sin EAN</span>');
         if (!p.marca) estadoBadges.push('<span class="badge badge-warning">Sin Marca</span>');
-        if (!p.categoria) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
-        const estadoHTML = estadoBadges.length > 0 ? estadoBadges.join(' ') : '<span class="badge badge-success">Completo</span>';
+        if (!p.categoria_id) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
+        const estadoHTML = estadoBadges.length > 0 ?
+            estadoBadges.join(' ') :
+            '<span class="badge badge-success">Completo</span>';
 
         const row = `
             <tr>
@@ -223,12 +250,12 @@ function mostrarProductos(productos) {
                     <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
                 </td>
                 <td>${p.id}</td>
-                <td>${p.codigo_ean || '-'}</td>
+                <td>${p.codigo_ean || '<span style="color: #999;">-</span>'}</td>
                 <td>${plusHTML}</td>
                 <td>${establecimientosHTML}</td>
-                <td>${p.nombre || '-'}</td>
-                <td>${p.marca || '-'}</td>
-                <td>${p.categoria || '-'}</td>
+                <td><strong>${p.nombre || '-'}</strong></td>
+                <td>${marcaHTML}</td>
+                <td>${categoriaHTML}</td>
                 <td>${precioHTML}</td>
                 <td>${p.veces_comprado || 0}</td>
                 <td>${estadoHTML}</td>
