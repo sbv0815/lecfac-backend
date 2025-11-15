@@ -175,7 +175,7 @@ function mostrarError(error) {
 // ⭐ MOSTRAR PRODUCTOS (ACTUALIZADO CON ESTABLECIMIENTOS)
 // =============================================================
 // =============================================================
-// ⭐ MOSTRAR PRODUCTOS (CORREGIDO - Con parsing de JSON)
+// ⭐ MOSTRAR PRODUCTOS (VERSIÓN FINAL CORREGIDA)
 // =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
@@ -214,7 +214,7 @@ function mostrarProductos(productos) {
 
         if (plusArray && plusArray.length > 0) {
             plusHTML = plusArray.map(plu =>
-                `<span class="badge badge-info">${plu.codigo_plu || 'N/A'}</span>`
+                `<span class="badge badge-info">${plu.codigo || 'N/A'}</span>`
             ).join(' ');
 
             establecimientosHTML = plusArray.map(plu =>
@@ -222,24 +222,23 @@ function mostrarProductos(productos) {
             ).join(' ');
         }
 
-        // Precio formateado
-        const precioHTML = p.precio_promedio ?
-            `$${parseInt(p.precio_promedio).toLocaleString('es-CO')}` :
-            '<span style="color: #999;">-</span>';
+        // Precio - usar el precio del primer PLU si existe, o 0
+        let precioHTML = '<span style="color: #999;">-</span>';
+        if (plusArray && plusArray.length > 0 && plusArray[0].precio > 0) {
+            precioHTML = `$${parseInt(plusArray[0].precio).toLocaleString('es-CO')}`;
+        }
 
         // Marca
-        const marcaHTML = p.marca || '<span style="color: #999;">-</span>';
+        const marcaHTML = p.marca || '<span style="color: #999;">Sin marca</span>';
 
-        // Categoría (por ahora es categoria_id, después será el nombre)
-        const categoriaHTML = p.categoria_id ?
-            `Cat. ${p.categoria_id}` :
-            '<span style="color: #999;">Sin categoría</span>';
+        // Categoría (ya viene como texto desde la API)
+        const categoriaHTML = p.categoria || '<span style="color: #999;">Sin categoría</span>';
 
         // Estado badges
         const estadoBadges = [];
         if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning">Sin EAN</span>');
         if (!p.marca) estadoBadges.push('<span class="badge badge-warning">Sin Marca</span>');
-        if (!p.categoria_id) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
+        if (p.categoria === 'Sin categoría' || !p.categoria) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
         const estadoHTML = estadoBadges.length > 0 ?
             estadoBadges.join(' ') :
             '<span class="badge badge-success">Completo</span>';
@@ -257,7 +256,7 @@ function mostrarProductos(productos) {
                 <td>${marcaHTML}</td>
                 <td>${categoriaHTML}</td>
                 <td>${precioHTML}</td>
-                <td>${p.veces_comprado || 0}</td>
+                <td>${p.num_establecimientos || 0}</td>
                 <td>${estadoHTML}</td>
                 <td>
                     <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
