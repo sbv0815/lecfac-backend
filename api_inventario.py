@@ -53,8 +53,8 @@ async def get_inventario_usuario(user_id: int):
                     pm.codigo_ean,
                     pm.nombre_consolidado,
                     pm.marca,
-                    pm.categoria,
-                    pm.imagen_url,
+                    COALESCE(c.nombre, 'Sin categoría') as categoria,
+                    NULL as imagen_url,
                     iu.cantidad_actual,
                     iu.unidad_medida,
                     iu.nivel_alerta,
@@ -63,11 +63,11 @@ async def get_inventario_usuario(user_id: int):
                     iu.fecha_estimada_agotamiento,
                     iu.alerta_activa,
                     CASE
-                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 'bajo'
-                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
-                        ELSE 'normal'
+                    WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 'bajo'
+                    WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
+                    ELSE 'normal'
                     END as estado_stock,
-                    pm.precio_promedio_global,
+                    iu.precio_ultima_compra as precio_promedio_global,
                     iu.precio_ultima_compra,
                     iu.precio_promedio,
                     iu.precio_minimo,
@@ -82,67 +82,18 @@ async def get_inventario_usuario(user_id: int):
                     iu.cantidad_por_unidad,
                     iu.dias_desde_ultima_compra,
                     iu.marca
-                FROM inventario_usuario iu
-                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
-                WHERE iu.usuario_id = %s
-                ORDER BY
+                    FROM inventario_usuario iu
+                    JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
+                    LEFT JOIN categorias c ON pm.categoria_id = c.id
+                    WHERE iu.usuario_id = %s
+                    ORDER BY
                     CASE
-                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1
-                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
-                        ELSE 3
+                    WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1
+                    WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
+                    ELSE 3
                     END,
                     iu.fecha_ultima_actualizacion DESC
-            """,
-                (user_id,),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT
-                    iu.id,
-                    pm.codigo_ean,
-                    pm.nombre_consolidado,
-                    pm.marca,
-                    pm.categoria,
-                    pm.imagen_url,
-                    iu.cantidad_actual,
-                    iu.unidad_medida,
-                    iu.nivel_alerta,
-                    iu.fecha_ultima_compra,
-                    iu.frecuencia_compra_dias,
-                    iu.fecha_estimada_agotamiento,
-                    iu.alerta_activa,
-                    CASE
-                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 'bajo'
-                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
-                        ELSE 'normal'
-                    END as estado_stock,
-                    pm.precio_promedio_global,
-                    iu.precio_ultima_compra,
-                    iu.precio_promedio,
-                    iu.precio_minimo,
-                    iu.precio_maximo,
-                    iu.establecimiento,
-                    iu.establecimiento_id,
-                    iu.ubicacion,
-                    iu.numero_compras,
-                    iu.cantidad_total_comprada,
-                    iu.total_gastado,
-                    iu.ultima_factura_id,
-                    iu.cantidad_por_unidad,
-                    iu.dias_desde_ultima_compra,
-                    iu.marca
-                FROM inventario_usuario iu
-                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
-                WHERE iu.usuario_id = ?
-                ORDER BY
-                    CASE
-                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1
-                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
-                        ELSE 3
-                    END,
-                    iu.fecha_ultima_actualizacion DESC
-            """,
+                        """,
                 (user_id,),
             )
 
