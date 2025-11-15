@@ -169,7 +169,7 @@ async function cargarPLUsProducto(productoId) {
 
     try {
         const apiBase = getApiBase();
-        const response = await fetch(`${apiBase}/api/productos/${productoId}/plus`);
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`);
 
         if (!response.ok) {
             throw new Error("Error cargando PLUs");
