@@ -455,27 +455,36 @@
 
         async function cargarEstadisticas() {
             try {
-                // Total productos desde el endpoint que ya funciona
-                const respTotal = await fetch(`${API_BASE}/api/v2/productos?limite=1000`);
+                // Usar los productos ya cargados (sin duplicados por ID)
+                const respTotal = await fetch(`${API_BASE}/api/v2/productos?limite=2000`);
                 const dataTotal = await respTotal.json();
 
-                const totalProductos = dataTotal.productos ? dataTotal.productos.length : 0;
-
-                // Contar papas y pendientes desde los datos
-                let totalPapas = 0;
-                let totalPendientes = 0;
-
+                // Eliminar duplicados por ID
+                const productosUnicos = {};
                 if (dataTotal.productos) {
                     dataTotal.productos.forEach(p => {
-                        if (p.es_producto_papa) {
-                            totalPapas++;
-                        } else {
-                            totalPendientes++;
+                        if (!productosUnicos[p.id]) {
+                            productosUnicos[p.id] = p;
                         }
                     });
                 }
 
-                // Contar PLUs registrados
+                const listaUnica = Object.values(productosUnicos);
+                const totalProductos = listaUnica.length;
+
+                // Contar papas y pendientes
+                let totalPapas = 0;
+                let totalPendientes = 0;
+
+                listaUnica.forEach(p => {
+                    if (p.es_producto_papa) {
+                        totalPapas++;
+                    } else {
+                        totalPendientes++;
+                    }
+                });
+
+                // Contar PLUs
                 const respPlus = await fetch(`${API_BASE}/admin/contar-plus`);
                 const dataPlus = await respPlus.json();
 
@@ -506,12 +515,24 @@
             listContainer.innerHTML = '<div class="loading">Cargando productos...</div>';
 
             try {
-                // Cargar productos con sus PLUs
-                const response = await fetch(`${API_BASE}/api/v2/productos?limite=200`);
+                const response = await fetch(`${API_BASE}/api/v2/productos?limite=2000`);
                 const data = await response.json();
 
                 if (data.success && data.productos) {
-                    productos = data.productos;
+                    // Eliminar duplicados por ID, mantener el que tiene más info
+                    const productosUnicos = {};
+                    data.productos.forEach(p => {
+                        if (!productosUnicos[p.id]) {
+                            productosUnicos[p.id] = p;
+                        } else {
+                            // Si ya existe, mantener el que tiene PLU
+                            if (p.codigo_plu && !productosUnicos[p.id].codigo_plu) {
+                                productosUnicos[p.id] = p;
+                            }
+                        }
+                    });
+
+                    productos = Object.values(productosUnicos);
                     renderizarProductos();
                 } else {
                     listContainer.innerHTML = '<div class="empty-state">No se pudieron cargar los productos</div>';
