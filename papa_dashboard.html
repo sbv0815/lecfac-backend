@@ -437,9 +437,8 @@
 
     <script>
         // Forzar HTTPS
-        const API_BASE = window.location.protocol === 'https:'
-            ? window.location.origin
-            : window.location.origin.replace('http://', 'https://');
+        // Forzar HTTPS - Versión dinámica
+        const API_BASE = `https://${window.location.host}`;
         let productos = [];
         let productoSeleccionado = null;
         let tabActual = 'todos';
