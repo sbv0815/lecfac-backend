@@ -8176,6 +8176,80 @@ async def limpiar_productos_viejos():
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/limpiar-papas-sin-plu")
+async def limpiar_papas_sin_plu():
+    """
+    Encuentra y limpia productos marcados como PAPA pero que no tienen PLU asociado.
+    Estos son residuos de productos viejos que no deberían ser papa.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Encontrar papas sin PLU
+        cursor.execute(
+            """
+            SELECT pm.id, pm.nombre_consolidado, pm.codigo_ean, pm.marca
+            FROM productos_maestros_v2 pm
+            WHERE pm.es_producto_papa = TRUE
+              AND pm.id NOT IN (
+                  SELECT DISTINCT producto_maestro_id
+                  FROM productos_por_establecimiento
+              )
+        """
+        )
+
+        papas_sin_plu = cursor.fetchall()
+
+        if not papas_sin_plu:
+            cursor.close()
+            conn.close()
+            return {
+                "success": True,
+                "mensaje": "No hay productos papa sin PLU",
+                "papas_limpiados": 0,
+            }
+
+        detalles = []
+        for papa in papas_sin_plu:
+            detalles.append(
+                {"id": papa[0], "nombre": papa[1], "ean": papa[2], "marca": papa[3]}
+            )
+
+        # 2. Desmarcar como papa (no eliminar, solo quitar el flag)
+        ids_a_limpiar = [p[0] for p in papas_sin_plu]
+
+        cursor.execute(
+            """
+            UPDATE productos_maestros_v2
+            SET es_producto_papa = FALSE,
+                validado_por_admin = FALSE,
+                producto_papa_id = NULL
+            WHERE id = ANY(%s)
+        """,
+            (ids_a_limpiar,),
+        )
+
+        actualizados = cursor.rowcount
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": f"{actualizados} productos papa sin PLU desmarcados",
+            "papas_limpiados": actualizados,
+            "detalles": detalles,
+            "nota": "Estos productos fueron desmarcados como papa porque no tienen PLU asociado. NO fueron eliminados.",
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
