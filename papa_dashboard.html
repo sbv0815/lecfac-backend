@@ -455,18 +455,34 @@
 
         async function cargarEstadisticas() {
             try {
-                // Total productos
-                const respTotal = await fetch(`${API_BASE}/api/v2/productos?limite=1`);
+                // Total productos desde el endpoint que ya funciona
+                const respTotal = await fetch(`${API_BASE}/api/v2/productos?limite=1000`);
                 const dataTotal = await respTotal.json();
 
-                // Productos papa
-                const respPapas = await fetch(`${API_BASE}/api/admin/productos-papa?limite=1000`);
-                const dataPapas = await respPapas.json();
+                const totalProductos = dataTotal.productos ? dataTotal.productos.length : 0;
 
-                document.getElementById('stat-total').textContent = dataTotal.total || '-';
-                document.getElementById('stat-papas').textContent = dataPapas.total || 0;
-                document.getElementById('stat-pendientes').textContent = (dataTotal.total || 0) - (dataPapas.total || 0);
-                document.getElementById('stat-plus').textContent = '64'; // Del migrado
+                // Contar papas y pendientes desde los datos
+                let totalPapas = 0;
+                let totalPendientes = 0;
+
+                if (dataTotal.productos) {
+                    dataTotal.productos.forEach(p => {
+                        if (p.es_producto_papa) {
+                            totalPapas++;
+                        } else {
+                            totalPendientes++;
+                        }
+                    });
+                }
+
+                // Contar PLUs registrados
+                const respPlus = await fetch(`${API_BASE}/admin/contar-plus`);
+                const dataPlus = await respPlus.json();
+
+                document.getElementById('stat-total').textContent = totalProductos;
+                document.getElementById('stat-papas').textContent = totalPapas;
+                document.getElementById('stat-pendientes').textContent = totalPendientes;
+                document.getElementById('stat-plus').textContent = dataPlus.total || 0;
 
             } catch (error) {
                 console.error('Error cargando estadísticas:', error);
