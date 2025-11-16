@@ -13,7 +13,7 @@ import re
 from unidecode import unidecode
 from typing import Optional, Dict, Any, Tuple
 import traceback
-from datetime import datetime
+
 
 # Importar módulos
 CORRECCIONES_OCR_AVAILABLE = False
@@ -800,4 +800,3 @@ print("   ✅ Actualiza veces_visto y fecha_ultima_actualizacion")
 print("=" * 80)
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("=" * 80)
-print("🚀 VERSIÓN 9.1 CONFIRMADA - " + str(datetime.now()))
