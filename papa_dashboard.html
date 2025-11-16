@@ -436,7 +436,10 @@
     </div>
 
     <script>
-        const API_BASE = window.location.origin;
+        // Forzar HTTPS
+        const API_BASE = window.location.protocol === 'https:'
+            ? window.location.origin
+            : window.location.origin.replace('http://', 'https://');
         let productos = [];
         let productoSeleccionado = null;
         let tabActual = 'todos';
