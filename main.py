@@ -8085,6 +8085,97 @@ async def limpiar_plus_mal_guardados():
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/limpiar-productos-viejos")
+async def limpiar_productos_viejos():
+    """
+    Limpia solo los productos viejos (sin PLU/establecimiento correcto)
+    Mantiene los productos nuevos que ya están bien
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultados = []
+
+        # 1. Encontrar el ID mínimo con PLU correcto
+        cursor.execute(
+            """
+            SELECT MIN(producto_maestro_id)
+            FROM productos_por_establecimiento
+        """
+        )
+        min_id_bueno = cursor.fetchone()[0]
+
+        if not min_id_bueno:
+            return {"error": "No hay productos con PLU correcto"}
+
+        resultados.append(f"📊 ID mínimo con PLU correcto: {min_id_bueno}")
+
+        # 2. Contar productos a eliminar
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM productos_maestros_v2
+            WHERE id < %s
+        """,
+            (min_id_bueno,),
+        )
+        total_viejos = cursor.fetchone()[0]
+
+        resultados.append(f"🗑️ Productos viejos a eliminar: {total_viejos}")
+
+        # 3. Desvincular items_factura de productos viejos
+        cursor.execute(
+            """
+            UPDATE items_factura
+            SET producto_maestro_id = NULL
+            WHERE producto_maestro_id < %s
+        """,
+            (min_id_bueno,),
+        )
+        desvinculados = cursor.rowcount
+        conn.commit()
+        resultados.append(f"✅ Desvinculados {desvinculados} items de factura")
+
+        # 4. Eliminar productos viejos
+        cursor.execute(
+            """
+            DELETE FROM productos_maestros_v2
+            WHERE id < %s
+        """,
+            (min_id_bueno,),
+        )
+        eliminados = cursor.rowcount
+        conn.commit()
+        resultados.append(f"✅ Eliminados {eliminados} productos viejos")
+
+        # 5. Contar lo que queda
+        cursor.execute("SELECT COUNT(*) FROM productos_maestros_v2")
+        total_restante = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
+        total_plus = cursor.fetchone()[0]
+
+        resultados.append(f"📦 Productos restantes: {total_restante}")
+        resultados.append(f"📍 PLUs registrados: {total_plus}")
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": "Limpieza de productos viejos completada",
+            "productos_eliminados": eliminados,
+            "productos_restantes": total_restante,
+            "plus_registrados": total_plus,
+            "resultados": resultados,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
