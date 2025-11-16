@@ -7213,7 +7213,6 @@ async def crear_producto_papa(producto_id: int, request: Request):
                 es_producto_papa = TRUE,
                 validado_por_admin = TRUE,
                 fecha_validacion_papa = CURRENT_TIMESTAMP,
-                estado = 'validado',
                 confianza_datos = 1.0
             WHERE id = %s
             RETURNING id, nombre_consolidado
@@ -7721,6 +7720,49 @@ async def listar_productos_v2(limite: int = 200):
 
         traceback.print_exc()
         return {"success": False, "error": str(e), "productos": [], "total": 0}
+
+
+@app.get("/admin/verificar-constraint-estado")
+async def verificar_constraint_estado():
+    """Ver qué valores permite el campo estado"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Ver el constraint
+        cursor.execute(
+            """
+            SELECT conname, pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conname = 'productos_maestros_v2_estado_check'
+        """
+        )
+
+        constraint = cursor.fetchone()
+
+        # Ver valores únicos actuales
+        cursor.execute(
+            """
+            SELECT DISTINCT estado, COUNT(*)
+            FROM productos_maestros_v2
+            GROUP BY estado
+        """
+        )
+
+        valores_actuales = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "constraint": constraint[1] if constraint else "No encontrado",
+            "valores_actuales": [
+                {"estado": v[0], "cantidad": v[1]} for v in valores_actuales
+            ],
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 if __name__ == "__main__":  # ← AGREGAR :
