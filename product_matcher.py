@@ -13,6 +13,7 @@ import re
 from unidecode import unidecode
 from typing import Optional, Dict, Any, Tuple
 import traceback
+from datetime import datetime
 
 # Importar módulos
 CORRECCIONES_OCR_AVAILABLE = False
