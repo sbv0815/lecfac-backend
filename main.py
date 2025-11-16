@@ -7832,6 +7832,24 @@ async def verificar_plus_guardados():
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/contar-plus")
+async def contar_plus():
+    """Cuenta total de PLUs en productos_por_establecimiento"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
+        total = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return {"total": total}
+    except Exception as e:
+        return {"total": 0, "error": str(e)}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
