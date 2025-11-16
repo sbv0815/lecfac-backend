@@ -7659,11 +7659,12 @@ print("✅ Dashboard Papa disponible en /papa-dashboard")
 
 @app.get("/api/v2/productos")
 async def listar_productos_v2(limite: int = 200):
-    """Lista productos de productos_maestros_v2 CON PLUs y establecimientos"""
+    """Lista productos de productos_maestros_v2 CON PLUs agrupados"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Primero obtener productos únicos
         cursor.execute(
             """
             SELECT
@@ -7672,42 +7673,73 @@ async def listar_productos_v2(limite: int = 200):
                 pm.nombre_consolidado,
                 pm.marca,
                 pm.categoria_id,
+                c.nombre as categoria_nombre,
                 pm.veces_visto,
-                pm.es_producto_papa,
-                pm.producto_papa_id,
-                pm.estado,
-                pm.confianza_datos,
-                ppe.codigo_plu,
-                e.nombre_normalizado as establecimiento,
-                ppe.precio_unitario
+                pm.es_producto_papa
             FROM productos_maestros_v2 pm
-            LEFT JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
-            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
             ORDER BY pm.id DESC
             LIMIT %s
         """,
             (limite,),
         )
 
-        productos = []
-        for row in cursor.fetchall():
-            productos.append(
-                {
-                    "id": row[0],
-                    "codigo_ean": row[1],
-                    "nombre_consolidado": row[2],
-                    "marca": row[3],
-                    "categoria_id": row[4],
-                    "veces_visto": row[5] or 0,
-                    "es_producto_papa": row[6] or False,
-                    "producto_papa_id": row[7],
-                    "estado": row[8],
-                    "confianza_datos": float(row[9]) if row[9] else 0,
-                    "codigo_plu": row[10],
-                    "establecimiento": row[11],
-                    "precio": float(row[12]) if row[12] else 0,
-                }
+        productos_raw = cursor.fetchall()
+
+        # Crear diccionario de productos
+        productos_dict = {}
+        for row in productos_raw:
+            productos_dict[row[0]] = {
+                "id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],  # productos.js espera 'nombre'
+                "nombre_consolidado": row[2],
+                "marca": row[3],
+                "categoria_id": row[4],
+                "categoria": row[5] or "Sin categoría",
+                "veces_visto": row[6] or 0,
+                "es_producto_papa": row[7] or False,
+                "plus": [],
+                "num_establecimientos": 0,
+            }
+
+        # Obtener PLUs para estos productos
+        if productos_dict:
+            prod_ids = list(productos_dict.keys())
+            placeholders = ",".join(["%s"] * len(prod_ids))
+
+            cursor.execute(
+                f"""
+                SELECT
+                    ppe.producto_maestro_id,
+                    ppe.codigo_plu,
+                    e.nombre_normalizado,
+                    ppe.precio_unitario
+                FROM productos_por_establecimiento ppe
+                JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                WHERE ppe.producto_maestro_id IN ({placeholders})
+            """,
+                prod_ids,
             )
+
+            for plu_row in cursor.fetchall():
+                prod_id = plu_row[0]
+                if prod_id in productos_dict:
+                    productos_dict[prod_id]["plus"].append(
+                        {
+                            "codigo": plu_row[1],
+                            "establecimiento": plu_row[2],
+                            "precio": float(plu_row[3]) if plu_row[3] else 0,
+                        }
+                    )
+
+            # Actualizar num_establecimientos
+            for prod_id in productos_dict:
+                productos_dict[prod_id]["num_establecimientos"] = len(
+                    productos_dict[prod_id]["plus"]
+                )
+
+        productos = list(productos_dict.values())
 
         cursor.close()
         conn.close()
