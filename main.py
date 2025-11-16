@@ -1399,6 +1399,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     establecimiento=establecimiento_raw,
                     cursor=cursor,
                     conn=conn,
+                    establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
                 )
 
                 # ✅ CAMBIO B: Usar buscar_o_crear_producto_inteligente
@@ -1409,6 +1410,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     establecimiento=establecimiento_raw,
                     cursor=cursor,
                     conn=conn,
+                    establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
@@ -1652,6 +1654,7 @@ async def save_invoice_with_image(
                     establecimiento=establecimiento,
                     cursor=cursor,
                     conn=conn,
+                    establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
@@ -2390,6 +2393,7 @@ async def process_video_background_task(
                             establecimiento=establecimiento,
                             cursor=cursor,
                             conn=conn,
+                            establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
                         )
 
                         # ✅ FIX: Validar que se creó correctamente
@@ -3368,6 +3372,7 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
                             establecimiento=establecimiento,
                             cursor=cursor,
                             conn=conn,
+                            establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
                         )
 
                         if not producto_maestro_id:
