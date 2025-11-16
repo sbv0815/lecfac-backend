@@ -5519,7 +5519,7 @@ async def migrar_aprendizaje():
             SELECT constraint_name
             FROM information_schema.table_constraints
             WHERE table_name = 'correcciones_aprendidas'
-              AND constraint_type = 'UNIQUE'
+            AND constraint_type = 'UNIQUE'
         """
         )
 
@@ -7716,6 +7716,139 @@ async def listar_productos_v2(limite: int = 200):
 
     except Exception as e:
         print(f"❌ Error listando productos v2: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "productos": [], "total": 0}
+
+
+@app.get("/api/v2/productos/")
+async def listar_productos_v2_paginado(
+    skip: int = 0, limit: int = 50, busqueda: str = None, filtro: str = "todos"
+):
+    """
+    Lista productos de productos_maestros_v2 con paginación
+    Compatible con productos.html
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Query base
+        query = """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.categoria_id,
+                c.nombre as categoria_nombre,
+                pm.veces_visto,
+                pm.es_producto_papa
+            FROM productos_maestros_v2 pm
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
+            WHERE 1=1
+        """
+        params = []
+
+        # Filtro de búsqueda
+        if busqueda:
+            query += """ AND (
+                pm.nombre_consolidado ILIKE %s
+                OR pm.codigo_ean ILIKE %s
+                OR pm.marca ILIKE %s
+            )"""
+            search_term = f"%{busqueda}%"
+            params.extend([search_term, search_term, search_term])
+
+        # Filtros específicos
+        if filtro == "sin_ean":
+            query += " AND (pm.codigo_ean IS NULL OR pm.codigo_ean = '')"
+        elif filtro == "sin_marca":
+            query += " AND (pm.marca IS NULL OR pm.marca = '')"
+        elif filtro == "sin_categoria":
+            query += " AND pm.categoria_id IS NULL"
+
+        # Contar total
+        count_query = query.replace(
+            "SELECT \n                pm.id,\n                pm.codigo_ean,\n                pm.nombre_consolidado,\n                pm.marca,\n                pm.categoria_id,\n                c.nombre as categoria_nombre,\n                pm.veces_visto,\n                pm.es_producto_papa",
+            "SELECT COUNT(DISTINCT pm.id)",
+        )
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+
+        # Agregar paginación
+        query += " ORDER BY pm.id DESC LIMIT %s OFFSET %s"
+        params.extend([limit, skip])
+
+        cursor.execute(query, params)
+
+        # Obtener productos únicos
+        productos_dict = {}
+        for row in cursor.fetchall():
+            prod_id = row[0]
+            if prod_id not in productos_dict:
+                productos_dict[prod_id] = {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "categoria_id": row[4],
+                    "categoria": row[5] or "Sin categoría",
+                    "veces_visto": row[6] or 0,
+                    "es_producto_papa": row[7] or False,
+                    "plus": [],
+                    "num_establecimientos": 0,
+                }
+
+        # Obtener PLUs para estos productos
+        if productos_dict:
+            prod_ids = list(productos_dict.keys())
+            placeholders = ",".join(["%s"] * len(prod_ids))
+
+            cursor.execute(
+                f"""
+                SELECT
+                    ppe.producto_maestro_id,
+                    ppe.codigo_plu,
+                    e.nombre_normalizado,
+                    ppe.precio_unitario
+                FROM productos_por_establecimiento ppe
+                JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                WHERE ppe.producto_maestro_id IN ({placeholders})
+            """,
+                prod_ids,
+            )
+
+            for plu_row in cursor.fetchall():
+                prod_id = plu_row[0]
+                if prod_id in productos_dict:
+                    productos_dict[prod_id]["plus"].append(
+                        {
+                            "codigo": plu_row[1],
+                            "establecimiento": plu_row[2],
+                            "precio": float(plu_row[3]) if plu_row[3] else 0,
+                        }
+                    )
+                    productos_dict[prod_id]["num_establecimientos"] = len(
+                        productos_dict[prod_id]["plus"]
+                    )
+
+        productos = list(productos_dict.values())
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "productos": productos,
+            "total": total,
+            "pagina": (skip // limit) + 1,
+            "limite": limit,
+        }
+
+    except Exception as e:
+        print(f"❌ Error listando productos v2 paginado: {e}")
         import traceback
 
         traceback.print_exc()
