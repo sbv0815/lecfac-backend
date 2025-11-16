@@ -7850,6 +7850,72 @@ async def contar_plus():
         return {"total": 0, "error": str(e)}
 
 
+@app.get("/admin/diagnostico-codigos")
+async def diagnostico_codigos():
+    """Analiza los códigos para identificar PLUs guardados como EAN"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Productos con código corto (probablemente PLU guardado como EAN)
+        cursor.execute(
+            """
+            SELECT id, codigo_ean, nombre_consolidado, marca
+            FROM productos_maestros_v2
+            WHERE codigo_ean IS NOT NULL
+              AND LENGTH(codigo_ean) BETWEEN 3 AND 7
+            ORDER BY id
+        """
+        )
+
+        plus_como_ean = []
+        for row in cursor.fetchall():
+            plus_como_ean.append(
+                {
+                    "id": row[0],
+                    "codigo_mal_guardado": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                }
+            )
+
+        # Productos con EAN válido (8+ dígitos)
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM productos_maestros_v2
+            WHERE codigo_ean IS NOT NULL
+              AND LENGTH(codigo_ean) >= 8
+        """
+        )
+        ean_validos = cursor.fetchone()[0]
+
+        # Productos sin código
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM productos_maestros_v2
+            WHERE codigo_ean IS NULL OR codigo_ean = ''
+        """
+        )
+        sin_codigo = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "resumen": {
+                "plus_guardados_como_ean": len(plus_como_ean),
+                "ean_validos": ean_validos,
+                "sin_codigo": sin_codigo,
+            },
+            "plus_como_ean": plus_como_ean[:50],  # Primeros 50
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
