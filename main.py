@@ -7658,7 +7658,7 @@ print("✅ Dashboard Papa disponible en /papa-dashboard")
 
 @app.get("/api/v2/productos")
 async def listar_productos_v2(limite: int = 200):
-    """Lista productos de productos_maestros_v2 con campos para dashboard papa"""
+    """Lista productos de productos_maestros_v2 CON PLUs y establecimientos"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -7666,18 +7666,24 @@ async def listar_productos_v2(limite: int = 200):
         cursor.execute(
             """
             SELECT
-                id,
-                codigo_ean,
-                nombre_consolidado,
-                marca,
-                categoria_id,
-                veces_visto,
-                es_producto_papa,
-                producto_papa_id,
-                estado,
-                confianza_datos
-            FROM productos_maestros_v2
-            ORDER BY id DESC
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.categoria_id,
+                pm.veces_visto,
+                pm.es_producto_papa,
+                pm.producto_papa_id,
+                pm.estado,
+                pm.confianza_datos,
+                -- Datos de PLU y establecimiento
+                ppe.codigo_plu,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario
+            FROM productos_maestros_v2 pm
+            LEFT JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            ORDER BY pm.id DESC
             LIMIT %s
         """,
             (limite,),
@@ -7697,6 +7703,10 @@ async def listar_productos_v2(limite: int = 200):
                     "producto_papa_id": row[7],
                     "estado": row[8],
                     "confianza_datos": float(row[9]) if row[9] else 0,
+                    # Nuevos campos
+                    "codigo_plu": row[10],
+                    "establecimiento": row[11],
+                    "precio": float(row[12]) if row[12] else 0,
                 }
             )
 
@@ -7712,8 +7722,6 @@ async def listar_productos_v2(limite: int = 200):
         traceback.print_exc()
         return {"success": False, "error": str(e), "productos": [], "total": 0}
 
-
-print("✅ Endpoint /api/v2/productos registrado")
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
