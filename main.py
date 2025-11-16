@@ -95,7 +95,9 @@ import product_matcher
 import inspect
 
 try:
-    source_code = inspect.getsource(product_matcher.crear_producto_en_ambas_tablas)
+    source_code = inspect.getsource(product_matcher.buscar_o_crear_producto_inteligente)
+
+    tiene_fix = "productos_maestros_v2" in source_code
 
     # Buscar múltiples indicadores del fix
     tiene_fix_1 = "fetchone() retornó None" in source_code
@@ -7675,7 +7677,6 @@ async def listar_productos_v2(limite: int = 200):
                 pm.producto_papa_id,
                 pm.estado,
                 pm.confianza_datos,
-                -- Datos de PLU y establecimiento
                 ppe.codigo_plu,
                 e.nombre_normalizado as establecimiento,
                 ppe.precio_unitario
@@ -7702,7 +7703,6 @@ async def listar_productos_v2(limite: int = 200):
                     "producto_papa_id": row[7],
                     "estado": row[8],
                     "confianza_datos": float(row[9]) if row[9] else 0,
-                    # Nuevos campos
                     "codigo_plu": row[10],
                     "establecimiento": row[11],
                     "precio": float(row[12]) if row[12] else 0,
