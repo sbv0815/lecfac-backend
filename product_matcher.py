@@ -479,7 +479,7 @@ def guardar_plu_en_establecimiento(
     precio: int,
 ) -> bool:
     """
-    ⭐ NUEVO V9.1: Guarda el PLU en productos_por_establecimiento
+    ⭐ V9.1 FIX: Guarda el PLU en productos_por_establecimiento
     """
     if not producto_id or not establecimiento_id or not codigo_plu:
         return False
@@ -489,15 +489,29 @@ def guardar_plu_en_establecimiento(
             """
             INSERT INTO productos_por_establecimiento (
                 producto_maestro_id, establecimiento_id, codigo_plu,
-                precio_unitario, fecha_actualizacion
-            ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                precio_actual, precio_unitario, precio_minimo, precio_maximo,
+                total_reportes, fecha_creacion, fecha_actualizacion, ultima_actualizacion
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (producto_maestro_id, establecimiento_id)
             DO UPDATE SET
                 codigo_plu = EXCLUDED.codigo_plu,
+                precio_actual = EXCLUDED.precio_actual,
                 precio_unitario = EXCLUDED.precio_unitario,
-                fecha_actualizacion = CURRENT_TIMESTAMP
+                precio_minimo = LEAST(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo),
+                precio_maximo = GREATEST(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo),
+                total_reportes = productos_por_establecimiento.total_reportes + 1,
+                fecha_actualizacion = CURRENT_TIMESTAMP,
+                ultima_actualizacion = CURRENT_TIMESTAMP
         """,
-            (producto_id, establecimiento_id, codigo_plu, precio),
+            (
+                producto_id,
+                establecimiento_id,
+                codigo_plu,
+                precio,
+                precio,
+                precio,
+                precio,
+            ),
         )
         conn.commit()
         print(f"   💾 PLU {codigo_plu} guardado en productos_por_establecimiento")
