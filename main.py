@@ -7070,6 +7070,579 @@ async def migrar_plus_historicos():
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+# ============================================================================
+# SISTEMA PAPA-HIJOS: CONSOLIDACIÓN DE PRODUCTOS
+# ============================================================================
+
+
+@app.get("/admin/setup-sistema-papa-hijos")
+async def setup_sistema_papa_hijos():
+    """
+    Crea las columnas necesarias para el sistema papa-hijos
+    Ejecutar una vez: https://tu-app.railway.app/admin/setup-sistema-papa-hijos
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultados = []
+
+        # 1. Agregar columna es_producto_papa
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE productos_maestros_v2
+                ADD COLUMN IF NOT EXISTS es_producto_papa BOOLEAN DEFAULT FALSE
+            """
+            )
+            conn.commit()
+            resultados.append("✅ Columna es_producto_papa agregada")
+        except Exception as e:
+            resultados.append(f"⚠️ es_producto_papa: {e}")
+
+        # 2. Agregar columna producto_papa_id (referencia al papa)
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE productos_maestros_v2
+                ADD COLUMN IF NOT EXISTS producto_papa_id INTEGER REFERENCES productos_maestros_v2(id)
+            """
+            )
+            conn.commit()
+            resultados.append("✅ Columna producto_papa_id agregada")
+        except Exception as e:
+            resultados.append(f"⚠️ producto_papa_id: {e}")
+
+        # 3. Agregar columna fecha_validacion_papa
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE productos_maestros_v2
+                ADD COLUMN IF NOT EXISTS fecha_validacion_papa TIMESTAMP
+            """
+            )
+            conn.commit()
+            resultados.append("✅ Columna fecha_validacion_papa agregada")
+        except Exception as e:
+            resultados.append(f"⚠️ fecha_validacion_papa: {e}")
+
+        # 4. Agregar columna validado_por_admin
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE productos_maestros_v2
+                ADD COLUMN IF NOT EXISTS validado_por_admin BOOLEAN DEFAULT FALSE
+            """
+            )
+            conn.commit()
+            resultados.append("✅ Columna validado_por_admin agregada")
+        except Exception as e:
+            resultados.append(f"⚠️ validado_por_admin: {e}")
+
+        # 5. Crear índices para optimizar búsquedas
+        try:
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_producto_papa_id
+                ON productos_maestros_v2(producto_papa_id)
+            """
+            )
+            conn.commit()
+            resultados.append("✅ Índice idx_producto_papa_id creado")
+        except Exception as e:
+            resultados.append(f"⚠️ Índice: {e}")
+
+        try:
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_es_producto_papa
+                ON productos_maestros_v2(es_producto_papa) WHERE es_producto_papa = TRUE
+            """
+            )
+            conn.commit()
+            resultados.append("✅ Índice idx_es_producto_papa creado")
+        except Exception as e:
+            resultados.append(f"⚠️ Índice papa: {e}")
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mensaje": "Sistema papa-hijos configurado",
+            "resultados": resultados,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.post("/api/admin/producto-papa/{producto_id}")
+async def crear_producto_papa(producto_id: int, request: Request):
+    """
+    Marca un producto como PAPA y propaga datos a todos los hijos
+
+    Body JSON:
+    {
+        "codigo_ean": "7702004003621",
+        "nombre": "LECHE ENTERA ALQUERIA 1L",
+        "marca": "ALQUERIA",
+        "categoria_id": 1
+    }
+    """
+    try:
+        datos = await request.json()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print(f"\n{'='*60}")
+        print(f"👑 CREANDO PRODUCTO PAPA: ID {producto_id}")
+        print(f"{'='*60}")
+
+        # 1. Actualizar el PAPA con los datos validados
+        cursor.execute(
+            """
+            UPDATE productos_maestros_v2
+            SET codigo_ean = %s,
+                nombre_consolidado = %s,
+                marca = %s,
+                categoria_id = %s,
+                es_producto_papa = TRUE,
+                validado_por_admin = TRUE,
+                fecha_validacion_papa = CURRENT_TIMESTAMP,
+                estado = 'validado',
+                confianza_datos = 1.0
+            WHERE id = %s
+            RETURNING id, nombre_consolidado
+        """,
+            (
+                datos.get("codigo_ean"),
+                datos.get("nombre", "").upper().strip(),
+                datos.get("marca"),
+                datos.get("categoria_id"),
+                producto_id,
+            ),
+        )
+
+        resultado = cursor.fetchone()
+        if not resultado:
+            cursor.close()
+            conn.close()
+            return {"success": False, "error": f"Producto {producto_id} no encontrado"}
+
+        papa_id = resultado[0]
+        papa_nombre = resultado[1]
+
+        print(f"   ✅ PAPA actualizado: {papa_nombre}")
+
+        # 2. Obtener PLUs del PAPA en productos_por_establecimiento
+        cursor.execute(
+            """
+            SELECT codigo_plu, establecimiento_id
+            FROM productos_por_establecimiento
+            WHERE producto_maestro_id = %s
+        """,
+            (papa_id,),
+        )
+
+        plus_papa = cursor.fetchall()
+        print(f"   📦 PLUs del PAPA: {len(plus_papa)}")
+
+        # 3. Buscar y actualizar HIJOS (mismo PLU + mismo establecimiento)
+        hijos_actualizados = 0
+        hijos_ids = []
+
+        for plu, est_id in plus_papa:
+            print(f"      🔍 Buscando hijos con PLU={plu}, Est={est_id}")
+
+            # Encontrar otros productos con mismo PLU en mismo establecimiento
+            cursor.execute(
+                """
+                SELECT DISTINCT ppe.producto_maestro_id
+                FROM productos_por_establecimiento ppe
+                WHERE ppe.codigo_plu = %s
+                  AND ppe.establecimiento_id = %s
+                  AND ppe.producto_maestro_id != %s
+            """,
+                (plu, est_id, papa_id),
+            )
+
+            hijos = cursor.fetchall()
+
+            for (hijo_id,) in hijos:
+                # Propagar datos del PAPA al HIJO
+                cursor.execute(
+                    """
+                    UPDATE productos_maestros_v2
+                    SET codigo_ean = %s,
+                        nombre_consolidado = %s,
+                        marca = %s,
+                        categoria_id = %s,
+                        producto_papa_id = %s,
+                        es_producto_papa = FALSE,
+                        estado = 'validado',
+                        confianza_datos = 0.95
+                    WHERE id = %s
+                """,
+                    (
+                        datos.get("codigo_ean"),
+                        datos.get("nombre", "").upper().strip(),
+                        datos.get("marca"),
+                        datos.get("categoria_id"),
+                        papa_id,
+                        hijo_id,
+                    ),
+                )
+                hijos_actualizados += 1
+                hijos_ids.append(hijo_id)
+                print(f"         ✅ Hijo actualizado: ID {hijo_id}")
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"\n   ✅ TOTAL: {hijos_actualizados} hijos actualizados")
+        print(f"{'='*60}\n")
+
+        return {
+            "success": True,
+            "papa_id": papa_id,
+            "papa_nombre": papa_nombre,
+            "hijos_actualizados": hijos_actualizados,
+            "hijos_ids": hijos_ids,
+            "mensaje": f"Producto papa {papa_id} creado, {hijos_actualizados} hijos actualizados",
+        }
+
+    except Exception as e:
+        print(f"❌ Error creando producto papa: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/admin/producto-papa/{producto_id}/hijos")
+async def obtener_hijos_producto(producto_id: int):
+    """
+    Obtiene todos los hijos de un producto papa
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que es un papa
+        cursor.execute(
+            """
+            SELECT es_producto_papa, nombre_consolidado
+            FROM productos_maestros_v2
+            WHERE id = %s
+        """,
+            (producto_id,),
+        )
+
+        papa_info = cursor.fetchone()
+        if not papa_info:
+            return {"success": False, "error": "Producto no encontrado"}
+
+        # Obtener hijos directos
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.nombre_consolidado,
+                pm.codigo_ean,
+                ppe.codigo_plu,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario
+            FROM productos_maestros_v2 pm
+            LEFT JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE pm.producto_papa_id = %s
+            ORDER BY e.nombre_normalizado
+        """,
+            (producto_id,),
+        )
+
+        hijos = []
+        for row in cursor.fetchall():
+            hijos.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "codigo_ean": row[2],
+                    "plu": row[3],
+                    "establecimiento": row[4],
+                    "precio": float(row[5]) if row[5] else 0,
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "papa_id": producto_id,
+            "papa_nombre": papa_info[1],
+            "es_papa": papa_info[0],
+            "total_hijos": len(hijos),
+            "hijos": hijos,
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/comparar-precios/{producto_papa_id}")
+async def comparar_precios_por_papa(producto_papa_id: int):
+    """
+    Compara precios del mismo producto (papa) en diferentes establecimientos
+    Incluye el papa y todos sus hijos
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener info del papa
+        cursor.execute(
+            """
+            SELECT nombre_consolidado, codigo_ean, marca
+            FROM productos_maestros_v2
+            WHERE id = %s
+        """,
+            (producto_papa_id,),
+        )
+
+        papa_info = cursor.fetchone()
+        if not papa_info:
+            return {"success": False, "error": "Producto no encontrado"}
+
+        # Obtener precios del PAPA y todos sus HIJOS
+        cursor.execute(
+            """
+            SELECT
+                e.nombre_normalizado as establecimiento,
+                ppe.codigo_plu,
+                ppe.precio_unitario,
+                ppe.precio_minimo,
+                ppe.precio_maximo,
+                ppe.total_reportes,
+                ppe.fecha_actualizacion,
+                pm.id as producto_id
+            FROM productos_por_establecimiento ppe
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            JOIN productos_maestros_v2 pm ON ppe.producto_maestro_id = pm.id
+            WHERE ppe.producto_maestro_id = %s
+               OR pm.producto_papa_id = %s
+            ORDER BY ppe.precio_unitario ASC
+        """,
+            (producto_papa_id, producto_papa_id),
+        )
+
+        precios = []
+        for row in cursor.fetchall():
+            precios.append(
+                {
+                    "establecimiento": row[0],
+                    "plu": row[1],
+                    "precio_actual": float(row[2]) if row[2] else 0,
+                    "precio_minimo": float(row[3]) if row[3] else 0,
+                    "precio_maximo": float(row[4]) if row[4] else 0,
+                    "veces_reportado": row[5],
+                    "ultima_actualizacion": str(row[6]) if row[6] else None,
+                    "producto_id": row[7],
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        # Calcular estadísticas
+        if precios:
+            precio_min = precios[0]["precio_actual"]
+            precio_max = precios[-1]["precio_actual"]
+            ahorro_maximo = precio_max - precio_min
+            porcentaje_ahorro = (
+                (ahorro_maximo / precio_max * 100) if precio_max > 0 else 0
+            )
+        else:
+            precio_min = 0
+            precio_max = 0
+            ahorro_maximo = 0
+            porcentaje_ahorro = 0
+
+        return {
+            "success": True,
+            "producto": {
+                "id": producto_papa_id,
+                "nombre": papa_info[0],
+                "codigo_ean": papa_info[1],
+                "marca": papa_info[2],
+            },
+            "precios": precios,
+            "estadisticas": {
+                "total_establecimientos": len(precios),
+                "precio_minimo": precio_min,
+                "precio_maximo": precio_max,
+                "ahorro_maximo": ahorro_maximo,
+                "porcentaje_ahorro": round(porcentaje_ahorro, 1),
+                "mejor_opcion": precios[0]["establecimiento"] if precios else None,
+            },
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.get("/api/admin/productos-papa")
+async def listar_productos_papa(limite: int = 50):
+    """
+    Lista todos los productos marcados como PAPA
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.fecha_validacion_papa,
+                COUNT(hijos.id) as total_hijos,
+                COUNT(DISTINCT ppe.establecimiento_id) as total_establecimientos
+            FROM productos_maestros_v2 pm
+            LEFT JOIN productos_maestros_v2 hijos ON hijos.producto_papa_id = pm.id
+            LEFT JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            WHERE pm.es_producto_papa = TRUE
+            GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.fecha_validacion_papa
+            ORDER BY pm.fecha_validacion_papa DESC
+            LIMIT %s
+        """,
+            (limite,),
+        )
+
+        papas = []
+        for row in cursor.fetchall():
+            papas.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "fecha_validacion": str(row[4]) if row[4] else None,
+                    "total_hijos": row[5],
+                    "total_establecimientos": row[6],
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, "total": len(papas), "productos_papa": papas}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/admin/migrar-plus-historicos")
+async def migrar_plus_historicos():
+    """
+    Migra PLUs de facturas existentes a productos_por_establecimiento
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("\n" + "=" * 80)
+        print("🔄 MIGRANDO PLUs HISTÓRICOS")
+        print("=" * 80)
+
+        # Obtener todos los items con código y establecimiento_id
+        cursor.execute(
+            """
+            SELECT DISTINCT
+                if2.codigo_leido,
+                if2.producto_maestro_id,
+                f.establecimiento_id,
+                if2.precio_pagado
+            FROM items_factura if2
+            JOIN facturas f ON if2.factura_id = f.id
+            WHERE if2.codigo_leido IS NOT NULL
+              AND if2.codigo_leido != ''
+              AND if2.producto_maestro_id IS NOT NULL
+              AND f.establecimiento_id IS NOT NULL
+        """
+        )
+
+        items = cursor.fetchall()
+        print(f"📦 Encontrados {len(items)} códigos únicos para migrar")
+
+        migrados = 0
+        errores = 0
+
+        for codigo, producto_id, est_id, precio in items:
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO productos_por_establecimiento (
+                        producto_maestro_id, establecimiento_id, codigo_plu,
+                        precio_actual, precio_unitario, precio_minimo, precio_maximo,
+                        total_reportes, fecha_creacion, fecha_actualizacion
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (producto_maestro_id, establecimiento_id)
+                    DO UPDATE SET
+                        codigo_plu = COALESCE(productos_por_establecimiento.codigo_plu, EXCLUDED.codigo_plu),
+                        total_reportes = productos_por_establecimiento.total_reportes + 1,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                """,
+                    (producto_id, est_id, codigo, precio, precio, precio, precio),
+                )
+
+                migrados += 1
+
+            except Exception as e:
+                errores += 1
+                continue
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(
+            f"✅ Migración completada: {migrados} registros migrados, {errores} errores"
+        )
+
+        return {
+            "success": True,
+            "codigos_encontrados": len(items),
+            "registros_migrados": migrados,
+            "errores": errores,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+print("✅ Sistema Papa-Hijos registrado:")
+print("   GET  /admin/setup-sistema-papa-hijos")
+print("   POST /api/admin/producto-papa/{id}")
+print("   GET  /api/admin/producto-papa/{id}/hijos")
+print("   GET  /api/comparar-precios/{id}")
+print("   GET  /api/admin/productos-papa")
+print("   GET  /admin/migrar-plus-historicos")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
