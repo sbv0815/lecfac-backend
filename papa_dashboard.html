@@ -538,20 +538,22 @@
                 const isSelected = productoSeleccionado && productoSeleccionado.id === p.id;
 
                 html += `
-                    <li class="product-item ${isPapa ? 'is-papa' : ''} ${isSelected ? 'selected' : ''}"
-                        onclick="seleccionarProducto(${p.id})">
-                        <div class="product-name">
-                            ${p.nombre_consolidado || 'Sin nombre'}
-                            ${isPapa ? '<span class="badge badge-papa">PAPA</span>' : ''}
-                        </div>
-                        <div class="product-meta">
-                            <span>ID: ${p.id}</span>
-                            ${p.codigo_ean ? `<span>EAN: ${p.codigo_ean}</span>` : '<span>Sin EAN</span>'}
-                            ${p.marca ? `<span>${p.marca}</span>` : ''}
-                            <span>Visto: ${p.veces_visto || 0}x</span>
-                        </div>
-                    </li>
-                `;
+    <li class="product-item ${isPapa ? 'is-papa' : ''} ${isSelected ? 'selected' : ''}"
+        onclick="seleccionarProducto(${p.id})">
+        <div class="product-name">
+            ${p.nombre_consolidado || 'Sin nombre'}
+            ${isPapa ? '<span class="badge badge-papa">PAPA</span>' : ''}
+        </div>
+        <div class="product-meta">
+            <span>ID: ${p.id}</span>
+            ${p.codigo_plu ? `<span>PLU: ${p.codigo_plu}</span>` : ''}
+            ${p.codigo_ean ? `<span>EAN: ${p.codigo_ean}</span>` : ''}
+            ${p.establecimiento ? `<span>🏪 ${p.establecimiento}</span>` : ''}
+            ${p.precio ? `<span>$${p.precio.toLocaleString()}</span>` : ''}
+            ${p.marca ? `<span>${p.marca}</span>` : ''}
+        </div>
+    </li>
+`;
             });
 
             html += '</ul>';
