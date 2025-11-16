@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LecFac - Gestor de Productos Papa</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            font-size: 28px;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-body {
+            padding: 20px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .product-list {
+            list-style: none;
+        }
+
+        .product-item {
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .product-item:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .product-item.selected {
+            border-color: #667eea;
+            background: #e8ecff;
+        }
+
+        .product-item.is-papa {
+            border-left: 4px solid #28a745;
+        }
+
+        .product-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .product-meta {
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .product-meta span {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-papa {
+            background: #28a745;
+            color: white;
+        }
+
+        .badge-pendiente {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .badge-validado {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn-block {
+            width: 100%;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .alert-warning {
+            background: #fff3e0;
+            color: #e65100;
+            border: 1px solid #ffcc80;
+        }
+
+        .hijos-preview {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .hijos-preview h4 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        .hijo-item {
+            background: white;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #667eea;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-top: 10px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 15px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>👑 Gestor de Productos Papa</h1>
+        <p>Consolida y valida productos para comparación de precios</p>
+    </div>
+
+    <div class="container">
+        <div class="stats-bar">
+            <div class="stat-card">
+                <h3 id="stat-total">-</h3>
+                <p>Total Productos</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-papas">-</h3>
+                <p>Productos Papa</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-pendientes">-</h3>
+                <p>Pendientes Validar</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-plus">-</h3>
+                <p>PLUs Registrados</p>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Panel Izquierdo: Lista de Productos -->
+            <div class="panel">
+                <div class="panel-header">
+                    📦 Productos
+                    <button class="btn btn-primary" onclick="cargarProductos()"
+                        style="padding: 6px 12px; font-size: 12px;">
+                        🔄 Refrescar
+                    </button>
+                </div>
+                <div class="panel-body">
+                    <input type="text" class="search-box" placeholder="🔍 Buscar por nombre, código o PLU..."
+                        id="searchInput" onkeyup="filtrarProductos()">
+
+                    <div class="tabs">
+                        <div class="tab active" onclick="cambiarTab('todos')">Todos</div>
+                        <div class="tab" onclick="cambiarTab('pendientes')">Pendientes</div>
+                        <div class="tab" onclick="cambiarTab('papas')">Papas</div>
+                    </div>
+
+                    <div id="productList" class="loading">
+                        Cargando productos...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel Derecho: Editor de Papa -->
+            <div class="panel">
+                <div class="panel-header">
+                    ✏️ Editor de Producto Papa
+                </div>
+                <div class="panel-body">
+                    <div id="editorContent">
+                        <div class="empty-state">
+                            <div style="font-size: 48px; margin-bottom: 10px;">👈</div>
+                            <p>Selecciona un producto de la lista para editarlo</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let productos = [];
+        let productoSeleccionado = null;
+        let tabActual = 'todos';
+        let categorias = [];
+
+        // Cargar al iniciar
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarEstadisticas();
+            cargarProductos();
+            cargarCategorias();
+        });
+
+        async function cargarEstadisticas() {
+            try {
+                // Total productos
+                const respTotal = await fetch(`${API_BASE}/api/v2/productos?limite=1`);
+                const dataTotal = await respTotal.json();
+
+                // Productos papa
+                const respPapas = await fetch(`${API_BASE}/api/admin/productos-papa?limite=1000`);
+                const dataPapas = await respPapas.json();
+
+                document.getElementById('stat-total').textContent = dataTotal.total || '-';
+                document.getElementById('stat-papas').textContent = dataPapas.total || 0;
+                document.getElementById('stat-pendientes').textContent = (dataTotal.total || 0) - (dataPapas.total || 0);
+                document.getElementById('stat-plus').textContent = '64'; // Del migrado
+
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+
+        async function cargarCategorias() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/sugerencias-categoria`);
+                const data = await response.json();
+                if (data.success) {
+                    categorias = data.categorias || [];
+                }
+            } catch (error) {
+                console.error('Error cargando categorías:', error);
+            }
+        }
+
+        async function cargarProductos() {
+            const listContainer = document.getElementById('productList');
+            listContainer.innerHTML = '<div class="loading">Cargando productos...</div>';
+
+            try {
+                // Cargar productos con sus PLUs
+                const response = await fetch(`${API_BASE}/api/v2/productos?limite=200`);
+                const data = await response.json();
+
+                if (data.success && data.productos) {
+                    productos = data.productos;
+                    renderizarProductos();
+                } else {
+                    listContainer.innerHTML = '<div class="empty-state">No se pudieron cargar los productos</div>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                listContainer.innerHTML = `<div class="alert alert-warning">Error: ${error.message}</div>`;
+            }
+        }
+
+        function renderizarProductos() {
+            const listContainer = document.getElementById('productList');
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            let productosFiltrados = productos.filter(p => {
+                // Filtro de búsqueda
+                const matchSearch = !searchTerm ||
+                    (p.nombre_consolidado || '').toLowerCase().includes(searchTerm) ||
+                    (p.codigo_ean || '').includes(searchTerm) ||
+                    (p.marca || '').toLowerCase().includes(searchTerm);
+
+                // Filtro de tab
+                if (tabActual === 'pendientes') {
+                    return matchSearch && !p.es_producto_papa;
+                } else if (tabActual === 'papas') {
+                    return matchSearch && p.es_producto_papa;
+                }
+                return matchSearch;
+            });
+
+            if (productosFiltrados.length === 0) {
+                listContainer.innerHTML = '<div class="empty-state">No hay productos que mostrar</div>';
+                return;
+            }
+
+            let html = '<ul class="product-list">';
+
+            productosFiltrados.forEach(p => {
+                const isPapa = p.es_producto_papa || false;
+                const isSelected = productoSeleccionado && productoSeleccionado.id === p.id;
+
+                html += `
+                    <li class="product-item ${isPapa ? 'is-papa' : ''} ${isSelected ? 'selected' : ''}"
+                        onclick="seleccionarProducto(${p.id})">
+                        <div class="product-name">
+                            ${p.nombre_consolidado || 'Sin nombre'}
+                            ${isPapa ? '<span class="badge badge-papa">PAPA</span>' : ''}
+                        </div>
+                        <div class="product-meta">
+                            <span>ID: ${p.id}</span>
+                            ${p.codigo_ean ? `<span>EAN: ${p.codigo_ean}</span>` : '<span>Sin EAN</span>'}
+                            ${p.marca ? `<span>${p.marca}</span>` : ''}
+                            <span>Visto: ${p.veces_visto || 0}x</span>
+                        </div>
+                    </li>
+                `;
+            });
+
+            html += '</ul>';
+            listContainer.innerHTML = html;
+        }
+
+        function filtrarProductos() {
+            renderizarProductos();
+        }
+
+        function cambiarTab(tab) {
+            tabActual = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            renderizarProductos();
+        }
+
+        async function seleccionarProducto(id) {
+            const producto = productos.find(p => p.id === id);
+            if (!producto) return;
+
+            productoSeleccionado = producto;
+            renderizarProductos(); // Re-render para mostrar selección
+
+            // Cargar PLUs del producto
+            let plusInfo = [];
+            try {
+                const respPlus = await fetch(`${API_BASE}/api/v2/productos/${id}/codigos`);
+                const dataPlus = await respPlus.json();
+                if (dataPlus.success) {
+                    plusInfo = dataPlus.codigos || [];
+                }
+            } catch (e) {
+                console.error('Error cargando PLUs:', e);
+            }
+
+            const editorContent = document.getElementById('editorContent');
+
+            editorContent.innerHTML = `
+                <div class="alert alert-info">
+                    <strong>Producto seleccionado:</strong> ID ${producto.id}
+                    ${producto.es_producto_papa ? '<br><span class="badge badge-papa">Este producto ya es PAPA</span>' : ''}
+                </div>
+
+                <form id="papaForm" onsubmit="guardarPapa(event)">
+                    <div class="form-group">
+                        <label>Código EAN (13 dígitos)</label>
+                        <input type="text" id="codigo_ean" value="${producto.codigo_ean || ''}"
+                               placeholder="Ej: 7702004003621" maxlength="14">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Nombre del Producto (OFICIAL)</label>
+                        <input type="text" id="nombre" value="${producto.nombre_consolidado || ''}"
+                               placeholder="Ej: LECHE ENTERA ALQUERIA 1L" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Marca</label>
+                            <input type="text" id="marca" value="${producto.marca || ''}"
+                                   placeholder="Ej: ALQUERIA" list="marcas-list">
+                            <datalist id="marcas-list">
+                                <option value="ALQUERIA">
+                                <option value="ALPINA">
+                                <option value="COLANTA">
+                                <option value="COCA-COLA">
+                                <option value="NESTLE">
+                                <option value="BIMBO">
+                                <option value="RAMO">
+                            </datalist>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Categoría ID</label>
+                            <select id="categoria_id">
+                                <option value="">Seleccionar...</option>
+                                <option value="1" ${producto.categoria_id == 1 ? 'selected' : ''}>1 - Lácteos</option>
+                                <option value="2" ${producto.categoria_id == 2 ? 'selected' : ''}>2 - Carnes</option>
+                                <option value="3" ${producto.categoria_id == 3 ? 'selected' : ''}>3 - Frutas y Verduras</option>
+                                <option value="4" ${producto.categoria_id == 4 ? 'selected' : ''}>4 - Panadería</option>
+                                <option value="5" ${producto.categoria_id == 5 ? 'selected' : ''}>5 - Bebidas</option>
+                                <option value="6" ${producto.categoria_id == 6 ? 'selected' : ''}>6 - Despensa</option>
+                                <option value="7" ${producto.categoria_id == 7 ? 'selected' : ''}>7 - Aseo Personal</option>
+                                <option value="8" ${producto.categoria_id == 8 ? 'selected' : ''}>8 - Aseo Hogar</option>
+                                <option value="9" ${producto.categoria_id == 9 ? 'selected' : ''}>9 - Snacks</option>
+                                <option value="10" ${producto.categoria_id == 10 ? 'selected' : ''}>10 - Congelados</option>
+                                <option value="15" ${producto.categoria_id == 15 ? 'selected' : ''}>15 - Otros</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="hijos-preview">
+                        <h4>📍 PLUs y Establecimientos (${plusInfo.length})</h4>
+                        ${plusInfo.length > 0 ? plusInfo.map(plu => `
+                            <div class="hijo-item">
+                                <strong>${plu.establecimiento}</strong><br>
+                                PLU: ${plu.codigo} | Visto: ${plu.veces_visto}x
+                            </div>
+                        `).join('') : '<div class="hijo-item">No hay PLUs registrados para este producto</div>'}
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button type="submit" class="btn btn-success btn-block">
+                            👑 Guardar como Producto PAPA
+                        </button>
+                    </div>
+                </form>
+
+                <div id="resultadoGuardado" style="margin-top: 15px;"></div>
+            `;
+        }
+
+        async function guardarPapa(event) {
+            event.preventDefault();
+
+            if (!productoSeleccionado) {
+                alert('No hay producto seleccionado');
+                return;
+            }
+
+            const datos = {
+                codigo_ean: document.getElementById('codigo_ean').value.trim(),
+                nombre: document.getElementById('nombre').value.trim().toUpperCase(),
+                marca: document.getElementById('marca').value.trim().toUpperCase(),
+                categoria_id: document.getElementById('categoria_id').value ?
+                    parseInt(document.getElementById('categoria_id').value) : null
+            };
+
+            if (!datos.nombre) {
+                alert('El nombre es obligatorio');
+                return;
+            }
+
+            const resultadoDiv = document.getElementById('resultadoGuardado');
+            resultadoDiv.innerHTML = '<div class="loading">Guardando y propagando cambios...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/producto-papa/${productoSeleccionado.id}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(datos)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    resultadoDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <strong>✅ ¡Guardado exitosamente!</strong><br>
+                            Producto PAPA: ${result.papa_nombre}<br>
+                            Hijos actualizados: ${result.hijos_actualizados}<br>
+                            ${result.hijos_ids.length > 0 ? `IDs: ${result.hijos_ids.join(', ')}` : ''}
+                        </div>
+                    `;
+
+                    // Actualizar producto en la lista local
+                    const idx = productos.findIndex(p => p.id === productoSeleccionado.id);
+                    if (idx !== -1) {
+                        productos[idx].es_producto_papa = true;
+                        productos[idx].nombre_consolidado = datos.nombre;
+                        productos[idx].codigo_ean = datos.codigo_ean;
+                        productos[idx].marca = datos.marca;
+                    }
+
+                    renderizarProductos();
+                    cargarEstadisticas();
+                } else {
+                    resultadoDiv.innerHTML = `
+                        <div class="alert alert-warning">
+                            <strong>⚠️ Error:</strong> ${result.error || 'Error desconocido'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultadoDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <strong>❌ Error de conexión:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+
+</html>

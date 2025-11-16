@@ -7643,6 +7643,18 @@ print("   GET  /api/comparar-precios/{id}")
 print("   GET  /api/admin/productos-papa")
 print("   GET  /admin/migrar-plus-historicos")
 
+
+@app.get("/papa-dashboard", response_class=HTMLResponse)
+async def serve_papa_dashboard():
+    """Sirve el dashboard de gestión de productos papa"""
+    try:
+        return FileResponse("papa_dashboard.html", media_type="text/html")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Dashboard no encontrado")
+
+
+print("✅ Dashboard Papa disponible en /papa-dashboard")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
