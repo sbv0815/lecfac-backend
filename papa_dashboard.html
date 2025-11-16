@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LecFac - Gestor de Productos Papa</title>
     <style>
@@ -439,6 +440,7 @@
         // Forzar HTTPS
         // Forzar HTTPS - Versión dinámica
         const API_BASE = `https://${window.location.host}`;
+        console.log('API_BASE:', API_BASE);
         let productos = [];
         let productoSeleccionado = null;
         let tabActual = 'todos';
