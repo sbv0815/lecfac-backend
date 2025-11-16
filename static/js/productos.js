@@ -31,7 +31,7 @@ async function cargarProductos(pagina = 1) {
         const filtro = document.getElementById("filtro")?.value || "todos";
 
         // ⭐ CAMBIO: Usar el nuevo endpoint /api/v2/productos/
-        let url = `${apiBase}/api/v2/productos/?skip=${(pagina - 1) * limite}&limit=${limite}`;
+        let url = `${apiBase}/api/v2/productos?limite=${limite}`;
 
         // Agregar parámetro de búsqueda si existe
         if (busqueda.trim()) {
