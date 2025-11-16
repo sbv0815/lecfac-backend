@@ -7967,6 +7967,61 @@ async def verificar_productos_por_establecimiento():
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/verificar-join-plus")
+async def verificar_join_plus():
+    """Verificar si los PLUs se pueden unir con productos_maestros_v2"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Ver si los producto_maestro_id existen en productos_maestros_v2
+        cursor.execute(
+            """
+            SELECT
+                ppe.producto_maestro_id,
+                ppe.codigo_plu,
+                e.nombre_normalizado,
+                pm.id as pm_id,
+                pm.nombre_consolidado
+            FROM productos_por_establecimiento ppe
+            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            LEFT JOIN productos_maestros_v2 pm ON ppe.producto_maestro_id = pm.id
+            ORDER BY ppe.producto_maestro_id
+            LIMIT 20
+        """
+        )
+
+        registros = []
+        huerfanos = 0
+        for row in cursor.fetchall():
+            es_huerfano = row[3] is None
+            if es_huerfano:
+                huerfanos += 1
+            registros.append(
+                {
+                    "producto_maestro_id": row[0],
+                    "plu": row[1],
+                    "establecimiento": row[2],
+                    "existe_en_v2": row[3] is not None,
+                    "nombre_en_v2": row[4],
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "total_registros": len(registros),
+            "huerfanos": huerfanos,
+            "registros": registros,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
