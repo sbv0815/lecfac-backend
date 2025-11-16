@@ -7655,6 +7655,66 @@ async def serve_papa_dashboard():
 
 print("✅ Dashboard Papa disponible en /papa-dashboard")
 
+
+@app.get("/api/v2/productos")
+async def listar_productos_v2(limite: int = 200):
+    """Lista productos de productos_maestros_v2 con campos para dashboard papa"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                codigo_ean,
+                nombre_consolidado,
+                marca,
+                categoria_id,
+                veces_visto,
+                es_producto_papa,
+                producto_papa_id,
+                estado,
+                confianza_datos
+            FROM productos_maestros_v2
+            ORDER BY id DESC
+            LIMIT %s
+        """,
+            (limite,),
+        )
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre_consolidado": row[2],
+                    "marca": row[3],
+                    "categoria_id": row[4],
+                    "veces_visto": row[5] or 0,
+                    "es_producto_papa": row[6] or False,
+                    "producto_papa_id": row[7],
+                    "estado": row[8],
+                    "confianza_datos": float(row[9]) if row[9] else 0,
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, "productos": productos, "total": len(productos)}
+
+    except Exception as e:
+        print(f"❌ Error listando productos v2: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "productos": [], "total": 0}
+
+
+print("✅ Endpoint /api/v2/productos registrado")
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
