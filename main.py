@@ -7765,6 +7765,73 @@ async def verificar_constraint_estado():
         return {"error": str(e)}
 
 
+@app.get("/admin/verificar-plus-guardados")
+async def verificar_plus_guardados():
+    """Verificar qué PLUs están guardados en productos_por_establecimiento"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Total de registros
+        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
+        total = cursor.fetchone()[0]
+
+        # Ver los últimos 20
+        cursor.execute(
+            """
+            SELECT
+                ppe.producto_maestro_id,
+                pm.nombre_consolidado,
+                ppe.codigo_plu,
+                e.nombre_normalizado,
+                ppe.precio_unitario,
+                ppe.fecha_creacion
+            FROM productos_por_establecimiento ppe
+            JOIN productos_maestros_v2 pm ON ppe.producto_maestro_id = pm.id
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            ORDER BY ppe.fecha_creacion DESC
+            LIMIT 20
+        """
+        )
+
+        registros = []
+        for row in cursor.fetchall():
+            registros.append(
+                {
+                    "producto_id": row[0],
+                    "nombre": row[1],
+                    "plu": row[2],
+                    "establecimiento": row[3],
+                    "precio": float(row[4]) if row[4] else 0,
+                    "fecha": str(row[5]) if row[5] else None,
+                }
+            )
+
+        # Buscar específicamente el PLU 632967
+        cursor.execute(
+            """
+            SELECT * FROM productos_por_establecimiento
+            WHERE codigo_plu = '632967'
+        """
+        )
+        plu_especifico = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "total_registros": total,
+            "ultimos_20": registros,
+            "plu_632967_encontrado": len(plu_especifico) > 0,
+            "plu_632967_datos": plu_especifico,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
