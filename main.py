@@ -8022,6 +8022,69 @@ async def verificar_join_plus():
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/limpiar-plus-mal-guardados")
+async def limpiar_plus_mal_guardados():
+    """
+    Limpia productos donde el PLU se guardó incorrectamente como EAN.
+    Mueve el código al campo correcto y limpia el EAN.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Encontrar productos con PLU en campo EAN (códigos de 3-7 dígitos)
+        cursor.execute(
+            """
+            SELECT id, codigo_ean, nombre_consolidado
+            FROM productos_maestros_v2
+            WHERE codigo_ean IS NOT NULL
+              AND LENGTH(codigo_ean) BETWEEN 3 AND 7
+        """
+        )
+
+        productos_afectados = cursor.fetchall()
+
+        limpiados = 0
+        detalles = []
+
+        for prod_id, codigo_malo, nombre in productos_afectados:
+            # Limpiar el campo EAN (quitar el PLU mal guardado)
+            cursor.execute(
+                """
+                UPDATE productos_maestros_v2
+                SET codigo_ean = NULL
+                WHERE id = %s
+            """,
+                (prod_id,),
+            )
+
+            limpiados += 1
+            detalles.append(
+                {
+                    "id": prod_id,
+                    "nombre": nombre,
+                    "codigo_removido": codigo_malo,
+                    "accion": "EAN limpiado (era un PLU)",
+                }
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "productos_limpiados": limpiados,
+            "detalles": detalles,
+            "mensaje": f"Se limpiaron {limpiados} productos con PLU en campo EAN",
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
