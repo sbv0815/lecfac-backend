@@ -6989,6 +6989,87 @@ print("✅ Endpoint /admin/test-reprocesar-una-factura registrado (v3 - corregid
 
 print("✅ Endpoint /admin/test-reprocesar-una-factura registrado")
 
+
+@app.get("/admin/migrar-plus-historicos")
+async def migrar_plus_historicos():
+    """
+    Migra PLUs de facturas existentes a productos_por_establecimiento
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("\n" + "=" * 80)
+        print("🔄 MIGRANDO PLUs HISTÓRICOS")
+        print("=" * 80)
+
+        # Obtener todos los items con código y establecimiento_id
+        cursor.execute(
+            """
+            SELECT DISTINCT
+                if2.codigo_leido,
+                if2.producto_maestro_id,
+                f.establecimiento_id,
+                if2.precio_pagado
+            FROM items_factura if2
+            JOIN facturas f ON if2.factura_id = f.id
+            WHERE if2.codigo_leido IS NOT NULL
+              AND if2.codigo_leido != ''
+              AND if2.producto_maestro_id IS NOT NULL
+              AND f.establecimiento_id IS NOT NULL
+              AND LENGTH(if2.codigo_leido) BETWEEN 3 AND 7  -- PLUs típicamente
+        """
+        )
+
+        items = cursor.fetchall()
+        print(f"📦 Encontrados {len(items)} PLUs únicos para migrar")
+
+        migrados = 0
+        errores = 0
+
+        for codigo, producto_id, est_id, precio in items:
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO productos_por_establecimiento (
+                        producto_maestro_id, establecimiento_id, codigo_plu,
+                        precio_actual, precio_unitario, precio_minimo, precio_maximo,
+                        total_reportes, fecha_creacion, fecha_actualizacion
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (producto_maestro_id, establecimiento_id)
+                    DO UPDATE SET
+                        codigo_plu = COALESCE(productos_por_establecimiento.codigo_plu, EXCLUDED.codigo_plu),
+                        total_reportes = productos_por_establecimiento.total_reportes + 1,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                """,
+                    (producto_id, est_id, codigo, precio, precio, precio, precio),
+                )
+
+                migrados += 1
+
+            except Exception as e:
+                errores += 1
+                continue
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Migración completada: {migrados} PLUs migrados, {errores} errores")
+
+        return {
+            "success": True,
+            "plus_encontrados": len(items),
+            "plus_migrados": migrados,
+            "errores": errores,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
