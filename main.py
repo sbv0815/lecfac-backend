@@ -1402,17 +1402,6 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
                 )
 
-                # ✅ CAMBIO B: Usar buscar_o_crear_producto_inteligente
-                producto_maestro_id = buscar_o_crear_producto_inteligente(
-                    codigo=codigo_ean_valido or "",
-                    nombre=nombre,
-                    precio=precio_unitario,
-                    establecimiento=establecimiento_raw,
-                    cursor=cursor,
-                    conn=conn,
-                    establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
-                )
-
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
                 # Guardar en items_factura
