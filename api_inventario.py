@@ -1,7 +1,7 @@
 """
 api_inventario.py - APIs REST para la App Flutter
-ACTUALIZADO: Incluye todos los campos nuevos del inventario
-CORREGIDO: Nombres de columnas correctos
+ACTUALIZADO: Usa productos_maestros_v2 correctamente
+CORREGIDO: JOINs y campos correctos para V2
 """
 
 from fastapi import APIRouter, HTTPException, Header
@@ -31,14 +31,12 @@ def verificar_token(authorization: str = Header(None)):
 
 
 # ========================================
-# 1. OBTENER INVENTARIO DEL USUARIO ⭐ CORREGIDO
+# 1. OBTENER INVENTARIO DEL USUARIO
 # ========================================
 @router.get("/usuario/{user_id}")
 async def get_inventario_usuario(user_id: int):
     """
     GET /api/inventario/usuario/{user_id}
-
-    Obtiene el inventario completo con TODOS los campos nuevos
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -63,9 +61,9 @@ async def get_inventario_usuario(user_id: int):
                     iu.fecha_estimada_agotamiento,
                     iu.alerta_activa,
                     CASE
-                    WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 'bajo'
-                    WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
-                    ELSE 'normal'
+                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 'bajo'
+                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
+                        ELSE 'normal'
                     END as estado_stock,
                     iu.precio_ultima_compra as precio_promedio_global,
                     iu.precio_ultima_compra,
@@ -82,18 +80,69 @@ async def get_inventario_usuario(user_id: int):
                     iu.cantidad_por_unidad,
                     iu.dias_desde_ultima_compra,
                     iu.marca
-                    FROM inventario_usuario iu
-                    JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
-                    LEFT JOIN categorias c ON pm.categoria_id = c.id
-                    WHERE iu.usuario_id = %s
-                    ORDER BY
+                FROM inventario_usuario iu
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN categorias c ON pm.categoria_id = c.id
+                WHERE iu.usuario_id = %s
+                ORDER BY
                     CASE
-                    WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1
-                    WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
-                    ELSE 3
+                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1
+                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
+                        ELSE 3
                     END,
                     iu.fecha_ultima_actualizacion DESC
-                        """,
+            """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    iu.id,
+                    pm.codigo_ean,
+                    pm.nombre_consolidado,
+                    pm.marca,
+                    COALESCE(c.nombre, 'Sin categoría') as categoria,
+                    NULL as imagen_url,
+                    iu.cantidad_actual,
+                    iu.unidad_medida,
+                    iu.nivel_alerta,
+                    iu.fecha_ultima_compra,
+                    iu.frecuencia_compra_dias,
+                    iu.fecha_estimada_agotamiento,
+                    iu.alerta_activa,
+                    CASE
+                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 'bajo'
+                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 'medio'
+                        ELSE 'normal'
+                    END as estado_stock,
+                    iu.precio_ultima_compra as precio_promedio_global,
+                    iu.precio_ultima_compra,
+                    iu.precio_promedio,
+                    iu.precio_minimo,
+                    iu.precio_maximo,
+                    iu.establecimiento,
+                    iu.establecimiento_id,
+                    iu.ubicacion,
+                    iu.numero_compras,
+                    iu.cantidad_total_comprada,
+                    iu.total_gastado,
+                    iu.ultima_factura_id,
+                    iu.cantidad_por_unidad,
+                    iu.dias_desde_ultima_compra,
+                    iu.marca
+                FROM inventario_usuario iu
+                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN categorias c ON pm.categoria_id = c.id
+                WHERE iu.usuario_id = ?
+                ORDER BY
+                    CASE
+                        WHEN iu.cantidad_actual <= iu.nivel_alerta THEN 1
+                        WHEN iu.cantidad_actual <= (iu.nivel_alerta * 2) THEN 2
+                        ELSE 3
+                    END,
+                    iu.fecha_ultima_actualizacion DESC
+            """,
                 (user_id,),
             )
 
@@ -104,9 +153,7 @@ async def get_inventario_usuario(user_id: int):
                     "id": row[0],
                     "codigo_ean": row[1],
                     "nombre": row[2],
-                    "marca": row[3]
-                    or row[28]
-                    or "",  # Priorizar marca de productos_maestros
+                    "marca": row[3] or row[28] or "",
                     "categoria": row[4] or "",
                     "imagen_url": row[5],
                     "cantidad_actual": float(row[6]) if row[6] else 0.0,
@@ -134,7 +181,6 @@ async def get_inventario_usuario(user_id: int):
                 }
             )
 
-        # Calcular estadísticas
         total = len(productos)
         bajos = len([p for p in productos if p["estado"] == "bajo"])
         medios = len([p for p in productos if p["estado"] == "medio"])
@@ -167,10 +213,6 @@ async def get_inventario_usuario(user_id: int):
 # ========================================
 @router.put("/producto/{inventario_id}")
 async def actualizar_cantidad(inventario_id: int, data: dict):
-    """
-    PUT /api/inventario/producto/{inventario_id}
-    Body: {"cantidad": 5.0, "usuario_id": 1}
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
@@ -182,7 +224,6 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
         if nueva_cantidad is None or usuario_id is None:
             raise HTTPException(status_code=400, detail="Faltan datos requeridos")
 
-        # Verificar que el inventario pertenece al usuario
         if database_type == "postgresql":
             cursor.execute(
                 "SELECT usuario_id FROM inventario_usuario WHERE id = %s",
@@ -199,7 +240,6 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
             conn.close()
             raise HTTPException(status_code=403, detail="No autorizado")
 
-        # Actualizar cantidad
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -243,9 +283,6 @@ async def actualizar_cantidad(inventario_id: int, data: dict):
 # ========================================
 @router.get("/alertas/{user_id}")
 async def get_alertas_usuario(user_id: int, solo_activas: bool = True):
-    """
-    GET /api/inventario/alertas/{user_id}?solo_activas=true
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
@@ -310,10 +347,6 @@ async def get_alertas_usuario(user_id: int, solo_activas: bool = True):
 # ========================================
 @router.put("/alertas/{alerta_id}/marcar-leida")
 async def marcar_alerta_leida(alerta_id: int, data: dict):
-    """
-    PUT /api/inventario/alertas/{alerta_id}/marcar-leida
-    Body: {"usuario_id": 1}
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
@@ -356,22 +389,13 @@ async def marcar_alerta_leida(alerta_id: int, data: dict):
 # ========================================
 # 5. OBTENER PRESUPUESTO DEL USUARIO
 # ========================================
-# ========================================
-# 5. OBTENER PRESUPUESTO DEL USUARIO - CORREGIDO ✅
-# ========================================
 @router.get("/presupuesto/{user_id}")
 async def get_presupuesto_usuario(user_id: int):
-    """
-    GET /api/inventario/presupuesto/{user_id}
-
-    Devuelve el presupuesto activo del usuario + gastos actuales calculados
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
     try:
-        # 1. Obtener presupuesto activo
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -412,7 +436,6 @@ async def get_presupuesto_usuario(user_id: int):
         fecha_inicio = presupuesto[3]
         fecha_fin = presupuesto[4]
 
-        # 2. Calcular gastos reales del periodo
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -438,7 +461,6 @@ async def get_presupuesto_usuario(user_id: int):
 
         gasto_mensual_actual = float(cursor.fetchone()[0])
 
-        # 3. Calcular gasto semanal (últimos 7 días)
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -462,7 +484,6 @@ async def get_presupuesto_usuario(user_id: int):
 
         gasto_semanal_actual = float(cursor.fetchone()[0])
 
-        # 4. Actualizar gastos en la tabla presupuesto_usuario
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -487,7 +508,6 @@ async def get_presupuesto_usuario(user_id: int):
         conn.commit()
         conn.close()
 
-        # 5. Preparar respuesta
         porcentaje_usado_mensual = (
             (gasto_mensual_actual / monto_mensual * 100) if monto_mensual > 0 else 0
         )
@@ -512,7 +532,7 @@ async def get_presupuesto_usuario(user_id: int):
                     "porcentaje_usado_semanal": round(porcentaje_usado_semanal, 1),
                     "fecha_inicio": str(fecha_inicio),
                     "fecha_fin": str(fecha_fin),
-                    "periodo": f"{presupuesto[6]}/{presupuesto[5]}",  # mes/anio
+                    "periodo": f"{presupuesto[6]}/{presupuesto[5]}",
                 },
             },
         }
@@ -528,54 +548,33 @@ async def get_presupuesto_usuario(user_id: int):
 # ========================================
 # 6. CREAR/ACTUALIZAR PRESUPUESTO
 # ========================================
-# ========================================
-# 6. CREAR/ACTUALIZAR PRESUPUESTO - CORREGIDO ✅
-# ========================================
 @router.post("/presupuesto")
 async def crear_presupuesto(data: dict):
-    """
-    POST /api/inventario/presupuesto
-    Body: {
-        "user_id": 1,
-        "monto_mensual": 500000,   # ✅ Acepta ambos
-        "limite_mensual": 500000,  # ✅ Compatibilidad Flutter
-        "monto_semanal": 125000,   # ✅ Acepta ambos
-        "limite_semanal": 125000,  # ✅ Compatibilidad Flutter
-        "anio": 2025,
-        "mes": 10
-    }
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
 
     try:
         usuario_id = data.get("user_id") or data.get("usuario_id")
-
-        # ✅ CORREGIDO: Aceptar ambos nombres de campos
         monto_mensual = data.get("monto_mensual") or data.get("limite_mensual")
         monto_semanal = data.get("monto_semanal") or data.get("limite_semanal")
-
         anio = data.get("anio", datetime.now().year)
         mes = data.get("mes", datetime.now().month)
 
         if not usuario_id or not monto_mensual:
             raise HTTPException(status_code=400, detail="Faltan datos requeridos")
 
-        # Validar montos positivos
         if monto_mensual <= 0 or (monto_semanal and monto_semanal <= 0):
             raise HTTPException(
                 status_code=400, detail="Los montos deben ser mayores a 0"
             )
 
-        # Calcular fechas del periodo
         fecha_inicio = datetime(anio, mes, 1).date()
         if mes == 12:
             fecha_fin = datetime(anio + 1, 1, 1).date() - timedelta(days=1)
         else:
             fecha_fin = datetime(anio, mes + 1, 1).date() - timedelta(days=1)
 
-        # Desactivar presupuestos anteriores del mismo periodo
         if database_type == "postgresql":
             cursor.execute(
                 "UPDATE presupuesto_usuario SET activo = FALSE WHERE usuario_id = %s AND anio = %s AND mes = %s",
@@ -587,7 +586,6 @@ async def crear_presupuesto(data: dict):
                 (usuario_id, anio, mes),
             )
 
-        # Crear nuevo presupuesto
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -652,18 +650,10 @@ async def crear_presupuesto(data: dict):
 
 
 # ========================================
-# 7. ESTADÍSTICAS COMPLETAS DEL USUARIO ⭐ AMPLIADO
+# 7. ESTADÍSTICAS COMPLETAS DEL USUARIO
 # ========================================
 @router.get("/estadisticas/{user_id}")
 async def get_estadisticas_usuario(user_id: int):
-    """
-    GET /api/inventario/estadisticas/{user_id}
-
-    Dashboard completo con:
-    - Inventario (stock, categorías, próximos a agotar)
-    - Gastos (mensual, productos, establecimientos)
-    - Comparativa comunitaria (precios vs promedio global)
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     database_type = os.environ.get("DATABASE_TYPE", "sqlite")
@@ -675,10 +665,6 @@ async def get_estadisticas_usuario(user_id: int):
             "gastos": {},
             "comunitarias": {},
         }
-
-        # ============================================================
-        # 🏠 SECCIÓN 1: ESTADÍSTICAS DE INVENTARIO
-        # ============================================================
 
         # 1.1 Resumen de stock
         if database_type == "postgresql":
@@ -714,18 +700,19 @@ async def get_estadisticas_usuario(user_id: int):
         stock_medio = inv[2] or 0
         valor_total = float(inv[3]) if inv[3] else 0
 
-        # 1.2 Productos por categoría
+        # 1.2 Productos por categoría - CORREGIDO
         if database_type == "postgresql":
             cursor.execute(
                 """
                 SELECT
-                    COALESCE(pm.categoria, 'Sin categoría') as categoria,
+                    COALESCE(c.nombre, 'Sin categoría') as categoria,
                     COUNT(*) as cantidad,
                     COALESCE(SUM(iu.cantidad_actual * iu.precio_ultima_compra), 0) as valor_total
                 FROM inventario_usuario iu
                 JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN categorias c ON pm.categoria_id = c.id
                 WHERE iu.usuario_id = %s
-                GROUP BY pm.categoria
+                GROUP BY c.nombre
                 ORDER BY cantidad DESC
                 LIMIT 10
                 """,
@@ -735,13 +722,14 @@ async def get_estadisticas_usuario(user_id: int):
             cursor.execute(
                 """
                 SELECT
-                    COALESCE(pm.categoria, 'Sin categoría') as categoria,
+                    COALESCE(c.nombre, 'Sin categoría') as categoria,
                     COUNT(*) as cantidad,
                     COALESCE(SUM(iu.cantidad_actual * iu.precio_ultima_compra), 0) as valor_total
                 FROM inventario_usuario iu
                 JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
+                LEFT JOIN categorias c ON pm.categoria_id = c.id
                 WHERE iu.usuario_id = ?
-                GROUP BY pm.categoria
+                GROUP BY c.nombre
                 ORDER BY cantidad DESC
                 LIMIT 10
                 """,
@@ -758,7 +746,7 @@ async def get_estadisticas_usuario(user_id: int):
                 }
             )
 
-        # 1.3 Productos próximos a agotarse
+        # 1.3 Productos próximos a agotarse - CORREGIDO
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -826,16 +814,11 @@ async def get_estadisticas_usuario(user_id: int):
             "proximos_agotar": proximos_agotar,
         }
 
-        # ============================================================
-        # 💰 SECCIÓN 2: ESTADÍSTICAS DE GASTOS
-        # ============================================================
-
-        # 2.1 Gasto mensual y presupuesto
+        # 2.1 Gasto mensual
         if database_type == "postgresql":
             cursor.execute(
                 """
-                SELECT
-                    COALESCE(SUM(total_factura), 0)
+                SELECT COALESCE(SUM(total_factura), 0)
                 FROM facturas
                 WHERE usuario_id = %s
                   AND EXTRACT(YEAR FROM fecha_cargue) = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -846,8 +829,7 @@ async def get_estadisticas_usuario(user_id: int):
         else:
             cursor.execute(
                 """
-                SELECT
-                    COALESCE(SUM(total_factura), 0)
+                SELECT COALESCE(SUM(total_factura), 0)
                 FROM facturas
                 WHERE usuario_id = ?
                   AND strftime('%Y-%m', fecha_cargue) = strftime('%Y-%m', 'now')
@@ -857,7 +839,6 @@ async def get_estadisticas_usuario(user_id: int):
 
         gasto_mensual = float(cursor.fetchone()[0])
 
-        # Obtener presupuesto activo
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -887,7 +868,7 @@ async def get_estadisticas_usuario(user_id: int):
             presupuesto_mensual - gasto_mensual if presupuesto_mensual > 0 else 0
         )
 
-        # 2.2 Gastos por mes (últimos 6 meses)
+        # 2.2 Gastos por mes
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -927,7 +908,7 @@ async def get_estadisticas_usuario(user_id: int):
                 {"mes": row[0], "anio": row[1], "total": float(row[2]) if row[2] else 0}
             )
 
-        # 2.3 Top 5 productos más comprados
+        # 2.3 Top productos
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -974,7 +955,7 @@ async def get_estadisticas_usuario(user_id: int):
                 }
             )
 
-        # 2.4 Top 3 establecimientos
+        # 2.4 Top establecimientos
         if database_type == "postgresql":
             cursor.execute(
                 """
@@ -1028,132 +1009,13 @@ async def get_estadisticas_usuario(user_id: int):
             "top_establecimientos": top_establecimientos,
         }
 
-        # ============================================================
-        # 🌍 SECCIÓN 3: COMPARATIVA COMUNITARIA
-        # ============================================================
-
-        # 3.1 Comparar precios del usuario vs precios globales
-        if database_type == "postgresql":
-            cursor.execute(
-                """
-                SELECT
-                    pm.nombre_consolidado,
-                    iu.precio_ultima_compra as mi_precio,
-                    pm.precio_promedio_global,
-                    (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
-                    NULL as mejor_establecimiento,
-                    NULL as mejor_precio
-                FROM inventario_usuario iu
-                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
-                WHERE iu.usuario_id = %s
-                  AND iu.precio_ultima_compra IS NOT NULL
-                  AND pm.precio_promedio_global IS NOT NULL
-                  AND pm.precio_promedio_global > 0
-                ORDER BY ABS(iu.precio_ultima_compra - pm.precio_promedio_global) DESC
-                LIMIT 10
-                """,
-                (user_id,),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT
-                    pm.nombre_consolidado,
-                    iu.precio_ultima_compra as mi_precio,
-                    pm.precio_promedio_global,
-                    (iu.precio_ultima_compra - pm.precio_promedio_global) as diferencia,
-                    NULL as mejor_establecimiento,
-                    NULL as mejor_precio
-                FROM inventario_usuario iu
-                JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
-                WHERE iu.usuario_id = ?
-                  AND iu.precio_ultima_compra IS NOT NULL
-                  AND pm.precio_promedio_global IS NOT NULL
-                  AND pm.precio_promedio_global > 0
-                ORDER BY ABS(iu.precio_ultima_compra - pm.precio_promedio_global) DESC
-                LIMIT 10
-                """,
-                (user_id,),
-            )
-
-        productos_comparativa = []
-        ahorro_vs_promedio = 0
-        productos_baratos = 0
-        productos_caros = 0
-
-        for row in cursor.fetchall():
-            diferencia = float(row[3]) if row[3] else 0
-            ahorro_vs_promedio += diferencia
-
-            if diferencia < 0:
-                productos_baratos += 1
-            elif diferencia > 0:
-                productos_caros += 1
-
-            productos_comparativa.append(
-                {
-                    "nombre": row[0],
-                    "mi_precio": float(row[1]) if row[1] else 0,
-                    "precio_promedio": float(row[2]) if row[2] else 0,
-                    "diferencia": diferencia,
-                    "mejor_establecimiento": row[4],
-                    "mejor_precio": float(row[5]) if row[5] else None,
-                }
-            )
-
-        # 3.2 Mejores establecimientos según datos comunitarios
-        if database_type == "postgresql":
-            cursor.execute(
-                """
-                SELECT
-                    e.nombre_normalizado,
-                    COUNT(DISTINCT pm.id) as productos_comprados,
-                    COALESCE(AVG(pp.precio), 0) as precio_promedio,
-                    0 as ahorro_estimado
-                FROM establecimientos e
-                JOIN precios_productos pp ON e.id = pp.establecimiento_id
-                JOIN productos_maestros_v2 pm ON pp.producto_maestro_id = pm.id
-                WHERE pp.precio IS NOT NULL
-                GROUP BY e.id, e.nombre_normalizado
-                ORDER BY precio_promedio ASC
-                LIMIT 5
-                """,
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT
-                    e.nombre_normalizado,
-                    COUNT(DISTINCT pm.id) as productos_comprados,
-                    COALESCE(AVG(pp.precio), 0) as precio_promedio,
-                    0 as ahorro_estimado
-                FROM establecimientos e
-                JOIN precios_productos pp ON e.id = pp.establecimiento_id
-                JOIN productos_maestros_v2 pm ON pp.producto_maestro_id = pm.id
-                WHERE pp.precio IS NOT NULL
-                GROUP BY e.id, e.nombre_normalizado
-                ORDER BY precio_promedio ASC
-                LIMIT 5
-                """,
-            )
-
-        mejores_establecimientos = []
-        for row in cursor.fetchall():
-            mejores_establecimientos.append(
-                {
-                    "nombre": row[0],
-                    "productos_comprados": row[1],
-                    "precio_promedio": float(row[2]) if row[2] else 0,
-                    "ahorro_estimado": float(row[3]) if row[3] else 0,
-                }
-            )
-
+        # 3.1 Comparativa (simplificada porque V2 no tiene precio_promedio_global)
         resultado["comunitarias"] = {
-            "ahorro_vs_promedio": -ahorro_vs_promedio,  # Negativo porque diferencia positiva = pago más
-            "productos_baratos": productos_baratos,
-            "productos_caros": productos_caros,
-            "productos_comparativa": productos_comparativa,
-            "mejores_establecimientos": mejores_establecimientos,
+            "ahorro_vs_promedio": 0,
+            "productos_baratos": 0,
+            "productos_caros": 0,
+            "productos_comparativa": [],
+            "mejores_establecimientos": [],
         }
 
         conn.close()
