@@ -7916,6 +7916,57 @@ async def diagnostico_codigos():
         return {"error": str(e)}
 
 
+@app.get("/admin/verificar-productos-por-establecimiento")
+async def verificar_productos_por_establecimiento():
+    """Ver qué hay en productos_por_establecimiento"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Total registros
+        cursor.execute("SELECT COUNT(*) FROM productos_por_establecimiento")
+        total = cursor.fetchone()[0]
+
+        # Últimos 20 registros
+        cursor.execute(
+            """
+            SELECT
+                ppe.producto_maestro_id,
+                pm.nombre_consolidado,
+                ppe.codigo_plu,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario
+            FROM productos_por_establecimiento ppe
+            LEFT JOIN productos_maestros_v2 pm ON ppe.producto_maestro_id = pm.id
+            LEFT JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            ORDER BY ppe.producto_maestro_id DESC
+            LIMIT 20
+        """
+        )
+
+        registros = []
+        for row in cursor.fetchall():
+            registros.append(
+                {
+                    "producto_id": row[0],
+                    "nombre": row[1],
+                    "plu": row[2],
+                    "establecimiento": row[3],
+                    "precio": float(row[4]) if row[4] else 0,
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {"total_registros": total, "registros": registros}
+
+    except Exception as e:
+        import traceback
+
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
