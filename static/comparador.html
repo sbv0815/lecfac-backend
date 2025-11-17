@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LecFac - Comparador de Precios</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        .search-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #00b894;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .stat-card h3 {
+            font-size: 32px;
+            color: #00b894;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: #666;
+            font-size: 13px;
+        }
+
+        .product-card {
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        .product-header {
+            background: #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .product-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2d3436;
+            margin-bottom: 10px;
+        }
+
+        .product-info {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .info-badge {
+            background: #e0e0e0;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .info-badge.ean {
+            background: #74b9ff;
+            color: #0984e3;
+        }
+
+        .info-badge.marca {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+
+        .info-badge.categoria {
+            background: #dfe6e9;
+            color: #636e72;
+        }
+
+        .precios-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            padding: 20px;
+        }
+
+        .precio-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .precio-card:hover {
+            border-color: #00b894;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .precio-card.mejor-precio {
+            border-color: #00b894;
+            background: #e8f8f5;
+        }
+
+        .precio-card.mejor-precio::after {
+            content: '⭐ MEJOR PRECIO';
+            position: absolute;
+            top: -12px;
+            right: 10px;
+            background: #00b894;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .establecimiento-nombre {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2d3436;
+            margin-bottom: 10px;
+        }
+
+        .precio-valor {
+            font-size: 28px;
+            font-weight: 800;
+            color: #00b894;
+            margin-bottom: 10px;
+        }
+
+        .precio-info {
+            font-size: 12px;
+            color: #636e72;
+        }
+
+        .precio-info div {
+            margin-bottom: 5px;
+        }
+
+        .plu-badge {
+            background: #81ecec;
+            color: #00b894;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .fecha-badge {
+            color: #636e72;
+        }
+
+        .diferencia {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed #e0e0e0;
+            font-size: 12px;
+        }
+
+        .diferencia.mas-caro {
+            color: #d63031;
+        }
+
+        .diferencia.ahorro {
+            color: #00b894;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #666;
+        }
+
+        .loading::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #00b894;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #999;
+        }
+
+        .empty-state div {
+            font-size: 60px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #00b894;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #00a085;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            border-color: #00b894;
+        }
+
+        .filter-btn.active {
+            background: #00b894;
+            color: white;
+            border-color: #00b894;
+        }
+
+        .resumen-ahorro {
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .resumen-ahorro h3 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .resumen-ahorro p {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>💰 Comparador de Precios</h1>
+        <p>Encuentra dónde comprar más barato</p>
+    </div>
+
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3 id="stat-productos">-</h3>
+                <p>Productos con Precios</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-establecimientos">-</h3>
+                <p>Supermercados</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-precios">-</h3>
+                <p>Precios Registrados</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-ahorro">-</h3>
+                <p>Ahorro Potencial Promedio</p>
+            </div>
+        </div>
+
+        <div class="search-section">
+            <input type="text" class="search-box" id="searchInput"
+                placeholder="🔍 Buscar producto por nombre, EAN o marca...">
+
+            <div class="filters">
+                <button class="filter-btn active" onclick="filtrarPor('todos')">Todos</button>
+                <button class="filter-btn" onclick="filtrarPor('con_diferencia')">Con Diferencia de Precio</button>
+                <button class="filter-btn" onclick="filtrarPor('multiples')">En 2+ Supermercados</button>
+            </div>
+        </div>
+
+        <div id="resultados" class="loading">
+            Cargando productos y precios...
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = `https://${window.location.host}`;
+        let productosConPrecios = [];
+        let filtroActual = 'todos';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarDatos();
+
+            document.getElementById('searchInput').addEventListener('input', renderizarProductos);
+        });
+
+        async function cargarDatos() {
+            try {
+                const response = await fetch(`${API_BASE}/api/comparador/precios`);
+                const data = await response.json();
+
+                if (data.success) {
+                    productosConPrecios = data.productos;
+                    actualizarEstadisticas(data.estadisticas);
+                    renderizarProductos();
+                } else {
+                    document.getElementById('resultados').innerHTML =
+                        '<div class="empty-state"><div>❌</div>Error cargando datos</div>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('resultados').innerHTML =
+                    `<div class="empty-state"><div>❌</div>Error: ${error.message}</div>`;
+            }
+        }
+
+        function actualizarEstadisticas(stats) {
+            document.getElementById('stat-productos').textContent = stats.total_productos || 0;
+            document.getElementById('stat-establecimientos').textContent = stats.total_establecimientos || 0;
+            document.getElementById('stat-precios').textContent = stats.total_precios || 0;
+            document.getElementById('stat-ahorro').textContent =
+                stats.ahorro_promedio ? `${stats.ahorro_promedio}%` : '0%';
+        }
+
+        function filtrarPor(filtro) {
+            filtroActual = filtro;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            renderizarProductos();
+        }
+
+        function renderizarProductos() {
+            const container = document.getElementById('resultados');
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            let productosFiltrados = productosConPrecios.filter(p => {
+                // Filtro de búsqueda
+                const matchSearch = !searchTerm ||
+                    (p.nombre || '').toLowerCase().includes(searchTerm) ||
+                    (p.codigo_ean || '').includes(searchTerm) ||
+                    (p.marca || '').toLowerCase().includes(searchTerm);
+
+                if (!matchSearch) return false;
+
+                // Filtros adicionales
+                if (filtroActual === 'con_diferencia') {
+                    return p.precios.length > 1 && p.diferencia_porcentaje > 5;
+                } else if (filtroActual === 'multiples') {
+                    return p.precios.length >= 2;
+                }
+
+                return true;
+            });
+
+            if (productosFiltrados.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div>🔍</div>No se encontraron productos</div>';
+                return;
+            }
+
+            let html = '';
+
+            productosFiltrados.forEach(producto => {
+                const precioMin = Math.min(...producto.precios.map(p => p.precio));
+                const precioMax = Math.max(...producto.precios.map(p => p.precio));
+                const diferencia = precioMax - precioMin;
+
+                html += `
+                    <div class="product-card">
+                        <div class="product-header">
+                            <div class="product-title">${producto.nombre}</div>
+                            <div class="product-info">
+                                ${producto.codigo_ean ? `<span class="info-badge ean">EAN: ${producto.codigo_ean}</span>` : ''}
+                                ${producto.marca ? `<span class="info-badge marca">${producto.marca}</span>` : ''}
+                                ${producto.categoria ? `<span class="info-badge categoria">${producto.categoria}</span>` : ''}
+                                <span class="info-badge">${producto.precios.length} supermercado(s)</span>
+                                ${diferencia > 0 ? `<span class="info-badge" style="background:#ff7675;color:white;">Diferencia: $${diferencia.toLocaleString()}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="precios-grid">
+                            ${producto.precios.map(precio => {
+                    const esMejor = precio.precio === precioMin && producto.precios.length > 1;
+                    const dif = precio.precio - precioMin;
+
+                    return `
+                                    <div class="precio-card ${esMejor ? 'mejor-precio' : ''}">
+                                        <div class="establecimiento-nombre">🏪 ${precio.establecimiento}</div>
+                                        <div class="precio-valor">$${precio.precio.toLocaleString()}</div>
+                                        <div class="precio-info">
+                                            <div><span class="plu-badge">PLU: ${precio.plu}</span></div>
+                                            <div class="fecha-badge">📅 Visto: ${precio.fecha}</div>
+                                            <div>👁️ ${precio.veces_visto}x veces</div>
+                                        </div>
+                                        ${dif > 0 ? `
+                                            <div class="diferencia mas-caro">
+                                                ⬆️ $${dif.toLocaleString()} más caro que el mejor precio
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                }).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+
+</html>
