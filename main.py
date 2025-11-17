@@ -8387,6 +8387,12 @@ async def limpiar_papas_sin_plu():
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+# ============================================================================
+# REEMPLAZAR en main.py el endpoint /api/comparador/precios
+# El error es que ppe.veces_comprado NO existe, usar ppe.total_reportes
+# ============================================================================
+
+
 @app.get("/api/comparador/precios")
 async def comparador_precios():
     """
@@ -8397,7 +8403,7 @@ async def comparador_precios():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Obtener productos con precios
+        # ✅ CORRECCIÓN: Cambiar ppe.veces_comprado por ppe.total_reportes
         cursor.execute(
             """
             SELECT
@@ -8410,7 +8416,7 @@ async def comparador_precios():
                 e.nombre_normalizado as establecimiento,
                 ppe.precio_unitario,
                 ppe.fecha_actualizacion,
-                ppe.veces_comprado
+                ppe.total_reportes  -- ✅ CORREGIDO: era veces_comprado
             FROM productos_maestros_v2 pm
             JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
             JOIN establecimientos e ON ppe.establecimiento_id = e.id
@@ -8443,13 +8449,22 @@ async def comparador_precios():
                     "precios": [],
                 }
 
+            # ✅ CORREGIDO: Manejar fecha_actualizacion correctamente
+            fecha_str = "N/A"
+            if row[8]:
+                fecha_str = (
+                    row[8].strftime("%Y-%m-%d")
+                    if hasattr(row[8], "strftime")
+                    else str(row[8])
+                )
+
             productos_dict[prod_id]["precios"].append(
                 {
                     "plu": row[5],
                     "establecimiento": establecimiento,
                     "precio": float(row[7]) if row[7] else 0,
-                    "fecha": row[8].strftime("%Y-%m-%d") if row[8] else "N/A",
-                    "veces_visto": row[9] or 1,
+                    "fecha": fecha_str,
+                    "veces_visto": row[9] or 1,  # total_reportes
                 }
             )
 
