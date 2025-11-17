@@ -8224,10 +8224,10 @@ async def limpiar_papas_sin_plu():
             SELECT pm.id, pm.nombre_consolidado, pm.codigo_ean, pm.marca
             FROM productos_maestros_v2 pm
             WHERE pm.es_producto_papa = TRUE
-              AND pm.id NOT IN (
-                  SELECT DISTINCT producto_maestro_id
-                  FROM productos_por_establecimiento
-              )
+            AND pm.id NOT IN (
+                SELECT DISTINCT producto_maestro_id
+                FROM productos_por_establecimiento
+            )
         """
         )
 
@@ -8399,6 +8399,11 @@ async def comparador_precios():
 
         traceback.print_exc()
         return {"success": False, "error": str(e), "productos": [], "estadisticas": {}}
+
+
+@app.get("/comparador")
+async def ver_comparador():
+    return FileResponse("static/comparador.html")
 
 
 if __name__ == "__main__":  # ← AGREGAR :
