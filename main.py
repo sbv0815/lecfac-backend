@@ -4136,6 +4136,7 @@ async def fix_mi_rol():
 async def get_codigos_producto(producto_id: int):
     """
     Obtener todos los códigos de un producto en diferentes establecimientos
+    CON FECHA DE ACTUALIZACIÓN
     """
     try:
         conn = get_db_connection()
@@ -4155,7 +4156,7 @@ async def get_codigos_producto(producto_id: int):
             JOIN establecimientos e ON ce.establecimiento_id = e.id
             WHERE ce.producto_maestro_id = %s
               AND ce.activo = TRUE
-            ORDER BY ce.veces_visto DESC
+            ORDER BY ce.ultima_vez_visto DESC  -- ✅ Ordenar por más reciente
         """,
             (producto_id,),
         )
@@ -4170,7 +4171,9 @@ async def get_codigos_producto(producto_id: int):
                     "establecimiento": row[3],
                     "veces_visto": row[4],
                     "primera_vez": row[5].isoformat() if row[5] else None,
-                    "ultima_vez": row[6].isoformat() if row[6] else None,
+                    "ultima_vez": (
+                        row[6].isoformat() if row[6] else None
+                    ),  # ✅ Fecha importante
                 }
             )
 
@@ -4187,6 +4190,96 @@ async def get_codigos_producto(producto_id: int):
     except Exception as e:
         print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/precios-desactualizados")
+async def obtener_precios_desactualizados(dias: int = 30):
+    """
+    Lista productos cuyo precio no se ha actualizado en X días
+    Útil para identificar precios que ya no son vigentes
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.nombre_consolidado,
+                pm.codigo_ean,
+                e.nombre_normalizado as establecimiento,
+                ppe.codigo_plu,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion,
+                EXTRACT(DAY FROM NOW() - ppe.fecha_actualizacion) as dias_sin_actualizar
+            FROM productos_por_establecimiento ppe
+            JOIN productos_maestros_v2 pm ON ppe.producto_maestro_id = pm.id
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE ppe.fecha_actualizacion < NOW() - INTERVAL '%s days'
+            ORDER BY ppe.fecha_actualizacion ASC
+            LIMIT 100
+        """,
+            (dias,),
+        )
+
+        precios_viejos = []
+        for row in cursor.fetchall():
+            precios_viejos.append(
+                {
+                    "producto_id": row[0],
+                    "nombre": row[1],
+                    "codigo_ean": row[2],
+                    "establecimiento": row[3],
+                    "plu": row[4],
+                    "precio": float(row[5]) if row[5] else 0,
+                    "fecha_actualizacion": (
+                        row[6].strftime("%Y-%m-%d") if row[6] else None
+                    ),
+                    "dias_sin_actualizar": int(row[7]) if row[7] else 0,
+                }
+            )
+
+        # Estadísticas
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as total_precios,
+                COUNT(CASE WHEN fecha_actualizacion < NOW() - INTERVAL '%s days' THEN 1 END) as precios_viejos,
+                COUNT(CASE WHEN fecha_actualizacion >= NOW() - INTERVAL '%s days' THEN 1 END) as precios_vigentes
+            FROM productos_por_establecimiento
+        """,
+            (dias, dias),
+        )
+
+        stats = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "dias_limite": dias,
+            "estadisticas": {
+                "total_precios": stats[0],
+                "precios_desactualizados": stats[1],
+                "precios_vigentes": stats[2],
+                "porcentaje_vigentes": (
+                    round(stats[2] / stats[0] * 100, 1) if stats[0] > 0 else 0
+                ),
+            },
+            "precios_desactualizados": precios_viejos,
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+print("✅ Endpoints actualizados con fecha de actualización de precios")
 
 
 @app.get("/api/v2/productos/{producto_id}")
@@ -7659,7 +7752,7 @@ print("✅ Dashboard Papa disponible en /papa-dashboard")
 
 @app.get("/api/v2/productos")
 async def listar_productos_v2(limite: int = 200):
-    """Lista productos de productos_maestros_v2 CON PLUs agrupados"""
+    """Lista productos de productos_maestros_v2 CON PLUs agrupados Y FECHAS"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -7692,7 +7785,7 @@ async def listar_productos_v2(limite: int = 200):
             productos_dict[row[0]] = {
                 "id": row[0],
                 "codigo_ean": row[1],
-                "nombre": row[2],  # productos.js espera 'nombre'
+                "nombre": row[2],
                 "nombre_consolidado": row[2],
                 "marca": row[3],
                 "categoria_id": row[4],
@@ -7703,7 +7796,7 @@ async def listar_productos_v2(limite: int = 200):
                 "num_establecimientos": 0,
             }
 
-        # Obtener PLUs para estos productos
+        # Obtener PLUs para estos productos CON FECHA DE ACTUALIZACIÓN
         if productos_dict:
             prod_ids = list(productos_dict.keys())
             placeholders = ",".join(["%s"] * len(prod_ids))
@@ -7714,10 +7807,12 @@ async def listar_productos_v2(limite: int = 200):
                     ppe.producto_maestro_id,
                     ppe.codigo_plu,
                     e.nombre_normalizado,
-                    ppe.precio_unitario
+                    ppe.precio_unitario,
+                    ppe.fecha_actualizacion  -- ✅ NUEVO: Fecha de actualización
                 FROM productos_por_establecimiento ppe
                 JOIN establecimientos e ON ppe.establecimiento_id = e.id
                 WHERE ppe.producto_maestro_id IN ({placeholders})
+                ORDER BY ppe.fecha_actualizacion DESC  -- Ordenar por más reciente
             """,
                 prod_ids,
             )
@@ -7725,11 +7820,21 @@ async def listar_productos_v2(limite: int = 200):
             for plu_row in cursor.fetchall():
                 prod_id = plu_row[0]
                 if prod_id in productos_dict:
+                    # ✅ NUEVO: Incluir fecha de actualización
+                    fecha_actualizacion = None
+                    if plu_row[4]:
+                        fecha_actualizacion = (
+                            plu_row[4].strftime("%Y-%m-%d")
+                            if hasattr(plu_row[4], "strftime")
+                            else str(plu_row[4])
+                        )
+
                     productos_dict[prod_id]["plus"].append(
                         {
                             "codigo": plu_row[1],
                             "establecimiento": plu_row[2],
                             "precio": float(plu_row[3]) if plu_row[3] else 0,
+                            "fecha_actualizacion": fecha_actualizacion,  # ✅ NUEVO
                         }
                     )
 
