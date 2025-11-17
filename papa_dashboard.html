@@ -574,6 +574,22 @@
                 const isPapa = p.es_producto_papa || false;
                 const isSelected = productoSeleccionado && productoSeleccionado.id === p.id;
 
+                // Extraer PLU info del array plus
+                let pluInfo = '';
+                let establecimientoInfo = '';
+                let precioInfo = '';
+
+                if (p.plus && p.plus.length > 0) {
+                    pluInfo = p.plus[0].codigo || p.plus[0].codigo_plu || '';
+                    establecimientoInfo = p.plus[0].establecimiento || '';
+                    precioInfo = p.plus[0].precio || 0;
+                } else if (p.codigo_plu) {
+                    // Compatibilidad con formato viejo
+                    pluInfo = p.codigo_plu;
+                    establecimientoInfo = p.establecimiento || '';
+                    precioInfo = p.precio || 0;
+                }
+
                 html += `
     <li class="product-item ${isPapa ? 'is-papa' : ''} ${isSelected ? 'selected' : ''}"
         onclick="seleccionarProducto(${p.id})">
