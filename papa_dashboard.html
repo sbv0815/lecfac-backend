@@ -164,6 +164,16 @@
             border-radius: 4px;
         }
 
+        .product-meta span.fecha-vieja {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .product-meta span.fecha-reciente {
+            background: #d1fae5;
+            color: #059669;
+        }
+
         .badge {
             display: inline-block;
             padding: 3px 8px;
@@ -306,6 +316,20 @@
             border: 1px solid #e0e0e0;
         }
 
+        .hijo-item .fecha-info {
+            margin-top: 4px;
+            font-size: 11px;
+        }
+
+        .hijo-item .fecha-vieja {
+            color: #dc2626;
+            font-weight: 600;
+        }
+
+        .hijo-item .fecha-reciente {
+            color: #059669;
+        }
+
         .loading {
             text-align: center;
             padding: 40px;
@@ -437,7 +461,6 @@
     </div>
 
     <script>
-        // Forzar HTTPS
         // Forzar HTTPS - Versión dinámica
         const API_BASE = `https://${window.location.host}`;
         console.log('API_BASE:', API_BASE);
@@ -453,13 +476,42 @@
             cargarCategorias();
         });
 
+        // Función para calcular días desde una fecha
+        function calcularDiasDesde(fechaStr) {
+            if (!fechaStr) return null;
+            const fecha = new Date(fechaStr);
+            const hoy = new Date();
+            const diffTime = Math.abs(hoy - fecha);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays;
+        }
+
+        // Función para formatear fecha relativa
+        function formatearFechaRelativa(fechaStr) {
+            if (!fechaStr) return 'Sin fecha';
+
+            const dias = calcularDiasDesde(fechaStr);
+
+            if (dias === 0) return 'Hoy';
+            if (dias === 1) return 'Ayer';
+            if (dias <= 7) return `Hace ${dias} días`;
+            if (dias <= 30) return `Hace ${Math.floor(dias / 7)} sem`;
+            if (dias <= 365) return `Hace ${Math.floor(dias / 30)} meses`;
+            return `Hace ${Math.floor(dias / 365)} años`;
+        }
+
+        // Función para determinar si precio está vigente (menos de 30 días)
+        function precioVigente(fechaStr) {
+            if (!fechaStr) return false;
+            const dias = calcularDiasDesde(fechaStr);
+            return dias <= 30;
+        }
+
         async function cargarEstadisticas() {
             try {
-                // Usar los productos ya cargados (sin duplicados por ID)
                 const respTotal = await fetch(`${API_BASE}/api/v2/productos?limite=2000`);
                 const dataTotal = await respTotal.json();
 
-                // Eliminar duplicados por ID
                 const productosUnicos = {};
                 if (dataTotal.productos) {
                     dataTotal.productos.forEach(p => {
@@ -472,7 +524,6 @@
                 const listaUnica = Object.values(productosUnicos);
                 const totalProductos = listaUnica.length;
 
-                // Contar papas y pendientes
                 let totalPapas = 0;
                 let totalPendientes = 0;
 
@@ -484,7 +535,6 @@
                     }
                 });
 
-                // Contar PLUs
                 const respPlus = await fetch(`${API_BASE}/admin/contar-plus`);
                 const dataPlus = await respPlus.json();
 
@@ -519,13 +569,11 @@
                 const data = await response.json();
 
                 if (data.success && data.productos) {
-                    // Eliminar duplicados por ID, mantener el que tiene más info
                     const productosUnicos = {};
                     data.productos.forEach(p => {
                         if (!productosUnicos[p.id]) {
                             productosUnicos[p.id] = p;
                         } else {
-                            // Si ya existe, mantener el que tiene PLU
                             if (p.codigo_plu && !productosUnicos[p.id].codigo_plu) {
                                 productosUnicos[p.id] = p;
                             }
@@ -548,13 +596,11 @@
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
 
             let productosFiltrados = productos.filter(p => {
-                // Filtro de búsqueda
                 const matchSearch = !searchTerm ||
                     (p.nombre_consolidado || '').toLowerCase().includes(searchTerm) ||
                     (p.codigo_ean || '').includes(searchTerm) ||
                     (p.marca || '').toLowerCase().includes(searchTerm);
 
-                // Filtro de tab
                 if (tabActual === 'pendientes') {
                     return matchSearch && !p.es_producto_papa;
                 } else if (tabActual === 'papas') {
@@ -578,13 +624,21 @@
                 let pluInfo = '';
                 let establecimientoInfo = '';
                 let precioInfo = '';
+                let fechaInfo = '';
+                let fechaClase = '';
 
                 if (p.plus && p.plus.length > 0) {
                     pluInfo = p.plus[0].codigo || p.plus[0].codigo_plu || '';
                     establecimientoInfo = p.plus[0].establecimiento || '';
                     precioInfo = p.plus[0].precio || 0;
+
+                    // ✅ NUEVO: Obtener fecha de actualización
+                    const fechaActualizacion = p.plus[0].fecha_actualizacion || p.plus[0].ultima_compra;
+                    if (fechaActualizacion) {
+                        fechaInfo = formatearFechaRelativa(fechaActualizacion);
+                        fechaClase = precioVigente(fechaActualizacion) ? 'fecha-reciente' : 'fecha-vieja';
+                    }
                 } else if (p.codigo_plu) {
-                    // Compatibilidad con formato viejo
                     pluInfo = p.codigo_plu;
                     establecimientoInfo = p.establecimiento || '';
                     precioInfo = p.precio || 0;
@@ -603,6 +657,7 @@
             ${p.codigo_ean ? `<span>EAN: ${p.codigo_ean}</span>` : ''}
             ${establecimientoInfo ? `<span>🏪 ${establecimientoInfo}</span>` : ''}
             ${precioInfo ? `<span>$${precioInfo.toLocaleString()}</span>` : ''}
+            ${fechaInfo ? `<span class="${fechaClase}">📅 ${fechaInfo}</span>` : ''}
             ${p.marca ? `<span>${p.marca}</span>` : ''}
                     </div>
             </li>
@@ -629,7 +684,7 @@
             if (!producto) return;
 
             productoSeleccionado = producto;
-            renderizarProductos(); // Re-render para mostrar selección
+            renderizarProductos();
 
             // Cargar PLUs del producto
             let plusInfo = [];
@@ -701,12 +756,21 @@
 
                     <div class="hijos-preview">
                         <h4>📍 PLUs y Establecimientos (${plusInfo.length})</h4>
-                        ${plusInfo.length > 0 ? plusInfo.map(plu => `
+                        ${plusInfo.length > 0 ? plusInfo.map(plu => {
+                const fechaTexto = plu.ultima_vez ? formatearFechaRelativa(plu.ultima_vez) : 'Sin fecha';
+                const esVigente = plu.ultima_vez ? precioVigente(plu.ultima_vez) : false;
+                const claseVigencia = esVigente ? 'fecha-reciente' : 'fecha-vieja';
+
+                return `
                             <div class="hijo-item">
                                 <strong>${plu.establecimiento}</strong><br>
                                 PLU: ${plu.codigo} | Visto: ${plu.veces_visto}x
+                                <div class="fecha-info ${claseVigencia}">
+                                    📅 Última actualización: ${fechaTexto}
+                                    ${!esVigente ? ' ⚠️ Precio puede estar desactualizado' : ' ✅ Precio vigente'}
+                                </div>
                             </div>
-                        `).join('') : '<div class="hijo-item">No hay PLUs registrados para este producto</div>'}
+                        `}).join('') : '<div class="hijo-item">No hay PLUs registrados para este producto</div>'}
                     </div>
 
                     <div style="margin-top: 20px;">
@@ -765,7 +829,6 @@
                         </div>
                     `;
 
-                    // Actualizar producto en la lista local
                     const idx = productos.findIndex(p => p.id === productoSeleccionado.id);
                     if (idx !== -1) {
                         productos[idx].es_producto_papa = true;
