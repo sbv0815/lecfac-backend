@@ -5354,7 +5354,7 @@ async def actualizar_producto_referencia(
             SET {', '.join(campos)}
             WHERE codigo_ean = %s
             RETURNING id, codigo_ean, nombre, marca, categoria,
-                      presentacion, unidad_medida, updated_at
+            presentacion, unidad_medida, updated_at
         """
 
         cursor.execute(query, valores)
@@ -8280,6 +8280,125 @@ async def limpiar_papas_sin_plu():
         import traceback
 
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.get("/api/comparador/precios")
+async def comparador_precios():
+    """
+    Obtiene todos los productos con sus precios por establecimiento
+    para comparación
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener productos con precios
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                c.nombre as categoria,
+                ppe.codigo_plu,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion,
+                ppe.veces_comprado
+            FROM productos_maestros_v2 pm
+            JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
+            WHERE ppe.precio_unitario > 0
+            ORDER BY pm.id, ppe.precio_unitario ASC
+        """
+        )
+
+        rows = cursor.fetchall()
+
+        # Agrupar por producto
+        productos_dict = {}
+        establecimientos_set = set()
+        total_precios = 0
+
+        for row in rows:
+            prod_id = row[0]
+            establecimiento = row[6]
+            establecimientos_set.add(establecimiento)
+            total_precios += 1
+
+            if prod_id not in productos_dict:
+                productos_dict[prod_id] = {
+                    "id": prod_id,
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "categoria": row[4],
+                    "precios": [],
+                }
+
+            productos_dict[prod_id]["precios"].append(
+                {
+                    "plu": row[5],
+                    "establecimiento": establecimiento,
+                    "precio": float(row[7]) if row[7] else 0,
+                    "fecha": row[8].strftime("%Y-%m-%d") if row[8] else "N/A",
+                    "veces_visto": row[9] or 1,
+                }
+            )
+
+        # Calcular diferencias de precio
+        productos = []
+        total_ahorro = 0
+        productos_con_diferencia = 0
+
+        for prod_id, prod in productos_dict.items():
+            if len(prod["precios"]) > 1:
+                precios_valores = [p["precio"] for p in prod["precios"]]
+                precio_min = min(precios_valores)
+                precio_max = max(precios_valores)
+                diferencia = precio_max - precio_min
+                porcentaje = (diferencia / precio_max * 100) if precio_max > 0 else 0
+                prod["diferencia_porcentaje"] = round(porcentaje, 1)
+
+                if porcentaje > 0:
+                    total_ahorro += porcentaje
+                    productos_con_diferencia += 1
+            else:
+                prod["diferencia_porcentaje"] = 0
+
+            productos.append(prod)
+
+        # Ordenar por diferencia de precio (mayor primero)
+        productos.sort(key=lambda x: x["diferencia_porcentaje"], reverse=True)
+
+        ahorro_promedio = (
+            round(total_ahorro / productos_con_diferencia, 1)
+            if productos_con_diferencia > 0
+            else 0
+        )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "productos": productos,
+            "estadisticas": {
+                "total_productos": len(productos),
+                "total_establecimientos": len(establecimientos_set),
+                "total_precios": total_precios,
+                "ahorro_promedio": ahorro_promedio,
+            },
+        }
+
+    except Exception as e:
+        print(f"❌ Error en comparador: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "productos": [], "estadisticas": {}}
 
 
 if __name__ == "__main__":  # ← AGREGAR :
