@@ -8694,6 +8694,101 @@ async def debug_static_files():
     return {"files": files, "cwd": os.getcwd()}
 
 
+@app.get("/admin/agregar-fecha-actualizacion")
+async def agregar_fecha_actualizacion():
+    """
+    Agrega columna fecha_actualizacion a productos_maestros_v2
+    Ejecutar una vez: /admin/agregar-fecha-actualizacion
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        print("=" * 80)
+        print("🔧 AGREGANDO COLUMNA fecha_actualizacion")
+        print("=" * 80)
+
+        # 1. Verificar si ya existe
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'productos_maestros_v2'
+            AND column_name = 'fecha_actualizacion'
+        """
+        )
+
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return {
+                "success": True,
+                "mensaje": "✅ La columna fecha_actualizacion ya existe",
+                "accion": "ninguna",
+            }
+
+        # 2. Agregar columna
+        print("➕ Agregando columna fecha_actualizacion...")
+        cursor.execute(
+            """
+            ALTER TABLE productos_maestros_v2
+            ADD COLUMN fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        """
+        )
+        conn.commit()
+        print("✅ Columna agregada")
+
+        # 3. Crear índice (opcional, para optimizar)
+        print("📊 Creando índice...")
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_productos_v2_fecha_actualizacion
+            ON productos_maestros_v2(fecha_actualizacion DESC)
+        """
+        )
+        conn.commit()
+        print("✅ Índice creado")
+
+        # 4. Verificar
+        cursor.execute(
+            """
+            SELECT column_name, data_type, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'productos_maestros_v2'
+            AND column_name = 'fecha_actualizacion'
+        """
+        )
+
+        verificacion = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        print("=" * 80)
+        print("✅ COLUMNA AGREGADA EXITOSAMENTE")
+        print("=" * 80)
+
+        return {
+            "success": True,
+            "mensaje": "✅ Columna fecha_actualizacion agregada correctamente",
+            "columna": {
+                "nombre": verificacion[0],
+                "tipo": verificacion[1],
+                "default": verificacion[2],
+            },
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
