@@ -1,3 +1,4 @@
+# VERSION: 2024-11-18-16:00 - BÚSQUEDA FUNCIONAL
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -13,19 +14,27 @@ async def listar_productos_v2(
     limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = None,
     categoria_id: Optional[int] = None,
-    limite: int = Query(500, ge=1, le=1000),  # ✅ Agregar parámetro alternativo
-    busqueda: Optional[str] = None,  # ✅ Agregar parámetro alternativo
+    limite: int = Query(500, ge=1, le=1000),  # ✅ Parámetro usado por productos.js
+    busqueda: Optional[str] = None,  # ✅ Parámetro usado por productos.js
 ):
     """
     Lista productos con información de PLUs por establecimiento
-    ✅ Ahora soporta  de productos real.
+    ✅ VERSION 2024-11-18 - Búsqueda funcional
     """
+
+    # ✅ LOG VISIBLE
+    print("=" * 80)
+    print(f"🔥 /api/v2/productos LLAMADO - VERSION 2024-11-18-16:00")
+    print(f"   busqueda={busqueda}, search={search}")
+    print(f"   limite={limite}, limit={limit}")
+    print("=" * 80)
+
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # ✅ Normalizar parámetros (productos.js usa 'busqueda', mobile usa 'search')
+        # ✅ Normalizar parámetros (productos.js usa 'busqueda', otros usan 'search')
         search_term = busqueda or search
         final_limit = limite if limite != 500 else limit
 
@@ -57,7 +66,7 @@ async def listar_productos_v2(
             )
             search_param = f"%{search_term}%"
             params.extend([search_param, search_param, search_param])
-            print(f"🔍 Aplicando búsqueda: {search_term}")
+            print(f"🔍 Aplicando búsqueda: '{search_term}'")
 
         if categoria_id:
             where_conditions.append("pm.categoria_id = %s")
@@ -73,7 +82,7 @@ async def listar_productos_v2(
         """
         params.extend([final_limit, skip])
 
-        print(f"📊 Ejecutando query con límite={final_limit}, búsqueda={search_term}")
+        print(f"📊 Ejecutando query: límite={final_limit}, búsqueda='{search_term}'")
 
         cursor.execute(query, params)
         productos = cursor.fetchall()
@@ -126,10 +135,12 @@ async def listar_productos_v2(
             )
 
         cursor.close()
-        return {"productos": resultado, "total": len(resultado), "success": True}
+
+        # ✅ Agregar 'success': True para compatibilidad
+        return {"success": True, "productos": resultado, "total": len(resultado)}
 
     except Exception as e:
-        logger.error(f"Error listando productos: {e}")
+        logger.error(f"❌ Error listando productos: {e}")
         if conn:
             conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
