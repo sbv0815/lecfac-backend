@@ -450,7 +450,7 @@ async def actualizar_producto(producto_id: int, request: dict):
 async def eliminar_producto(producto_id: int):
     """
     Elimina un producto y TODAS sus referencias
-    VERSION: 2024-11-18-19:30
+    VERSION: 2024-11-18-19:40
     """
     print(f"🗑️ [Router] DELETE producto ID: {producto_id}")
 
@@ -474,7 +474,11 @@ async def eliminar_producto(producto_id: int):
 
         nombre = producto[0]
 
-        # 1. Eliminar de precios_productos (CRÍTICO - debe ser primero)
+        # ============================================================
+        # ELIMINACIONES CRÍTICAS (deben funcionar)
+        # ============================================================
+
+        # 1. Eliminar de precios_productos
         cursor.execute(
             "DELETE FROM precios_productos WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -490,7 +494,7 @@ async def eliminar_producto(producto_id: int):
         plus_eliminados = cursor.rowcount
         logger.info(f"   🗑️ {plus_eliminados} PLUs eliminados")
 
-        # 3. Desvincular items_factura (NO eliminar, solo desvincular)
+        # 3. Desvincular items_factura
         cursor.execute(
             "UPDATE items_factura SET producto_maestro_id = NULL WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -498,24 +502,25 @@ async def eliminar_producto(producto_id: int):
         items_desvinculados = cursor.rowcount
         logger.info(f"   🔗 {items_desvinculados} items desvinculados")
 
-        # 4. Eliminar de inventario_usuario (si existe)
-        try:
-            cursor.execute(
-                "DELETE FROM inventario_usuario WHERE producto_maestro_id = %s",
-                (producto_id,),
-            )
-            inventario_eliminado = cursor.rowcount
-            logger.info(
-                f"   📦 {inventario_eliminado} registros de inventario eliminados"
-            )
-        except Exception as e:
-            logger.warning(f"   ⚠️ No se pudo limpiar inventario: {e}")
-            inventario_eliminado = 0
+        # 4. Eliminar de inventario_usuario
+        cursor.execute(
+            "DELETE FROM inventario_usuario WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        inventario_eliminado = cursor.rowcount
+        logger.info(f"   📦 {inventario_eliminado} registros de inventario eliminados")
 
-        # 5. Eliminar de historial_compras_usuario (si existe)
+        # ============================================================
+        # ELIMINACIONES OPCIONALES (pueden fallar sin romper)
+        # ============================================================
+
+        historial_eliminado = 0
+        patrones_eliminados = 0
+
+        # Intentar eliminar de historial (puede no tener la columna)
         try:
             cursor.execute(
-                "DELETE FROM historial_compras_usuario WHERE producto_maestro_id = %s",
+                "DELETE FROM historial_compras_usuario WHERE producto_id = %s",
                 (producto_id,),
             )
             historial_eliminado = cursor.rowcount
@@ -523,10 +528,29 @@ async def eliminar_producto(producto_id: int):
                 f"   📊 {historial_eliminado} registros de historial eliminados"
             )
         except Exception as e:
-            logger.warning(f"   ⚠️ No se pudo limpiar historial: {e}")
-            historial_eliminado = 0
+            # Si falla, hacer rollback del error pero continuar
+            conn.rollback()
+            # Reabrir transacción
+            cursor = conn.cursor()
+            logger.warning(f"   ⚠️ Historial no limpiado (columna no existe)")
 
-        # 6. Finalmente, eliminar el producto
+        # Intentar eliminar de patrones_compra
+        try:
+            cursor.execute(
+                "DELETE FROM patrones_compra WHERE producto_maestro_id = %s",
+                (producto_id,),
+            )
+            patrones_eliminados = cursor.rowcount
+            logger.info(f"   📈 {patrones_eliminados} patrones eliminados")
+        except Exception as e:
+            conn.rollback()
+            cursor = conn.cursor()
+            logger.warning(f"   ⚠️ Patrones no limpiados")
+
+        # ============================================================
+        # ELIMINACIÓN FINAL DEL PRODUCTO
+        # ============================================================
+
         cursor.execute(
             "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
@@ -546,6 +570,7 @@ async def eliminar_producto(producto_id: int):
                 "items_desvinculados": items_desvinculados,
                 "inventario_eliminado": inventario_eliminado,
                 "historial_eliminado": historial_eliminado,
+                "patrones_eliminados": patrones_eliminados,
             },
         }
 
