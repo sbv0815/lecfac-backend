@@ -548,7 +548,7 @@ async def eliminar_producto(producto_id: int):
             logger.warning(f"   ⚠️ Patrones no limpiados")
 
         # ============================================================
-        # ELIMINACIÓN FINAL DEL PRODUCTO
+        # ELIMINACIÓN FINAL DEL PRODUCTO duplicado
         # ============================================================
 
         cursor.execute(
@@ -573,7 +573,6 @@ async def eliminar_producto(producto_id: int):
                 "patrones_eliminados": patrones_eliminados,
             },
         }
-
     except HTTPException:
         raise
     except Exception as e:
