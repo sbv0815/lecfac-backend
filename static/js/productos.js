@@ -1,6 +1,4 @@
-// productos.js - Gestión de productos (v2.5 - Con establecimientos por PLU)
-
-console.log("🚀 Inicializando Gestión de Productos v2.5 - Con Establecimientos");
+console.log("🚀 Inicializando Gestión de Productos v2.6 - Buscador Funcional");
 
 // =============================================================
 // Variables globales
@@ -20,13 +18,18 @@ function getApiBase() {
 }
 
 // =============================================================
-// Cargar productos (⭐ ACTUALIZADO CON NUEVO ENDPOINT)
+// 🔍 INDICADOR DE BÚSQUEDA (MOVER AL PRINCIPIO)
 // =============================================================
-// =============================================================
-// 🔧 FIX PARA productos.js - LÍNEA 25-35 APROXIMADAMENTE
-// Reemplazar la función cargarProductos() con esta versión corregida
-// =============================================================
+function mostrarIndicadorBusqueda(mostrar) {
+    const indicator = document.getElementById('search-indicator');
+    if (indicator) {
+        indicator.style.display = mostrar ? 'block' : 'none';
+    }
+}
 
+// =============================================================
+// Cargar productos
+// =============================================================
 async function cargarProductos(pagina = 1) {
     try {
         const apiBase = getApiBase();
@@ -35,8 +38,7 @@ async function cargarProductos(pagina = 1) {
         const busqueda = document.getElementById("busqueda")?.value || "";
         const filtro = document.getElementById("filtro")?.value || "todos";
 
-        // ✅ FIX: Aumentar límite a 500 y cambiar orden a DESC (más recientes primero)
-        // Los productos más viejos se verán en páginas siguientes
+        // Aumentar límite a 500 y orden DESC
         let url = `${apiBase}/api/v2/productos?limite=500`;
 
         // Agregar parámetro de búsqueda si existe
@@ -62,15 +64,15 @@ async function cargarProductos(pagina = 1) {
         const data = await response.json();
         console.log("📊 Respuesta API:", data);
 
-        // ✅ FIX: Guardar TODOS los productos sin límite artificial
+        // Guardar TODOS los productos sin límite artificial
         productosCache = data.productos || [];
 
-        // ✅ FIX: Calcular paginación REAL del lado del cliente
-        const productosPorPagina = limite; // 50 por defecto
+        // Calcular paginación REAL del lado del cliente
+        const productosPorPagina = limite;
         const totalProductos = productosCache.length;
         totalPaginas = Math.ceil(totalProductos / productosPorPagina) || 1;
 
-        // ✅ FIX: Calcular índices para la paginación del lado del cliente
+        // Calcular índices para la paginación del lado del cliente
         const inicio = (pagina - 1) * productosPorPagina;
         const fin = inicio + productosPorPagina;
         const productosPagina = productosCache.slice(inicio, fin);
@@ -83,7 +85,6 @@ async function cargarProductos(pagina = 1) {
         if (productosCache.length === 0 && busqueda) {
             mostrarSinResultados(busqueda);
         } else {
-            // ✅ FIX: Mostrar solo los productos de la página actual
             mostrarProductos(productosPagina);
         }
 
@@ -97,14 +98,11 @@ async function cargarProductos(pagina = 1) {
 }
 
 // =============================================================
-// ✅ TAMBIÉN AGREGAR ESTA FUNCIÓN AUXILIAR AL FINAL DEL ARCHIVO
+// Función auxiliar para cambiar página (sin recargar API)
 // =============================================================
-
-// Función auxiliar para mantener sincronización al cambiar página
 function cargarPagina(num) {
     if (num < 1 || num > totalPaginas) return;
 
-    // ✅ FIX: No volver a llamar la API, solo cambiar la vista de los productos en caché
     paginaActual = num;
 
     const productosPorPagina = limite;
@@ -119,43 +117,60 @@ function cargarPagina(num) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-
 // =============================================================
-// Configurar búsqueda en tiempo real
+// 🔍 CONFIGURAR BÚSQUEDA EN TIEMPO REAL (VERSIÓN ÚNICA Y CORRECTA)
 // =============================================================
 function configurarBuscadorTiempoReal() {
     const inputBusqueda = document.getElementById('busqueda');
+    const selectFiltro = document.getElementById('filtro');
 
     if (!inputBusqueda) {
-        console.error('No se encontró el input de búsqueda');
+        console.error('❌ No se encontró el input de búsqueda');
         return;
     }
 
+    console.log('✅ Input de búsqueda encontrado:', inputBusqueda);
+
     // Búsqueda en tiempo real con debounce
     inputBusqueda.addEventListener('input', function (e) {
+        console.log('⌨️ Input detectado:', e.target.value);
+
         if (timeoutBusqueda) {
             clearTimeout(timeoutBusqueda);
         }
 
-        mostrarBuscando();
+        // Mostrar indicador si hay texto
+        if (e.target.value.trim()) {
+            mostrarIndicadorBusqueda(true);
+        }
 
         timeoutBusqueda = setTimeout(() => {
             console.log('🔍 Búsqueda en tiempo real:', e.target.value);
             cargarProductos(1);
+            mostrarIndicadorBusqueda(false);
         }, 500);
     });
 
-    // También permitir búsqueda con Enter
+    // También búsqueda con Enter
     inputBusqueda.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
             if (timeoutBusqueda) clearTimeout(timeoutBusqueda);
             console.log('🔍 Búsqueda con Enter:', e.target.value);
+            mostrarIndicadorBusqueda(false);
             cargarProductos(1);
         }
     });
 
-    console.log('✅ Buscador en tiempo real configurado');
+    // Cambio en filtro recarga automáticamente
+    if (selectFiltro) {
+        selectFiltro.addEventListener('change', function () {
+            console.log('🏷️ Filtro cambiado:', this.value);
+            cargarProductos(1);
+        });
+    }
+
+    console.log('✅ Buscador en tiempo real configurado correctamente');
 }
 
 // =============================================================
@@ -214,10 +229,7 @@ function mostrarError(error) {
 }
 
 // =============================================================
-// ⭐ MOSTRAR PRODUCTOS (ACTUALIZADO CON ESTABLECIMIENTOS)
-// =============================================================
-// =============================================================
-// ⭐ MOSTRAR PRODUCTOS (VERSIÓN FINAL CORREGIDA)
+// ⭐ MOSTRAR PRODUCTOS
 // =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
@@ -273,7 +285,7 @@ function mostrarProductos(productos) {
         // Marca
         const marcaHTML = p.marca || '<span style="color: #999;">Sin marca</span>';
 
-        // Categoría (ya viene como texto desde la API)
+        // Categoría
         const categoriaHTML = p.categoria || '<span style="color: #999;">Sin categoría</span>';
 
         // Estado badges
@@ -314,7 +326,6 @@ function mostrarProductos(productos) {
     });
 }
 
-
 // =============================================================
 // Actualizar estadísticas y paginación
 // =============================================================
@@ -348,11 +359,6 @@ function actualizarPaginacion() {
              onclick="cargarPagina(${paginaActual + 1})">Siguiente →</button>`;
 
     paginacion.innerHTML = html;
-}
-
-function cargarPagina(num) {
-    if (num < 1 || num > totalPaginas) return;
-    cargarProductos(num);
 }
 
 // =============================================================
