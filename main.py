@@ -37,6 +37,7 @@ from fastapi import (
     Header,
     Request,
     BackgroundTasks,
+    Query,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse, HTMLResponse, JSONResponse
