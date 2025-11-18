@@ -8526,6 +8526,27 @@ async def ver_comparador():
     return FileResponse("static/comparador.html")
 
 
+@app.get("/debug/static-files")
+async def debug_static_files():
+    """Ver qué archivos estáticos tiene Railway"""
+    import os
+    from pathlib import Path
+
+    files = {}
+    static_path = Path("static")
+
+    if static_path.exists():
+        for file in static_path.rglob("*"):
+            if file.is_file():
+                stat = file.stat()
+                files[str(file)] = {
+                    "size": stat.st_size,
+                    "modified": stat.st_mtime,
+                }
+
+    return {"files": files, "cwd": os.getcwd()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
