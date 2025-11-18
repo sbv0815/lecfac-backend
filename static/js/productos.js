@@ -543,56 +543,72 @@ function calcularDigitoControl(ean12) {
 // =============================================================
 // Guardar edición
 // =============================================================
-async function guardarEdicion(event) {
-    if (event) event.preventDefault();
+async function guardarEdicion() {
+    console.log('💾 Iniciando guardado de edición...');
 
-    const productoId = document.getElementById("edit-id").value;
-    const apiBase = getApiBase();
+    const productoId = document.getElementById('editProductoId').value;
+    const nombreConsolidado = document.getElementById('editNombreConsolidado').value;
+    const marca = document.getElementById('editMarca').value;
+    const codigoEan = document.getElementById('editCodigoEan').value;
+    const categoriaId = document.getElementById('editCategoria').value;
 
-    const datos = {
-        codigo_ean: document.getElementById("edit-ean").value || null,
-        nombre_consolidado: document.getElementById("edit-nombre-norm").value,
-        nombre_comercial: document.getElementById("edit-nombre-com").value || null,
-        marca: document.getElementById("edit-marca").value || null,
-        categoria: document.getElementById("edit-categoria").value || null,
-        subcategoria: document.getElementById("edit-subcategoria").value || null,
-        presentacion: document.getElementById("edit-presentacion").value || null
+    // ✅ CRÍTICO: Construir el body correctamente
+    const datosActualizados = {
+        nombre_consolidado: nombreConsolidado.trim(),
+        marca: marca.trim(),
+        codigo_ean: codigoEan.trim()
     };
 
+    // Solo agregar categoria_id si tiene valor
+    if (categoriaId && categoriaId !== '') {
+        datosActualizados.categoria_id = parseInt(categoriaId);
+    }
+
+    console.log('📦 Datos a enviar:', datosActualizados);
+    console.log(`🌐 URL: ${API_BASE_URL}/api/v2/productos/${productoId}`);
+
     try {
-        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(datos)
+        const response = await fetch(`${API_BASE_URL}/api/v2/productos/${productoId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(datosActualizados)
         });
 
-        if (!response.ok) throw new Error("Error al guardar producto");
+        console.log(`📊 Response status: ${response.status}`);
 
-        // Guardar PLUs si la función existe
-        if (typeof recopilarPLUs === "function") {
-            const plus = recopilarPLUs();
-            const datosConPLUs = { ...datos, plus };
-
-            const responsePLUs = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(datosConPLUs)
-            });
-
-            if (!responsePLUs.ok) {
-                console.warn("Advertencia: Error actualizando PLUs");
-            }
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+            throw new Error(errorData.error || `HTTP ${response.status}`);
         }
 
-        alert("✅ Producto actualizado correctamente");
-        cerrarModal("modal-editar");
-        cargarProductos(paginaActual);
+        const resultado = await response.json();
+        console.log('✅ Respuesta del servidor:', resultado);
+
+        if (resultado.success) {
+            mostrarMensaje('✅ Cambios guardados correctamente', 'success');
+
+            // Cerrar modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editarProductoModal'));
+            if (modal) {
+                modal.hide();
+            }
+
+            // Recargar productos
+            console.log('🔄 Recargando lista de productos...');
+            await cargarProductos();
+
+        } else {
+            throw new Error(resultado.error || 'Error guardando producto');
+        }
 
     } catch (error) {
-        console.error("❌ Error guardando:", error);
-        alert("Error al guardar: " + error.message);
+        console.error('❌ Error guardando:', error);
+        mostrarMensaje(`❌ Error: ${error.message}`, 'danger');
     }
 }
+
 async function marcarRevisado(productoId) {
     if (!confirm('¿Marcar este producto como REVISADO y CORRECTO?\n\nEsto significa que el nombre, marca y categoría son correctos.')) {
         return;
