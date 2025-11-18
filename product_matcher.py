@@ -918,7 +918,7 @@ def buscar_o_crear_producto_inteligente(
                 traceback.print_exc()
 
         # ═══════════════════════════════════════════════════════════════
-        # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2
+        # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2 prueba nueva
         # ═══════════════════════════════════════════════════════════════
         print(f"   ℹ️  Producto no encontrado → Creando en V2...")
 
