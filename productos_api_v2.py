@@ -1,4 +1,4 @@
-# VERSION: 2024-11-18-17:30 - BÚSQUEDA + GET INDIVIDUAL
+# VERSION: 2024-11-18-19:45 - FIX LIMITE 5000 PARA PAPA-DASHBOARD
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -11,10 +11,10 @@ router = APIRouter()
 @router.get("/api/v2/productos/")
 async def listar_productos_v2(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=5000),  # ✅ AUMENTADO DE 100 A 5000
     search: Optional[str] = None,
     categoria_id: Optional[int] = None,
-    limite: int = Query(500, ge=1, le=1000),
+    limite: int = Query(500, ge=1, le=5000),  # ✅ AUMENTADO DE 1000 A 5000
     busqueda: Optional[str] = None,
 ):
     """Lista productos con búsqueda"""
