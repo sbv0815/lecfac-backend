@@ -22,6 +22,11 @@ function getApiBase() {
 // =============================================================
 // Cargar productos (⭐ ACTUALIZADO CON NUEVO ENDPOINT)
 // =============================================================
+// =============================================================
+// 🔧 FIX PARA productos.js - LÍNEA 25-35 APROXIMADAMENTE
+// Reemplazar la función cargarProductos() con esta versión corregida
+// =============================================================
+
 async function cargarProductos(pagina = 1) {
     try {
         const apiBase = getApiBase();
@@ -30,8 +35,9 @@ async function cargarProductos(pagina = 1) {
         const busqueda = document.getElementById("busqueda")?.value || "";
         const filtro = document.getElementById("filtro")?.value || "todos";
 
-        // ⭐ CAMBIO: Usar el nuevo endpoint /api/v2/productos/
-        let url = `${apiBase}/api/v2/productos?limite=${limite}`;
+        // ✅ FIX: Aumentar límite a 500 y cambiar orden a DESC (más recientes primero)
+        // Los productos más viejos se verán en páginas siguientes
+        let url = `${apiBase}/api/v2/productos?limite=500`;
 
         // Agregar parámetro de búsqueda si existe
         if (busqueda.trim()) {
@@ -56,17 +62,29 @@ async function cargarProductos(pagina = 1) {
         const data = await response.json();
         console.log("📊 Respuesta API:", data);
 
+        // ✅ FIX: Guardar TODOS los productos sin límite artificial
         productosCache = data.productos || [];
-        totalPaginas = Math.ceil(data.total / limite) || 1;
+
+        // ✅ FIX: Calcular paginación REAL del lado del cliente
+        const productosPorPagina = limite; // 50 por defecto
+        const totalProductos = productosCache.length;
+        totalPaginas = Math.ceil(totalProductos / productosPorPagina) || 1;
+
+        // ✅ FIX: Calcular índices para la paginación del lado del cliente
+        const inicio = (pagina - 1) * productosPorPagina;
+        const fin = inicio + productosPorPagina;
+        const productosPagina = productosCache.slice(inicio, fin);
+
         paginaActual = pagina;
 
-        console.log(`✅ ${productosCache.length} productos recibidos`);
+        console.log(`✅ ${totalProductos} productos totales, mostrando ${productosPagina.length} en página ${pagina}`);
 
         // Mostrar mensaje especial si no hay resultados
         if (productosCache.length === 0 && busqueda) {
             mostrarSinResultados(busqueda);
         } else {
-            mostrarProductos(productosCache);
+            // ✅ FIX: Mostrar solo los productos de la página actual
+            mostrarProductos(productosPagina);
         }
 
         actualizarPaginacion();
@@ -77,6 +95,30 @@ async function cargarProductos(pagina = 1) {
         mostrarError(error);
     }
 }
+
+// =============================================================
+// ✅ TAMBIÉN AGREGAR ESTA FUNCIÓN AUXILIAR AL FINAL DEL ARCHIVO
+// =============================================================
+
+// Función auxiliar para mantener sincronización al cambiar página
+function cargarPagina(num) {
+    if (num < 1 || num > totalPaginas) return;
+
+    // ✅ FIX: No volver a llamar la API, solo cambiar la vista de los productos en caché
+    paginaActual = num;
+
+    const productosPorPagina = limite;
+    const inicio = (num - 1) * productosPorPagina;
+    const fin = inicio + productosPorPagina;
+    const productosPagina = productosCache.slice(inicio, fin);
+
+    mostrarProductos(productosPagina);
+    actualizarPaginacion();
+
+    // Scroll al inicio de la tabla
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 
 // =============================================================
 // Configurar búsqueda en tiempo real
