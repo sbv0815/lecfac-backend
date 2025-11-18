@@ -630,20 +630,33 @@
             <!-- Filters -->
             <div class="filters">
                 <div class="filter-row">
-                    <input type="text" id="busqueda" placeholder="🔍 Buscar por nombre, EAN o PLU...">
-                    <select id="filtro">
+                    <input type="text" id="busqueda"
+                        placeholder="🔍 Buscar en tiempo real... (nombre, EAN, PLU, marca)">
+
+                    <select id="filtro" onchange="cargarProductos(1)">
                         <option value="todos">Todos los productos</option>
                         <option value="sin_ean">Sin código EAN</option>
                         <option value="sin_marca">Sin marca</option>
                         <option value="sin_categoria">Sin categoría</option>
                     </select>
-                    <button class="btn-primary" onclick="cargarProductos()">Buscar</button>
-                    <button class="btn-secondary" onclick="limpiarFiltros()">Limpiar</button>
+
+                    <button class="btn-secondary" onclick="limpiarFiltros()">
+                        🔄 Limpiar
+                    </button>
+
+                    <button class="btn-primary" onclick="cargarProductos(1)">
+                        ♻️ Recargar
+                    </button>
+                </div>
+
+                <!-- Indicador de búsqueda -->
+                <div id="search-indicator" style="margin-top: 10px; display: none; color: #2563eb; font-size: 13px;">
+                    <span class="loading" style="width: 14px; height: 14px; border-width: 2px;"></span>
+                    Buscando...
                 </div>
             </div>
 
-            <!-- Actions Bar -->
-            <!-- Actions Bar -->
+
             <!-- Actions Bar -->
             <div class="actions-bar">
                 <div class="actions-left">

@@ -1286,7 +1286,68 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     console.log("✅ Módulo de administración inicializado");
 });
+// =============================================================
+// Mostrar/ocultar indicador de búsqueda
+// =============================================================
+function mostrarIndicadorBusqueda(mostrar) {
+    const indicator = document.getElementById('search-indicator');
+    if (indicator) {
+        indicator.style.display = mostrar ? 'block' : 'none';
+    }
+}
 
+// Actualizar la función configurarBuscadorTiempoReal
+function configurarBuscadorTiempoReal() {
+    const inputBusqueda = document.getElementById('busqueda');
+    const selectFiltro = document.getElementById('filtro');
+
+    if (!inputBusqueda) {
+        console.error('No se encontró el input de búsqueda');
+        return;
+    }
+
+    // Búsqueda en tiempo real con debounce
+    inputBusqueda.addEventListener('input', function (e) {
+        if (timeoutBusqueda) {
+            clearTimeout(timeoutBusqueda);
+        }
+
+        // Mostrar indicador si hay texto
+        if (e.target.value.trim()) {
+            mostrarIndicadorBusqueda(true);
+        }
+
+        timeoutBusqueda = setTimeout(() => {
+            console.log('🔍 Búsqueda en tiempo real:', e.target.value);
+            cargarProductos(1);
+            mostrarIndicadorBusqueda(false);
+        }, 500);
+    });
+
+    // También búsqueda con Enter
+    inputBusqueda.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (timeoutBusqueda) clearTimeout(timeoutBusqueda);
+            console.log('🔍 Búsqueda con Enter:', e.target.value);
+            mostrarIndicadorBusqueda(false);
+            cargarProductos(1);
+        }
+    });
+
+    // Cambio en filtro recarga automáticamente
+    if (selectFiltro) {
+        selectFiltro.addEventListener('change', function () {
+            console.log('🏷️ Filtro cambiado:', this.value);
+            cargarProductos(1);
+        });
+    }
+
+    console.log('✅ Buscador en tiempo real configurado');
+}
+
+// Exportar
+window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
 // =============================================================
 // EXPORTAR NUEVAS FUNCIONES
 // =============================================================
