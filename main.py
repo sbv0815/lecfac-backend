@@ -7752,8 +7752,124 @@ print("✅ Dashboard Papa disponible en /papa-dashboard")
 
 
 @app.get("/api/v2/productos")
-async def listar_productos_v2():
-    pass
+async def listar_productos_v2_temp(
+    limite: int = Query(500, ge=1, le=1000),
+    busqueda: Optional[str] = None,
+    filtro: Optional[str] = None,
+):
+    """
+    TEMPORAL - Lista productos con búsqueda
+    """
+    print(f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}")
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.categoria_id,
+                c.nombre as categoria_nombre,
+                pm.veces_visto,
+                pm.es_producto_papa
+            FROM productos_maestros_v2 pm
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
+        """
+
+        where_conditions = []
+        params = []
+
+        if busqueda:
+            where_conditions.append(
+                """
+                (LOWER(pm.nombre_consolidado) LIKE LOWER(%s)
+                OR pm.codigo_ean LIKE %s
+                OR LOWER(pm.marca) LIKE LOWER(%s))
+            """
+            )
+            search_param = f"%{busqueda}%"
+            params.extend([search_param, search_param, search_param])
+
+        if filtro and filtro != "todos":
+            where_conditions.append("c.nombre = %s")
+            params.append(filtro)
+
+        if where_conditions:
+            query += " WHERE " + " AND ".join(where_conditions)
+
+        query += " ORDER BY pm.id DESC LIMIT %s"
+        params.append(limite)
+
+        cursor.execute(query, params)
+        productos_raw = cursor.fetchall()
+
+        productos_dict = {}
+        for row in productos_raw:
+            productos_dict[row[0]] = {
+                "id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],
+                "nombre_consolidado": row[2],
+                "marca": row[3],
+                "categoria_id": row[4],
+                "categoria": row[5] or "Sin categoría",
+                "veces_visto": row[6] or 0,
+                "es_producto_papa": row[7] or False,
+                "plus": [],
+                "num_establecimientos": 0,
+            }
+
+        # Obtener PLUs
+        if productos_dict:
+            prod_ids = list(productos_dict.keys())
+            placeholders = ",".join(["%s"] * len(prod_ids))
+
+            cursor.execute(
+                f"""
+                SELECT
+                    ppe.producto_maestro_id,
+                    ppe.codigo_plu,
+                    e.nombre_normalizado,
+                    ppe.precio_unitario,
+                    ppe.fecha_actualizacion
+                FROM productos_por_establecimiento ppe
+                JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                WHERE ppe.producto_maestro_id IN ({placeholders})
+            """,
+                prod_ids,
+            )
+
+            for plu_row in cursor.fetchall():
+                prod_id = plu_row[0]
+                if prod_id in productos_dict:
+                    productos_dict[prod_id]["plus"].append(
+                        {
+                            "codigo": plu_row[1],
+                            "establecimiento": plu_row[2],
+                            "precio": float(plu_row[3]) if plu_row[3] else 0,
+                        }
+                    )
+                    productos_dict[prod_id]["num_establecimientos"] = len(
+                        productos_dict[prod_id]["plus"]
+                    )
+
+        productos = list(productos_dict.values())
+
+        cursor.close()
+        conn.close()
+
+        return {"success": True, "productos": productos, "total": len(productos)}
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "productos": [], "total": 0}
 
 
 @app.get("/api/v2/productos/{producto_id}")
