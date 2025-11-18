@@ -1,12 +1,13 @@
 """
-product_matcher.py - VERSIÓN 9.1 - GUARDA PLUs CORRECTAMENTE
+product_matcher.py - VERSIÓN 9.2 - DETECCIÓN AUTOMÁTICA DE PAPAS
 ========================================================================
 
-🎯 CAMBIOS V9.1:
-- ✅ Usa productos_maestros_v2 en lugar de productos_maestros
-- ✅ NO agrega PLU al nombre del producto
-- ✅ GUARDA PLUs en productos_por_establecimiento (FIX CRÍTICO)
-- ✅ Campos correctos: nombre_consolidado, categoria_id, estado
+🎯 CAMBIOS V9.2:
+- ✅ BUSCA PAPAS PRIMERO antes de crear productos
+- ✅ Si existe PAPA → Usa sus datos (nombre, marca, categoría)
+- ✅ Si no existe PAPA → Flujo normal de creación
+- ✅ Actualiza estadísticas del PAPA automáticamente
+- ✅ Soporta búsqueda por EAN (JUMBO) y PLU (OLÍMPICA)
 """
 
 import re
@@ -523,6 +524,192 @@ def guardar_plu_en_establecimiento(
         return False
 
 
+# ═══════════════════════════════════════════════════════════════
+# 🎯 FASE 1.1: FUNCIÓN NUEVA - BUSCAR PAPA PRIMERO
+# ═══════════════════════════════════════════════════════════════
+
+
+def buscar_papa_primero(
+    codigo: str,
+    establecimiento_id: int,
+    cursor,
+    conn,
+    precio: int = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    🎯 FASE 1.1: Busca si existe un PAPA para este código
+
+    Retorna:
+    - None si no existe PAPA
+    - Dict con datos del PAPA si existe
+    """
+    if not codigo or not establecimiento_id:
+        return None
+
+    tipo_codigo = clasificar_codigo_tipo(codigo)
+
+    try:
+        # ESTRATEGIA 1: Buscar por EAN en PAPAS (JUMBO, ARA, D1)
+        if tipo_codigo == "EAN":
+            cursor.execute(
+                """
+                SELECT pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca,
+                       pm.categoria_id, pm.veces_visto
+                FROM productos_maestros_v2 pm
+                WHERE pm.es_producto_papa = TRUE
+                  AND pm.codigo_ean = %s
+                LIMIT 1
+            """,
+                (codigo,),
+            )
+
+            resultado = cursor.fetchone()
+
+            if resultado:
+                papa_id = resultado[0]
+                print(f"   👑 PAPA ENCONTRADO por EAN: ID={papa_id}")
+                print(f"      📝 Nombre PAPA: {resultado[2]}")
+                print(f"      🏷️  Marca: {resultado[3] or 'N/A'}")
+                print(f"      📊 Visto {resultado[5]} veces")
+
+                # Actualizar estadísticas del PAPA
+                cursor.execute(
+                    """
+                    UPDATE productos_maestros_v2
+                    SET veces_visto = veces_visto + 1,
+                        fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """,
+                    (papa_id,),
+                )
+
+                # Actualizar precio en productos_por_establecimiento si existe
+                if precio:
+                    cursor.execute(
+                        """
+                        UPDATE productos_por_establecimiento
+                        SET precio_actual = %s,
+                            precio_unitario = %s,
+                            precio_minimo = LEAST(COALESCE(precio_minimo, %s), %s),
+                            precio_maximo = GREATEST(COALESCE(precio_maximo, %s), %s),
+                            total_reportes = total_reportes + 1,
+                            ultima_actualizacion = CURRENT_TIMESTAMP,
+                            fecha_actualizacion = CURRENT_TIMESTAMP
+                        WHERE producto_maestro_id = %s AND establecimiento_id = %s
+                    """,
+                        (
+                            precio,
+                            precio,
+                            precio,
+                            precio,
+                            precio,
+                            precio,
+                            papa_id,
+                            establecimiento_id,
+                        ),
+                    )
+
+                conn.commit()
+
+                return {
+                    "papa_id": papa_id,
+                    "codigo_ean": resultado[1],
+                    "nombre_consolidado": resultado[2],
+                    "marca": resultado[3],
+                    "categoria_id": resultado[4],
+                    "veces_visto": resultado[5] + 1,
+                    "fuente": "papa_ean",
+                }
+
+        # ESTRATEGIA 2: Buscar por PLU en productos_por_establecimiento (OLÍMPICA, CARULLA, ÉXITO)
+        elif tipo_codigo == "PLU":
+            cursor.execute(
+                """
+                SELECT pm.id, pm.nombre_consolidado, pm.marca, pm.categoria_id,
+                       pm.veces_visto, ppe.codigo_plu
+                FROM productos_maestros_v2 pm
+                JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+                WHERE pm.es_producto_papa = TRUE
+                  AND ppe.codigo_plu = %s
+                  AND ppe.establecimiento_id = %s
+                LIMIT 1
+            """,
+                (codigo, establecimiento_id),
+            )
+
+            resultado = cursor.fetchone()
+
+            if resultado:
+                papa_id = resultado[0]
+                print(f"   👑 PAPA ENCONTRADO por PLU: ID={papa_id}")
+                print(f"      📝 Nombre PAPA: {resultado[1]}")
+                print(f"      🏷️  Marca: {resultado[2] or 'N/A'}")
+                print(f"      📌 PLU: {resultado[5]}")
+                print(f"      📊 Visto {resultado[4]} veces")
+
+                # Actualizar estadísticas del PAPA
+                cursor.execute(
+                    """
+                    UPDATE productos_maestros_v2
+                    SET veces_visto = veces_visto + 1,
+                        fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """,
+                    (papa_id,),
+                )
+
+                # Actualizar precio en productos_por_establecimiento
+                if precio:
+                    cursor.execute(
+                        """
+                        UPDATE productos_por_establecimiento
+                        SET precio_actual = %s,
+                            precio_unitario = %s,
+                            precio_minimo = LEAST(COALESCE(precio_minimo, %s), %s),
+                            precio_maximo = GREATEST(COALESCE(precio_maximo, %s), %s),
+                            total_reportes = total_reportes + 1,
+                            ultima_actualizacion = CURRENT_TIMESTAMP,
+                            fecha_actualizacion = CURRENT_TIMESTAMP
+                        WHERE producto_maestro_id = %s AND establecimiento_id = %s
+                    """,
+                        (
+                            precio,
+                            precio,
+                            precio,
+                            precio,
+                            precio,
+                            precio,
+                            papa_id,
+                            establecimiento_id,
+                        ),
+                    )
+
+                conn.commit()
+
+                return {
+                    "papa_id": papa_id,
+                    "codigo_plu": resultado[5],
+                    "nombre_consolidado": resultado[1],
+                    "marca": resultado[2],
+                    "categoria_id": resultado[3],
+                    "veces_visto": resultado[4] + 1,
+                    "fuente": "papa_plu",
+                }
+
+        # No se encontró PAPA
+        return None
+
+    except Exception as e:
+        print(f"   ⚠️ Error buscando PAPA: {e}")
+        traceback.print_exc()
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# FUNCIÓN PRINCIPAL MODIFICADA
+# ═══════════════════════════════════════════════════════════════
+
+
 def buscar_o_crear_producto_inteligente(
     codigo: str,
     nombre: str,
@@ -536,14 +723,17 @@ def buscar_o_crear_producto_inteligente(
     establecimiento_id: int = None,
 ) -> Optional[int]:
     """
-    ⭐ VERSIÓN 9.1: Función principal - USA productos_maestros_v2
+    ⭐ VERSIÓN 9.2: Función principal - BUSCA PAPAS PRIMERO
+    ✅ Prioridad 1: Buscar PAPA (si existe)
+    ✅ Prioridad 2: Buscar producto existente
+    ✅ Prioridad 3: Crear nuevo producto
     ✅ NO agrega PLU al nombre
     ✅ Busca en tabla V2
     ✅ GUARDA PLU en productos_por_establecimiento
     """
     import os
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.1 (tabla V2):")
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.2 (con PAPAS):")
     print(f"   Código: {codigo or 'Sin código'}")
     print(f"   Nombre: {nombre[:50]}")
     print(f"   Precio: ${precio:,}")
@@ -559,7 +749,25 @@ def buscar_o_crear_producto_inteligente(
     param = "%s" if is_postgresql else "?"
 
     # ═══════════════════════════════════════════════════════════════
-    # PASO 0: BUSCAR POR PLU EXACTO EN productos_por_establecimiento
+    # 🎯 PASO 0: BUSCAR PAPA PRIMERO (NUEVA FUNCIONALIDAD)
+    # ═══════════════════════════════════════════════════════════════
+    print(f"\n   🔍 BUSCANDO PAPA...")
+    papa_encontrado = buscar_papa_primero(
+        codigo=codigo,
+        establecimiento_id=establecimiento_id,
+        cursor=cursor,
+        conn=conn,
+        precio=precio,
+    )
+
+    if papa_encontrado:
+        print(f"   ✅ USANDO DATOS DEL PAPA")
+        return papa_encontrado["papa_id"]
+
+    print(f"   ℹ️  No existe PAPA → Continuar búsqueda normal")
+
+    # ═══════════════════════════════════════════════════════════════
+    # PASO 1: BUSCAR POR PLU EXACTO EN productos_por_establecimiento
     # ═══════════════════════════════════════════════════════════════
     if tipo_codigo == "PLU" and codigo and establecimiento_id:
         try:
@@ -607,7 +815,7 @@ def buscar_o_crear_producto_inteligente(
             print(f"   ⚠️ Error buscando PLU en productos_por_establecimiento: {e}")
 
     # ═══════════════════════════════════════════════════════════════
-    # PASO 1: BUSCAR POR EAN EXISTENTE EN V2
+    # PASO 2: BUSCAR POR EAN EXISTENTE EN V2
     # ═══════════════════════════════════════════════════════════════
     if tipo_codigo == "EAN" and codigo:
         try:
@@ -633,7 +841,7 @@ def buscar_o_crear_producto_inteligente(
                 )
                 conn.commit()
 
-                # ⭐ NUEVO: También guardar en productos_por_establecimiento si tiene establecimiento_id
+                # También guardar en productos_por_establecimiento si tiene establecimiento_id
                 if establecimiento_id:
                     guardar_plu_en_establecimiento(
                         cursor, conn, producto_id, establecimiento_id, codigo, precio
@@ -645,7 +853,7 @@ def buscar_o_crear_producto_inteligente(
 
     try:
         # ═══════════════════════════════════════════════════════════════
-        # PASO 2: BUSCAR POR NOMBRE SIMILAR EN V2
+        # PASO 3: BUSCAR POR NOMBRE SIMILAR EN V2
         # ═══════════════════════════════════════════════════════════════
         if not codigo or tipo_codigo == "DESCONOCIDO":
             try:
@@ -692,7 +900,7 @@ def buscar_o_crear_producto_inteligente(
                         )
                         conn.commit()
 
-                        # ⭐ NUEVO: Guardar PLU si existe
+                        # Guardar PLU si existe
                         if codigo and establecimiento_id:
                             guardar_plu_en_establecimiento(
                                 cursor,
@@ -710,7 +918,7 @@ def buscar_o_crear_producto_inteligente(
                 traceback.print_exc()
 
         # ═══════════════════════════════════════════════════════════════
-        # PASO 3: NO ENCONTRADO → VALIDAR Y CREAR EN V2
+        # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2
         # ═══════════════════════════════════════════════════════════════
         print(f"   ℹ️  Producto no encontrado → Creando en V2...")
 
@@ -742,7 +950,7 @@ def buscar_o_crear_producto_inteligente(
         print(f"   📊 Fuente: {resultado_validacion['fuente']}")
         print(f"   🎯 Confianza: {resultado_validacion['confianza']:.0%}")
 
-        # ⭐ CREAR EN productos_maestros_v2 (SIN agregar PLU al nombre)
+        # CREAR EN productos_maestros_v2 (SIN agregar PLU al nombre)
         producto_id = crear_producto_en_v2(
             cursor=cursor,
             conn=conn,
@@ -755,7 +963,7 @@ def buscar_o_crear_producto_inteligente(
             print(f"   ❌ SKIP: No se pudo crear '{nombre_final}'")
             return None
 
-        # ⭐ NUEVO V9.1: GUARDAR PLU EN productos_por_establecimiento
+        # GUARDAR PLU EN productos_por_establecimiento
         if codigo and establecimiento_id:
             guardar_plu_en_establecimiento(
                 cursor, conn, producto_id, establecimiento_id, codigo, precio
@@ -789,14 +997,15 @@ def buscar_o_crear_producto_inteligente(
 # MENSAJE DE CARGA
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
-print("✅ product_matcher.py V9.1 - GUARDA PLUs CORRECTAMENTE")
+print("✅ product_matcher.py V9.2 - CON DETECCIÓN AUTOMÁTICA DE PAPAS")
 print("=" * 80)
-print("🎯 CAMBIOS V9.1:")
-print("   ✅ Busca y crea en productos_maestros_v2 (tabla nueva)")
+print("🎯 CAMBIOS V9.2:")
+print("   ✅ Busca PAPAS PRIMERO (antes de crear productos)")
+print("   ✅ Si existe PAPA → Usa sus datos normalizados")
+print("   ✅ Actualiza estadísticas del PAPA automáticamente")
+print("   ✅ Soporta búsqueda por EAN (JUMBO) y PLU (OLÍMPICA)")
 print("   ✅ NO agrega PLU al nombre del producto")
-print("   ✅ GUARDA PLUs en productos_por_establecimiento (FIX CRÍTICO)")
-print("   ✅ Actualiza precios en productos_por_establecimiento")
-print("   ✅ Actualiza veces_visto y fecha_ultima_actualizacion")
+print("   ✅ GUARDA PLUs en productos_por_establecimiento")
 print("=" * 80)
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
 print("=" * 80)
