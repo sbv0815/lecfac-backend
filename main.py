@@ -7753,7 +7753,7 @@ print("✅ Dashboard Papa disponible en /papa-dashboard")
 
 @app.get("/api/v2/productos")
 async def listar_productos_v2_temp(
-    limite: int = Query(500, ge=1, le=1000),
+    limite: int = Query(500, ge=1, le=5000),
     busqueda: Optional[str] = None,
     filtro: Optional[str] = None,
 ):
