@@ -444,3 +444,78 @@ async def actualizar_producto(producto_id: int, request: dict):
             conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+ @router.delete("/api/v2/productos/{producto_id}")
+async def eliminar_producto(producto_id: int):
+    """
+    Elimina un producto y todas sus referencias
+    VERSION: 2024-11-18-19:00
+    """
+    print(f"🗑️ [Router] DELETE producto ID: {producto_id}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que existe
+        cursor.execute(
+            "SELECT nombre_consolidado FROM productos_maestros_v2 WHERE id = %s",
+            (producto_id,)
+        )
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        nombre = producto[0]
+
+        # 1. Eliminar PLUs asociados
+        cursor.execute(
+            "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
+            (producto_id,)
+        )
+        plus_eliminados = cursor.rowcount
+        logger.info(f"   🗑️ {plus_eliminados} PLUs eliminados")
+
+        # 2. Desvincular items_factura (NO eliminar, solo desvincular)
+        cursor.execute(
+            "UPDATE items_factura SET producto_maestro_id = NULL WHERE producto_maestro_id = %s",
+            (producto_id,)
+        )
+        items_desvinculados = cursor.rowcount
+        logger.info(f"   🔗 {items_desvinculados} items desvinculados")
+
+        # 3. Eliminar el producto
+        cursor.execute(
+            "DELETE FROM productos_maestros_v2 WHERE id = %s",
+            (producto_id,)
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"✅ Producto {producto_id} eliminado: {nombre}")
+
+        return {
+            "success": True,
+            "mensaje": f"Producto '{nombre}' eliminado correctamente",
+            "detalles": {
+                "plus_eliminados": plus_eliminados,
+                "items_desvinculados": items_desvinculados
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error eliminando producto: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
