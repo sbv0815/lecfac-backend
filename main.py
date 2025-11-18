@@ -7751,15 +7751,27 @@ print("✅ Dashboard Papa disponible en /papa-dashboard")
 
 
 @app.get("/api/v2/productos")
-async def listar_productos_v2(limite: int = 200):
-    """Lista productos de productos_maestros_v2 CON PLUs agrupados Y FECHAS"""
+async def listar_productos_v2(
+    limite: int = Query(500, ge=1, le=1000),
+    busqueda: Optional[str] = None,
+    filtro: Optional[str] = None,
+):
+    """
+    Lista productos de productos_maestros_v2 CON búsqueda funcional
+    VERSION: 2024-11-18-16:30
+    """
+
+    print("=" * 80)
+    print(f"🔥 /api/v2/productos LLAMADO (main.py)")
+    print(f"   busqueda={busqueda}, limite={limite}, filtro={filtro}")
+    print("=" * 80)
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Primero obtener productos únicos
-        cursor.execute(
-            """
+        # Query base
+        query = """
             SELECT
                 pm.id,
                 pm.codigo_ean,
@@ -7771,13 +7783,41 @@ async def listar_productos_v2(limite: int = 200):
                 pm.es_producto_papa
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
-            ORDER BY pm.id DESC
-            LIMIT %s
-        """,
-            (limite,),
-        )
+        """
 
+        where_conditions = []
+        params = []
+
+        # ✅ BÚSQUEDA
+        if busqueda:
+            where_conditions.append(
+                """
+                (LOWER(pm.nombre_consolidado) LIKE LOWER(%s)
+                OR pm.codigo_ean LIKE %s
+                OR LOWER(pm.marca) LIKE LOWER(%s))
+            """
+            )
+            search_param = f"%{busqueda}%"
+            params.extend([search_param, search_param, search_param])
+            print(f"🔍 Aplicando búsqueda: '{busqueda}'")
+
+        # Filtro por categoría
+        if filtro and filtro != "todos":
+            where_conditions.append("c.nombre = %s")
+            params.append(filtro)
+
+        if where_conditions:
+            query += " WHERE " + " AND ".join(where_conditions)
+
+        query += " ORDER BY pm.id DESC LIMIT %s"
+        params.append(limite)
+
+        print(f"📊 Query: límite={limite}, condiciones={len(where_conditions)}")
+
+        cursor.execute(query, params)
         productos_raw = cursor.fetchall()
+
+        print(f"✅ Encontrados {len(productos_raw)} productos")
 
         # Crear diccionario de productos
         productos_dict = {}
@@ -7796,7 +7836,7 @@ async def listar_productos_v2(limite: int = 200):
                 "num_establecimientos": 0,
             }
 
-        # Obtener PLUs para estos productos CON FECHA DE ACTUALIZACIÓN
+        # Obtener PLUs para estos productos
         if productos_dict:
             prod_ids = list(productos_dict.keys())
             placeholders = ",".join(["%s"] * len(prod_ids))
@@ -7808,11 +7848,11 @@ async def listar_productos_v2(limite: int = 200):
                     ppe.codigo_plu,
                     e.nombre_normalizado,
                     ppe.precio_unitario,
-                    ppe.fecha_actualizacion  -- ✅ NUEVO: Fecha de actualización
+                    ppe.fecha_actualizacion
                 FROM productos_por_establecimiento ppe
                 JOIN establecimientos e ON ppe.establecimiento_id = e.id
                 WHERE ppe.producto_maestro_id IN ({placeholders})
-                ORDER BY ppe.fecha_actualizacion DESC  -- Ordenar por más reciente
+                ORDER BY ppe.fecha_actualizacion DESC
             """,
                 prod_ids,
             )
@@ -7820,7 +7860,6 @@ async def listar_productos_v2(limite: int = 200):
             for plu_row in cursor.fetchall():
                 prod_id = plu_row[0]
                 if prod_id in productos_dict:
-                    # ✅ NUEVO: Incluir fecha de actualización
                     fecha_actualizacion = None
                     if plu_row[4]:
                         fecha_actualizacion = (
@@ -7834,7 +7873,7 @@ async def listar_productos_v2(limite: int = 200):
                             "codigo": plu_row[1],
                             "establecimiento": plu_row[2],
                             "precio": float(plu_row[3]) if plu_row[3] else 0,
-                            "fecha_actualizacion": fecha_actualizacion,  # ✅ NUEVO
+                            "fecha_actualizacion": fecha_actualizacion,
                         }
                     )
 
@@ -7852,7 +7891,7 @@ async def listar_productos_v2(limite: int = 200):
         return {"success": True, "productos": productos, "total": len(productos)}
 
     except Exception as e:
-        print(f"❌ Error listando productos v2: {e}")
+        print(f"❌ Error listando productos: {e}")
         import traceback
 
         traceback.print_exc()
