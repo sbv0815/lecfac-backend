@@ -2,7 +2,7 @@ import os
 import base64
 
 print("=" * 80)
-print("🚀 LECFAC BACKEND - VERSION 2025-11-12-15:30 - REBUILD FORZADO V2")
+print("🚀 LECFAC BACKEND - VERSION 2025-11-17-19:30 - STATIC CACHE FIX")
 print("=" * 80)
 import tempfile
 import traceback
