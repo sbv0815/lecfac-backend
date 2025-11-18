@@ -7899,6 +7899,113 @@ async def listar_productos_v2(
         return {"success": False, "error": str(e), "productos": [], "total": 0}
 
 
+@app.get("/api/v2/productos/{producto_id}")
+async def obtener_producto_individual(producto_id: int):
+    """
+    Obtiene UN producto específico por ID
+    VERSION: 2024-11-18-17:00
+    """
+    print(f"📋 Obteniendo producto ID: {producto_id}")
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener producto
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.categoria_id,
+                c.nombre as categoria_nombre,
+                pm.subcategoria,
+                pm.presentacion,
+                pm.veces_visto,
+                pm.precio_promedio_global,
+                pm.es_producto_papa
+            FROM productos_maestros_v2 pm
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
+            WHERE pm.id = %s
+        """,
+            (producto_id,),
+        )
+
+        producto = cursor.fetchone()
+
+        if not producto:
+            cursor.close()
+            conn.close()
+            print(f"❌ Producto {producto_id} no encontrado")
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        print(f"✅ Producto encontrado: {producto[2]}")
+
+        # Obtener PLUs del producto
+        cursor.execute(
+            """
+            SELECT
+                ppe.codigo_plu,
+                e.nombre_normalizado,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion
+            FROM productos_por_establecimiento ppe
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE ppe.producto_maestro_id = %s
+            ORDER BY ppe.fecha_actualizacion DESC
+        """,
+            (producto_id,),
+        )
+
+        plus_rows = cursor.fetchall()
+
+        plus = []
+        for plu in plus_rows:
+            plus.append(
+                {
+                    "codigo_plu": plu[0],
+                    "nombre_establecimiento": plu[1],
+                    "precio": float(plu[2]) if plu[2] else 0,
+                    "ultima_vez_visto": (
+                        plu[3].strftime("%Y-%m-%d") if plu[3] else None
+                    ),
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "id": producto[0],
+            "codigo_ean": producto[1],
+            "nombre_consolidado": producto[2],
+            "nombre_comercial": producto[2],  # Usar mismo nombre
+            "marca": producto[3],
+            "categoria": producto[5] or "Sin categoría",
+            "categoria_id": producto[4],
+            "subcategoria": producto[6],
+            "presentacion": producto[7],
+            "veces_comprado": producto[8] or 0,
+            "precio_promedio": float(producto[9]) if producto[9] else 0,
+            "num_establecimientos": len(plus),
+            "es_producto_papa": producto[10] or False,
+            "plus": plus,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo producto: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/admin/verificar-constraint-estado")
 async def verificar_constraint_estado():
     """Ver qué valores permite el campo estado"""
