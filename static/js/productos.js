@@ -383,15 +383,22 @@ async function editarProducto(id) {
     const apiBase = getApiBase();
 
     try {
-        const response = await fetch(`${apiBase}/api/v2/productos/${id}`);
-        if (!response.ok) throw new Error("Producto no encontrado");
+        const url = `${apiBase}/api/v2/productos/${id}`;
+        console.log("🌐 Fetching:", url);
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: Producto no encontrado`);
+        }
 
         const producto = await response.json();
+        console.log("✅ Producto cargado:", producto);
 
         // Llenar el formulario
         document.getElementById("edit-id").value = producto.id;
         document.getElementById("edit-ean").value = producto.codigo_ean || "";
-        document.getElementById("edit-nombre-norm").value = producto.nombre_normalizado || "";
+        document.getElementById("edit-nombre-norm").value = producto.nombre_consolidado || "";
         document.getElementById("edit-nombre-com").value = producto.nombre_comercial || "";
         document.getElementById("edit-marca").value = producto.marca || "";
         document.getElementById("edit-categoria").value = producto.categoria || "";
@@ -404,7 +411,7 @@ async function editarProducto(id) {
             `$${producto.precio_promedio.toLocaleString('es-CO')}` : "Sin datos";
         document.getElementById("edit-num-establecimientos").value = producto.num_establecimientos || "0";
 
-        // IMPORTANTE: Habilitar los campos editables
+        // Habilitar campos editables
         habilitarCamposEdicion();
 
         // Cargar PLUs
