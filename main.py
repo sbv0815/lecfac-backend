@@ -64,6 +64,7 @@ from mobile_endpoints import router as mobile_router
 from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
+from comparador_api import router as comparador_router
 
 # ==========================================
 # FORZAR RECARGA DE MÓDULOS - NUEVO
@@ -571,6 +572,9 @@ except Exception as e:
 
 app.include_router(productos_est_router)
 print("✅ productos_establecimiento_router registrado")
+
+app.include_router(comparador_router)
+print("✅ comparador_routes registrado")
 
 
 @app.post("/invoices/parse-video")
