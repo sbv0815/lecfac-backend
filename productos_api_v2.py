@@ -18,7 +18,7 @@ async def listar_productos_v2(
 ):
     """
     Lista productos con información de PLUs por establecimiento
-    ✅ Ahora soporta búsqueda real
+    ✅ Ahora soporta  de productos real.
     """
     conn = None
     try:
