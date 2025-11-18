@@ -266,3 +266,181 @@ async def obtener_producto_individual(producto_id: int):
     finally:
         if conn:
             conn.close()
+
+
+@router.get("/api/v2/productos/{producto_id}/plus")
+async def obtener_plus_producto(producto_id: int):
+    """
+    Obtiene los PLUs de un producto en diferentes establecimientos
+    VERSION: 2024-11-18-18:00
+    """
+    print(f"📍 [Router] GET PLUs del producto ID: {producto_id}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que el producto existe
+        cursor.execute(
+            "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
+        )
+
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Obtener PLUs
+        cursor.execute(
+            """
+            SELECT
+                ppe.id,
+                ppe.codigo_plu,
+                ppe.establecimiento_id,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario,
+                ppe.precio_minimo,
+                ppe.precio_maximo,
+                ppe.total_reportes,
+                ppe.fecha_actualizacion
+            FROM productos_por_establecimiento ppe
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE ppe.producto_maestro_id = %s
+            ORDER BY ppe.fecha_actualizacion DESC
+        """,
+            (producto_id,),
+        )
+
+        plus = []
+        for row in cursor.fetchall():
+            plus.append(
+                {
+                    "id": row[0],
+                    "codigo_plu": row[1],
+                    "establecimiento_id": row[2],
+                    "establecimiento": row[3],
+                    "precio_unitario": float(row[4]) if row[4] else 0.0,
+                    "precio_minimo": float(row[5]) if row[5] else 0.0,
+                    "precio_maximo": float(row[6]) if row[6] else 0.0,
+                    "total_reportes": row[7] or 0,
+                    "fecha_actualizacion": row[8],
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        logger.info(f"✅ {len(plus)} PLUs encontrados para producto {producto_id}")
+
+        return {
+            "success": True,
+            "producto_id": producto_id,
+            "plus": plus,
+            "total": len(plus),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo PLUs: {e}")
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.put("/api/v2/productos/{producto_id}")
+async def actualizar_producto(producto_id: int, request: dict):
+    """
+    Actualiza un producto (nombre, marca, categoría, EAN)
+    VERSION: 2024-11-18-18:00
+    """
+    print(f"✏️ [Router] PUT producto ID: {producto_id}")
+    print(f"   Datos: {request}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que existe
+        cursor.execute(
+            "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
+        )
+
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Construir UPDATE dinámico
+        updates = []
+        params = []
+
+        if "nombre_consolidado" in request:
+            updates.append("nombre_consolidado = %s")
+            params.append(request["nombre_consolidado"])
+
+        if "marca" in request:
+            updates.append("marca = %s")
+            params.append(request["marca"])
+
+        if "codigo_ean" in request:
+            updates.append("codigo_ean = %s")
+            params.append(request["codigo_ean"])
+
+        if "categoria_id" in request:
+            updates.append("categoria_id = %s")
+            params.append(request["categoria_id"])
+
+        if not updates:
+            cursor.close()
+            conn.close()
+            return {"success": False, "error": "No hay campos para actualizar"}
+
+        # Agregar fecha de actualización
+        updates.append("fecha_actualizacion = CURRENT_TIMESTAMP")
+        params.append(producto_id)
+
+        query = f"""
+            UPDATE productos_maestros_v2
+            SET {', '.join(updates)}
+            WHERE id = %s
+            RETURNING id, nombre_consolidado, marca, codigo_ean, categoria_id
+        """
+
+        cursor.execute(query, params)
+        updated = cursor.fetchone()
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"✅ Producto {producto_id} actualizado: {updated[1]}")
+
+        return {
+            "success": True,
+            "producto": {
+                "id": updated[0],
+                "nombre_consolidado": updated[1],
+                "marca": updated[2],
+                "codigo_ean": updated[3],
+                "categoria_id": updated[4],
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error actualizando producto: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
