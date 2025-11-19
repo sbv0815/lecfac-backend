@@ -1,4 +1,4 @@
-console.log("🚀 Inicializando Gestión de Productos v2.6 - Buscador Funcional");
+console.log("🚀 Inicializando Gestión de Productos v2.7 - EDICIÓN Y DUPLICADOS CORREGIDOS");
 
 // =============================================================
 // Variables globales
@@ -18,7 +18,7 @@ function getApiBase() {
 }
 
 // =============================================================
-// 🔍 INDICADOR DE BÚSQUEDA (MOVER AL PRINCIPIO)
+// 🔍 INDICADOR DE BÚSQUEDA
 // =============================================================
 function mostrarIndicadorBusqueda(mostrar) {
     const indicator = document.getElementById('search-indicator');
@@ -118,7 +118,7 @@ function cargarPagina(num) {
 }
 
 // =============================================================
-// 🔍 CONFIGURAR BÚSQUEDA EN TIEMPO REAL (VERSIÓN ÚNICA Y CORRECTA)
+// 🔍 CONFIGURAR BÚSQUEDA EN TIEMPO REAL
 // =============================================================
 function configurarBuscadorTiempoReal() {
     const inputBusqueda = document.getElementById('busqueda');
@@ -376,7 +376,7 @@ function limpiarFiltros() {
 }
 
 // =============================================================
-// EDITAR PRODUCTO (con habilitación de campos)
+// ✅ EDITAR PRODUCTO - CORREGIDO
 // =============================================================
 async function editarProducto(id) {
     console.log("✏️ Editando producto:", id);
@@ -395,7 +395,7 @@ async function editarProducto(id) {
         const producto = await response.json();
         console.log("✅ Producto cargado:", producto);
 
-        // Llenar el formulario
+        // Llenar el formulario con los IDs CORRECTOS
         document.getElementById("edit-id").value = producto.id;
         document.getElementById("edit-ean").value = producto.codigo_ean || "";
         document.getElementById("edit-nombre-norm").value = producto.nombre_consolidado || "";
@@ -541,16 +541,30 @@ function calcularDigitoControl(ean12) {
 }
 
 // =============================================================
-// Guardar edición
+// ✅ GUARDAR EDICIÓN - CORREGIDO
 // =============================================================
 async function guardarEdicion() {
     console.log('💾 Iniciando guardado de edición...');
 
-    const productoId = document.getElementById('editProductoId').value;
-    const nombreConsolidado = document.getElementById('editNombreConsolidado').value;
-    const marca = document.getElementById('editMarca').value;
-    const codigoEan = document.getElementById('editCodigoEan').value;
-    const categoriaId = document.getElementById('editCategoria').value;
+    const apiBase = getApiBase();
+
+    // ✅ USAR LOS IDs CORRECTOS DEL HTML
+    const productoId = document.getElementById('edit-id').value;
+    const nombreConsolidado = document.getElementById('edit-nombre-norm').value;
+    const marca = document.getElementById('edit-marca').value;
+    const codigoEan = document.getElementById('edit-ean').value;
+    const categoria = document.getElementById('edit-categoria').value;
+
+    if (!productoId) {
+        mostrarAlerta('❌ Error: No se encontró el ID del producto', 'error');
+        return;
+    }
+
+    // Validar que al menos haya algo para actualizar
+    if (!nombreConsolidado.trim()) {
+        mostrarAlerta('❌ El nombre del producto no puede estar vacío', 'error');
+        return;
+    }
 
     // ✅ CRÍTICO: Construir el body correctamente
     const datosActualizados = {
@@ -559,16 +573,16 @@ async function guardarEdicion() {
         codigo_ean: codigoEan.trim()
     };
 
-    // Solo agregar categoria_id si tiene valor
-    if (categoriaId && categoriaId !== '') {
-        datosActualizados.categoria_id = parseInt(categoriaId);
+    // Solo agregar categoría si tiene valor
+    if (categoria && categoria.trim()) {
+        datosActualizados.categoria = categoria.trim();
     }
 
     console.log('📦 Datos a enviar:', datosActualizados);
-    console.log(`🌐 URL: ${API_BASE_URL}/api/v2/productos/${productoId}`);
+    console.log(`🌐 URL: ${apiBase}/api/v2/productos/${productoId}`);
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/v2/productos/${productoId}`, {
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
@@ -586,26 +600,18 @@ async function guardarEdicion() {
         const resultado = await response.json();
         console.log('✅ Respuesta del servidor:', resultado);
 
-        if (resultado.success) {
-            mostrarMensaje('✅ Cambios guardados correctamente', 'success');
+        mostrarAlerta('✅ Cambios guardados correctamente', 'success');
 
-            // Cerrar modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('editarProductoModal'));
-            if (modal) {
-                modal.hide();
-            }
+        // Cerrar modal
+        cerrarModal('modal-editar');
 
-            // Recargar productos
-            console.log('🔄 Recargando lista de productos...');
-            await cargarProductos();
-
-        } else {
-            throw new Error(resultado.error || 'Error guardando producto');
-        }
+        // Recargar productos
+        console.log('🔄 Recargando lista de productos...');
+        await cargarProductos(paginaActual);
 
     } catch (error) {
         console.error('❌ Error guardando:', error);
-        mostrarMensaje(`❌ Error: ${error.message}`, 'danger');
+        mostrarAlerta(`❌ Error: ${error.message}`, 'error');
     }
 }
 
@@ -650,6 +656,13 @@ function switchTab(tabName) {
 
     document.getElementById(`tab-${tabName}`).classList.add('active');
     event.target.classList.add('active');
+
+    // Cargar datos específicos del tab
+    if (tabName === 'calidad') {
+        cargarAnomalias();
+    } else if (tabName === 'duplicados') {
+        // El usuario debe hacer clic en "Analizar"
+    }
 }
 
 function toggleSelectAll() {
@@ -722,7 +735,7 @@ async function eliminarProducto(id, nombre) {
 }
 
 // =============================================================
-// FUNCIÓN MOSTRAR ALERTAS (si no existe ya)
+// FUNCIÓN MOSTRAR ALERTAS
 // =============================================================
 function mostrarAlerta(mensaje, tipo = 'info') {
     // Buscar contenedor de alertas o crearlo
@@ -801,7 +814,7 @@ if (!document.getElementById('alert-animations')) {
 }
 
 // =============================================================
-// AGREGAR PLU NUEVO (si funciones_plu_modal.js no existe)
+// AGREGAR PLU NUEVO
 // =============================================================
 function agregarPLU() {
     const contenedor = document.getElementById('contenedorPLUs');
@@ -938,37 +951,6 @@ function recopilarPLUs() {
 }
 
 // =============================================================
-// EXPORTAR FUNCIONES ADICIONALES
-// =============================================================
-window.eliminarProducto = eliminarProducto;
-window.mostrarAlerta = mostrarAlerta;
-window.agregarPLU = agregarPLU;
-window.cargarPLUsProducto = cargarPLUsProducto;
-window.recopilarPLUs = recopilarPLUs;
-
-console.log('✅ Funciones de edición y eliminación cargadas');
-
-// =============================================================
-// Inicialización
-// =============================================================
-document.addEventListener("DOMContentLoaded", async function () {
-    // Configurar búsqueda en tiempo real
-    configurarBuscadorTiempoReal();
-
-    // Permitir paste en el modal
-    const modal = document.getElementById('modal-editar');
-    if (modal) {
-        modal.addEventListener('paste', function (e) {
-            e.stopPropagation();
-        }, true);
-    }
-
-    // Cargar productos
-    await cargarProductos(1);
-
-    console.log("✅ Sistema inicializado correctamente con establecimientos por PLU");
-});
-// =============================================================
 // 🔧 FUNCIONES DE ADMINISTRACIÓN Y CORRECCIÓN
 // =============================================================
 
@@ -977,7 +959,7 @@ let marcasSugeridas = [];
 let categoriasSugeridas = [];
 
 // =============================================================
-// CARGAR ANOMALÍAS (Tab Calidad de Datos)
+// ✅ CARGAR ANOMALÍAS - CORREGIDO
 // =============================================================
 async function cargarAnomalias() {
     const apiBase = getApiBase();
@@ -1088,7 +1070,7 @@ async function cargarAnomalias() {
                             </td>
                             <td style="padding: 10px;">${problemaBadge}</td>
                             <td style="padding: 10px;">
-                                <button class="btn-small btn-primary" onclick="editarProductoRapido(${p.id})">
+                                <button class="btn-small btn-primary" onclick="editarProducto(${p.id})">
                                     ✏️ Corregir
                                 </button>
                             </td>
@@ -1122,12 +1104,112 @@ async function cargarAnomalias() {
 }
 
 // =============================================================
-// EDICIÓN RÁPIDA INLINE
+// ✅ DETECTAR DUPLICADOS - CORREGIDO
 // =============================================================
-async function editarProductoRapido(id) {
-    // Usa la función existente de editar
-    await editarProducto(id);
+async function detectarDuplicados() {
+    const container = document.getElementById('duplicados-container');
+    if (!container) {
+        console.error('❌ No se encontró duplicados-container');
+        return;
+    }
+
+    container.innerHTML = '<div class="loading"></div> Analizando duplicados...';
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos?limite=1000`);
+        if (!response.ok) throw new Error('Error cargando productos');
+
+        const data = await response.json();
+        const productos = data.productos || [];
+
+        console.log(`📊 Analizando ${productos.length} productos...`);
+
+        // Agrupar por nombre similar (primeros 15 caracteres)
+        const grupos = {};
+        productos.forEach(p => {
+            if (!p.nombre) return;
+            const nombreBase = p.nombre.substring(0, 15).toUpperCase().trim();
+            if (!grupos[nombreBase]) grupos[nombreBase] = [];
+            grupos[nombreBase].push(p);
+        });
+
+        // Filtrar grupos con más de 1 producto
+        const duplicados = Object.entries(grupos)
+            .filter(([key, items]) => items.length > 1)
+            .sort((a, b) => b[1].length - a[1].length) // Más duplicados primero
+            .slice(0, 30); // Top 30
+
+        console.log(`✅ Encontrados ${duplicados.length} grupos de duplicados`);
+
+        if (duplicados.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #059669;">
+                    <h3>✅ No se encontraron duplicados obvios</h3>
+                    <p>Los productos parecen estar bien diferenciados</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+            <div style="margin-bottom: 20px; padding: 15px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;">
+                <h3 style="margin: 0 0 10px 0;">⚠️ Se encontraron ${duplicados.length} grupos de posibles duplicados</h3>
+                <p style="margin: 0; color: #666;">Revisa cada grupo y fusiona o corrige los productos según sea necesario.</p>
+            </div>
+        `;
+
+        duplicados.forEach(([nombre, items], index) => {
+            html += `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong style="font-size: 16px;">Grupo ${index + 1}: "${nombre}..."</strong>
+                        <span class="badge badge-warning">${items.length} productos</span>
+                    </div>
+                    <div style="display: grid; gap: 10px;">
+            `;
+
+            items.forEach((p, i) => {
+                const cardStyle = i === 0 ?
+                    'border: 2px solid #3b82f6; background: #eff6ff;' :
+                    'border: 1px solid #e5e7eb; background: #f9fafb;';
+
+                html += `
+                    <div style="${cardStyle} padding: 12px; border-radius: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: bold; margin-bottom: 5px;">ID ${p.id}: ${p.nombre || 'Sin nombre'}</div>
+                                <div style="font-size: 13px; color: #666;">
+                                    ${p.codigo_ean ? `EAN: ${p.codigo_ean}` : 'Sin EAN'} |
+                                    ${p.marca || 'Sin marca'} |
+                                    ${p.categoria || 'Sin categoría'}
+                                </div>
+                            </div>
+                            <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" style="margin-left: 10px;">
+                                ✏️ Editar
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        container.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+    }
 }
+
+// Alias para compatibilidad
+window.cargarDuplicados = detectarDuplicados;
 
 // =============================================================
 // CORRECCIÓN MASIVA
@@ -1176,13 +1258,12 @@ async function aplicarCorreccionMasiva() {
 }
 
 // =============================================================
-// CARGAR SUGERENCIAS (autocompletado)
+// CARGAR SUGERENCIAS
 // =============================================================
 async function cargarSugerencias() {
     const apiBase = getApiBase();
 
     try {
-        // Cargar marcas
         const resMarcas = await fetch(`${apiBase}/api/admin/sugerencias-marca`);
         if (resMarcas.ok) {
             const data = await resMarcas.json();
@@ -1190,7 +1271,6 @@ async function cargarSugerencias() {
             console.log(`✅ ${marcasSugeridas.length} marcas cargadas`);
         }
 
-        // Cargar categorías
         const resCat = await fetch(`${apiBase}/api/admin/sugerencias-categoria`);
         if (resCat.ok) {
             const data = await resCat.json();
@@ -1204,194 +1284,7 @@ async function cargarSugerencias() {
 }
 
 // =============================================================
-// DETECTAR DUPLICADOS
-// =============================================================
-async function detectarDuplicados() {
-    const container = document.getElementById('duplicados-container');
-    if (!container) return;
-
-    container.innerHTML = '<div class="loading"></div> Analizando duplicados...';
-
-    const apiBase = getApiBase();
-
-    try {
-        // Por ahora, detectar duplicados localmente
-        const response = await fetch(`${apiBase}/api/admin/anomalias`);
-        if (!response.ok) throw new Error('Error');
-
-        const data = await response.json();
-        const productos = data.productos || [];
-
-        // Agrupar por nombre similar
-        const grupos = {};
-        productos.forEach(p => {
-            const nombreBase = (p.nombre || '').substring(0, 10).toUpperCase();
-            if (!grupos[nombreBase]) grupos[nombreBase] = [];
-            grupos[nombreBase].push(p);
-        });
-
-        // Filtrar grupos con más de 1 producto
-        const duplicados = Object.entries(grupos)
-            .filter(([key, items]) => items.length > 1)
-            .slice(0, 20);
-
-        if (duplicados.length === 0) {
-            container.innerHTML = `
-                <div style="text-align: center; padding: 40px; color: #059669;">
-                    <h3>✅ No se encontraron duplicados obvios</h3>
-                    <p>Los productos parecen estar bien diferenciados</p>
-                </div>
-            `;
-            return;
-        }
-
-        let html = `<h3>⚠️ Posibles Duplicados Encontrados (${duplicados.length} grupos)</h3>`;
-
-        duplicados.forEach(([nombre, items]) => {
-            html += `
-                <div class="duplicado-item">
-                    <div class="duplicado-header">
-                        <strong>Grupo: "${nombre}..."</strong>
-                        <span class="badge badge-warning">${items.length} productos</span>
-                    </div>
-                    <div class="productos-duplicados">
-            `;
-
-            items.forEach((p, i) => {
-                html += `
-                    <div class="producto-dup-card ${i === 0 ? 'principal' : ''}">
-                        <strong>ID ${p.id}:</strong> ${p.nombre}<br>
-                        <small>EAN: ${p.codigo_ean || 'N/A'} | Marca: ${p.marca || 'N/A'}</small>
-                        <button class="btn-small btn-primary" style="float: right;" onclick="editarProducto(${p.id})">
-                            ✏️ Editar
-                        </button>
-                    </div>
-                `;
-            });
-
-            html += `
-                    </div>
-                </div>
-            `;
-        });
-
-        container.innerHTML = html;
-
-    } catch (error) {
-        console.error('❌ Error:', error);
-        container.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
-    }
-}
-
-// =============================================================
-// SOBRESCRIBIR switchTab PARA CARGAR DATOS
-// =============================================================
-const originalSwitchTab = window.switchTab;
-window.switchTab = function (tabName) {
-    // Llamar función original
-    document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    document.querySelectorAll('.tab').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.getElementById(`tab-${tabName}`).classList.add('active');
-    event.target.classList.add('active');
-
-    // Cargar datos específicos del tab
-    if (tabName === 'calidad') {
-        cargarAnomalias();
-    } else if (tabName === 'duplicados') {
-        // El usuario debe hacer clic en "Analizar"
-    }
-};
-
-// =============================================================
-// INICIALIZACIÓN ADICIONAL
-// =============================================================
-document.addEventListener("DOMContentLoaded", async function () {
-    // Cargar sugerencias para autocompletado
-    await cargarSugerencias();
-
-    console.log("✅ Módulo de administración inicializado");
-});
-// =============================================================
-// Mostrar/ocultar indicador de búsqueda
-// =============================================================
-function mostrarIndicadorBusqueda(mostrar) {
-    const indicator = document.getElementById('search-indicator');
-    if (indicator) {
-        indicator.style.display = mostrar ? 'block' : 'none';
-    }
-}
-
-// Actualizar la función configurarBuscadorTiempoReal
-function configurarBuscadorTiempoReal() {
-    const inputBusqueda = document.getElementById('busqueda');
-    const selectFiltro = document.getElementById('filtro');
-
-    if (!inputBusqueda) {
-        console.error('No se encontró el input de búsqueda');
-        return;
-    }
-
-    // Búsqueda en tiempo real con debounce
-    inputBusqueda.addEventListener('input', function (e) {
-        if (timeoutBusqueda) {
-            clearTimeout(timeoutBusqueda);
-        }
-
-        // Mostrar indicador si hay texto
-        if (e.target.value.trim()) {
-            mostrarIndicadorBusqueda(true);
-        }
-
-        timeoutBusqueda = setTimeout(() => {
-            console.log('🔍 Búsqueda en tiempo real:', e.target.value);
-            cargarProductos(1);
-            mostrarIndicadorBusqueda(false);
-        }, 500);
-    });
-
-    // También búsqueda con Enter
-    inputBusqueda.addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            if (timeoutBusqueda) clearTimeout(timeoutBusqueda);
-            console.log('🔍 Búsqueda con Enter:', e.target.value);
-            mostrarIndicadorBusqueda(false);
-            cargarProductos(1);
-        }
-    });
-
-    // Cambio en filtro recarga automáticamente
-    if (selectFiltro) {
-        selectFiltro.addEventListener('change', function () {
-            console.log('🏷️ Filtro cambiado:', this.value);
-            cargarProductos(1);
-        });
-    }
-
-    console.log('✅ Buscador en tiempo real configurado');
-}
-
-// Exportar
-window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
-// =============================================================
-// EXPORTAR NUEVAS FUNCIONES
-// =============================================================
-window.cargarAnomalias = cargarAnomalias;
-window.editarProductoRapido = editarProductoRapido;
-window.aplicarCorreccionMasiva = aplicarCorreccionMasiva;
-window.detectarDuplicados = detectarDuplicados;
-window.cargarSugerencias = cargarSugerencias;
-// Alias para el botón en la pestaña de duplicados
-window.cargarDuplicados = detectarDuplicados;
-
-console.log('✅ Funciones de administración cargadas');
-
-// =============================================================
-// Exportar funciones
+// EXPORTAR FUNCIONES
 // =============================================================
 window.cargarProductos = cargarProductos;
 window.editarProducto = editarProducto;
@@ -1410,3 +1303,42 @@ window.habilitarCamposEdicion = habilitarCamposEdicion;
 window.agregarHelperEAN = agregarHelperEAN;
 window.completarEAN = completarEAN;
 window.calcularDigitoControl = calcularDigitoControl;
+window.eliminarProducto = eliminarProducto;
+window.mostrarAlerta = mostrarAlerta;
+window.agregarPLU = agregarPLU;
+window.cargarPLUsProducto = cargarPLUsProducto;
+window.recopilarPLUs = recopilarPLUs;
+window.cargarAnomalias = cargarAnomalias;
+window.aplicarCorreccionMasiva = aplicarCorreccionMasiva;
+window.detectarDuplicados = detectarDuplicados;
+window.cargarSugerencias = cargarSugerencias;
+window.cargarDuplicados = detectarDuplicados;
+window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
+
+console.log('✅ Funciones cargadas correctamente');
+
+// =============================================================
+// Inicialización
+// =============================================================
+document.addEventListener("DOMContentLoaded", async function () {
+    console.log('🚀 Inicializando aplicación...');
+
+    // Configurar búsqueda en tiempo real
+    configurarBuscadorTiempoReal();
+
+    // Permitir paste en el modal
+    const modal = document.getElementById('modal-editar');
+    if (modal) {
+        modal.addEventListener('paste', function (e) {
+            e.stopPropagation();
+        }, true);
+    }
+
+    // Cargar productos
+    await cargarProductos(1);
+
+    // Cargar sugerencias
+    await cargarSugerencias();
+
+    console.log("✅ Sistema inicializado correctamente");
+});
