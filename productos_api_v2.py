@@ -399,12 +399,38 @@ async def actualizar_producto(producto_id: int, request: dict):
             print(f"   ✅ Actualizando marca: {marca}")
 
         if "codigo_ean" in request:
-            # ✅ CRÍTICO: Si EAN está vacío, guardar NULL en vez de cadena vacía
+            # Leer EAN actual del producto
+            cursor.execute(
+                "SELECT codigo_ean FROM productos_maestros_v2 WHERE id = %s",
+                (producto_id,),
+            )
+            ean_actual = cursor.fetchone()[0]
+
+            # Procesar EAN nuevo
             ean_value = request["codigo_ean"].strip() if request["codigo_ean"] else None
             ean_final = ean_value if ean_value else None
-            updates.append("codigo_ean = %s")
-            params.append(ean_final)
-            print(f"   ✅ Actualizando EAN: {ean_final} (NULL si vacío)")
+
+            # Solo actualizar si es diferente
+            if ean_actual != ean_final:
+                # Verificar que no existe en OTRO producto
+                if ean_final:
+                    cursor.execute(
+                        "SELECT id FROM productos_maestros_v2 WHERE codigo_ean = %s AND id != %s",
+                        (ean_final, producto_id),
+                    )
+                    if cursor.fetchone():
+                        cursor.close()
+                        conn.close()
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"El código EAN '{ean_final}' ya existe en otro producto",
+                        )
+
+                updates.append("codigo_ean = %s")
+                params.append(ean_final)
+                print(f"   ✅ Actualizando EAN: {ean_actual} → {ean_final}")
+            else:
+                print(f"   ℹ️  EAN sin cambios: {ean_actual}")
 
         if "categoria_id" in request:
             updates.append("categoria_id = %s")
