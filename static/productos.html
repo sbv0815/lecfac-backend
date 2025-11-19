@@ -745,7 +745,7 @@
                     <h2>✏️ Editar Producto</h2>
                     <span class="close" onclick="cerrarModal('modal-editar')">&times;</span>
                 </div>
-                <form id="form-editar" onsubmit="guardarEdicion(event)">
+                <form id="form-editar" onsubmit="event.preventDefault(); guardarEdicion();">
                     <input type="hidden" id="edit-id">
 
                     <!-- Sección 1: Identificación Global -->
@@ -793,6 +793,12 @@
                         🏪 PLUs por Establecimiento
                     </div>
 
+                    <!-- ✅ CONTENEDOR DE PLUs - ESTO FALTABA -->
+                    <div id="contenedorPLUs" style="margin: 15px 0; min-height: 50px;">
+                        <!-- Los PLUs se cargan aquí dinámicamente -->
+                        <p style="color: #999; text-align: center; padding: 20px;">Cargando PLUs...</p>
+                    </div>
+
                     <div style="margin-top: 10px;">
                         <button type="button" class="btn-secondary" onclick="agregarPLUEditable()" style="width: 100%;">
                             ➕ Agregar PLU
@@ -820,9 +826,12 @@
                     </div>
 
                     <div class="form-actions">
-                        <button type="button" class="btn-secondary"
-                            onclick="cerrarModal('modal-editar')">Cancelar</button>
-                        <button type="submit" class="btn-success">💾 Guardar Cambios</button>
+                        <button type="button" class="btn-secondary" onclick="cerrarModal('modal-editar')">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="btn-success">
+                            💾 Guardar Cambios
+                        </button>
                     </div>
                 </form>
             </div>
