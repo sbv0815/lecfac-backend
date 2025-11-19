@@ -7948,14 +7948,16 @@ async def listar_productos_v2_temp(
     filtro: Optional[str] = None,
 ):
     """
-    TEMPORAL - Lista productos con búsqueda
+    Lista productos con búsqueda
+    VERSION: 2024-11-19-21:45 - CON CODIGO LECFAC
     """
-    print(f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}")
+    print(f"🔥 [PRODUCTOS V2] Búsqueda: {busqueda}, Filtro: {filtro}, Límite: {limite}")
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # ✅ SELECT incluye codigo_lecfac
         query = """
             SELECT
                 pm.id,
@@ -7965,7 +7967,8 @@ async def listar_productos_v2_temp(
                 pm.categoria_id,
                 c.nombre as categoria_nombre,
                 pm.veces_visto,
-                pm.es_producto_papa
+                pm.es_producto_papa,
+                pm.codigo_lecfac
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
         """
@@ -7978,11 +7981,12 @@ async def listar_productos_v2_temp(
                 """
                 (LOWER(pm.nombre_consolidado) LIKE LOWER(%s)
                 OR pm.codigo_ean LIKE %s
-                OR LOWER(pm.marca) LIKE LOWER(%s))
+                OR LOWER(pm.marca) LIKE LOWER(%s)
+                OR pm.codigo_lecfac LIKE %s)
             """
             )
             search_param = f"%{busqueda}%"
-            params.extend([search_param, search_param, search_param])
+            params.extend([search_param, search_param, search_param, search_param])
 
         if filtro and filtro != "todos":
             where_conditions.append("c.nombre = %s")
@@ -7997,6 +8001,8 @@ async def listar_productos_v2_temp(
         cursor.execute(query, params)
         productos_raw = cursor.fetchall()
 
+        print(f"📊 Productos encontrados: {len(productos_raw)}")
+
         productos_dict = {}
         for row in productos_raw:
             productos_dict[row[0]] = {
@@ -8009,6 +8015,7 @@ async def listar_productos_v2_temp(
                 "categoria": row[5] or "Sin categoría",
                 "veces_visto": row[6] or 0,
                 "es_producto_papa": row[7] or False,
+                "codigo_lecfac": row[8],  # ✅ AGREGADO
                 "plus": [],
                 "num_establecimientos": 0,
             }
@@ -8051,6 +8058,8 @@ async def listar_productos_v2_temp(
 
         cursor.close()
         conn.close()
+
+        print(f"✅ Retornando {len(productos)} productos con codigo_lecfac")
 
         return {"success": True, "productos": productos, "total": len(productos)}
 
