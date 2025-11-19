@@ -7283,6 +7283,7 @@ async def setup_sistema_papa_hijos():
 async def crear_producto_papa(producto_id: int, request: Request):
     """
     Marca un producto como PAPA y propaga datos a todos los hijos
+    ✅ ACTUALIZADO: Ahora genera codigo_lecfac automáticamente
 
     Body JSON:
     {
@@ -7302,7 +7303,16 @@ async def crear_producto_papa(producto_id: int, request: Request):
         print(f"👑 CREANDO PRODUCTO PAPA: ID {producto_id}")
         print(f"{'='*60}")
 
-        # 1. Actualizar el PAPA con los datos validados
+        # ✅ NUEVO: Generar codigo_lecfac desde el nombre
+        nombre_producto = datos.get("nombre", "").upper().strip()
+
+        # Generar el código LecFac
+        cursor.execute("SELECT generar_codigo_lecfac(%s)", (nombre_producto,))
+        codigo_lecfac = cursor.fetchone()[0]
+
+        print(f"   📛 Código LecFac generado: {codigo_lecfac}")
+
+        # 1. Actualizar el PAPA con los datos validados + codigo_lecfac
         cursor.execute(
             """
             UPDATE productos_maestros_v2
@@ -7310,18 +7320,20 @@ async def crear_producto_papa(producto_id: int, request: Request):
                 nombre_consolidado = %s,
                 marca = %s,
                 categoria_id = %s,
+                codigo_lecfac = %s,
                 es_producto_papa = TRUE,
                 validado_por_admin = TRUE,
                 fecha_validacion_papa = CURRENT_TIMESTAMP,
                 confianza_datos = 1.0
             WHERE id = %s
-            RETURNING id, nombre_consolidado
+            RETURNING id, nombre_consolidado, codigo_lecfac
         """,
             (
                 datos.get("codigo_ean"),
-                datos.get("nombre", "").upper().strip(),
+                nombre_producto,
                 datos.get("marca"),
                 datos.get("categoria_id"),
+                codigo_lecfac,  # ← NUEVO
                 producto_id,
             ),
         )
@@ -7334,8 +7346,10 @@ async def crear_producto_papa(producto_id: int, request: Request):
 
         papa_id = resultado[0]
         papa_nombre = resultado[1]
+        papa_codigo_lecfac = resultado[2]  # ← NUEVO
 
         print(f"   ✅ PAPA actualizado: {papa_nombre}")
+        print(f"   📛 Código LecFac: {papa_codigo_lecfac}")
 
         # 2. Obtener PLUs del PAPA en productos_por_establecimiento
         cursor.execute(
@@ -7372,7 +7386,7 @@ async def crear_producto_papa(producto_id: int, request: Request):
             hijos = cursor.fetchall()
 
             for (hijo_id,) in hijos:
-                # Propagar datos del PAPA al HIJO
+                # Propagar datos del PAPA al HIJO (incluyendo codigo_lecfac)
                 cursor.execute(
                     """
                     UPDATE productos_maestros_v2
@@ -7380,6 +7394,7 @@ async def crear_producto_papa(producto_id: int, request: Request):
                         nombre_consolidado = %s,
                         marca = %s,
                         categoria_id = %s,
+                        codigo_lecfac = %s,
                         producto_papa_id = %s,
                         es_producto_papa = FALSE,
                         estado = 'validado',
@@ -7388,9 +7403,10 @@ async def crear_producto_papa(producto_id: int, request: Request):
                 """,
                     (
                         datos.get("codigo_ean"),
-                        datos.get("nombre", "").upper().strip(),
+                        nombre_producto,
                         datos.get("marca"),
                         datos.get("categoria_id"),
+                        codigo_lecfac,  # ← NUEVO: Propagar código LecFac a hijos
                         papa_id,
                         hijo_id,
                     ),
@@ -7410,9 +7426,10 @@ async def crear_producto_papa(producto_id: int, request: Request):
             "success": True,
             "papa_id": papa_id,
             "papa_nombre": papa_nombre,
+            "codigo_lecfac": papa_codigo_lecfac,  # ← NUEVO
             "hijos_actualizados": hijos_actualizados,
             "hijos_ids": hijos_ids,
-            "mensaje": f"Producto papa {papa_id} creado, {hijos_actualizados} hijos actualizados",
+            "mensaje": f"Producto papa {papa_id} creado con código {papa_codigo_lecfac}, {hijos_actualizados} hijos actualizados",
         }
 
     except Exception as e:
