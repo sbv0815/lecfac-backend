@@ -289,9 +289,10 @@ function mostrarProductos(productos) {
         const categoriaHTML = p.categoria || '<span style="color: #999;">Sin categoría</span>';
 
         // ✅ CÓDIGO LECFAC - NUEVO
+        // ✅ CÓDIGO LECFAC
         let codigoLecfacHTML = '<span style="color: #999;">-</span>';
         if (p.codigo_lecfac) {
-            codigoLecfacHTML = `<span class="badge badge-lecfac" style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 0.85em;">${p.codigo_lecfac}</span>`;
+            codigoLecfacHTML = `<code style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${p.codigo_lecfac}</code>`;
         }
 
         // Estado badges
