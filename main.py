@@ -5776,55 +5776,54 @@ async def verificar_aprendizaje():
 # ============================================================================
 # COMPARADOR DE PRECIOS - ENDPOINT PRINCIPAL
 # ============================================================================
-
-
 @app.get("/api/comparador/precios")
 async def obtener_precios_comparador():
     """
-    Endpoint para el comparador de precios
-    Agrupa productos por codigo_lecfac y muestra precios por establecimiento
-    VERSION: 2024-11-19-20:30
+    Comparador de precios - Agrupa por codigo_lecfac
+    VERSION: 2024-11-19-21:30 - SOLUCION FINAL
     """
     print("\n" + "=" * 80)
-    print("🔍 COMPARADOR: Endpoint /api/comparador/precios llamado")
+    print("🔍 COMPARADOR: Consultando productos")
     print("=" * 80)
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Query para obtener productos con múltiples precios
+        # Query que trae TODOS los productos con precios
+        # NO filtramos por cantidad aquí, lo hacemos después en Python
         query = """
             SELECT
                 pm.id,
                 pm.codigo_ean,
                 pm.nombre_consolidado,
                 pm.marca,
-                pm.codigo_lecfac,
-                c.nombre as categoria,
+                COALESCE(pm.codigo_lecfac, CONCAT('prod-', pm.id)) as codigo_lecfac,
+                COALESCE(c.nombre, 'Sin categoría') as categoria,
                 ppe.codigo_plu,
                 e.nombre_normalizado as establecimiento,
                 ppe.precio_unitario,
                 ppe.fecha_actualizacion,
-                ppe.total_reportes
+                COALESCE(ppe.total_reportes, 1) as total_reportes
             FROM productos_maestros_v2 pm
-            JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
-            JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            LEFT JOIN categorias c ON pm.categoria_id = c.id
+            INNER JOIN productos_por_establecimiento ppe
+                ON pm.id = ppe.producto_maestro_id
+            INNER JOIN establecimientos e
+                ON ppe.establecimiento_id = e.id
+            LEFT JOIN categorias c
+                ON pm.categoria_id = c.id
             WHERE ppe.precio_unitario > 0
-            ORDER BY pm.codigo_lecfac, ppe.precio_unitario ASC
+            ORDER BY codigo_lecfac, ppe.precio_unitario ASC
         """
 
-        print("📊 Ejecutando query...")
         cursor.execute(query)
         rows = cursor.fetchall()
 
-        print(f"✅ Filas obtenidas: {len(rows)}")
+        print(f"📊 Total filas: {len(rows)}")
 
         if len(rows) == 0:
             cursor.close()
             conn.close()
-            print("⚠️ No se encontraron productos con precios")
             return {
                 "success": True,
                 "productos": [],
@@ -5833,6 +5832,7 @@ async def obtener_precios_comparador():
                     "total_establecimientos": 0,
                     "ahorro_promedio": 0,
                 },
+                "mensaje": "No hay productos con precios registrados",
             }
 
         # Agrupar por codigo_lecfac
@@ -5840,15 +5840,15 @@ async def obtener_precios_comparador():
         establecimientos_set = set()
 
         for row in rows:
-            prod_id = row[0]
-            codigo_lecfac = row[4] or f"prod-{prod_id}"
+            codigo_lecfac = row[4]  # Ya tiene fallback en el SQL
             establecimiento = row[7]
 
             establecimientos_set.add(establecimiento)
 
+            # Crear grupo si no existe
             if codigo_lecfac not in productos_dict:
                 productos_dict[codigo_lecfac] = {
-                    "id": prod_id,
+                    "id": row[0],
                     "codigo_ean": row[1],
                     "nombre": row[2],
                     "marca": row[3],
@@ -5857,26 +5857,30 @@ async def obtener_precios_comparador():
                     "precios": [],
                 }
 
+            # Agregar precio al grupo
             productos_dict[codigo_lecfac]["precios"].append(
                 {
                     "plu": row[6],
                     "establecimiento": establecimiento,
-                    "precio": float(row[8]) if row[8] else 0,
+                    "precio": float(row[8]),
                     "fecha": row[9].strftime("%Y-%m-%d") if row[9] else "N/A",
-                    "veces_visto": row[10] or 1,
+                    "veces_visto": row[10],
                 }
             )
 
-        print(f"📦 Productos agrupados: {len(productos_dict)}")
+        print(f"📦 Grupos por codigo_lecfac: {len(productos_dict)}")
 
-        # Filtrar productos con 2+ precios y calcular diferencias
-        productos = []
+        # Filtrar solo productos con 2+ precios
+        productos_comparables = []
         total_ahorro = 0
         productos_con_diferencia = 0
 
         for codigo_lecfac, prod in productos_dict.items():
             num_precios = len(prod["precios"])
 
+            print(f"   {prod['nombre'][:40]}: {num_precios} precio(s)")
+
+            # Solo incluir si tiene 2+ precios
             if num_precios >= 2:
                 precios_valores = [p["precio"] for p in prod["precios"]]
                 precio_min = min(precios_valores)
@@ -5889,13 +5893,15 @@ async def obtener_precios_comparador():
                     total_ahorro += porcentaje
                     productos_con_diferencia += 1
 
-                productos.append(prod)
+                productos_comparables.append(prod)
                 print(
-                    f"   ✅ {prod['nombre']}: {num_precios} precios, {porcentaje:.1f}% diferencia"
+                    f"      ✅ COMPARABLE: {num_precios} precios, {porcentaje:.1f}% diferencia"
                 )
 
-        # Ordenar por diferencia
-        productos.sort(key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True)
+        # Ordenar por mayor ahorro
+        productos_comparables.sort(
+            key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True
+        )
 
         ahorro_promedio = (
             round(total_ahorro / productos_con_diferencia, 1)
@@ -5907,23 +5913,23 @@ async def obtener_precios_comparador():
         conn.close()
 
         print(f"\n📊 RESUMEN:")
-        print(f"   Productos comparables: {len(productos)}")
+        print(f"   Productos comparables: {len(productos_comparables)}")
         print(f"   Establecimientos: {len(establecimientos_set)}")
         print(f"   Ahorro promedio: {ahorro_promedio}%")
         print("=" * 80 + "\n")
 
         return {
             "success": True,
-            "productos": productos,
+            "productos": productos_comparables,
             "estadisticas": {
-                "total_productos": len(productos),
+                "total_productos": len(productos_comparables),
                 "total_establecimientos": len(establecimientos_set),
                 "ahorro_promedio": ahorro_promedio,
             },
         }
 
     except Exception as e:
-        print(f"❌ ERROR en comparador: {e}")
+        print(f"❌ ERROR: {e}")
         import traceback
 
         traceback.print_exc()
@@ -5934,9 +5940,6 @@ async def obtener_precios_comparador():
             "productos": [],
             "estadisticas": {},
         }
-
-
-print("✅ Endpoint /api/comparador/precios registrado")
 
 
 @app.post("/admin/corregir-aprendizaje/{aprendizaje_id}")
