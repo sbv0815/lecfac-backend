@@ -5773,6 +5773,172 @@ async def verificar_aprendizaje():
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+# ============================================================================
+# COMPARADOR DE PRECIOS - ENDPOINT PRINCIPAL
+# ============================================================================
+
+
+@app.get("/api/comparador/precios")
+async def obtener_precios_comparador():
+    """
+    Endpoint para el comparador de precios
+    Agrupa productos por codigo_lecfac y muestra precios por establecimiento
+    VERSION: 2024-11-19-20:30
+    """
+    print("\n" + "=" * 80)
+    print("🔍 COMPARADOR: Endpoint /api/comparador/precios llamado")
+    print("=" * 80)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Query para obtener productos con múltiples precios
+        query = """
+            SELECT
+                pm.id,
+                pm.codigo_ean,
+                pm.nombre_consolidado,
+                pm.marca,
+                pm.codigo_lecfac,
+                c.nombre as categoria,
+                ppe.codigo_plu,
+                e.nombre_normalizado as establecimiento,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion,
+                ppe.total_reportes
+            FROM productos_maestros_v2 pm
+            JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            LEFT JOIN categorias c ON pm.categoria_id = c.id
+            WHERE ppe.precio_unitario > 0
+            ORDER BY pm.codigo_lecfac, ppe.precio_unitario ASC
+        """
+
+        print("📊 Ejecutando query...")
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        print(f"✅ Filas obtenidas: {len(rows)}")
+
+        if len(rows) == 0:
+            cursor.close()
+            conn.close()
+            print("⚠️ No se encontraron productos con precios")
+            return {
+                "success": True,
+                "productos": [],
+                "estadisticas": {
+                    "total_productos": 0,
+                    "total_establecimientos": 0,
+                    "ahorro_promedio": 0,
+                },
+            }
+
+        # Agrupar por codigo_lecfac
+        productos_dict = {}
+        establecimientos_set = set()
+
+        for row in rows:
+            prod_id = row[0]
+            codigo_lecfac = row[4] or f"prod-{prod_id}"
+            establecimiento = row[7]
+
+            establecimientos_set.add(establecimiento)
+
+            if codigo_lecfac not in productos_dict:
+                productos_dict[codigo_lecfac] = {
+                    "id": prod_id,
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "codigo_lecfac": codigo_lecfac,
+                    "categoria": row[5],
+                    "precios": [],
+                }
+
+            productos_dict[codigo_lecfac]["precios"].append(
+                {
+                    "plu": row[6],
+                    "establecimiento": establecimiento,
+                    "precio": float(row[8]) if row[8] else 0,
+                    "fecha": row[9].strftime("%Y-%m-%d") if row[9] else "N/A",
+                    "veces_visto": row[10] or 1,
+                }
+            )
+
+        print(f"📦 Productos agrupados: {len(productos_dict)}")
+
+        # Filtrar productos con 2+ precios y calcular diferencias
+        productos = []
+        total_ahorro = 0
+        productos_con_diferencia = 0
+
+        for codigo_lecfac, prod in productos_dict.items():
+            num_precios = len(prod["precios"])
+
+            if num_precios >= 2:
+                precios_valores = [p["precio"] for p in prod["precios"]]
+                precio_min = min(precios_valores)
+                precio_max = max(precios_valores)
+                diferencia = precio_max - precio_min
+                porcentaje = (diferencia / precio_max * 100) if precio_max > 0 else 0
+                prod["diferencia_porcentaje"] = round(porcentaje, 1)
+
+                if porcentaje > 0:
+                    total_ahorro += porcentaje
+                    productos_con_diferencia += 1
+
+                productos.append(prod)
+                print(
+                    f"   ✅ {prod['nombre']}: {num_precios} precios, {porcentaje:.1f}% diferencia"
+                )
+
+        # Ordenar por diferencia
+        productos.sort(key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True)
+
+        ahorro_promedio = (
+            round(total_ahorro / productos_con_diferencia, 1)
+            if productos_con_diferencia > 0
+            else 0
+        )
+
+        cursor.close()
+        conn.close()
+
+        print(f"\n📊 RESUMEN:")
+        print(f"   Productos comparables: {len(productos)}")
+        print(f"   Establecimientos: {len(establecimientos_set)}")
+        print(f"   Ahorro promedio: {ahorro_promedio}%")
+        print("=" * 80 + "\n")
+
+        return {
+            "success": True,
+            "productos": productos,
+            "estadisticas": {
+                "total_productos": len(productos),
+                "total_establecimientos": len(establecimientos_set),
+                "ahorro_promedio": ahorro_promedio,
+            },
+        }
+
+    except Exception as e:
+        print(f"❌ ERROR en comparador: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+        return {
+            "success": False,
+            "error": str(e),
+            "productos": [],
+            "estadisticas": {},
+        }
+
+
+print("✅ Endpoint /api/comparador/precios registrado")
+
+
 @app.post("/admin/corregir-aprendizaje/{aprendizaje_id}")
 async def corregir_aprendizaje(aprendizaje_id: int, nombre_correcto: str):
     """
@@ -8531,138 +8697,6 @@ async def limpiar_papas_sin_plu():
 @app.get("/comparador")
 async def ver_comparador():
     return FileResponse("static/comparador.html")
-
-
-@app.get("/api/comparador/precios")
-async def comparador_precios():
-    """
-    Obtiene todos los productos con precios para comparación
-    VERSION: 2024-11-19 - AGRUPADO POR CODIGO LECFAC
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        print("\n" + "=" * 60)
-        print("🔍 API COMPARADOR: Consultando productos...")
-        print("=" * 60)
-
-        # Query principal
-        cursor.execute(
-            """
-            SELECT
-                pm.id,
-                pm.codigo_ean,
-                pm.nombre_consolidado,
-                pm.marca,
-                pm.codigo_lecfac,
-                c.nombre as categoria,
-                ppe.codigo_plu,
-                e.nombre_normalizado as establecimiento,
-                ppe.precio_unitario,
-                ppe.fecha_actualizacion,
-                ppe.total_reportes
-            FROM productos_maestros_v2 pm
-            JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
-            JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            LEFT JOIN categorias c ON pm.categoria_id = c.id
-            WHERE ppe.precio_unitario > 0
-            ORDER BY pm.codigo_lecfac, ppe.precio_unitario ASC
-        """
-        )
-
-        rows = cursor.fetchall()
-        print(f"📊 Filas encontradas: {len(rows)}")
-
-        # Agrupar por codigo_lecfac
-        productos_dict = {}
-        establecimientos_set = set()
-
-        for row in rows:
-            prod_id = row[0]
-            codigo_lecfac = row[4] or f"prod-{prod_id}"
-            establecimiento = row[7]
-
-            establecimientos_set.add(establecimiento)
-
-            if codigo_lecfac not in productos_dict:
-                productos_dict[codigo_lecfac] = {
-                    "id": prod_id,
-                    "codigo_ean": row[1],
-                    "nombre": row[2],
-                    "marca": row[3],
-                    "codigo_lecfac": codigo_lecfac,
-                    "categoria": row[5],
-                    "precios": [],
-                }
-
-            productos_dict[codigo_lecfac]["precios"].append(
-                {
-                    "plu": row[6],
-                    "establecimiento": establecimiento,
-                    "precio": float(row[8]) if row[8] else 0,
-                    "fecha": row[9].strftime("%Y-%m-%d") if row[9] else "N/A",
-                    "veces_visto": row[10] or 1,
-                }
-            )
-
-        # Filtrar solo productos con 2+ precios
-        productos = []
-        total_ahorro = 0
-        productos_con_diferencia = 0
-
-        for codigo_lecfac, prod in productos_dict.items():
-            if len(prod["precios"]) >= 2:
-                precios_valores = [p["precio"] for p in prod["precios"]]
-                precio_min = min(precios_valores)
-                precio_max = max(precios_valores)
-                diferencia = precio_max - precio_min
-                porcentaje = (diferencia / precio_max * 100) if precio_max > 0 else 0
-                prod["diferencia_porcentaje"] = round(porcentaje, 1)
-
-                if porcentaje > 0:
-                    total_ahorro += porcentaje
-                    productos_con_diferencia += 1
-
-                productos.append(prod)
-
-        productos.sort(key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True)
-
-        ahorro_promedio = (
-            round(total_ahorro / productos_con_diferencia, 1)
-            if productos_con_diferencia > 0
-            else 0
-        )
-
-        cursor.close()
-        conn.close()
-
-        print(f"✅ Productos comparables: {len(productos)}")
-        print(f"✅ Establecimientos: {len(establecimientos_set)}")
-        print(f"✅ Ahorro promedio: {ahorro_promedio}%")
-        print("=" * 60 + "\n")
-
-        return {
-            "success": True,
-            "productos": productos,
-            "estadisticas": {
-                "total_productos": len(productos),
-                "total_establecimientos": len(establecimientos_set),
-                "ahorro_promedio": ahorro_promedio,
-            },
-        }
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e),
-            "productos": [],
-            "estadisticas": {},
-        }
 
 
 @app.get("/debug/static-files")
