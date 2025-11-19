@@ -8528,25 +8528,26 @@ async def limpiar_papas_sin_plu():
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
-# ============================================================================
-# REEMPLAZAR en main.py el endpoint /api/comparador/precios
-# El error es que ppe.veces_comprado NO existe, usar ppe.total_reportes
-# ============================================================================
+@app.get("/comparador")
+async def ver_comparador():
+    return FileResponse("static/comparador.html")
 
 
 @app.get("/api/comparador/precios")
 async def comparador_precios():
     """
-    Obtiene todos los productos con sus precios por establecimiento
-    para comparación - VERSIÓN CORREGIDA CON CODIGO LECFAC
+    Obtiene todos los productos con precios para comparación
+    VERSION: 2024-11-19 - AGRUPADO POR CODIGO LECFAC
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print("🔍 Consultando productos para comparador...")
+        print("\n" + "=" * 60)
+        print("🔍 API COMPARADOR: Consultando productos...")
+        print("=" * 60)
 
-        # ✅ CORRECCIÓN: Query optimizada para agrupar por codigo_lecfac
+        # Query principal
         cursor.execute(
             """
             SELECT
@@ -8571,24 +8572,19 @@ async def comparador_precios():
         )
 
         rows = cursor.fetchall()
-        print(f"📊 Encontradas {len(rows)} combinaciones producto-establecimiento")
+        print(f"📊 Filas encontradas: {len(rows)}")
 
-        # Agrupar por codigo_lecfac (productos iguales)
+        # Agrupar por codigo_lecfac
         productos_dict = {}
         establecimientos_set = set()
-        total_precios = 0
 
         for row in rows:
             prod_id = row[0]
-            codigo_lecfac = (
-                row[4] or f"sin-codigo-{prod_id}"
-            )  # Usar codigo_lecfac como agrupador
+            codigo_lecfac = row[4] or f"prod-{prod_id}"
             establecimiento = row[7]
 
             establecimientos_set.add(establecimiento)
-            total_precios += 1
 
-            # Agrupar por codigo_lecfac en lugar de ID
             if codigo_lecfac not in productos_dict:
                 productos_dict[codigo_lecfac] = {
                     "id": prod_id,
@@ -8600,7 +8596,6 @@ async def comparador_precios():
                     "precios": [],
                 }
 
-            # Agregar precio del establecimiento
             productos_dict[codigo_lecfac]["precios"].append(
                 {
                     "plu": row[6],
@@ -8611,13 +8606,12 @@ async def comparador_precios():
                 }
             )
 
-        # Convertir a lista y calcular diferencias
+        # Filtrar solo productos con 2+ precios
         productos = []
         total_ahorro = 0
         productos_con_diferencia = 0
 
         for codigo_lecfac, prod in productos_dict.items():
-            # Solo incluir productos con 2+ precios
             if len(prod["precios"]) >= 2:
                 precios_valores = [p["precio"] for p in prod["precios"]]
                 precio_min = min(precios_valores)
@@ -8632,7 +8626,6 @@ async def comparador_precios():
 
                 productos.append(prod)
 
-        # Ordenar por diferencia de precio (mayor primero)
         productos.sort(key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True)
 
         ahorro_promedio = (
@@ -8647,6 +8640,7 @@ async def comparador_precios():
         print(f"✅ Productos comparables: {len(productos)}")
         print(f"✅ Establecimientos: {len(establecimientos_set)}")
         print(f"✅ Ahorro promedio: {ahorro_promedio}%")
+        print("=" * 60 + "\n")
 
         return {
             "success": True,
@@ -8654,13 +8648,12 @@ async def comparador_precios():
             "estadisticas": {
                 "total_productos": len(productos),
                 "total_establecimientos": len(establecimientos_set),
-                "total_precios": total_precios,
                 "ahorro_promedio": ahorro_promedio,
             },
         }
 
     except Exception as e:
-        print(f"❌ Error en comparador: {e}")
+        print(f"❌ Error: {e}")
         import traceback
 
         traceback.print_exc()
@@ -8670,11 +8663,6 @@ async def comparador_precios():
             "productos": [],
             "estadisticas": {},
         }
-
-
-@app.get("/comparador")
-async def ver_comparador():
-    return FileResponse("static/comparador.html")
 
 
 @app.get("/debug/static-files")
