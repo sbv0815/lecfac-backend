@@ -1,4 +1,4 @@
-# VERSION: 2024-11-18-19:45 - FIX LIMITE 5000 PARA PAPA-DASHBOARD
+# VERSION: 2024-11-19-CORREGIDO - FIX EAN VACÍO Y DUPLICADOS
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -11,17 +11,16 @@ router = APIRouter()
 @router.get("/api/v2/productos/")
 async def listar_productos_v2(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=5000),  # ✅ AUMENTADO DE 100 A 5000
+    limit: int = Query(50, ge=1, le=5000),
     search: Optional[str] = None,
     categoria_id: Optional[int] = None,
-    limite: int = Query(500, ge=1, le=5000),  # ✅ AUMENTADO DE 1000 A 5000
+    limite: int = Query(500, ge=1, le=5000),
     busqueda: Optional[str] = None,
 ):
     """Lista productos con búsqueda"""
 
     print("=" * 80)
-    print(f"🔥 /api/v2/productos/ LLAMADO")
-    print(f"   busqueda={busqueda}, search={search}")
+    print(f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}")
     print("=" * 80)
 
     conn = None
@@ -172,7 +171,7 @@ async def listar_categorias():
 async def obtener_producto_individual(producto_id: int):
     """
     Obtiene UN producto por ID
-    VERSION: 2024-11-18-17:30
+    VERSION: 2024-11-19-CORREGIDO
     """
     print(f"📋 [Router] GET producto ID: {producto_id}")
 
@@ -243,10 +242,10 @@ async def obtener_producto_individual(producto_id: int):
 
         return {
             "id": producto[0],
-            "codigo_ean": producto[1],
+            "codigo_ean": producto[1] or "",  # ✅ Retornar string vacío si es NULL
             "nombre": producto[2],
             "nombre_consolidado": producto[2],
-            "marca": producto[3],
+            "marca": producto[3] or "",  # ✅ Retornar string vacío si es NULL
             "categoria": producto[5] or "Sin categoría",
             "categoria_id": producto[4],
             "veces_comprado": producto[6] or 0,
@@ -357,10 +356,10 @@ async def obtener_plus_producto(producto_id: int):
 async def actualizar_producto(producto_id: int, request: dict):
     """
     Actualiza un producto (nombre, marca, categoría, EAN)
-    VERSION: 2024-11-18-18:00
+    VERSION: 2024-11-19-CORREGIDO - Fix EAN vacío
     """
     print(f"✏️ [Router] PUT producto ID: {producto_id}")
-    print(f"   Datos: {request}")
+    print(f"   Datos recibidos: {request}")
 
     conn = None
     try:
@@ -369,33 +368,64 @@ async def actualizar_producto(producto_id: int, request: dict):
 
         # Verificar que existe
         cursor.execute(
-            "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
+            "SELECT nombre_consolidado FROM productos_maestros_v2 WHERE id = %s",
+            (producto_id,),
         )
 
-        if not cursor.fetchone():
+        producto_actual = cursor.fetchone()
+
+        if not producto_actual:
             cursor.close()
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        print(f"   Producto actual: {producto_actual[0]}")
 
         # Construir UPDATE dinámico
         updates = []
         params = []
 
         if "nombre_consolidado" in request:
-            updates.append("nombre_consolidado = %s")
-            params.append(request["nombre_consolidado"])
+            nombre = request["nombre_consolidado"].strip()
+            if nombre:  # Solo actualizar si no está vacío
+                updates.append("nombre_consolidado = %s")
+                params.append(nombre)
+                print(f"   ✅ Actualizando nombre: {nombre}")
 
         if "marca" in request:
+            marca = request["marca"].strip() if request["marca"] else None
             updates.append("marca = %s")
-            params.append(request["marca"])
+            params.append(marca)
+            print(f"   ✅ Actualizando marca: {marca}")
 
         if "codigo_ean" in request:
+            # ✅ CRÍTICO: Si EAN está vacío, guardar NULL en vez de cadena vacía
+            ean_value = request["codigo_ean"].strip() if request["codigo_ean"] else None
+            ean_final = ean_value if ean_value else None
             updates.append("codigo_ean = %s")
-            params.append(request["codigo_ean"])
+            params.append(ean_final)
+            print(f"   ✅ Actualizando EAN: {ean_final} (NULL si vacío)")
 
         if "categoria_id" in request:
             updates.append("categoria_id = %s")
             params.append(request["categoria_id"])
+            print(f"   ✅ Actualizando categoria_id: {request['categoria_id']}")
+
+        if "categoria" in request and "categoria_id" not in request:
+            # Si se envió nombre de categoría, buscar su ID
+            categoria_nombre = request["categoria"].strip()
+            if categoria_nombre and categoria_nombre != "Sin categoría":
+                cursor.execute(
+                    "SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(%s)",
+                    (categoria_nombre,),
+                )
+                cat_row = cursor.fetchone()
+                if cat_row:
+                    updates.append("categoria_id = %s")
+                    params.append(cat_row[0])
+                    print(
+                        f"   ✅ Actualizando categoría por nombre: {categoria_nombre} (ID: {cat_row[0]})"
+                    )
 
         if not updates:
             cursor.close()
@@ -413,6 +443,9 @@ async def actualizar_producto(producto_id: int, request: dict):
             RETURNING id, nombre_consolidado, marca, codigo_ean, categoria_id
         """
 
+        print(f"   🔍 Query: {query}")
+        print(f"   🔍 Params: {params}")
+
         cursor.execute(query, params)
         updated = cursor.fetchone()
 
@@ -420,7 +453,8 @@ async def actualizar_producto(producto_id: int, request: dict):
         cursor.close()
         conn.close()
 
-        logger.info(f"✅ Producto {producto_id} actualizado: {updated[1]}")
+        logger.info(f"✅ Producto {producto_id} actualizado exitosamente")
+        print(f"   ✅ Resultado: {updated}")
 
         return {
             "success": True,
@@ -548,7 +582,7 @@ async def eliminar_producto(producto_id: int):
             logger.warning(f"   ⚠️ Patrones no limpiados")
 
         # ============================================================
-        # ELIMINACIÓN FINAL DEL PRODUCTO duplicado
+        # ELIMINACIÓN FINAL DEL PRODUCTO
         # ============================================================
 
         cursor.execute(
