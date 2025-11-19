@@ -934,74 +934,161 @@ function agregarPLU() {
 // =============================================================
 // CARGAR PLUs DEL PRODUCTO
 // =============================================================
+// =============================================================
+// CARGAR PLUs DEL PRODUCTO - VERSIÓN EDITABLE
+// =============================================================
 async function cargarPLUsProducto(productoId) {
     const apiBase = getApiBase();
     const contenedor = document.getElementById('contenedorPLUs');
 
-    if (!contenedor) return;
+    if (!contenedor) {
+        console.warn('⚠️ No se encontró contenedorPLUs');
+        return;
+    }
 
     try {
+        // 1. Cargar datos del producto (incluye PLUs)
         const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`);
-        if (!response.ok) throw new Error('Error cargando PLUs');
+        if (!response.ok) throw new Error('Error cargando producto');
 
-        const data = await response.json();
+        const producto = await response.json();
+        console.log('📦 Producto con PLUs:', producto);
+
+        // 2. Cargar lista de establecimientos
+        const respEst = await fetch(`${apiBase}/api/establecimientos`);
+        const establecimientos = await respEst.json();
+        console.log('🏪 Establecimientos:', establecimientos);
+
+        // 3. Limpiar contenedor
         contenedor.innerHTML = '';
 
-        if (!data.plus || data.plus.length === 0) {
+        // 4. Si no hay PLUs
+        if (!producto.plus || producto.plus.length === 0) {
             contenedor.innerHTML = '<p style="color: #666; padding: 10px;">No hay PLUs registrados</p>';
             return;
         }
 
-        // Cargar lista de establecimientos
-        const respEst = await fetch(`${apiBase}/api/establecimientos`);
-        const establecimientos = await respEst.json();
+        // 5. Crear campos editables para cada PLU
+        producto.plus.forEach((plu, index) => {
+            console.log(`   PLU ${index + 1}:`, plu);
 
-        data.plus.forEach((plu) => {
             const pluDiv = document.createElement('div');
             pluDiv.className = 'plu-item';
-            pluDiv.dataset.pluId = plu.id || '';  // Guardar ID del PLU
+            pluDiv.dataset.pluId = plu.id || '';  // ⚠️ Guardar ID del registro en productos_por_establecimiento
+
+            // Buscar el ID del establecimiento
+            const estId = plu.establecimiento_id ||
+                establecimientos.find(e => e.nombre_normalizado === plu.establecimiento)?.id ||
+                '';
 
             pluDiv.innerHTML = `
-                <div class="plu-row">
+                <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px;">
                     <div class="form-group">
-                        <label>Establecimiento</label>
-                        <select class="plu-establecimiento" data-est-id="${plu.establecimiento_id || ''}">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Establecimiento</label>
+                        <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
                             <option value="">Seleccionar...</option>
                             ${establecimientos.map(e =>
-                `<option value="${e.id}" ${e.id == plu.establecimiento_id ? 'selected' : ''}>
+                `<option value="${e.id}" ${e.id == estId ? 'selected' : ''}>
                                     ${e.nombre_normalizado}
                                 </option>`
             ).join('')}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Código PLU</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Código PLU</label>
                         <input type="text"
                                class="plu-codigo"
                                value="${plu.codigo_plu || ''}"
-                               placeholder="Ej: 1234">
+                               placeholder="Ej: 1234"
+                               style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
                     </div>
                     <div class="form-group">
-                        <label>Precio</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Precio</label>
                         <input type="number"
                                class="plu-precio"
                                value="${plu.precio || 0}"
-                               placeholder="0">
+                               placeholder="0"
+                               style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
                     </div>
-                    <button type="button" class="btn-remove-plu" onclick="this.parentElement.parentElement.remove()">
+                    <button type="button"
+                            class="btn-remove-plu"
+                            onclick="this.closest('.plu-item').remove(); console.log('🗑️ PLU eliminado');"
+                            style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                            title="Eliminar este PLU">
                         🗑️
                     </button>
                 </div>
             `;
+
             contenedor.appendChild(pluDiv);
         });
 
+        console.log(`✅ ${producto.plus.length} PLUs cargados para edición`);
+
     } catch (error) {
-        console.error('Error cargando PLUs:', error);
+        console.error('❌ Error cargando PLUs:', error);
         contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
     }
 }
 
+// =============================================================
+// AGREGAR PLU EDITABLE
+// =============================================================
+async function agregarPLUEditable() {
+    const apiBase = getApiBase();
+    const contenedor = document.getElementById('contenedorPLUs');
+
+    if (!contenedor) return;
+
+    // Cargar establecimientos
+    const respEst = await fetch(`${apiBase}/api/establecimientos`);
+    const establecimientos = await respEst.json();
+
+    // Eliminar mensaje de "No hay PLUs" si existe
+    const mensaje = contenedor.querySelector('p');
+    if (mensaje) mensaje.remove();
+
+    const pluDiv = document.createElement('div');
+    pluDiv.className = 'plu-item';
+    pluDiv.dataset.pluId = '';  // Vacío = nuevo PLU
+
+    pluDiv.innerHTML = `
+        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px; background: #f0fdf4;">
+            <div class="form-group">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Establecimiento</label>
+                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Seleccionar...</option>
+                    ${establecimientos.map(e =>
+        `<option value="${e.id}">${e.nombre_normalizado}</option>`
+    ).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Código PLU</label>
+                <input type="text"
+                       class="plu-codigo"
+                       placeholder="Ej: 1234"
+                       style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            <div class="form-group">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Precio</label>
+                <input type="number"
+                       class="plu-precio"
+                       placeholder="0"
+                       style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            <button type="button"
+                    class="btn-remove-plu"
+                    onclick="this.closest('.plu-item').remove();"
+                    style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                🗑️
+            </button>
+        </div>
+    `;
+
+    contenedor.appendChild(pluDiv);
+    console.log('✅ Nuevo PLU agregado para edición');
+}
 // =============================================================
 // RECOPILAR PLUs DEL FORMULARIO
 // =============================================================
@@ -1390,6 +1477,7 @@ window.cargarDuplicados = detectarDuplicados;
 window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
 // Exportar nueva función
 window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
+window.agregarPLUEditable = agregarPLUEditable;
 
 console.log('✅ Funciones cargadas correctamente');
 
