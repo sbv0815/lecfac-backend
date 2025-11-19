@@ -1026,7 +1026,7 @@ def buscar_o_crear_producto_inteligente(
 
 
 # ═══════════════════════════════════════════════════════════════
-# MENSAJE DE CARGA
+# MENSAJE DE CARGA PARA PODER VER
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
 print("✅ product_matcher.py V9.3 - CON DETECCIÓN AUTOMÁTICA DE PAPAS (MEJORADO)")
