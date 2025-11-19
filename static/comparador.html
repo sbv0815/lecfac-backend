@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>LecFac - Comparador con Edición</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LecFac - Comparador de Precios</title>
     <style>
         * {
             margin: 0;
@@ -23,6 +24,16 @@
             text-align: center;
         }
 
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
         .container {
             max-width: 1400px;
             margin: 20px auto;
@@ -37,14 +48,21 @@
             display: flex;
             gap: 15px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .search-box {
             flex: 1;
+            min-width: 250px;
             padding: 12px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 14px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #00b894;
         }
 
         .btn {
@@ -54,6 +72,7 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
+            font-size: 14px;
         }
 
         .btn-primary {
@@ -63,9 +82,36 @@
 
         .btn-primary:hover {
             background: #00a085;
+            transform: translateY(-1px);
         }
 
-        .grupo-card {
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .stat-card h3 {
+            font-size: 32px;
+            color: #00b894;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: #636e72;
+            font-size: 13px;
+        }
+
+        .producto-card {
             background: white;
             border-radius: 12px;
             margin-bottom: 20px;
@@ -73,113 +119,122 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
         }
 
-        .grupo-header {
+        .producto-header {
             background: #f8f9fa;
             padding: 20px;
             border-bottom: 2px solid #e0e0e0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
 
-        .grupo-titulo {
-            font-size: 20px;
-            font-weight: 700;
-            color: #2d3436;
-        }
-
-        .grupo-acciones {
-            display: flex;
-            gap: 10px;
-        }
-
-        .btn-icon {
-            padding: 8px 12px;
-            font-size: 12px;
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-
-        .btn-icon:hover {
-            background: #f8f9fa;
-        }
-
-        .btn-danger {
-            color: #d63031;
-            border-color: #d63031;
-        }
-
-        .btn-success {
-            color: #00b894;
-            border-color: #00b894;
-        }
-
-        .productos-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 15px;
-            padding: 20px;
-        }
-
-        .producto-item {
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 15px;
-            position: relative;
-        }
-
-        .producto-item.mejor-precio {
-            border-color: #00b894;
-            background: #e8f8f5;
-        }
-
-        .establecimiento {
-            font-size: 16px;
+        .producto-nombre {
+            font-size: 18px;
             font-weight: 700;
             color: #2d3436;
             margin-bottom: 8px;
         }
 
-        .nombre-producto {
+        .producto-meta {
             font-size: 13px;
             color: #636e72;
-            margin-bottom: 10px;
-        }
-
-        .precio {
-            font-size: 24px;
-            font-weight: 800;
-            color: #00b894;
-            margin-bottom: 10px;
-        }
-
-        .producto-meta {
-            font-size: 11px;
-            color: #999;
-            margin-bottom: 10px;
-        }
-
-        .producto-acciones {
             display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .producto-meta span {
+            background: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .precios-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+            padding: 20px;
+        }
+
+        .precio-item {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        .precio-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .precio-item.mejor-precio {
+            border-color: #00b894;
+            background: linear-gradient(135deg, #e8f8f5 0%, #f0fdf9 100%);
+        }
+
+        .mejor-precio-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #00b894;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .establecimiento {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2d3436;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
             gap: 8px;
         }
 
-        .btn-sm {
-            padding: 6px 12px;
+        .plu-badge {
             font-size: 11px;
-            border-radius: 6px;
-            border: 1px solid #ddd;
-            background: white;
-            cursor: pointer;
+            background: #dfe6e9;
+            color: #2d3436;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-weight: 600;
         }
 
-        .btn-sm:hover {
-            background: #f8f9fa;
+        .precio-valor {
+            font-size: 36px;
+            font-weight: 800;
+            color: #00b894;
+            margin-bottom: 12px;
         }
 
-        .grupo-footer {
+        .precio-info {
+            font-size: 12px;
+            color: #636e72;
+            margin-bottom: 4px;
+        }
+
+        .fecha-info {
+            font-size: 11px;
+            color: #999;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .fecha-vigente {
+            color: #00b894;
+            font-weight: 600;
+        }
+
+        .fecha-vieja {
+            color: #d63031;
+            font-weight: 600;
+        }
+
+        .producto-footer {
             padding: 15px 20px;
             background: #f8f9fa;
             border-top: 1px solid #e0e0e0;
@@ -189,326 +244,316 @@
         }
 
         .ahorro-info {
-            font-size: 14px;
+            font-size: 16px;
             color: #00b894;
-            font-weight: 600;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            font-size: 20px;
             font-weight: 700;
-            margin-bottom: 20px;
         }
 
-        .form-group {
+        .ahorro-destacado {
+            font-size: 20px;
+            color: #d63031;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #636e72;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #00b894;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-top: 15px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state .icon {
+            font-size: 64px;
             margin-bottom: 15px;
         }
 
-        .form-group label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 5px;
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #636e72;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+        }
+
+        .diferencia-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
             font-size: 13px;
+            font-weight: 700;
         }
 
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+        .diferencia-alta {
+            background: #ffe5e5;
+            color: #d63031;
         }
 
-        .modal-footer {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
+        .diferencia-media {
+            background: #fff3cd;
+            color: #f39c12;
         }
 
-        .btn-cancel {
-            background: #dfe6e9;
-            color: #2d3436;
+        .diferencia-baja {
+            background: #d1f2eb;
+            color: #00b894;
         }
     </style>
 </head>
 
 <body>
     <div class="header">
-        <h1>💰 Comparador de Precios</h1>
-        <p>Edita, vincula y compara productos entre supermercados</p>
+        <h1>💰 Comparador de Precios LecFac</h1>
+        <p>Compara precios del mismo producto en diferentes supermercados</p>
     </div>
 
     <div class="container">
         <!-- Barra de herramientas -->
         <div class="toolbar">
-            <input type="text" class="search-box" placeholder="🔍 Buscar producto..." id="searchInput">
-            <button class="btn btn-primary" onclick="crearNuevoGrupo()">
-                ➕ Crear grupo de comparación
-            </button>
-            <button class="btn btn-primary" onclick="cargarGrupos()">
+            <input type="text" class="search-box" placeholder="🔍 Buscar producto por nombre, marca o código..."
+                id="searchInput" onkeyup="filtrarProductos()">
+            <button class="btn btn-primary" onclick="cargarProductos()">
                 🔄 Refrescar
             </button>
         </div>
 
-        <!-- Lista de grupos comparables -->
-        <div id="gruposContainer">
+        <!-- Estadísticas -->
+        <div class="stats-bar" id="statsBar" style="display: none;">
+            <div class="stat-card">
+                <h3 id="stat-productos">0</h3>
+                <p>Productos Comparables</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-establecimientos">0</h3>
+                <p>Supermercados</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="stat-ahorro">0%</h3>
+                <p>Ahorro Promedio</p>
+            </div>
+        </div>
+
+        <!-- Lista de productos -->
+        <div id="productosContainer">
             <div class="loading">Cargando productos...</div>
-        </div>
-    </div>
-
-    <!-- Modal: Editar Producto -->
-    <div class="modal" id="modalEditarProducto">
-        <div class="modal-content">
-            <div class="modal-header">✏️ Editar Producto</div>
-
-            <div class="form-group">
-                <label>Nombre del producto</label>
-                <input type="text" id="edit_nombre" placeholder="LECHE ALQUERIA 1L">
-            </div>
-
-            <div class="form-group">
-                <label>Marca</label>
-                <input type="text" id="edit_marca" placeholder="ALQUERIA">
-            </div>
-
-            <div class="form-group">
-                <label>Código EAN</label>
-                <input type="text" id="edit_ean" placeholder="7702001234567">
-            </div>
-
-            <div class="form-group">
-                <label>Precio</label>
-                <input type="number" id="edit_precio" placeholder="5200">
-            </div>
-
-            <div class="modal-footer">
-                <button class="btn btn-cancel" onclick="cerrarModal('modalEditarProducto')">
-                    Cancelar
-                </button>
-                <button class="btn btn-primary" onclick="guardarEdicion()">
-                    💾 Guardar cambios
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal: Vincular Productos -->
-    <div class="modal" id="modalVincular">
-        <div class="modal-content">
-            <div class="modal-header">🔗 Vincular Producto al Grupo</div>
-
-            <div class="form-group">
-                <label>Buscar producto</label>
-                <input type="text" id="vincular_busqueda" placeholder="Buscar..." onkeyup="buscarProductosVincular()">
-            </div>
-
-            <div id="resultadosVincular" style="max-height: 300px; overflow-y: auto;">
-                <!-- Lista de productos disponibles -->
-            </div>
-
-            <div class="modal-footer">
-                <button class="btn btn-cancel" onclick="cerrarModal('modalVincular')">
-                    Cancelar
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal: Crear Grupo Nuevo -->
-    <div class="modal" id="modalCrearGrupo">
-        <div class="modal-content">
-            <div class="modal-header">➕ Crear Grupo de Comparación</div>
-
-            <div class="form-group">
-                <label>Nombre del grupo</label>
-                <input type="text" id="nuevo_grupo_nombre" placeholder="LECHE ALQUERIA 1L">
-            </div>
-
-            <div class="form-group">
-                <label>Seleccionar productos</label>
-                <input type="text" id="nuevo_grupo_busqueda" placeholder="Buscar productos..."
-                    onkeyup="buscarProductosNuevo()">
-            </div>
-
-            <div id="productosSeleccionados">
-                <!-- Productos seleccionados -->
-            </div>
-
-            <div id="resultadosBusquedaNuevo" style="max-height: 300px; overflow-y: auto;">
-                <!-- Resultados de búsqueda -->
-            </div>
-
-            <div class="modal-footer">
-                <button class="btn btn-cancel" onclick="cerrarModal('modalCrearGrupo')">
-                    Cancelar
-                </button>
-                <button class="btn btn-primary" onclick="guardarNuevoGrupo()">
-                    💾 Crear grupo
-                </button>
-            </div>
         </div>
     </div>
 
     <script>
         const API_BASE = `https://${window.location.host}`;
-        let grupos = [];
-        let productoEditando = null;
-        let grupoVinculando = null;
-        let productosSeleccionadosNuevo = [];
+        let productosOriginales = [];
+        let productosFiltrados = [];
 
-        // Cargar grupos al iniciar
-        document.addEventListener('DOMContentLoaded', cargarGrupos);
+        // Cargar productos al iniciar
+        document.addEventListener('DOMContentLoaded', cargarProductos);
 
-        async function cargarGrupos() {
+        async function cargarProductos() {
+            const container = document.getElementById('productosContainer');
+            container.innerHTML = '<div class="loading">Cargando productos...</div>';
+
             try {
-                const response = await fetch(`${API_BASE}/api/comparador/grupos`);
+                console.log('🔍 Cargando desde:', `${API_BASE}/api/comparador/precios`);
+
+                const response = await fetch(`${API_BASE}/api/comparador/precios`);
                 const data = await response.json();
 
-                if (data.success) {
-                    grupos = data.grupos;
-                    renderizarGrupos();
+                console.log('📊 Respuesta API:', data);
+
+                if (data.success && data.productos) {
+                    productosOriginales = data.productos;
+                    productosFiltrados = productosOriginales;
+
+                    // Actualizar estadísticas
+                    if (data.estadisticas) {
+                        document.getElementById('stat-productos').textContent = data.estadisticas.total_productos;
+                        document.getElementById('stat-establecimientos').textContent = data.estadisticas.total_establecimientos;
+                        document.getElementById('stat-ahorro').textContent = data.estadisticas.ahorro_promedio + '%';
+                        document.getElementById('statsBar').style.display = 'grid';
+                    }
+
+                    renderizarProductos();
+                } else {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">📦</div>
+                            <h3>No hay productos para comparar</h3>
+                            <p>Los productos aparecerán aquí cuando tengan precios en múltiples supermercados</p>
+                        </div>
+                    `;
                 }
             } catch (error) {
-                console.error('Error:', error);
+                console.error('❌ Error:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <h3>Error al cargar productos</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
             }
         }
 
-        function renderizarGrupos() {
-            const container = document.getElementById('gruposContainer');
+        function renderizarProductos() {
+            const container = document.getElementById('productosContainer');
 
-            if (grupos.length === 0) {
-                container.innerHTML = '<div class="empty">No hay productos para comparar</div>';
+            if (productosFiltrados.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">🔍</div>
+                        <h3>No se encontraron productos</h3>
+                        <p>Intenta con otro término de búsqueda</p>
+                    </div>
+                `;
                 return;
             }
 
             let html = '';
 
-            grupos.forEach(grupo => {
-                const precios = grupo.productos.map(p => p.precio);
+            productosFiltrados.forEach(producto => {
+                if (!producto.precios || producto.precios.length === 0) return;
+
+                // Solo mostrar productos con 2+ precios
+                if (producto.precios.length < 2) return;
+
+                const precios = producto.precios.map(p => p.precio);
                 const precioMin = Math.min(...precios);
                 const precioMax = Math.max(...precios);
                 const diferencia = precioMax - precioMin;
+                const porcentajeDif = precioMax > 0 ? ((diferencia / precioMax) * 100).toFixed(1) : 0;
+
+                let claseDiferencia = 'diferencia-baja';
+                if (porcentajeDif > 20) claseDiferencia = 'diferencia-alta';
+                else if (porcentajeDif > 10) claseDiferencia = 'diferencia-media';
 
                 html += `
-                    <div class="grupo-card">
-                        <div class="grupo-header">
-                            <div class="grupo-titulo">${grupo.nombre}</div>
-                            <div class="grupo-acciones">
-                                <button class="btn-icon btn-success" onclick="vincularProducto('${grupo.id}')">
-                                    🔗 Vincular
-                                </button>
-                                <button class="btn-icon btn-danger" onclick="desvincularGrupo('${grupo.id}')">
-                                    ❌ Separar grupo
-                                </button>
+                    <div class="producto-card">
+                        <div class="producto-header">
+                            <div class="producto-nombre">${producto.nombre || 'Producto sin nombre'}</div>
+                            <div class="producto-meta">
+                                ${producto.codigo_ean ? `<span>📊 EAN: ${producto.codigo_ean}</span>` : ''}
+                                ${producto.marca ? `<span>🏷️ ${producto.marca}</span>` : ''}
+                                ${producto.categoria ? `<span>📁 ${producto.categoria}</span>` : ''}
+                                <span class="diferencia-badge ${claseDiferencia}">
+                                    Diferencia: ${porcentajeDif}%
+                                </span>
                             </div>
                         </div>
 
-                        <div class="productos-grid">
-                            ${grupo.productos.map(prod => {
-                    const esMejor = prod.precio === precioMin && grupo.productos.length > 1;
+                        <div class="precios-grid">
+                            ${producto.precios.map(precio => {
+                    const esMejor = precio.precio === precioMin && producto.precios.length > 1;
+                    const diasDesde = calcularDias(precio.fecha);
+                    const esVigente = diasDesde <= 30;
+
                     return `
-                                    <div class="producto-item ${esMejor ? 'mejor-precio' : ''}">
-                                        <div class="establecimiento">🏪 ${prod.establecimiento}</div>
-                                        <div class="nombre-producto">${prod.nombre}</div>
-                                        <div class="precio">$${prod.precio.toLocaleString()}</div>
-                                        <div class="producto-meta">
-                                            ${prod.ean ? `EAN: ${prod.ean}` : 'Sin EAN'}<br>
-                                            Actualizado: ${prod.fecha}
+                                    <div class="precio-item ${esMejor ? 'mejor-precio' : ''}">
+                                        ${esMejor ? '<div class="mejor-precio-badge">💰 MEJOR PRECIO</div>' : ''}
+
+                                        <div class="establecimiento">
+                                            🏪 ${precio.establecimiento}
+                                            ${precio.plu ? `<span class="plu-badge">PLU: ${precio.plu}</span>` : ''}
                                         </div>
-                                        <div class="producto-acciones">
-                                            <button class="btn-sm" onclick="editarProducto(${prod.id})">
-                                                ✏️ Editar
-                                            </button>
-                                            <button class="btn-sm" onclick="quitarDelGrupo('${grupo.id}', ${prod.id})">
-                                                🗑️ Quitar
-                                            </button>
+
+                                        <div class="precio-valor">
+                                            $${precio.precio.toLocaleString()}
+                                        </div>
+
+                                        <div class="precio-info">
+                                            ${precio.veces_visto ? `Reportado ${precio.veces_visto}x` : 'Primera vez'}
+                                        </div>
+
+                                        <div class="fecha-info ${esVigente ? 'fecha-vigente' : 'fecha-vieja'}">
+                                            📅 ${precio.fecha || 'Sin fecha'}
+                                            ${diasDesde !== null ? ` (${formatearDias(diasDesde)})` : ''}
+                                            ${!esVigente && diasDesde ? ' ⚠️ Precio desactualizado' : ''}
                                         </div>
                                     </div>
                                 `;
                 }).join('')}
                         </div>
 
-                        <div class="grupo-footer">
-                            <div class="ahorro-info">
-                                ${diferencia > 0 ? `💰 Ahorro potencial: $${diferencia.toLocaleString()} (${Math.round((diferencia / precioMax) * 100)}%)` : 'Mismo precio en todas las tiendas'}
+                        <div class="producto-footer">
+                            <div class="ahorro-info ${diferencia > 1000 ? 'ahorro-destacado' : ''}">
+                                ${diferencia > 0 ?
+                        `💰 Ahorro comprando en ${producto.precios.find(p => p.precio === precioMin)?.establecimiento}: $${diferencia.toLocaleString()} (${porcentajeDif}%)`
+                        : '✅ Mismo precio en todas las tiendas'}
                             </div>
-                            <div>
-                                ${grupo.productos.length} supermercados
+                            <div style="color: #636e72; font-size: 13px;">
+                                ${producto.precios.length} supermercados
                             </div>
                         </div>
                     </div>
                 `;
             });
 
-            container.innerHTML = html;
+            container.innerHTML = html || `
+                <div class="empty-state">
+                    <div class="icon">📦</div>
+                    <h3>No hay productos con múltiples precios</h3>
+                    <p>Los productos necesitan tener precios en al menos 2 supermercados diferentes</p>
+                </div>
+            `;
         }
 
-        function editarProducto(productoId) {
-            // TODO: Cargar datos del producto y abrir modal
-            document.getElementById('modalEditarProducto').classList.add('active');
+        function filtrarProductos() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            if (!searchTerm) {
+                productosFiltrados = productosOriginales;
+            } else {
+                productosFiltrados = productosOriginales.filter(p =>
+                    (p.nombre || '').toLowerCase().includes(searchTerm) ||
+                    (p.codigo_ean || '').includes(searchTerm) ||
+                    (p.marca || '').toLowerCase().includes(searchTerm) ||
+                    (p.categoria || '').toLowerCase().includes(searchTerm)
+                );
+            }
+
+            renderizarProductos();
         }
 
-        function vincularProducto(grupoId) {
-            grupoVinculando = grupoId;
-            document.getElementById('modalVincular').classList.add('active');
-        }
-
-        function quitarDelGrupo(grupoId, productoId) {
-            if (confirm('¿Quitar este producto del grupo?')) {
-                // TODO: API call para quitar
-                console.log('Quitar', productoId, 'del grupo', grupoId);
+        function calcularDias(fechaStr) {
+            if (!fechaStr) return null;
+            try {
+                const fecha = new Date(fechaStr);
+                const hoy = new Date();
+                const diff = Math.abs(hoy - fecha);
+                return Math.ceil(diff / (1000 * 60 * 60 * 24));
+            } catch (e) {
+                return null;
             }
         }
 
-        function desvincularGrupo(grupoId) {
-            if (confirm('¿Separar todos los productos de este grupo?')) {
-                // TODO: API call para desvincular
-                console.log('Desvincular grupo', grupoId);
-            }
-        }
-
-        function crearNuevoGrupo() {
-            productosSeleccionadosNuevo = [];
-            document.getElementById('modalCrearGrupo').classList.add('active');
-        }
-
-        function cerrarModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
-
-        async function guardarEdicion() {
-            // TODO: Implementar guardado
-            alert('Guardado exitoso');
-            cerrarModal('modalEditarProducto');
-            cargarGrupos();
+        function formatearDias(dias) {
+            if (dias === 0) return 'Hoy';
+            if (dias === 1) return 'Ayer';
+            if (dias <= 7) return `Hace ${dias} días`;
+            if (dias <= 30) return `Hace ${Math.floor(dias / 7)} semanas`;
+            if (dias <= 365) return `Hace ${Math.floor(dias / 30)} meses`;
+            return `Hace ${Math.floor(dias / 365)} años`;
         }
     </script>
 </body>
