@@ -230,6 +230,17 @@
             color: #333;
         }
 
+        /* ✅ NUEVO BADGE PARA CÓDIGO LECFAC */
+        .badge-lecfac {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            color: #1976d2;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            border: 2px solid #90caf9;
+        }
+
         .grupo-similitud {
             background: #fff3cd;
             color: #856404;
@@ -239,7 +250,6 @@
             font-weight: 600;
         }
 
-        /* 🆕 ESTILOS PARA CHECKBOXES */
         .producto-item {
             margin: 10px 0;
             border: 2px solid #e0e0e0;
@@ -383,7 +393,6 @@
             transform: none;
         }
 
-        /* MODAL DE CONFIRMACIÓN */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -530,7 +539,6 @@
             margin-bottom: 20px;
         }
 
-        /* RESTO DE ESTILOS ORIGINALES (alertas, modales, etc.) */
         .alert {
             padding: 15px 20px;
             border-radius: 8px;
@@ -605,7 +613,6 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
         }
 
-        /* Modal de edición de productos */
         #modalEdicionProducto {
             display: none;
             position: fixed;
@@ -714,7 +721,7 @@
         <div class="header">
             <div>
                 <h1>🔗 Consolidación de Productos</h1>
-                <p>Unifica productos duplicados en el catálogo global</p>
+                <p>Unifica productos duplicados usando códigos LecFac</p>
             </div>
             <a href="/admin" class="btn-back">← Volver al Admin</a>
         </div>
@@ -726,11 +733,15 @@
 
             <!-- Búsqueda -->
             <div class="search-section">
-                <h2>🔍 Buscar Duplicados</h2>
+                <h2>🔍 Buscar Productos por Código LecFac</h2>
                 <div class="search-controls">
-                    <input type="text" id="search-ean" class="search-input" placeholder="Buscar por código EAN...">
+                    <input type="text" id="search-codigo-lecfac" class="search-input"
+                        placeholder="Buscar por código LecFac (ej: lf_banano-granel)...">
                     <input type="text" id="search-nombre" class="search-input" placeholder="Buscar por nombre...">
-                    <button class="btn btn-primary" onclick="buscarDuplicados()">🔍 Buscar</button>
+                    <button class="btn btn-primary" onclick="buscarPorCodigoLecfac()">🔍 Buscar por Código
+                        LecFac</button>
+                    <button class="btn btn-success" onclick="buscarDuplicadosPAPA()">🍌 Detectar Duplicados
+                        PAPA</button>
                     <button class="btn btn-warning" onclick="cargarTodos()">📋 Cargar Todos</button>
                 </div>
             </div>
@@ -744,6 +755,10 @@
                 <div class="stat-item">
                     <div class="stat-value" id="total-productos">0</div>
                     <div class="stat-label">Productos afectados</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="total-papa">0</div>
+                    <div class="stat-label">Productos PAPA</div>
                 </div>
             </div>
 
@@ -787,6 +802,7 @@
                 <p><strong>Nombre:</strong> <span id="edit_nombre_actual"></span></p>
                 <p><strong>EAN:</strong> <span id="edit_ean_actual"></span></p>
                 <p><strong>Marca:</strong> <span id="edit_marca_actual"></span></p>
+                <p><strong>Código LecFac:</strong> <span id="edit_codigo_lecfac_actual"></span></p>
                 <p><strong>Precio:</strong> <span id="edit_precio_actual"></span></p>
                 <p><strong>Reportes:</strong> <span id="edit_reportes"></span></p>
                 <div id="edit_establecimientos_lista"></div>
@@ -857,19 +873,147 @@
         // 🆕 CARGAR DUPLICADOS AL INICIAR
         // ==========================================
         window.addEventListener('DOMContentLoaded', () => {
-            console.log('✅ Consolidación de Productos cargado');
-            cargarTodos();
+            console.log('✅ Consolidación de Productos cargado (con Código LecFac)');
+            buscarDuplicadosPAPA();
         });
 
         // ==========================================
-        // 🆕 FUNCIONES DE BÚSQUEDA
+        // 🆕 BUSCAR POR CÓDIGO LECFAC
+        // ==========================================
+        async function buscarPorCodigoLecfac() {
+            const codigoLecfac = document.getElementById('search-codigo-lecfac').value.trim();
+
+            if (!codigoLecfac) {
+                alert('⚠️ Ingresa un código LecFac para buscar');
+                return;
+            }
+
+            console.log('🔍 Buscando productos con código LecFac:', codigoLecfac);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('duplicados-container').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_URL}/api/v2/productos?busqueda=${encodeURIComponent(codigoLecfac)}&limite=500`);
+                const data = await response.json();
+
+                console.log('✅ Productos obtenidos:', data);
+
+                if (data.success && data.productos && data.productos.length > 0) {
+                    // Filtrar solo los que tienen ese codigo_lecfac exacto
+                    const productosFiltrados = data.productos.filter(p => p.codigo_lecfac === codigoLecfac);
+
+                    if (productosFiltrados.length > 0) {
+                        // Crear un grupo único
+                        const grupos = [{
+                            nombre_grupo: codigoLecfac,
+                            codigo_lecfac: codigoLecfac,
+                            productos: productosFiltrados,
+                            similitud: 100
+                        }];
+
+                        todosLosDuplicados = grupos;
+                        renderizarDuplicados(grupos);
+
+                        document.getElementById('total-grupos').textContent = '1';
+                        document.getElementById('total-productos').textContent = productosFiltrados.length;
+                        document.getElementById('total-papa').textContent = productosFiltrados.length;
+                    } else {
+                        document.getElementById('empty-state').style.display = 'block';
+                        document.getElementById('total-grupos').textContent = '0';
+                        document.getElementById('total-productos').textContent = '0';
+                    }
+                } else {
+                    document.getElementById('empty-state').style.display = 'block';
+                    document.getElementById('total-grupos').textContent = '0';
+                    document.getElementById('total-productos').textContent = '0';
+                }
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                mostrarAlerta('Error al buscar productos: ' + error.message, 'danger');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // 🆕 BUSCAR DUPLICADOS PAPA (productos con codigo_lecfac)
+        // ==========================================
+        async function buscarDuplicadosPAPA() {
+            console.log('🔍 Buscando productos PAPA (con código LecFac)...');
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('duplicados-container').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_URL}/api/v2/productos?limite=1000`);
+                const data = await response.json();
+
+                console.log('📊 Productos obtenidos:', data.productos.length);
+
+                // Filtrar solo productos PAPA (que tengan codigo_lecfac)
+                const productosPAPA = data.productos.filter(p => p.codigo_lecfac);
+
+                console.log(`✅ ${productosPAPA.length} productos PAPA encontrados`);
+
+                // Agrupar por codigo_lecfac
+                const gruposPorCodigo = {};
+                productosPAPA.forEach(p => {
+                    const codigo = p.codigo_lecfac;
+                    if (!gruposPorCodigo[codigo]) {
+                        gruposPorCodigo[codigo] = [];
+                    }
+                    gruposPorCodigo[codigo].push(p);
+                });
+
+                // Filtrar solo grupos con más de 1 producto
+                const grupos = Object.entries(gruposPorCodigo)
+                    .filter(([codigo, productos]) => productos.length > 1)
+                    .map(([codigo, productos]) => ({
+                        nombre_grupo: codigo,
+                        codigo_lecfac: codigo,
+                        productos: productos,
+                        similitud: 100
+                    }))
+                    .sort((a, b) => b.productos.length - a.productos.length);
+
+                console.log(`✅ ${grupos.length} grupos de duplicados PAPA detectados`);
+
+                if (grupos.length > 0) {
+                    todosLosDuplicados = grupos;
+                    renderizarDuplicados(grupos);
+
+                    const totalProductos = grupos.reduce((sum, g) => sum + g.productos.length, 0);
+                    document.getElementById('total-grupos').textContent = grupos.length;
+                    document.getElementById('total-productos').textContent = totalProductos;
+                    document.getElementById('total-papa').textContent = productosPAPA.length;
+                } else {
+                    document.getElementById('empty-state').style.display = 'block';
+                    document.getElementById('total-grupos').textContent = '0';
+                    document.getElementById('total-productos').textContent = '0';
+                    document.getElementById('total-papa').textContent = productosPAPA.length;
+                }
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                mostrarAlerta('Error al cargar duplicados PAPA: ' + error.message, 'danger');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // 🆕 CARGAR TODOS (comportamiento original)
         // ==========================================
         async function cargarTodos() {
             await buscarDuplicados();
         }
 
         async function buscarDuplicados() {
-            const ean = document.getElementById('search-ean').value.trim();
+            const ean = document.getElementById('search-ean')?.value.trim() || '';
             const nombre = document.getElementById('search-nombre').value.trim();
 
             console.log('🔍 Buscando duplicados...', { ean, nombre });
@@ -892,7 +1036,6 @@
                     todosLosDuplicados = data.grupos;
                     renderizarDuplicados(data.grupos);
 
-                    // Actualizar stats
                     document.getElementById('total-grupos').textContent = data.grupos.length;
                     const totalProductos = data.grupos.reduce((sum, g) => sum + g.productos.length, 0);
                     document.getElementById('total-productos').textContent = totalProductos;
@@ -911,7 +1054,7 @@
         }
 
         // ==========================================
-        // 🆕 RENDERIZAR GRUPOS CON CHECKBOXES
+        // 🆕 RENDERIZAR GRUPOS CON CÓDIGO LECFAC
         // ==========================================
         function renderizarDuplicados(grupos) {
             const container = document.getElementById('duplicados-container');
@@ -923,12 +1066,17 @@
                 grupoDiv.className = 'grupo-duplicado';
                 grupoDiv.id = `grupo-${grupoIndex}`;
 
-                // Header
+                // Header con código LecFac
                 const header = document.createElement('div');
                 header.className = 'grupo-header';
                 header.innerHTML = `
-                    <div class="grupo-titulo">${grupo.nombre_grupo}</div>
-                    <div class="grupo-similitud">${grupo.similitud}% similitud</div>
+                    <div class="grupo-titulo">
+                        ${grupo.codigo_lecfac ?
+                        `<span class="badge-lecfac">📋 ${grupo.codigo_lecfac}</span>` :
+                        grupo.nombre_grupo
+                    }
+                    </div>
+                    <div class="grupo-similitud">${grupo.productos.length} productos</div>
                 `;
                 grupoDiv.appendChild(header);
 
@@ -952,16 +1100,20 @@
                                     <div class="producto-detalles">
                                         <span class="badge badge-id">ID: #${producto.id}</span>
                                         ${producto.codigo_ean ?
-                            `<span class="badge badge-ean">Código: ${producto.codigo_ean}</span>` :
+                            `<span class="badge badge-ean">EAN: ${producto.codigo_ean}</span>` :
                             '<span class="badge badge-no-ean">Sin EAN</span>'
                         }
-                                        <span class="badge badge-lugar">Lugar: ${producto.establecimiento || 'Varios'}</span>
-                                        <span class="badge badge-precio">Precio: $${formatearNumero(producto.precio_promedio || 0)}</span>
+                                        ${producto.codigo_lecfac ?
+                            `<span class="badge-lecfac">📋 ${producto.codigo_lecfac}</span>` :
+                            ''
+                        }
+                                        <span class="badge badge-lugar">🏪 ${producto.establecimiento || 'Varios'}</span>
+                                        <span class="badge badge-precio">💰 $${formatearNumero(producto.precio_promedio || 0)}</span>
                                         ${producto.codigo_ean && producto.codigo_ean.length >= 8 ?
                             '<span class="badge badge-success">✅ EAN</span>' :
                             ''
                         }
-                                        <span class="badge badge-reportes">${producto.veces_reportado}x reportado</span>
+                                        <span class="badge badge-reportes">${producto.veces_reportado || 0}x reportado</span>
                                     </div>
                                 </div>
                             </label>
@@ -989,24 +1141,22 @@
                 container.appendChild(grupoDiv);
             });
 
-            console.log('✅ Todos los duplicados:', todosLosDuplicados);
+            console.log('✅ Grupos renderizados con código LecFac');
         }
 
         // ==========================================
-        // 🆕 VALIDAR SELECCIÓN (al menos 1 checked)
+        // VALIDAR SELECCIÓN
         // ==========================================
         function validarSeleccion(grupoIndex) {
             const checkboxes = document.querySelectorAll(`input[data-grupo="${grupoIndex}"]`);
             const seleccionados = Array.from(checkboxes).filter(cb => cb.checked);
 
-            // Prevenir deseleccionar todos
             if (seleccionados.length === 0) {
                 event.target.checked = true;
                 alert('⚠️ Debes mantener al menos un producto seleccionado');
                 return;
             }
 
-            // Actualizar contador
             const countSpan = document.getElementById(`count-${grupoIndex}`);
             if (countSpan) {
                 countSpan.textContent = `${seleccionados.length} de ${checkboxes.length} seleccionado(s)`;
@@ -1014,7 +1164,7 @@
         }
 
         // ==========================================
-        // 🆕 PREPARAR CONSOLIDACIÓN (solo seleccionados)
+        // PREPARAR CONSOLIDACIÓN
         // ==========================================
         function prepararConsolidacion(grupoIndex) {
             console.log('🔄 Preparando consolidación del grupo:', grupoIndex);
@@ -1025,7 +1175,6 @@
                 return;
             }
 
-            // Obtener productos seleccionados
             const checkboxes = document.querySelectorAll(`input[data-grupo="${grupoIndex}"]`);
             const productosSeleccionados = grupo.productos.filter(producto => {
                 const checkbox = document.querySelector(`input[data-producto-id="${producto.id}"]`);
@@ -1039,26 +1188,22 @@
                 return;
             }
 
-            // Identificar maestro (preferir EAN)
             const productoMaestro = productosSeleccionados.find(p => p.codigo_ean && p.codigo_ean.length >= 8)
                 || productosSeleccionados[0];
 
             const productosDuplicados = productosSeleccionados.filter(p => p.id !== productoMaestro.id);
 
-            // Guardar para confirmar
             consolidacionPendiente = {
                 maestro: productoMaestro,
                 duplicados: productosDuplicados
             };
 
-            console.log('✅ Consolidación pendiente preparada:', consolidacionPendiente);
-
-            // Mostrar modal
+            console.log('✅ Consolidación pendiente:', consolidacionPendiente);
             mostrarModalConfirmacion(productoMaestro, productosDuplicados);
         }
 
         // ==========================================
-        // 🆕 MODAL DE CONFIRMACIÓN
+        // MODAL DE CONFIRMACIÓN
         // ==========================================
         function mostrarModalConfirmacion(maestro, duplicados) {
             const modalBody = document.getElementById('modal-body');
@@ -1069,7 +1214,8 @@
                     <div class="producto-preview maestro">
                         <strong>${maestro.nombre}</strong>
                         <div>ID: #${maestro.id} | ${maestro.codigo_ean || 'Sin EAN'}</div>
-                        <div>Establecimiento: ${maestro.establecimiento || 'Varios'}</div>
+                        ${maestro.codigo_lecfac ? `<div>📋 Código LecFac: ${maestro.codigo_lecfac}</div>` : ''}
+                        <div>🏪 ${maestro.establecimiento || 'Varios'}</div>
                     </div>
                 </div>
 
@@ -1079,7 +1225,8 @@
                         <div class="producto-preview duplicado">
                             <strong>${d.nombre}</strong>
                             <div>ID: #${d.id} | ${d.codigo_ean || 'Sin EAN'}</div>
-                            <div>Establecimiento: ${d.establecimiento || 'Varios'}</div>
+                            ${d.codigo_lecfac ? `<div>📋 Código LecFac: ${d.codigo_lecfac}</div>` : ''}
+                            <div>🏪 ${d.establecimiento || 'Varios'}</div>
                         </div>
                     `).join('')}
                 </div>
@@ -1093,7 +1240,7 @@
         }
 
         // ==========================================
-        // 🆕 CONFIRMAR Y ENVIAR AL BACKEND
+        // CONFIRMAR CONSOLIDACIÓN
         // ==========================================
         async function confirmarConsolidacion() {
             if (!consolidacionPendiente) {
@@ -1103,7 +1250,7 @@
 
             const { maestro, duplicados } = consolidacionPendiente;
 
-            console.log('🔄 Iniciating consolidación:', {
+            console.log('🔄 Iniciando consolidación:', {
                 maestro: maestro.id,
                 duplicados: duplicados.map(d => d.id)
             });
@@ -1139,9 +1286,8 @@
 
                     cerrarModal();
 
-                    // Recargar duplicados
                     setTimeout(() => {
-                        buscarDuplicados();
+                        buscarDuplicadosPAPA();
                     }, 1500);
                 } else {
                     console.error('❌ Error response:', data);
@@ -1160,53 +1306,40 @@
             productoActualEdicion = { id: productoId };
 
             try {
-                const response = await fetch(`${API_URL}/admin/productos/${productoId}/detalle`);
-                const data = await response.json();
+                const response = await fetch(`${API_URL}/api/v2/productos/${productoId}`);
+                const producto = await response.json();
 
-                if (!data.success) {
-                    alert('Error al obtener detalles del producto');
-                    return;
-                }
-
-                // Mostrar modal
                 document.getElementById('modalEdicionProducto').classList.add('active');
 
-                // Llenar información actual
-                document.getElementById('edit_nombre_actual').textContent = data.producto.nombre || 'N/A';
-                document.getElementById('edit_ean_actual').textContent = data.producto.codigo_ean || 'Sin EAN';
-                document.getElementById('edit_marca_actual').textContent = data.producto.marca || 'N/A';
-                document.getElementById('edit_precio_actual').textContent = `$${formatearNumero(data.producto.precio_promedio)}`;
-                document.getElementById('edit_reportes').textContent = `${data.producto.total_reportes}x`;
+                document.getElementById('edit_nombre_actual').textContent = producto.nombre || 'N/A';
+                document.getElementById('edit_ean_actual').textContent = producto.codigo_ean || 'Sin EAN';
+                document.getElementById('edit_marca_actual').textContent = producto.marca || 'N/A';
+                document.getElementById('edit_codigo_lecfac_actual').textContent = producto.codigo_lecfac || 'Sin código LecFac';
+                document.getElementById('edit_precio_actual').textContent = `$${formatearNumero(producto.precio_promedio || 0)}`;
+                document.getElementById('edit_reportes').textContent = `${producto.total_reportes || producto.veces_comprado || 0}x`;
 
-                // Mostrar establecimientos
                 const establecimientosDiv = document.getElementById('edit_establecimientos_lista');
                 establecimientosDiv.innerHTML = '';
 
-                for (const [est, precios] of Object.entries(data.producto.precios_por_establecimiento)) {
-                    const tag = document.createElement('div');
-                    tag.className = 'establecimiento-tag';
-                    tag.innerHTML = `
-                        <span>🏪 ${est}</span>
-                        <span class="establecimiento-precio">$${formatearNumero(precios[0].precio)}</span>
-                    `;
-                    establecimientosDiv.appendChild(tag);
+                if (producto.plus && producto.plus.length > 0) {
+                    producto.plus.forEach(plu => {
+                        const tag = document.createElement('div');
+                        tag.className = 'establecimiento-tag';
+                        tag.innerHTML = `
+                            <span>🏪 ${plu.establecimiento}</span>
+                            <span class="establecimiento-precio">$${formatearNumero(plu.precio)}</span>
+                        `;
+                        establecimientosDiv.appendChild(tag);
+                    });
                 }
 
-                // Prellenar formulario
-                document.getElementById('edit_nombre_completo').value = data.producto.nombre || '';
-                document.getElementById('edit_codigo_ean').value = data.producto.codigo_ean || '';
-                document.getElementById('edit_marca').value = data.producto.marca || '';
-                document.getElementById('edit_categoria').value = data.producto.categoria || '';
+                document.getElementById('edit_nombre_completo').value = producto.nombre || '';
+                document.getElementById('edit_codigo_ean').value = producto.codigo_ean || '';
+                document.getElementById('edit_marca').value = producto.marca || '';
+                document.getElementById('edit_categoria').value = producto.categoria || '';
                 document.getElementById('edit_razon').value = '';
 
-                // Ocultar sugerencia API
                 document.getElementById('seccion_sugerencia_api').style.display = 'none';
-
-                // Si tiene EAN, consultar API
-                if (data.producto.codigo_ean) {
-                    // Comentado para no auto-consultar
-                    // consultarAPI();
-                }
 
             } catch (error) {
                 console.error('Error abriendo modal:', error);
@@ -1319,7 +1452,7 @@
                 if (data.success) {
                     alert('✅ Producto actualizado correctamente');
                     cerrarModalEdicion();
-                    buscarDuplicados();
+                    buscarDuplicadosPAPA();
                 } else {
                     alert(`❌ Error: ${data.message}`);
                 }
@@ -1366,15 +1499,14 @@
         // ==========================================
         // EVENTOS
         // ==========================================
-        document.getElementById('search-ean').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') buscarDuplicados();
+        document.getElementById('search-codigo-lecfac')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') buscarPorCodigoLecfac();
         });
 
         document.getElementById('search-nombre').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') buscarDuplicados();
         });
 
-        // Cerrar modales con ESC
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 cerrarModal();
@@ -1382,7 +1514,7 @@
             }
         });
 
-        console.log('✅ Sistema de consolidación cargado con checkboxes');
+        console.log('✅ Sistema de consolidación cargado con soporte para Código LecFac');
     </script>
 </body>
 

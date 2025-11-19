@@ -1,4 +1,4 @@
-console.log("🚀 Inicializando Gestión de Productos v2.7 - EDICIÓN Y DUPLICADOS CORREGIDOS");
+console.log("🚀 Inicializando Gestión de Productos v2.8 - CÓDIGO LECFAC");
 
 // =============================================================
 // Variables globales
@@ -181,7 +181,7 @@ function mostrarBuscando() {
     if (tbody && tbody.children.length === 1) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 40px;">
+                <td colspan="13" style="text-align: center; padding: 40px;">
                     <div class="loading"></div>
                     <p style="margin-top: 10px;">Buscando productos...</p>
                 </td>
@@ -195,7 +195,7 @@ function mostrarSinResultados(busqueda) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 40px;">
+                <td colspan="13" style="text-align: center; padding: 40px;">
                     <p style="font-size: 18px; margin-bottom: 10px;">
                         No se encontraron productos para: <strong>"${busqueda}"</strong>
                     </p>
@@ -216,7 +216,7 @@ function mostrarError(error) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 40px; color: #dc2626;">
+                <td colspan="13" style="text-align: center; padding: 40px; color: #dc2626;">
                     <p>❌ Error cargando productos</p>
                     <p style="font-size: 14px; color: #666;">${error.message}</p>
                     <button class="btn-primary" onclick="cargarProductos(${paginaActual})" style="margin-top: 10px;">
@@ -229,7 +229,7 @@ function mostrarError(error) {
 }
 
 // =============================================================
-// ⭐ MOSTRAR PRODUCTOS
+// ⭐ MOSTRAR PRODUCTOS - AHORA CON CÓDIGO LECFAC
 // =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
@@ -240,7 +240,7 @@ function mostrarProductos(productos) {
     if (!productos || productos.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 40px;">
+                <td colspan="13" style="text-align: center; padding: 40px;">
                     No hay productos para mostrar
                 </td>
             </tr>
@@ -288,6 +288,12 @@ function mostrarProductos(productos) {
         // Categoría
         const categoriaHTML = p.categoria || '<span style="color: #999;">Sin categoría</span>';
 
+        // ✅ CÓDIGO LECFAC - NUEVO
+        let codigoLecfacHTML = '<span style="color: #999;">-</span>';
+        if (p.codigo_lecfac) {
+            codigoLecfacHTML = `<span class="badge badge-lecfac" style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 0.85em;">${p.codigo_lecfac}</span>`;
+        }
+
         // Estado badges
         const estadoBadges = [];
         if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning">Sin EAN</span>');
@@ -309,6 +315,7 @@ function mostrarProductos(productos) {
                 <td><strong>${p.nombre || '-'}</strong></td>
                 <td>${marcaHTML}</td>
                 <td>${categoriaHTML}</td>
+                <td>${codigoLecfacHTML}</td>
                 <td>${precioHTML}</td>
                 <td>${p.num_establecimientos || 0}</td>
                 <td>${estadoHTML}</td>
@@ -442,7 +449,7 @@ function habilitarCamposEdicion() {
         eanInput.removeAttribute('disabled');
         eanInput.style.background = 'white';
         eanInput.style.cursor = 'text';
-        eanInput.setAttribute('maxlength', '14'); // Para Ara con 0 inicial
+        eanInput.setAttribute('maxlength', '14');
     }
 
     // Habilitar campo nombre
@@ -540,9 +547,6 @@ function calcularDigitoControl(ean12) {
     return modulo === 0 ? 0 : 10 - modulo;
 }
 
-// =============================================================
-// ✅ GUARDAR EDICIÓN - CORREGIDO
-// =============================================================
 // =============================================================
 // ✅ GUARDAR EDICIÓN - CON SOPORTE PARA PLUs
 // =============================================================
@@ -652,7 +656,7 @@ async function guardarEdicion() {
 }
 
 // =============================================================
-// ✅ RECOPILAR PLUs PARA GUARDAR (NUEVA FUNCIÓN)
+// ✅ RECOPILAR PLUs PARA GUARDAR
 // =============================================================
 function recopilarPLUsParaGuardar() {
     const plusItems = document.querySelectorAll('.plu-item');
@@ -660,7 +664,7 @@ function recopilarPLUsParaGuardar() {
     const plus_a_eliminar = [];
 
     plusItems.forEach(item => {
-        const pluId = item.dataset.pluId;  // ID del PLU en BD (si existe)
+        const pluId = item.dataset.pluId;
         const establecimientoSelect = item.querySelector('.plu-establecimiento');
         const codigo = item.querySelector('.plu-codigo')?.value.trim();
         const precio = item.querySelector('.plu-precio')?.value || 0;
@@ -668,7 +672,7 @@ function recopilarPLUsParaGuardar() {
         // Solo agregar si tiene datos válidos
         if (codigo && establecimientoSelect && establecimientoSelect.value) {
             plus.push({
-                id: pluId ? parseInt(pluId) : null,  // null = crear nuevo, número = actualizar
+                id: pluId ? parseInt(pluId) : null,
                 codigo_plu: codigo,
                 establecimiento_id: parseInt(establecimientoSelect.value),
                 precio_unitario: parseFloat(precio)
@@ -680,7 +684,7 @@ function recopilarPLUsParaGuardar() {
 
     return {
         plus,
-        plus_a_eliminar  // Por ahora vacío, en el futuro se pueden marcar PLUs para eliminar
+        plus_a_eliminar
     };
 }
 
@@ -697,7 +701,7 @@ async function marcarRevisado(productoId) {
 
         if (response.ok) {
             alert('✅ Producto marcado como revisado');
-            cargarProductos(); // Recargar tabla
+            cargarProductos();
         } else {
             const error = await response.json();
             alert('Error: ' + error.detail);
@@ -726,7 +730,6 @@ function switchTab(tabName) {
     document.getElementById(`tab-${tabName}`).classList.add('active');
     event.target.classList.add('active');
 
-    // Cargar datos específicos del tab
     if (tabName === 'calidad') {
         cargarAnomalias();
     } else if (tabName === 'duplicados') {
@@ -747,7 +750,6 @@ function toggleProductSelection(id) {
     document.getElementById('btn-fusionar').disabled = selected < 2;
     document.getElementById('btn-deseleccionar').disabled = selected === 0;
 
-    // Habilitar corrección masiva si hay al menos 1 seleccionado
     const btnCorreccion = document.getElementById('btn-correccion-masiva');
     if (btnCorreccion) {
         btnCorreccion.disabled = selected === 0;
@@ -795,7 +797,7 @@ async function eliminarProducto(id, nombre) {
         }
 
         mostrarAlerta('✅ Producto eliminado correctamente', 'success');
-        cargarProductos(paginaActual); // Recargar tabla
+        cargarProductos(paginaActual);
 
     } catch (error) {
         console.error('❌ Error:', error);
@@ -807,7 +809,6 @@ async function eliminarProducto(id, nombre) {
 // FUNCIÓN MOSTRAR ALERTAS
 // =============================================================
 function mostrarAlerta(mensaje, tipo = 'info') {
-    // Buscar contenedor de alertas o crearlo
     let alertContainer = document.getElementById('alert-container');
     if (!alertContainer) {
         alertContainer = document.createElement('div');
@@ -822,7 +823,6 @@ function mostrarAlerta(mensaje, tipo = 'info') {
         document.body.appendChild(alertContainer);
     }
 
-    // Crear alerta
     const alert = document.createElement('div');
     const alertClasses = {
         'success': 'alert-success',
@@ -846,7 +846,6 @@ function mostrarAlerta(mensaje, tipo = 'info') {
 
     alertContainer.appendChild(alert);
 
-    // Auto-remover después de 5 segundos
     setTimeout(() => {
         alert.style.animation = 'slideOut 0.3s ease-out';
         setTimeout(() => alert.remove(), 300);
@@ -930,7 +929,6 @@ function agregarPLU() {
     contenedor.appendChild(pluDiv);
 }
 
-
 // =============================================================
 // CARGAR PLUs DEL PRODUCTO
 // =============================================================
@@ -961,7 +959,6 @@ async function cargarPLUsProducto(productoId) {
         }
 
         producto.plus.forEach((plu, index) => {
-            // ⚠️ CRÍTICO: El ID debe venir de la respuesta del API
             const pluId = plu.id || plu.plu_id || '';
 
             console.log(`   PLU ${index + 1}:`, {
@@ -973,7 +970,7 @@ async function cargarPLUsProducto(productoId) {
 
             const pluDiv = document.createElement('div');
             pluDiv.className = 'plu-item';
-            pluDiv.dataset.pluId = pluId;  // ✅ Guardar ID
+            pluDiv.dataset.pluId = pluId;
 
             const estId = plu.establecimiento_id ||
                 establecimientos.find(e => e.nombre_normalizado === plu.establecimiento)?.id ||
@@ -1027,6 +1024,7 @@ async function cargarPLUsProducto(productoId) {
         contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
     }
 }
+
 // =============================================================
 // AGREGAR PLU EDITABLE
 // =============================================================
@@ -1036,17 +1034,15 @@ async function agregarPLUEditable() {
 
     if (!contenedor) return;
 
-    // Cargar establecimientos
     const respEst = await fetch(`${apiBase}/api/establecimientos`);
     const establecimientos = await respEst.json();
 
-    // Eliminar mensaje de "No hay PLUs" si existe
     const mensaje = contenedor.querySelector('p');
     if (mensaje) mensaje.remove();
 
     const pluDiv = document.createElement('div');
     pluDiv.className = 'plu-item';
-    pluDiv.dataset.pluId = '';  // Vacío = nuevo PLU
+    pluDiv.dataset.pluId = '';
 
     pluDiv.innerHTML = `
         <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px; background: #f0fdf4;">
@@ -1085,6 +1081,7 @@ async function agregarPLUEditable() {
     contenedor.appendChild(pluDiv);
     console.log('✅ Nuevo PLU agregado para edición');
 }
+
 // =============================================================
 // RECOPILAR PLUs DEL FORMULARIO
 // =============================================================
@@ -1117,7 +1114,7 @@ let marcasSugeridas = [];
 let categoriasSugeridas = [];
 
 // =============================================================
-// ✅ CARGAR ANOMALÍAS - CORREGIDO
+// ✅ CARGAR ANOMALÍAS
 // =============================================================
 async function cargarAnomalias() {
     const apiBase = getApiBase();
@@ -1136,7 +1133,6 @@ async function cargarAnomalias() {
         anomaliasCache = data.productos || [];
         const stats = data.estadisticas;
 
-        // Mostrar estadísticas
         container.innerHTML = `
             <div class="stat-card">
                 <div class="stat-value">${stats.total}</div>
@@ -1172,11 +1168,9 @@ async function cargarAnomalias() {
             </div>
         `;
 
-        // Mostrar recomendaciones y lista de problemas
         if (recomendaciones) {
             let html = '';
 
-            // Barra de progreso
             html += `
                 <div style="margin-bottom: 30px;">
                     <h3>📊 Progreso de Calidad</h3>
@@ -1189,7 +1183,6 @@ async function cargarAnomalias() {
                 </div>
             `;
 
-            // Lista de productos problemáticos
             const problematicos = anomaliasCache.filter(p => p.tipo_problema !== 'ok').slice(0, 50);
 
             if (problematicos.length > 0) {
@@ -1262,7 +1255,7 @@ async function cargarAnomalias() {
 }
 
 // =============================================================
-// ✅ DETECTAR DUPLICADOS - CORREGIDO
+// ✅ DETECTAR DUPLICADOS
 // =============================================================
 async function detectarDuplicados() {
     const container = document.getElementById('duplicados-container');
@@ -1284,7 +1277,6 @@ async function detectarDuplicados() {
 
         console.log(`📊 Analizando ${productos.length} productos...`);
 
-        // Agrupar por nombre similar (primeros 15 caracteres)
         const grupos = {};
         productos.forEach(p => {
             if (!p.nombre) return;
@@ -1293,11 +1285,10 @@ async function detectarDuplicados() {
             grupos[nombreBase].push(p);
         });
 
-        // Filtrar grupos con más de 1 producto
         const duplicados = Object.entries(grupos)
             .filter(([key, items]) => items.length > 1)
-            .sort((a, b) => b[1].length - a[1].length) // Más duplicados primero
-            .slice(0, 30); // Top 30
+            .sort((a, b) => b[1].length - a[1].length)
+            .slice(0, 30);
 
         console.log(`✅ Encontrados ${duplicados.length} grupos de duplicados`);
 
@@ -1366,7 +1357,6 @@ async function detectarDuplicados() {
     }
 }
 
-// Alias para compatibilidad
 window.cargarDuplicados = detectarDuplicados;
 
 // =============================================================
@@ -1414,8 +1404,9 @@ async function aplicarCorreccionMasiva() {
         mostrarAlerta(`Error: ${error.message}`, 'error');
     }
 }
+
 // =============================================================
-// CARGAR SUGERENCIAS CLAVES
+// CARGAR SUGERENCIAS
 // =============================================================
 async function cargarSugerencias() {
     const apiBase = getApiBase();
@@ -1471,32 +1462,27 @@ window.detectarDuplicados = detectarDuplicados;
 window.cargarSugerencias = cargarSugerencias;
 window.cargarDuplicados = detectarDuplicados;
 window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
-// Exportar nueva función
 window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
 window.agregarPLUEditable = agregarPLUEditable;
 
 console.log('✅ Funciones cargadas correctamente');
 
 // =============================================================
-// Inicialización para el cargue
+// Inicialización
 // =============================================================
 document.addEventListener("DOMContentLoaded", async function () {
     console.log('🚀 Inicializando aplicación...');
 
-    // Configurar búsqueda en tiempo real
     configurarBuscadorTiempoReal();
 
-    // Permitir paste en el modal
     const modal = document.getElementById('modal-editar');
     if (modal) {
         modal.addEventListener('paste', function (e) {
             e.stopPropagation();
         }, true);
     }
-    // Cargar productos nuevamente
-    await cargarProductos(1);
 
-    // Cargar sugerencias
+    await cargarProductos(1);
     await cargarSugerencias();
 
     console.log("✅ Sistema inicializado correctamente");

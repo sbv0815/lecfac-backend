@@ -1,4 +1,4 @@
-# VERSION: 2024-11-19-CORREGIDO - FIX EAN VACÍO Y DUPLICADOS
+# VERSION: 2024-11-19-CODIGO-LECFAC - Soporte para codigo_lecfac
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -17,7 +17,7 @@ async def listar_productos_v2(
     limite: int = Query(500, ge=1, le=5000),
     busqueda: Optional[str] = None,
 ):
-    """Lista productos con búsqueda"""
+    """Lista productos con búsqueda - INCLUYE codigo_lecfac"""
 
     print("=" * 80)
     print(f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}")
@@ -31,12 +31,14 @@ async def listar_productos_v2(
         search_term = busqueda or search
         final_limit = limite if limite != 500 else limit
 
+        # ✅ AGREGAMOS codigo_lecfac AL SELECT
         query = """
             SELECT
                 pm.id,
                 pm.codigo_ean,
                 pm.nombre_consolidado,
                 pm.marca,
+                pm.codigo_lecfac,
                 COALESCE(c.nombre, 'Sin categoría') as categoria,
                 COUNT(DISTINCT pe.establecimiento_id) as num_establecimientos
             FROM productos_maestros_v2 pm
@@ -52,11 +54,12 @@ async def listar_productos_v2(
                 """
                 (LOWER(pm.nombre_consolidado) LIKE LOWER(%s)
                 OR pm.codigo_ean LIKE %s
-                OR LOWER(pm.marca) LIKE LOWER(%s))
+                OR LOWER(pm.marca) LIKE LOWER(%s)
+                OR pm.codigo_lecfac LIKE %s)
             """
             )
             search_param = f"%{search_term}%"
-            params.extend([search_param, search_param, search_param])
+            params.extend([search_param, search_param, search_param, search_param])
             print(f"🔍 Aplicando búsqueda: '{search_term}'")
 
         if categoria_id:
@@ -66,8 +69,9 @@ async def listar_productos_v2(
         if where_conditions:
             query += " WHERE " + " AND ".join(where_conditions)
 
+        # ✅ AGREGAMOS codigo_lecfac AL GROUP BY
         query += """
-            GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, c.nombre
+            GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac, c.nombre
             ORDER BY pm.id DESC
             LIMIT %s OFFSET %s
         """
@@ -110,14 +114,16 @@ async def listar_productos_v2(
                     }
                 )
 
+            # ✅ INCLUIMOS codigo_lecfac EN LA RESPUESTA
             resultado.append(
                 {
                     "id": producto[0],
                     "codigo_ean": producto[1],
                     "nombre": producto[2],
                     "marca": producto[3],
-                    "categoria": producto[4],
-                    "num_establecimientos": producto[5],
+                    "codigo_lecfac": producto[4],  # ← NUEVO CAMPO
+                    "categoria": producto[5],
+                    "num_establecimientos": producto[6],
                     "plus": plus_info,
                 }
             )
@@ -170,8 +176,8 @@ async def listar_categorias():
 @router.get("/api/v2/productos/{producto_id}")
 async def obtener_producto_individual(producto_id: int):
     """
-    Obtiene UN producto por ID
-    VERSION: 2024-11-19-CORREGIDO
+    Obtiene UN producto por ID - INCLUYE codigo_lecfac
+    VERSION: 2024-11-19-CODIGO-LECFAC
     """
     print(f"📋 [Router] GET producto ID: {producto_id}")
 
@@ -180,6 +186,7 @@ async def obtener_producto_individual(producto_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # ✅ AGREGAMOS codigo_lecfac AL SELECT
         cursor.execute(
             """
             SELECT
@@ -190,7 +197,8 @@ async def obtener_producto_individual(producto_id: int):
                 pm.categoria_id,
                 c.nombre as categoria_nombre,
                 pm.veces_visto,
-                pm.es_producto_papa
+                pm.es_producto_papa,
+                pm.codigo_lecfac
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
             WHERE pm.id = %s
@@ -240,17 +248,19 @@ async def obtener_producto_individual(producto_id: int):
         cursor.close()
         conn.close()
 
+        # ✅ INCLUIMOS codigo_lecfac EN LA RESPUESTA
         return {
             "id": producto[0],
-            "codigo_ean": producto[1] or "",  # ✅ Retornar string vacío si es NULL
+            "codigo_ean": producto[1] or "",
             "nombre": producto[2],
             "nombre_consolidado": producto[2],
-            "marca": producto[3] or "",  # ✅ Retornar string vacío si es NULL
+            "marca": producto[3] or "",
             "categoria": producto[5] or "Sin categoría",
             "categoria_id": producto[4],
             "veces_comprado": producto[6] or 0,
             "num_establecimientos": len(plus_info),
             "es_producto_papa": producto[7] or False,
+            "codigo_lecfac": producto[8],  # ← NUEVO CAMPO
             "plus": plus_info,
         }
 
@@ -458,7 +468,7 @@ async def actualizar_producto(producto_id: int, request: dict):
             conn.close()
             return {"success": False, "error": "No hay campos para actualizar"}
 
-        # Agregar fecha de actualización clave en el proceso
+        # Agregar fecha de actualización
         updates.append("fecha_actualizacion = CURRENT_TIMESTAMP")
         params.append(producto_id)
 
@@ -466,7 +476,7 @@ async def actualizar_producto(producto_id: int, request: dict):
             UPDATE productos_maestros_v2
             SET {', '.join(updates)}
             WHERE id = %s
-            RETURNING id, nombre_consolidado, marca, codigo_ean, categoria_id
+            RETURNING id, nombre_consolidado, marca, codigo_ean, categoria_id, codigo_lecfac
         """
 
         print(f"   🔍 Query: {query}")
@@ -490,6 +500,7 @@ async def actualizar_producto(producto_id: int, request: dict):
                 "marca": updated[2],
                 "codigo_ean": updated[3],
                 "categoria_id": updated[4],
+                "codigo_lecfac": updated[5],  # ← INCLUIDO EN RESPUESTA
             },
         }
 
@@ -504,89 +515,6 @@ async def actualizar_producto(producto_id: int, request: dict):
             conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.put("/api/v2/productos/{producto_id}/plus")
-async def actualizar_plus_producto(producto_id: int, request: dict):
-    """Actualiza los PLUs de un producto"""
-    print(f"🔧 [Router] PUT PLUs del producto ID: {producto_id}")
-
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Verificar producto existe
-        cursor.execute(
-            "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
-        )
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        # 1. ELIMINAR PLUs marcados
-        plus_eliminados = 0
-        if "plus_a_eliminar" in request:
-            for plu_id in request["plus_a_eliminar"]:
-                cursor.execute(
-                    "DELETE FROM productos_por_establecimiento WHERE id = %s AND producto_maestro_id = %s",
-                    (plu_id, producto_id),
-                )
-                plus_eliminados += cursor.rowcount
-
-        # 2. ACTUALIZAR/CREAR PLUs
-        plus_actualizados = 0
-        plus_creados = 0
-
-        if "plus" in request:
-            for plu in request["plus"]:
-                plu_id = plu.get("id")
-                codigo = plu.get("codigo_plu", "").strip()
-                est_id = plu.get("establecimiento_id")
-                precio = plu.get("precio_unitario", 0)
-
-                if not codigo or not est_id:
-                    continue
-
-                if plu_id:
-                    # Actualizar existente
-                    cursor.execute(
-                        """
-                        UPDATE productos_por_establecimiento
-                        SET codigo_plu = %s, precio_unitario = %s, fecha_actualizacion = CURRENT_TIMESTAMP
-                        WHERE id = %s AND producto_maestro_id = %s
-                    """,
-                        (codigo, precio, plu_id, producto_id),
-                    )
-                    plus_actualizados += cursor.rowcount
-                else:
-                    # Crear nuevo
-                    cursor.execute(
-                        """
-                        INSERT INTO productos_por_establecimiento (
-                            producto_maestro_id, establecimiento_id, codigo_plu,
-                            precio_unitario, precio_actual, precio_minimo, precio_maximo,
-                            total_reportes, fecha_creacion, ultima_actualizacion, fecha_actualizacion
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                        (producto_id, est_id, codigo, precio, precio, precio, precio),
-                    )
-                    plus_creados += 1
-
-        conn.commit()
-        return {
-            "success": True,
-            "actualizados": plus_actualizados,
-            "creados": plus_creados,
-            "eliminados": plus_eliminados,
-        }
-
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn:
-            conn.close()
 
 
 @router.put("/api/v2/productos/{producto_id}/plus")
@@ -726,11 +654,7 @@ async def eliminar_producto(producto_id: int):
 
         nombre = producto[0]
 
-        # ============================================================
-        # ELIMINACIONES CRÍTICAS (deben funcionar)
-        # ============================================================
-
-        # 1. Eliminar de precios_productos
+        # ELIMINACIONES CRÍTICAS
         cursor.execute(
             "DELETE FROM precios_productos WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -738,7 +662,6 @@ async def eliminar_producto(producto_id: int):
         precios_eliminados = cursor.rowcount
         logger.info(f"   💰 {precios_eliminados} precios eliminados")
 
-        # 2. Eliminar PLUs asociados
         cursor.execute(
             "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -746,7 +669,6 @@ async def eliminar_producto(producto_id: int):
         plus_eliminados = cursor.rowcount
         logger.info(f"   🗑️ {plus_eliminados} PLUs eliminados")
 
-        # 3. Desvincular items_factura
         cursor.execute(
             "UPDATE items_factura SET producto_maestro_id = NULL WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -754,7 +676,6 @@ async def eliminar_producto(producto_id: int):
         items_desvinculados = cursor.rowcount
         logger.info(f"   🔗 {items_desvinculados} items desvinculados")
 
-        # 4. Eliminar de inventario_usuario
         cursor.execute(
             "DELETE FROM inventario_usuario WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -762,47 +683,7 @@ async def eliminar_producto(producto_id: int):
         inventario_eliminado = cursor.rowcount
         logger.info(f"   📦 {inventario_eliminado} registros de inventario eliminados")
 
-        # ============================================================
-        # ELIMINACIONES OPCIONALES (pueden fallar sin romper)
-        # ============================================================
-
-        historial_eliminado = 0
-        patrones_eliminados = 0
-
-        # Intentar eliminar de historial (puede no tener la columna)
-        try:
-            cursor.execute(
-                "DELETE FROM historial_compras_usuario WHERE producto_id = %s",
-                (producto_id,),
-            )
-            historial_eliminado = cursor.rowcount
-            logger.info(
-                f"   📊 {historial_eliminado} registros de historial eliminados"
-            )
-        except Exception as e:
-            # Si falla, hacer rollback del error pero continuar
-            conn.rollback()
-            # Reabrir transacción
-            cursor = conn.cursor()
-            logger.warning(f"   ⚠️ Historial no limpiado (columna no existe)")
-
-        # Intentar eliminar de patrones_compra
-        try:
-            cursor.execute(
-                "DELETE FROM patrones_compra WHERE producto_maestro_id = %s",
-                (producto_id,),
-            )
-            patrones_eliminados = cursor.rowcount
-            logger.info(f"   📈 {patrones_eliminados} patrones eliminados")
-        except Exception as e:
-            conn.rollback()
-            cursor = conn.cursor()
-            logger.warning(f"   ⚠️ Patrones no limpiados")
-
-        # ============================================================
-        # ELIMINACIÓN FINAL DEL PRODUCTO PARA PODER ELIMINAR
-        # ============================================================
-
+        # ELIMINACIÓN FINAL
         cursor.execute(
             "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
@@ -821,8 +702,6 @@ async def eliminar_producto(producto_id: int):
                 "plus_eliminados": plus_eliminados,
                 "items_desvinculados": items_desvinculados,
                 "inventario_eliminado": inventario_eliminado,
-                "historial_eliminado": historial_eliminado,
-                "patrones_eliminados": patrones_eliminados,
             },
         }
     except HTTPException:
