@@ -5779,19 +5779,16 @@ async def verificar_aprendizaje():
 @app.get("/api/comparador/precios")
 async def obtener_precios_comparador():
     """
-    Comparador de precios - Agrupa por codigo_lecfac
-    VERSION: 2024-11-19-21:30 - SOLUCION FINAL
+    Comparador - VERSION DEBUG 2024-11-19-22:00
     """
     print("\n" + "=" * 80)
-    print("🔍 COMPARADOR: Consultando productos")
+    print("🔍 COMPARADOR: Iniciando consulta")
     print("=" * 80)
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Query que trae TODOS los productos con precios
-        # NO filtramos por cantidad aquí, lo hacemos después en Python
         query = """
             SELECT
                 pm.id,
@@ -5819,11 +5816,20 @@ async def obtener_precios_comparador():
         cursor.execute(query)
         rows = cursor.fetchall()
 
-        print(f"📊 Total filas: {len(rows)}")
+        print(f"📊 Total filas obtenidas: {len(rows)}")
+
+        # Mostrar primeras 5 filas para debug
+        if rows:
+            print("\n📋 Primeras 5 filas:")
+            for i, row in enumerate(rows[:5]):
+                print(
+                    f"   {i+1}. ID:{row[0]} | LecFac:{row[4]} | {row[2]} | {row[7]} | ${row[8]}"
+                )
 
         if len(rows) == 0:
             cursor.close()
             conn.close()
+            print("⚠️ No se encontraron productos con precios")
             return {
                 "success": True,
                 "productos": [],
@@ -5836,11 +5842,12 @@ async def obtener_precios_comparador():
             }
 
         # Agrupar por codigo_lecfac
+        print("\n📦 Agrupando por codigo_lecfac...")
         productos_dict = {}
         establecimientos_set = set()
 
         for row in rows:
-            codigo_lecfac = row[4]  # Ya tiene fallback en el SQL
+            codigo_lecfac = row[4]
             establecimiento = row[7]
 
             establecimientos_set.add(establecimiento)
@@ -5856,6 +5863,7 @@ async def obtener_precios_comparador():
                     "categoria": row[5],
                     "precios": [],
                 }
+                print(f"   ✅ Nuevo grupo: {codigo_lecfac} ({row[2]})")
 
             # Agregar precio al grupo
             productos_dict[codigo_lecfac]["precios"].append(
@@ -5867,10 +5875,12 @@ async def obtener_precios_comparador():
                     "veces_visto": row[10],
                 }
             )
+            print(f"      → Precio agregado: {establecimiento} ${row[8]}")
 
-        print(f"📦 Grupos por codigo_lecfac: {len(productos_dict)}")
+        print(f"\n📦 Total grupos: {len(productos_dict)}")
 
         # Filtrar solo productos con 2+ precios
+        print("\n🔍 Filtrando productos comparables (2+ precios)...")
         productos_comparables = []
         total_ahorro = 0
         productos_con_diferencia = 0
@@ -5878,9 +5888,8 @@ async def obtener_precios_comparador():
         for codigo_lecfac, prod in productos_dict.items():
             num_precios = len(prod["precios"])
 
-            print(f"   {prod['nombre'][:40]}: {num_precios} precio(s)")
+            print(f"   {prod['nombre']}: {num_precios} precio(s)")
 
-            # Solo incluir si tiene 2+ precios
             if num_precios >= 2:
                 precios_valores = [p["precio"] for p in prod["precios"]]
                 precio_min = min(precios_valores)
@@ -5894,11 +5903,10 @@ async def obtener_precios_comparador():
                     productos_con_diferencia += 1
 
                 productos_comparables.append(prod)
-                print(
-                    f"      ✅ COMPARABLE: {num_precios} precios, {porcentaje:.1f}% diferencia"
-                )
+                print(f"      ✅ COMPARABLE: {porcentaje:.1f}% diferencia")
+            else:
+                print(f"      ❌ Solo tiene 1 precio, no es comparable")
 
-        # Ordenar por mayor ahorro
         productos_comparables.sort(
             key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True
         )
