@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LecFac - Gestor de Productos Papa</title>
+    <title>LecFac - Gestor de Productos Papa unicos </title>
     <style>
         * {
             margin: 0;
@@ -225,6 +225,12 @@
             border-color: #667eea;
         }
 
+        .form-group input:read-only {
+            background-color: #f0f0f0;
+            color: #666;
+            cursor: not-allowed;
+        }
+
         .form-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -387,6 +393,13 @@
 
         .tab:hover {
             color: #667eea;
+        }
+
+        .form-text {
+            display: block;
+            margin-top: 5px;
+            font-size: 11px;
+            color: #666;
         }
     </style>
 </head>
@@ -632,7 +645,6 @@
                     establecimientoInfo = p.plus[0].establecimiento || '';
                     precioInfo = p.plus[0].precio || 0;
 
-                    // ✅ NUEVO: Obtener fecha de actualización
                     const fechaActualizacion = p.plus[0].fecha_actualizacion || p.plus[0].ultima_compra;
                     if (fechaActualizacion) {
                         fechaInfo = formatearFechaRelativa(fechaActualizacion);
@@ -646,9 +658,9 @@
 
                 html += `
                 <li class="product-item ${isPapa ? 'is-papa' : ''} ${isSelected ? 'selected' : ''}"
-                 onclick="seleccionarProducto(${p.id})">
+                onclick="seleccionarProducto(${p.id})">
                 <div class="product-name">
-                 ${p.nombre_consolidado || p.nombre || 'Sin nombre'}
+                ${p.nombre_consolidado || p.nombre || 'Sin nombre'}
                     ${isPapa ? '<span class="badge badge-papa">PAPA</span>' : ''}
                 </div>
                 <div class="product-meta">
@@ -710,20 +722,20 @@
                     <div class="form-group">
                         <label>Código EAN (13 dígitos)</label>
                         <input type="text" id="codigo_ean" value="${producto.codigo_ean || ''}"
-                               placeholder="Ej: 7702004003621" maxlength="14">
+                            placeholder="Ej: 7702004003621" maxlength="14">
                     </div>
 
                     <div class="form-group">
                         <label>Nombre del Producto (OFICIAL)</label>
                         <input type="text" id="nombre" value="${producto.nombre_consolidado || ''}"
-                               placeholder="Ej: LECHE ENTERA ALQUERIA 1L" required>
+                            placeholder="Ej: LECHE ENTERA ALQUERIA 1L" required>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label>Marca</label>
                             <input type="text" id="marca" value="${producto.marca || ''}"
-                                   placeholder="Ej: ALQUERIA" list="marcas-list">
+                                placeholder="Ej: ALQUERIA" list="marcas-list">
                             <datalist id="marcas-list">
                                 <option value="ALQUERIA">
                                 <option value="ALPINA">
@@ -752,6 +764,14 @@
                                 <option value="15" ${producto.categoria_id == 15 ? 'selected' : ''}>15 - Otros</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>📛 Código LecFac (Generado automáticamente)</label>
+                        <input type="text" id="codigo_lecfac" readonly
+                            value="${producto.codigo_lecfac || 'Se generará al guardar'}"
+                            style="font-family: monospace;">
+                        <small class="form-text">Este código se genera automáticamente al guardar</small>
                     </div>
 
                     <div class="hijos-preview">
@@ -820,21 +840,30 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    // ✅ ACTUALIZAR EL CAMPO codigo_lecfac CON EL VALOR RETORNADO.
+                    if (result.codigo_lecfac) {
+                        document.getElementById('codigo_lecfac').value = result.codigo_lecfac;
+                        console.log('✅ Código LecFac generado:', result.codigo_lecfac);
+                    }
+
                     resultadoDiv.innerHTML = `
                         <div class="alert alert-success">
                             <strong>✅ ¡Guardado exitosamente!</strong><br>
                             Producto PAPA: ${result.papa_nombre}<br>
+                            📛 Código LecFac: <strong>${result.codigo_lecfac || 'N/A'}</strong><br>
                             Hijos actualizados: ${result.hijos_actualizados}<br>
                             ${result.hijos_ids.length > 0 ? `IDs: ${result.hijos_ids.join(', ')}` : ''}
                         </div>
                     `;
 
+                    // Actualizar producto en memoria
                     const idx = productos.findIndex(p => p.id === productoSeleccionado.id);
                     if (idx !== -1) {
                         productos[idx].es_producto_papa = true;
                         productos[idx].nombre_consolidado = datos.nombre;
                         productos[idx].codigo_ean = datos.codigo_ean;
                         productos[idx].marca = datos.marca;
+                        productos[idx].codigo_lecfac = result.codigo_lecfac; // ✅ NUEVO
                     }
 
                     renderizarProductos();
