@@ -8835,6 +8835,19 @@ async def agregar_fecha_actualizacion():
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/test-deploy-time")
+async def test_deploy():
+    """Endpoint de prueba para verificar deploy"""
+    from datetime import datetime
+
+    return {
+        "success": True,
+        "deploy_time": "2024-11-19 22:40",
+        "message": "Si ves este mensaje, Railway desplegó el código nuevo",
+        "current_time": datetime.now().isoformat(),
+    }
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
