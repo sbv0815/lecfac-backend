@@ -904,22 +904,22 @@ function agregarPLU() {
             <div class="form-group">
                 <label>Establecimiento</label>
                 <input type="text"
-                       class="plu-establecimiento"
-                       placeholder="Ej: EXITO, JUMBO, CARULLA">
+                class="plu-establecimiento"
+                placeholder="Ej: EXITO, JUMBO, CARULLA">
             </div>
             <div class="form-group">
                 <label>Código PLU</label>
                 <input type="text"
-                       class="plu-codigo"
-                       placeholder="Ej: 1234, 5678">
+                class="plu-codigo"
+                placeholder="Ej: 1234, 5678">
             </div>
             <div class="form-group">
                 <label>Última Vez Visto</label>
                 <input type="text"
-                       class="plu-fecha"
-                       value="Nuevo"
-                       readonly
-                       style="background: #f0f0f0;">
+                class="plu-fecha"
+                value="Nuevo"
+                readonly
+                style="background: #f0f0f0;">
             </div>
             <button type="button" class="btn-remove-plu" onclick="this.parentElement.parentElement.remove()">
                 🗑️
@@ -934,9 +934,6 @@ function agregarPLU() {
 // =============================================================
 // CARGAR PLUs DEL PRODUCTO
 // =============================================================
-// =============================================================
-// CARGAR PLUs DEL PRODUCTO - VERSIÓN EDITABLE
-// =============================================================
 async function cargarPLUsProducto(productoId) {
     const apiBase = getApiBase();
     const contenedor = document.getElementById('contenedorPLUs');
@@ -947,36 +944,37 @@ async function cargarPLUsProducto(productoId) {
     }
 
     try {
-        // 1. Cargar datos del producto (incluye PLUs)
         const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`);
         if (!response.ok) throw new Error('Error cargando producto');
 
         const producto = await response.json();
         console.log('📦 Producto con PLUs:', producto);
 
-        // 2. Cargar lista de establecimientos
         const respEst = await fetch(`${apiBase}/api/establecimientos`);
         const establecimientos = await respEst.json();
-        console.log('🏪 Establecimientos:', establecimientos);
 
-        // 3. Limpiar contenedor
         contenedor.innerHTML = '';
 
-        // 4. Si no hay PLUs
         if (!producto.plus || producto.plus.length === 0) {
             contenedor.innerHTML = '<p style="color: #666; padding: 10px;">No hay PLUs registrados</p>';
             return;
         }
 
-        // 5. Crear campos editables para cada PLU
         producto.plus.forEach((plu, index) => {
-            console.log(`   PLU ${index + 1}:`, plu);
+            // ⚠️ CRÍTICO: El ID debe venir de la respuesta del API
+            const pluId = plu.id || plu.plu_id || '';
+
+            console.log(`   PLU ${index + 1}:`, {
+                id: pluId,
+                codigo: plu.codigo_plu,
+                establecimiento: plu.establecimiento,
+                establecimiento_id: plu.establecimiento_id
+            });
 
             const pluDiv = document.createElement('div');
             pluDiv.className = 'plu-item';
-            pluDiv.dataset.pluId = plu.id || '';  // ⚠️ Guardar ID del registro en productos_por_establecimiento
+            pluDiv.dataset.pluId = pluId;  // ✅ Guardar ID
 
-            // Buscar el ID del establecimiento
             const estId = plu.establecimiento_id ||
                 establecimientos.find(e => e.nombre_normalizado === plu.establecimiento)?.id ||
                 '';
@@ -984,8 +982,8 @@ async function cargarPLUsProducto(productoId) {
             pluDiv.innerHTML = `
                 <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px;">
                     <div class="form-group">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Establecimiento</label>
-                        <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                        <label style="display: block; margin-bottom: 5px;">Establecimiento</label>
+                        <select class="plu-establecimiento" style="width: 100%; padding: 8px;">
                             <option value="">Seleccionar...</option>
                             ${establecimientos.map(e =>
                 `<option value="${e.id}" ${e.id == estId ? 'selected' : ''}>
@@ -995,26 +993,25 @@ async function cargarPLUsProducto(productoId) {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Código PLU</label>
+                        <label style="display: block; margin-bottom: 5px;">Código PLU</label>
                         <input type="text"
-                               class="plu-codigo"
-                               value="${plu.codigo_plu || ''}"
-                               placeholder="Ej: 1234"
-                               style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                        class="plu-codigo"
+                        value="${plu.codigo_plu || ''}"
+                        placeholder="Ej: 1234"
+                        style="width: 100%; padding: 8px;">
                     </div>
                     <div class="form-group">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Precio</label>
+                        <label style="display: block; margin-bottom: 5px;">Precio</label>
                         <input type="number"
                                class="plu-precio"
                                value="${plu.precio || 0}"
                                placeholder="0"
-                               style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                               style="width: 100%; padding: 8px;">
                     </div>
                     <button type="button"
                             class="btn-remove-plu"
-                            onclick="this.closest('.plu-item').remove(); console.log('🗑️ PLU eliminado');"
-                            style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;"
-                            title="Eliminar este PLU">
+                            onclick="this.closest('.plu-item').remove();"
+                            style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px;">
                         🗑️
                     </button>
                 </div>
@@ -1030,7 +1027,6 @@ async function cargarPLUsProducto(productoId) {
         contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
     }
 }
-
 // =============================================================
 // AGREGAR PLU EDITABLE
 // =============================================================
