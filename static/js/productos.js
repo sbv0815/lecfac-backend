@@ -1493,8 +1493,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             e.stopPropagation();
         }, true);
     }
-
-    // Cargar productos
+    // Cargar productos nuevamente
     await cargarProductos(1);
 
     // Cargar sugerencias
