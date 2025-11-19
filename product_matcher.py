@@ -1,13 +1,15 @@
 """
-product_matcher.py - VERSIÓN 9.2 - DETECCIÓN AUTOMÁTICA DE PAPAS
+product_matcher.py - VERSIÓN 9.3 - DETECCIÓN AUTOMÁTICA DE PAPAS (MEJORADO)
 ========================================================================
 
-🎯 CAMBIOS V9.2:
+🎯 CAMBIOS V9.3:
 - ✅ BUSCA PAPAS PRIMERO antes de crear productos
 - ✅ Si existe PAPA → Usa sus datos (nombre, marca, categoría)
-- ✅ Si no existe PAPA → Flujo normal de creación
+- ✅ CREA registro en productos_por_establecimiento si no existe
+- ✅ ACTUALIZA precios SIEMPRE (min, max, actual)
 - ✅ Actualiza estadísticas del PAPA automáticamente
 - ✅ Soporta búsqueda por EAN (JUMBO) y PLU (OLÍMPICA)
+- ✅ GARANTIZA que todos los datos estén completos
 """
 
 import re
@@ -481,7 +483,7 @@ def guardar_plu_en_establecimiento(
     precio: int,
 ) -> bool:
     """
-    ⭐ V9.1 FIX: Guarda el PLU en productos_por_establecimiento
+    ⭐ V9.3: Guarda el PLU en productos_por_establecimiento con ACTUALIZACIÓN DE PRECIOS
     """
     if not producto_id or not establecimiento_id or not codigo_plu:
         return False
@@ -499,8 +501,8 @@ def guardar_plu_en_establecimiento(
                 codigo_plu = EXCLUDED.codigo_plu,
                 precio_actual = EXCLUDED.precio_actual,
                 precio_unitario = EXCLUDED.precio_unitario,
-                precio_minimo = LEAST(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo),
-                precio_maximo = GREATEST(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo),
+                precio_minimo = LEAST(COALESCE(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo), EXCLUDED.precio_minimo),
+                precio_maximo = GREATEST(COALESCE(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo), EXCLUDED.precio_maximo),
                 total_reportes = productos_por_establecimiento.total_reportes + 1,
                 fecha_actualizacion = CURRENT_TIMESTAMP,
                 ultima_actualizacion = CURRENT_TIMESTAMP
@@ -516,7 +518,9 @@ def guardar_plu_en_establecimiento(
             ),
         )
         conn.commit()
-        print(f"   💾 PLU {codigo_plu} guardado en productos_por_establecimiento")
+        print(
+            f"   💾 PLU {codigo_plu} guardado/actualizado en productos_por_establecimiento"
+        )
         return True
     except Exception as e:
         print(f"   ⚠️ Error guardando PLU en establecimiento: {e}")
@@ -525,7 +529,7 @@ def guardar_plu_en_establecimiento(
 
 
 # ═══════════════════════════════════════════════════════════════
-# 🎯 FASE 1.1: FUNCIÓN NUEVA - BUSCAR PAPA PRIMERO
+# 🎯 FASE 1.1: FUNCIÓN MEJORADA - BUSCAR PAPA PRIMERO
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -537,7 +541,9 @@ def buscar_papa_primero(
     precio: int = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    🎯 FASE 1.1: Busca si existe un PAPA para este código
+    🎯 FASE 1.1 V9.3: Busca si existe un PAPA para este código
+    ✅ MEJORADO: Crea registro en productos_por_establecimiento si no existe
+    ✅ MEJORADO: Actualiza TODOS los precios (min, max, actual)
 
     Retorna:
     - None si no existe PAPA
@@ -583,30 +589,37 @@ def buscar_papa_primero(
                     (papa_id,),
                 )
 
-                # Actualizar precio en productos_por_establecimiento si existe
+                # ✅ V9.3: CREAR O ACTUALIZAR en productos_por_establecimiento
                 if precio:
                     cursor.execute(
                         """
-                        UPDATE productos_por_establecimiento
-                        SET precio_actual = %s,
-                            precio_unitario = %s,
-                            precio_minimo = LEAST(COALESCE(precio_minimo, %s), %s),
-                            precio_maximo = GREATEST(COALESCE(precio_maximo, %s), %s),
-                            total_reportes = total_reportes + 1,
+                        INSERT INTO productos_por_establecimiento (
+                            producto_maestro_id, establecimiento_id, codigo_plu,
+                            precio_actual, precio_unitario, precio_minimo, precio_maximo,
+                            total_reportes, fecha_creacion, fecha_actualizacion, ultima_actualizacion
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (producto_maestro_id, establecimiento_id)
+                        DO UPDATE SET
+                            precio_actual = EXCLUDED.precio_actual,
+                            precio_unitario = EXCLUDED.precio_unitario,
+                            precio_minimo = LEAST(COALESCE(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo), EXCLUDED.precio_minimo),
+                            precio_maximo = GREATEST(COALESCE(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo), EXCLUDED.precio_maximo),
+                            total_reportes = productos_por_establecimiento.total_reportes + 1,
                             ultima_actualizacion = CURRENT_TIMESTAMP,
                             fecha_actualizacion = CURRENT_TIMESTAMP
-                        WHERE producto_maestro_id = %s AND establecimiento_id = %s
                     """,
                         (
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
                             papa_id,
                             establecimiento_id,
+                            codigo,  # EAN también se guarda como PLU
+                            precio,
+                            precio,
+                            precio,
+                            precio,
                         ),
+                    )
+                    print(
+                        f"      💾 Precios actualizados en productos_por_establecimiento"
                     )
 
                 conn.commit()
@@ -658,7 +671,7 @@ def buscar_papa_primero(
                     (papa_id,),
                 )
 
-                # Actualizar precio en productos_por_establecimiento
+                # ✅ V9.3: ACTUALIZAR precios en productos_por_establecimiento
                 if precio:
                     cursor.execute(
                         """
@@ -682,6 +695,9 @@ def buscar_papa_primero(
                             papa_id,
                             establecimiento_id,
                         ),
+                    )
+                    print(
+                        f"      💾 Precios actualizados en productos_por_establecimiento"
                     )
 
                 conn.commit()
@@ -723,17 +739,18 @@ def buscar_o_crear_producto_inteligente(
     establecimiento_id: int = None,
 ) -> Optional[int]:
     """
-    ⭐ VERSIÓN 9.2: Función principal - BUSCA PAPAS PRIMERO
+    ⭐ VERSIÓN 9.3: Función principal - BUSCA PAPAS PRIMERO (MEJORADO)
     ✅ Prioridad 1: Buscar PAPA (si existe)
     ✅ Prioridad 2: Buscar producto existente
     ✅ Prioridad 3: Crear nuevo producto
+    ✅ GARANTIZA actualización completa de datos
     ✅ NO agrega PLU al nombre
     ✅ Busca en tabla V2
     ✅ GUARDA PLU en productos_por_establecimiento
     """
     import os
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.2 (con PAPAS):")
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.3 (con PAPAS MEJORADO):")
     print(f"   Código: {codigo or 'Sin código'}")
     print(f"   Nombre: {nombre[:50]}")
     print(f"   Precio: ${precio:,}")
@@ -749,7 +766,7 @@ def buscar_o_crear_producto_inteligente(
     param = "%s" if is_postgresql else "?"
 
     # ═══════════════════════════════════════════════════════════════
-    # 🎯 PASO 0: BUSCAR PAPA PRIMERO (NUEVA FUNCIONALIDAD)
+    # 🎯 PASO 0: BUSCAR PAPA PRIMERO (FUNCIONALIDAD MEJORADA V9.3)
     # ═══════════════════════════════════════════════════════════════
     print(f"\n   🔍 BUSCANDO PAPA...")
     papa_encontrado = buscar_papa_primero(
@@ -803,10 +820,25 @@ def buscar_o_crear_producto_inteligente(
                 cursor.execute(
                     """
                     UPDATE productos_por_establecimiento
-                    SET precio_unitario = %s, fecha_actualizacion = CURRENT_TIMESTAMP
+                    SET precio_actual = %s,
+                        precio_unitario = %s,
+                        precio_minimo = LEAST(COALESCE(precio_minimo, %s), %s),
+                        precio_maximo = GREATEST(COALESCE(precio_maximo, %s), %s),
+                        total_reportes = total_reportes + 1,
+                        ultima_actualizacion = CURRENT_TIMESTAMP,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
                     WHERE producto_maestro_id = %s AND establecimiento_id = %s
                 """,
-                    (precio, producto_id, establecimiento_id),
+                    (
+                        precio,
+                        precio,
+                        precio,
+                        precio,
+                        precio,
+                        precio,
+                        producto_id,
+                        establecimiento_id,
+                    ),
                 )
 
                 conn.commit()
@@ -918,7 +950,7 @@ def buscar_o_crear_producto_inteligente(
                 traceback.print_exc()
 
         # ═══════════════════════════════════════════════════════════════
-        # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2 prueba nueva
+        # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2
         # ═══════════════════════════════════════════════════════════════
         print(f"   ℹ️  Producto no encontrado → Creando en V2...")
 
@@ -997,13 +1029,16 @@ def buscar_o_crear_producto_inteligente(
 # MENSAJE DE CARGA
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
-print("✅ product_matcher.py V9.2 - CON DETECCIÓN AUTOMÁTICA DE PAPAS")
+print("✅ product_matcher.py V9.3 - CON DETECCIÓN AUTOMÁTICA DE PAPAS (MEJORADO)")
 print("=" * 80)
-print("🎯 CAMBIOS V9.2:")
+print("🎯 CAMBIOS V9.3:")
 print("   ✅ Busca PAPAS PRIMERO (antes de crear productos)")
 print("   ✅ Si existe PAPA → Usa sus datos normalizados")
+print("   ✅ CREA registro en productos_por_establecimiento si no existe")
+print("   ✅ ACTUALIZA precios SIEMPRE (min, max, actual)")
 print("   ✅ Actualiza estadísticas del PAPA automáticamente")
 print("   ✅ Soporta búsqueda por EAN (JUMBO) y PLU (OLÍMPICA)")
+print("   ✅ GARANTIZA que todos los datos estén completos")
 print("   ✅ NO agrega PLU al nombre del producto")
 print("   ✅ GUARDA PLUs en productos_por_establecimiento")
 print("=" * 80)
