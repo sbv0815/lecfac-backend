@@ -543,6 +543,9 @@ function calcularDigitoControl(ean12) {
 // =============================================================
 // ✅ GUARDAR EDICIÓN - CORREGIDO
 // =============================================================
+// =============================================================
+// ✅ GUARDAR EDICIÓN - CON SOPORTE PARA PLUs
+// =============================================================
 async function guardarEdicion() {
     console.log('💾 Iniciando guardado de edición...');
 
@@ -566,22 +569,22 @@ async function guardarEdicion() {
         return;
     }
 
-    // ✅ CRÍTICO: Construir el body correctamente
-    const datosActualizados = {
-        nombre_consolidado: nombreConsolidado.trim(),
-        marca: marca.trim(),
-        codigo_ean: codigoEan.trim()
-    };
-
-    // Solo agregar categoría si tiene valor
-    if (categoria && categoria.trim()) {
-        datosActualizados.categoria = categoria.trim();
-    }
-
-    console.log('📦 Datos a enviar:', datosActualizados);
-    console.log(`🌐 URL: ${apiBase}/api/v2/productos/${productoId}`);
-
     try {
+        // =============================================================
+        // 1. GUARDAR DATOS DEL PRODUCTO (nombre, marca, EAN, categoría)
+        // =============================================================
+        const datosActualizados = {
+            nombre_consolidado: nombreConsolidado.trim(),
+            marca: marca.trim(),
+            codigo_ean: codigoEan.trim()
+        };
+
+        if (categoria && categoria.trim()) {
+            datosActualizados.categoria = categoria.trim();
+        }
+
+        console.log('📦 Datos producto a enviar:', datosActualizados);
+
         const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
             method: 'PUT',
             headers: {
@@ -590,17 +593,50 @@ async function guardarEdicion() {
             body: JSON.stringify(datosActualizados)
         });
 
-        console.log(`📊 Response status: ${response.status}`);
-
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
             throw new Error(errorData.error || `HTTP ${response.status}`);
         }
 
         const resultado = await response.json();
-        console.log('✅ Respuesta del servidor:', resultado);
+        console.log('✅ Producto actualizado:', resultado);
 
-        mostrarAlerta('✅ Cambios guardados correctamente', 'success');
+        // =============================================================
+        // 2. GUARDAR PLUs (si hay cambios)
+        // =============================================================
+        const plusData = recopilarPLUsParaGuardar();
+
+        if (plusData.plus.length > 0 || plusData.plus_a_eliminar.length > 0) {
+            console.log('💾 Guardando PLUs...', plusData);
+
+            const responsePlus = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(plusData)
+            });
+
+            if (responsePlus.ok) {
+                const resultadoPlus = await responsePlus.json();
+                console.log('✅ PLUs actualizados:', resultadoPlus);
+
+                // Mostrar detalle de cambios en PLUs
+                if (resultadoPlus.actualizados > 0 || resultadoPlus.creados > 0 || resultadoPlus.eliminados > 0) {
+                    const detalles = [];
+                    if (resultadoPlus.actualizados > 0) detalles.push(`${resultadoPlus.actualizados} actualizado(s)`);
+                    if (resultadoPlus.creados > 0) detalles.push(`${resultadoPlus.creados} creado(s)`);
+                    if (resultadoPlus.eliminados > 0) detalles.push(`${resultadoPlus.eliminados} eliminado(s)`);
+
+                    mostrarAlerta(`✅ Producto y PLUs guardados: ${detalles.join(', ')}`, 'success');
+                } else {
+                    mostrarAlerta('✅ Producto actualizado correctamente', 'success');
+                }
+            } else {
+                console.warn('⚠️ Error guardando PLUs, pero producto se guardó');
+                mostrarAlerta('✅ Producto guardado (con advertencia en PLUs)', 'warning');
+            }
+        } else {
+            mostrarAlerta('✅ Producto actualizado correctamente', 'success');
+        }
 
         // Cerrar modal
         cerrarModal('modal-editar');
@@ -613,6 +649,39 @@ async function guardarEdicion() {
         console.error('❌ Error guardando:', error);
         mostrarAlerta(`❌ Error: ${error.message}`, 'error');
     }
+}
+
+// =============================================================
+// ✅ RECOPILAR PLUs PARA GUARDAR (NUEVA FUNCIÓN)
+// =============================================================
+function recopilarPLUsParaGuardar() {
+    const plusItems = document.querySelectorAll('.plu-item');
+    const plus = [];
+    const plus_a_eliminar = [];
+
+    plusItems.forEach(item => {
+        const pluId = item.dataset.pluId;  // ID del PLU en BD (si existe)
+        const establecimientoSelect = item.querySelector('.plu-establecimiento');
+        const codigo = item.querySelector('.plu-codigo')?.value.trim();
+        const precio = item.querySelector('.plu-precio')?.value || 0;
+
+        // Solo agregar si tiene datos válidos
+        if (codigo && establecimientoSelect && establecimientoSelect.value) {
+            plus.push({
+                id: pluId ? parseInt(pluId) : null,  // null = crear nuevo, número = actualizar
+                codigo_plu: codigo,
+                establecimiento_id: parseInt(establecimientoSelect.value),
+                precio_unitario: parseFloat(precio)
+            });
+        }
+    });
+
+    console.log('📋 PLUs recopilados:', plus);
+
+    return {
+        plus,
+        plus_a_eliminar  // Por ahora vacío, en el futuro se pueden marcar PLUs para eliminar
+    };
 }
 
 async function marcarRevisado(productoId) {
@@ -869,10 +938,7 @@ async function cargarPLUsProducto(productoId) {
     const apiBase = getApiBase();
     const contenedor = document.getElementById('contenedorPLUs');
 
-    if (!contenedor) {
-        console.warn('No se encontró contenedorPLUs');
-        return;
-    }
+    if (!contenedor) return;
 
     try {
         const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`);
@@ -886,17 +952,27 @@ async function cargarPLUsProducto(productoId) {
             return;
         }
 
-        data.plus.forEach((plu, index) => {
+        // Cargar lista de establecimientos
+        const respEst = await fetch(`${apiBase}/api/establecimientos`);
+        const establecimientos = await respEst.json();
+
+        data.plus.forEach((plu) => {
             const pluDiv = document.createElement('div');
             pluDiv.className = 'plu-item';
+            pluDiv.dataset.pluId = plu.id || '';  // Guardar ID del PLU
+
             pluDiv.innerHTML = `
                 <div class="plu-row">
                     <div class="form-group">
                         <label>Establecimiento</label>
-                        <input type="text"
-                               class="plu-establecimiento"
-                               value="${plu.nombre_establecimiento || ''}"
-                               placeholder="Ej: EXITO, JUMBO">
+                        <select class="plu-establecimiento" data-est-id="${plu.establecimiento_id || ''}">
+                            <option value="">Seleccionar...</option>
+                            ${establecimientos.map(e =>
+                `<option value="${e.id}" ${e.id == plu.establecimiento_id ? 'selected' : ''}>
+                                    ${e.nombre_normalizado}
+                                </option>`
+            ).join('')}
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Código PLU</label>
@@ -906,12 +982,11 @@ async function cargarPLUsProducto(productoId) {
                                placeholder="Ej: 1234">
                     </div>
                     <div class="form-group">
-                        <label>Última Vez Visto</label>
-                        <input type="text"
-                               class="plu-fecha"
-                               value="${plu.ultima_vez_visto || 'N/A'}"
-                               readonly
-                               style="background: #f0f0f0;">
+                        <label>Precio</label>
+                        <input type="number"
+                               class="plu-precio"
+                               value="${plu.precio || 0}"
+                               placeholder="0">
                     </div>
                     <button type="button" class="btn-remove-plu" onclick="this.parentElement.parentElement.remove()">
                         🗑️
@@ -1313,6 +1388,8 @@ window.detectarDuplicados = detectarDuplicados;
 window.cargarSugerencias = cargarSugerencias;
 window.cargarDuplicados = detectarDuplicados;
 window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
+// Exportar nueva función
+window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
 
 console.log('✅ Funciones cargadas correctamente');
 

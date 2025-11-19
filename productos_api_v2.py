@@ -506,6 +506,89 @@ async def actualizar_producto(producto_id: int, request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/api/v2/productos/{producto_id}/plus")
+async def actualizar_plus_producto(producto_id: int, request: dict):
+    """Actualiza los PLUs de un producto"""
+    print(f"🔧 [Router] PUT PLUs del producto ID: {producto_id}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar producto existe
+        cursor.execute(
+            "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # 1. ELIMINAR PLUs marcados
+        plus_eliminados = 0
+        if "plus_a_eliminar" in request:
+            for plu_id in request["plus_a_eliminar"]:
+                cursor.execute(
+                    "DELETE FROM productos_por_establecimiento WHERE id = %s AND producto_maestro_id = %s",
+                    (plu_id, producto_id),
+                )
+                plus_eliminados += cursor.rowcount
+
+        # 2. ACTUALIZAR/CREAR PLUs
+        plus_actualizados = 0
+        plus_creados = 0
+
+        if "plus" in request:
+            for plu in request["plus"]:
+                plu_id = plu.get("id")
+                codigo = plu.get("codigo_plu", "").strip()
+                est_id = plu.get("establecimiento_id")
+                precio = plu.get("precio_unitario", 0)
+
+                if not codigo or not est_id:
+                    continue
+
+                if plu_id:
+                    # Actualizar existente
+                    cursor.execute(
+                        """
+                        UPDATE productos_por_establecimiento
+                        SET codigo_plu = %s, precio_unitario = %s, fecha_actualizacion = CURRENT_TIMESTAMP
+                        WHERE id = %s AND producto_maestro_id = %s
+                    """,
+                        (codigo, precio, plu_id, producto_id),
+                    )
+                    plus_actualizados += cursor.rowcount
+                else:
+                    # Crear nuevo
+                    cursor.execute(
+                        """
+                        INSERT INTO productos_por_establecimiento (
+                            producto_maestro_id, establecimiento_id, codigo_plu,
+                            precio_unitario, precio_actual, precio_minimo, precio_maximo,
+                            total_reportes, fecha_creacion, ultima_actualizacion, fecha_actualizacion
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                        (producto_id, est_id, codigo, precio, precio, precio, precio),
+                    )
+                    plus_creados += 1
+
+        conn.commit()
+        return {
+            "success": True,
+            "actualizados": plus_actualizados,
+            "creados": plus_creados,
+            "eliminados": plus_eliminados,
+        }
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+
 @router.delete("/api/v2/productos/{producto_id}")
 async def eliminar_producto(producto_id: int):
     """
