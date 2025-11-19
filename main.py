@@ -5776,8 +5776,8 @@ async def verificar_aprendizaje():
 # ============================================================================
 # COMPARADOR DE PRECIOS - ENDPOINT PRINCIPAL
 # ============================================================================
-@app.get("/api/comparador/precios")
-async def obtener_precios_comparador():
+@app.get("/api/comparador/precios_v2")
+async def obtener_precios_comparador_v2():
     """
     Comparador - VERSION DEBUG 2024-11-19-22:00
     """
