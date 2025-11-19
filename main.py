@@ -8538,13 +8538,15 @@ async def limpiar_papas_sin_plu():
 async def comparador_precios():
     """
     Obtiene todos los productos con sus precios por establecimiento
-    para comparación
+    para comparación - VERSIÓN CORREGIDA CON CODIGO LECFAC
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # ✅ CORRECCIÓN: Cambiar ppe.veces_comprado por ppe.total_reportes
+        print("🔍 Consultando productos para comparador...")
+
+        # ✅ CORRECCIÓN: Query optimizada para agrupar por codigo_lecfac
         cursor.execute(
             """
             SELECT
@@ -8552,70 +8554,71 @@ async def comparador_precios():
                 pm.codigo_ean,
                 pm.nombre_consolidado,
                 pm.marca,
+                pm.codigo_lecfac,
                 c.nombre as categoria,
                 ppe.codigo_plu,
                 e.nombre_normalizado as establecimiento,
                 ppe.precio_unitario,
                 ppe.fecha_actualizacion,
-                ppe.total_reportes  -- ✅ CORREGIDO: era veces_comprado
+                ppe.total_reportes
             FROM productos_maestros_v2 pm
             JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
             JOIN establecimientos e ON ppe.establecimiento_id = e.id
             LEFT JOIN categorias c ON pm.categoria_id = c.id
             WHERE ppe.precio_unitario > 0
-            ORDER BY pm.id, ppe.precio_unitario ASC
+            ORDER BY pm.codigo_lecfac, ppe.precio_unitario ASC
         """
         )
 
         rows = cursor.fetchall()
+        print(f"📊 Encontradas {len(rows)} combinaciones producto-establecimiento")
 
-        # Agrupar por producto
+        # Agrupar por codigo_lecfac (productos iguales)
         productos_dict = {}
         establecimientos_set = set()
         total_precios = 0
 
         for row in rows:
             prod_id = row[0]
-            establecimiento = row[6]
+            codigo_lecfac = (
+                row[4] or f"sin-codigo-{prod_id}"
+            )  # Usar codigo_lecfac como agrupador
+            establecimiento = row[7]
+
             establecimientos_set.add(establecimiento)
             total_precios += 1
 
-            if prod_id not in productos_dict:
-                productos_dict[prod_id] = {
+            # Agrupar por codigo_lecfac en lugar de ID
+            if codigo_lecfac not in productos_dict:
+                productos_dict[codigo_lecfac] = {
                     "id": prod_id,
                     "codigo_ean": row[1],
                     "nombre": row[2],
                     "marca": row[3],
-                    "categoria": row[4],
+                    "codigo_lecfac": codigo_lecfac,
+                    "categoria": row[5],
                     "precios": [],
                 }
 
-            # ✅ CORREGIDO: Manejar fecha_actualizacion correctamente
-            fecha_str = "N/A"
-            if row[8]:
-                fecha_str = (
-                    row[8].strftime("%Y-%m-%d")
-                    if hasattr(row[8], "strftime")
-                    else str(row[8])
-                )
-
-            productos_dict[prod_id]["precios"].append(
+            # Agregar precio del establecimiento
+            productos_dict[codigo_lecfac]["precios"].append(
                 {
-                    "plu": row[5],
+                    "plu": row[6],
                     "establecimiento": establecimiento,
-                    "precio": float(row[7]) if row[7] else 0,
-                    "fecha": fecha_str,
-                    "veces_visto": row[9] or 1,  # total_reportes
+                    "precio": float(row[8]) if row[8] else 0,
+                    "fecha": row[9].strftime("%Y-%m-%d") if row[9] else "N/A",
+                    "veces_visto": row[10] or 1,
                 }
             )
 
-        # Calcular diferencias de precio
+        # Convertir a lista y calcular diferencias
         productos = []
         total_ahorro = 0
         productos_con_diferencia = 0
 
-        for prod_id, prod in productos_dict.items():
-            if len(prod["precios"]) > 1:
+        for codigo_lecfac, prod in productos_dict.items():
+            # Solo incluir productos con 2+ precios
+            if len(prod["precios"]) >= 2:
                 precios_valores = [p["precio"] for p in prod["precios"]]
                 precio_min = min(precios_valores)
                 precio_max = max(precios_valores)
@@ -8626,13 +8629,11 @@ async def comparador_precios():
                 if porcentaje > 0:
                     total_ahorro += porcentaje
                     productos_con_diferencia += 1
-            else:
-                prod["diferencia_porcentaje"] = 0
 
-            productos.append(prod)
+                productos.append(prod)
 
         # Ordenar por diferencia de precio (mayor primero)
-        productos.sort(key=lambda x: x["diferencia_porcentaje"], reverse=True)
+        productos.sort(key=lambda x: x.get("diferencia_porcentaje", 0), reverse=True)
 
         ahorro_promedio = (
             round(total_ahorro / productos_con_diferencia, 1)
@@ -8642,6 +8643,10 @@ async def comparador_precios():
 
         cursor.close()
         conn.close()
+
+        print(f"✅ Productos comparables: {len(productos)}")
+        print(f"✅ Establecimientos: {len(establecimientos_set)}")
+        print(f"✅ Ahorro promedio: {ahorro_promedio}%")
 
         return {
             "success": True,
@@ -8659,7 +8664,12 @@ async def comparador_precios():
         import traceback
 
         traceback.print_exc()
-        return {"success": False, "error": str(e), "productos": [], "estadisticas": {}}
+        return {
+            "success": False,
+            "error": str(e),
+            "productos": [],
+            "estadisticas": {},
+        }
 
 
 @app.get("/comparador")
