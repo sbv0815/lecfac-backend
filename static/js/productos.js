@@ -1256,9 +1256,8 @@ async function aplicarCorreccionMasiva() {
         mostrarAlerta(`Error: ${error.message}`, 'error');
     }
 }
-
 // =============================================================
-// CARGAR SUGERENCIAS
+// CARGAR SUGERENCIAS CLAVES
 // =============================================================
 async function cargarSugerencias() {
     const apiBase = getApiBase();
@@ -1318,7 +1317,7 @@ window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
 console.log('✅ Funciones cargadas correctamente');
 
 // =============================================================
-// Inicialización
+// Inicialización para el cargue
 // =============================================================
 document.addEventListener("DOMContentLoaded", async function () {
     console.log('🚀 Inicializando aplicación...');
