@@ -432,7 +432,7 @@ async def actualizar_producto(producto_id: int, request: dict):
             conn.close()
             return {"success": False, "error": "No hay campos para actualizar"}
 
-        # Agregar fecha de actualización
+        # Agregar fecha de actualización clave en el proceso
         updates.append("fecha_actualizacion = CURRENT_TIMESTAMP")
         params.append(producto_id)
 
@@ -582,7 +582,7 @@ async def eliminar_producto(producto_id: int):
             logger.warning(f"   ⚠️ Patrones no limpiados")
 
         # ============================================================
-        # ELIMINACIÓN FINAL DEL PRODUCTO
+        # ELIMINACIÓN FINAL DEL PRODUCTO PARA PODER ELIMINAR
         # ============================================================
 
         cursor.execute(
