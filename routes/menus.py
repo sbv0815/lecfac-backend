@@ -157,7 +157,7 @@ async def get_inventario_disponible(user_id: int) -> List[dict]:
             i.codigo_lecfac,
             p.marca,
             p.ean
-        FROM inventario_personal i
+        FROM inventario_usuario i
         LEFT JOIN productos_comunitarios p ON i.codigo_lecfac = p.codigo_lecfac
         WHERE i.user_id = $1 AND i.cantidad > 0
         ORDER BY i.fecha_vencimiento ASC NULLS LAST
