@@ -408,13 +408,14 @@ async def actualizar_producto(producto_id: int, request: dict):
             params.append(marca)
             print(f"   ✅ Actualizando marca: {marca}")
 
-        if "codigo_ean" in request:
-            # Leer EAN actual del producto
-            cursor.execute(
-                "SELECT codigo_ean FROM productos_maestros_v2 WHERE id = %s",
-                (producto_id,),
-            )
-            ean_actual = cursor.fetchone()[0]
+            if "codigo_ean" in request:
+                # Leer EAN actual del producto
+                cursor.execute(
+                    "SELECT codigo_ean FROM productos_maestros_v2 WHERE id = %s",
+                    (producto_id,),
+                )
+            ean_result = cursor.fetchone()
+            ean_actual = ean_result[0] if ean_result else None
 
             # Procesar EAN nuevo
             ean_value = request["codigo_ean"].strip() if request["codigo_ean"] else None
@@ -422,7 +423,7 @@ async def actualizar_producto(producto_id: int, request: dict):
 
             # Solo actualizar si es diferente
             if ean_actual != ean_final:
-                # ✅ NUEVA VALIDACIÓN: Verificar que no existe en OTRO producto DEL MISMO ESTABLECIMIENTO
+                # ✅ VALIDACIÓN CORRECTA - Verificar que no existe en OTRO producto DEL MISMO ESTABLECIMIENTO
                 if ean_final:
                     cursor.execute(
                         """
@@ -440,7 +441,9 @@ async def actualizar_producto(producto_id: int, request: dict):
                     )
 
                 conflicto = cursor.fetchone()
-                if conflicto:
+
+                # ✅ CRÍTICO: Solo lanzar error si conflicto NO es None
+                if conflicto and conflicto[0]:  # Verificar que existe y tiene datos
                     cursor.close()
                     conn.close()
                 raise HTTPException(
