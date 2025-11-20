@@ -1225,6 +1225,13 @@ async def serve_productos():
         raise HTTPException(status_code=404, detail=f"Productos no disponible: {e}")
 
 
+@app.get("/historial_precios.html")
+async def servir_historial_precios():
+    """Servir página de historial de precios"""
+    print("📊 Sirviendo historial_precios.html")
+    return FileResponse("static/historial_precios.html")
+
+
 @app.get("/health")
 @app.get("/api/health-check")
 async def health_check():
