@@ -6,7 +6,6 @@ from typing import List, Optional
 import json
 from anthropic import Anthropic
 import os
-import asyncpg
 
 # ✅ AGREGAR PREFIJO AL ROUTER
 router = APIRouter(prefix="/api/menus", tags=["Menús"])
@@ -133,47 +132,42 @@ def extract_json_from_text(text: str) -> dict:
         raise
 
 
-async def get_db_pool():
-    """Obtiene pool de conexiones a la base de datos"""
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        raise Exception("DATABASE_URL no configurada")
-
-    return await asyncpg.create_pool(database_url)
-
-
 async def get_inventario_disponible(user_id: int) -> List[dict]:
     """Obtiene productos en inventario con cantidad > 0"""
-    pool = await get_db_pool()
+    from database import get_db_connection
 
-    async with pool.acquire() as conn:
+    conn = await get_db_connection()
+
+    try:
         query = """
         SELECT
             pm.nombre_consolidado as nombre,
             i.cantidad_actual as cantidad,
             i.unidad_medida as unidad,
-            c.nombre as categoria,
+            'Sin categoría' as categoria,
             i.fecha_estimada_agotamiento as fecha_vencimiento,
             pm.codigo_lecfac,
             COALESCE(i.marca, pm.marca) as marca,
             pm.codigo_ean as ean
         FROM inventario_usuario i
         LEFT JOIN productos_maestros_v2 pm ON i.producto_maestro_id = pm.id
-        LEFT JOIN categorias c ON pm.categoria_id = c.id
         WHERE i.usuario_id = $1 AND i.cantidad_actual > 0
         ORDER BY i.fecha_estimada_agotamiento ASC NULLS LAST
         """
 
         rows = await conn.fetch(query, user_id)
-        await pool.close()
         return [dict(row) for row in rows]
+    finally:
+        await conn.close()
 
 
 async def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> int:
     """Guarda el menú generado en la base de datos"""
-    pool = await get_db_pool()
+    from database import get_db_connection
 
-    async with pool.acquire() as conn:
+    conn = await get_db_connection()
+
+    try:
         query = """
         INSERT INTO menus_generados (
             user_id, nombre, descripcion, tipo_comida, num_personas, ocasion,
@@ -201,8 +195,9 @@ async def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> i
             json.dumps(receta.get("tags", [])),
         )
 
-        await pool.close()
         return row["id"]
+    finally:
+        await conn.close()
 
 
 # ============================================================================
@@ -210,7 +205,6 @@ async def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> i
 # ============================================================================
 
 
-# ✅ 1. POST /generar (ESPECÍFICO)
 @router.post("/generar", response_model=MenuResponse)
 async def generar_menu(
     request: MenuRequest, user_id: int = Header(..., alias="X-User-ID")
@@ -317,13 +311,14 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
         raise HTTPException(500, f"Error generando menú: {str(e)}")
 
 
-# ✅ 2. GET /historial (ESPECÍFICO)
 @router.get("/historial")
 async def get_historial_menus(user_id: int = Header(..., alias="X-User-ID")):
     """Obtiene el historial de menús generados del usuario"""
-    pool = await get_db_pool()
+    from database import get_db_connection
 
-    async with pool.acquire() as conn:
+    conn = await get_db_connection()
+
+    try:
         query = """
         SELECT
             id, nombre, descripcion, tipo_comida, num_personas,
@@ -336,30 +331,30 @@ async def get_historial_menus(user_id: int = Header(..., alias="X-User-ID")):
         """
 
         rows = await conn.fetch(query, user_id)
-        await pool.close()
         return {"success": True, "menus": [dict(row) for row in rows]}
+    finally:
+        await conn.close()
 
 
-# ✅ 3. GET /{menu_id} (GENÉRICO - AL FINAL)
 @router.get("/{menu_id}")
 async def get_menu_detalle(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
     """Obtiene el detalle completo de un menú"""
-    pool = await get_db_pool()
+    from database import get_db_connection
 
-    async with pool.acquire() as conn:
+    conn = await get_db_connection()
+
+    try:
         query = """
         SELECT * FROM menus_generados
         WHERE id = $1 AND user_id = $2
         """
 
         row = await conn.fetchrow(query, menu_id, user_id)
-        await pool.close()
 
         if not row:
             raise HTTPException(404, "Menú no encontrado")
 
         menu = dict(row)
-        # Parsear JSONB a objetos Python
         menu["ingredientes"] = (
             json.loads(menu["ingredientes"]) if menu["ingredientes"] else []
         )
@@ -367,15 +362,18 @@ async def get_menu_detalle(menu_id: int, user_id: int = Header(..., alias="X-Use
         menu["tags"] = json.loads(menu["tags"]) if menu["tags"] else []
 
         return {"success": True, "menu": menu}
+    finally:
+        await conn.close()
 
 
-# ✅ 4. PATCH /{menu_id}/favorito (GENÉRICO)
 @router.patch("/{menu_id}/favorito")
 async def toggle_favorito(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
     """Marca/desmarca un menú como favorito"""
-    pool = await get_db_pool()
+    from database import get_db_connection
 
-    async with pool.acquire() as conn:
+    conn = await get_db_connection()
+
+    try:
         query = """
         UPDATE menus_generados
         SET favorito = NOT favorito
@@ -384,21 +382,23 @@ async def toggle_favorito(menu_id: int, user_id: int = Header(..., alias="X-User
         """
 
         row = await conn.fetchrow(query, menu_id, user_id)
-        await pool.close()
 
         if not row:
             raise HTTPException(404, "Menú no encontrado")
 
         return {"success": True, "favorito": row["favorito"]}
+    finally:
+        await conn.close()
 
 
-# ✅ 5. PATCH /{menu_id}/usado (GENÉRICO)
 @router.patch("/{menu_id}/usado")
 async def marcar_usado(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
     """Marca un menú como usado (ya cocinado)"""
-    pool = await get_db_pool()
+    from database import get_db_connection
 
-    async with pool.acquire() as conn:
+    conn = await get_db_connection()
+
+    try:
         query = """
         UPDATE menus_generados
         SET usado = true
@@ -407,12 +407,13 @@ async def marcar_usado(menu_id: int, user_id: int = Header(..., alias="X-User-ID
         """
 
         row = await conn.fetchrow(query, menu_id, user_id)
-        await pool.close()
 
         if not row:
             raise HTTPException(404, "Menú no encontrado")
 
         return {"success": True, "usado": row["usado"]}
+    finally:
+        await conn.close()
 
 
 print("✅ Módulo menus.py cargado correctamente")
