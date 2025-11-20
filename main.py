@@ -2038,17 +2038,23 @@ async def crear_establecimiento(request: Request):
 
 # FUNCIÓN DE BACKGROUND - COMPLETA CON ESTABLECIMIENTO
 # ==========================================
+# FUNCIÓN DE BACKGROUND - COMPLETA CON ESTABLECIMIENTO Y TRACKING
+# ==========================================
 async def process_video_background_task(
     job_id: str,
     video_path: str,
     usuario_id: int,
-    establecimiento_nombre: str = None,  # ← NUEVO
-    establecimiento_id: int = None,  # ← NUEVO
+    establecimiento_nombre: str = None,
+    establecimiento_id: int = None,
 ):
     """Procesa video en BACKGROUND con establecimiento confirmado"""
     conn = None
     cursor = None
     frames_paths = []
+
+    # ✅ NUEVO: Variables para tracking de tokens
+    total_tokens_input = 0
+    total_tokens_output = 0
 
     try:
         print(f"\n{'='*80}")
@@ -2060,6 +2066,25 @@ async def process_video_background_task(
                 f"🏪 Establecimiento: {establecimiento_nombre} (ID: {establecimiento_id})"
             )
         print(f"{'='*80}")
+
+        # ✅ NUEVO: Verificar límites ANTES de procesar
+        verificacion = verificar_limite_usuario(usuario_id, "ocr_factura")
+        if not verificacion["permitido"]:
+            print(f"⛔ Usuario {usuario_id} bloqueado: {verificacion['razon']}")
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE processing_jobs
+                SET status = 'failed', error_message = %s, completed_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """,
+                (verificacion["razon"], job_id),
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -2165,15 +2190,12 @@ async def process_video_background_task(
             raise Exception(f"Error importando módulos: {e}")
 
         # Extraer frames
-        # Extraer frames - OPTIMIZADO
         print(f"🎬 Extrayendo frames...")
         frames_paths = extraer_frames_video(video_path, intervalo=5.0)
 
-        # LIMITAR a máximo 5 frames para evitar duplicados y rate limits
         MAX_FRAMES = 5
         if len(frames_paths) > MAX_FRAMES:
             print(f"⚠️ Limitando de {len(frames_paths)} a {MAX_FRAMES} frames")
-            # Tomar frames distribuidos uniformemente
             indices = [
                 int(i * len(frames_paths) / MAX_FRAMES) for i in range(MAX_FRAMES)
             ]
@@ -2188,23 +2210,23 @@ async def process_video_background_task(
         print(f"🤖 Procesando con Claude...")
         start_time = time.time()
 
+        # ✅ MODIFICADO: Retornar también usage
         def procesar_frame_individual(args):
             i, frame_path = args
             try:
-                # ✅ CRÍTICO: Pasar establecimiento_nombre a Claude
                 resultado = parse_invoice_with_claude(
                     frame_path,
-                    establecimiento_preseleccionado=establecimiento_nombre,  # ← NUEVO
+                    establecimiento_preseleccionado=establecimiento_nombre,
                 )
                 if resultado.get("success") and resultado.get("data"):
-                    return (i, resultado["data"])
-                return (i, None)
+                    return (i, resultado["data"], resultado.get("usage", {}))
+                return (i, None, resultado.get("usage", {}))
             except Exception as e:
                 print(f"⚠️ Error procesando frame {i+1}: {e}")
-                return (i, None)
+                return (i, None, {})
 
         todos_productos = []
-        establecimiento = None
+        establecimiento = establecimiento_nombre
         fecha = None
         frames_exitosos = 0
 
@@ -2215,7 +2237,14 @@ async def process_video_background_task(
 
         totales_detectados = []
 
-        for i, data in resultados:
+        # ✅ MODIFICADO: Procesar resultados con usage
+        for resultado in resultados:
+            i, data, usage = resultado
+
+            # Acumular tokens
+            total_tokens_input += usage.get("input_tokens", 0)
+            total_tokens_output += usage.get("output_tokens", 0)
+
             if data:
                 frames_exitosos += 1
 
@@ -2235,6 +2264,9 @@ async def process_video_background_task(
         print(f"✅ Frames exitosos: {frames_exitosos}/{len(frames_paths)}")
         print(f"📦 Productos detectados: {len(todos_productos)}")
         print(f"⏱️ Tiempo: {elapsed_time:.1f}s")
+        print(
+            f"🔢 Tokens totales: {total_tokens_input:,} in + {total_tokens_output:,} out"
+        )
 
         if totales_detectados:
             total = max(totales_detectados)
@@ -2293,15 +2325,19 @@ async def process_video_background_task(
         cursor = conn.cursor()
 
         try:
-            establecimiento, cadena = procesar_establecimiento(
-                establecimiento_raw=establecimiento,
-                productos=productos_unicos,
-                total=total,
-            )
+            # Si no tenemos establecimiento_id, procesarlo
+            if not establecimiento_id:
+                establecimiento, cadena = procesar_establecimiento(
+                    establecimiento_raw=establecimiento,
+                    productos=productos_unicos,
+                    total=total,
+                )
 
-            establecimiento_id = obtener_o_crear_establecimiento_id(
-                conn=conn, establecimiento=establecimiento, cadena=cadena
-            )
+                establecimiento_id = obtener_o_crear_establecimiento_id(
+                    conn=conn, establecimiento=establecimiento, cadena=cadena
+                )
+            else:
+                cadena = None  # Ya lo tenemos
 
             if os.environ.get("DATABASE_TYPE") == "postgresql":
                 fecha_final = (
@@ -2352,6 +2388,22 @@ async def process_video_background_task(
 
             conn.commit()
             print(f"✅ Factura creada: ID {factura_id}")
+
+            # ✅ NUEVO: Registrar uso de API
+            uso_registrado = registrar_uso_api(
+                user_id=usuario_id,
+                tipo_operacion="ocr_factura",
+                modelo="claude-sonnet-4-20250514",
+                tokens_input=total_tokens_input,
+                tokens_output=total_tokens_output,
+                referencia_id=factura_id,
+                referencia_tipo="factura",
+                exitoso=True,
+            )
+            if uso_registrado.get("success"):
+                print(
+                    f"📊 API Usage: {total_tokens_input + total_tokens_output:,} tokens = ${uso_registrado.get('costo_usd', 0):.4f} USD"
+                )
 
             # Guardar reporte de anomalías
             if resultado_deteccion.get("duplicados_detectados"):
@@ -2406,13 +2458,11 @@ async def process_video_background_task(
                     precio = producto.get("precio") or producto.get("valor", 0)
                     cantidad = producto.get("cantidad", 1)
 
-                    # Validación: producto sin nombre
                     if not nombre or nombre.strip() == "":
                         print(f"⚠️ Producto sin nombre, omitiendo")
                         productos_fallidos += 1
                         continue
 
-                    # Validación: cantidad válida
                     try:
                         cantidad = int(cantidad)
                         if cantidad <= 0:
@@ -2420,7 +2470,6 @@ async def process_video_background_task(
                     except (ValueError, TypeError):
                         cantidad = 1
 
-                    # Validación: precio válido
                     try:
                         precio = float(precio)
                         if precio < 0:
@@ -2435,9 +2484,6 @@ async def process_video_background_task(
                         productos_fallidos += 1
                         continue
 
-                    # ==========================================
-                    # BUSCAR O CREAR PRODUCTO MAESTRO
-                    # ==========================================
                     producto_maestro_id = None
 
                     if codigo and len(codigo) >= 3:
@@ -2448,10 +2494,9 @@ async def process_video_background_task(
                             establecimiento=establecimiento,
                             cursor=cursor,
                             conn=conn,
-                            establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
+                            establecimiento_id=establecimiento_id,
                         )
 
-                        # ✅ FIX: Validar que se creó correctamente
                         if not producto_maestro_id:
                             print(
                                 f"   ⚠️ SKIP: No se pudo crear producto maestro para '{nombre}'"
@@ -2463,7 +2508,6 @@ async def process_video_background_task(
                             f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}"
                         )
 
-                    # Guardar en items_factura
                     if os.environ.get("DATABASE_TYPE") == "postgresql":
                         cursor.execute(
                             """
@@ -2561,32 +2605,30 @@ async def process_video_background_task(
                 print(f"⚠️ Error actualizando inventario: {e}")
                 traceback.print_exc()
 
-                # ✅ NUEVO: Actualizar tablas analíticas
+            # ✅ CORREGIDO: Actualizar tablas analíticas
             print(f"📊 Actualizando tablas analíticas...")
             try:
-                # Preparar items procesados
+                cursor.execute(
+                    """
+                    SELECT producto_maestro_id, codigo_leido
+                    FROM items_factura
+                    WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
+                """,
+                    (factura_id,),
+                )
+
                 items_data = []
-                for producto in productos_unicos:
-                    # Buscar producto_maestro_id de cada item guardado
-                    cursor.execute(
-                        """
-                        SELECT producto_maestro_id, codigo_leido
-                        FROM items_factura
-                        WHERE factura_id = %s
-                        AND nombre_leido = %s
-                        LIMIT 1
-                    """,
-                        (factura_id, producto.get("nombre", "")),
+                for row in cursor.fetchall():
+                    items_data.append(
+                        {"producto_maestro_id": row[0], "codigo_leido": row[1] or ""}
                     )
 
-                    item_data = cursor.fetchone()
-                    if item_data:
-                        items_data.append(
-                            {
-                                "producto_maestro_id": item_data[0],
-                                "codigo_leido": item_data[1],
-                            }
-                        )
+                # ✅ FIX: Definir productos_ids ANTES de usarlo
+                productos_ids = [
+                    item["producto_maestro_id"]
+                    for item in items_data
+                    if item.get("producto_maestro_id")
+                ]
 
                 resultado_analytics = actualizar_todas_las_tablas_analiticas(
                     cursor=cursor,
@@ -2610,6 +2652,7 @@ async def process_video_background_task(
                 import traceback
 
                 traceback.print_exc()
+
             print(f"💰 Guardando precios para comparación...")
             try:
                 stats = procesar_items_factura_y_guardar_precios(factura_id, usuario_id)
@@ -2709,6 +2752,18 @@ async def process_video_background_task(
         print(f"Error: {str(e)}")
         print(f"{'='*80}")
         traceback.print_exc()
+
+        # ✅ NUEVO: Registrar uso fallido si hubo tokens
+        if total_tokens_input > 0 or total_tokens_output > 0:
+            registrar_uso_api(
+                user_id=usuario_id,
+                tipo_operacion="ocr_factura",
+                modelo="claude-sonnet-4-20250514",
+                tokens_input=total_tokens_input,
+                tokens_output=total_tokens_output,
+                exitoso=False,
+                error_mensaje=str(e)[:500],
+            )
 
         try:
             conn = get_db_connection()
