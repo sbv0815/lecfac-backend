@@ -3146,11 +3146,6 @@ import psycopg2.extras
 # Buscar desde @app.post("/api/v2/procesar-factura") hasta el siguiente @app
 # ============================================================================
 
-# ============================================================================
-# ENDPOINT V2 CON AUTENTICACIÓN JWT CORREGIDA
-# Reemplazar en main.py desde @app.post("/api/v2/procesar-factura")
-# ============================================================================
-
 
 @app.post("/api/v2/procesar-factura")
 async def procesar_factura_v2(request: Request, background_tasks: BackgroundTasks):
