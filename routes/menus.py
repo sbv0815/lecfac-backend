@@ -278,7 +278,7 @@ async def generar_menu(
             raise HTTPException(400, "num_personas debe estar entre 1 y 20")
 
         # 2. Obtener inventario actual del usuario
-        inventario = await get_inventario_disponible(user_id)
+        inventario = get_inventario_disponible(user_id)  # ✅ SIN await
 
         if not inventario:
             return MenuResponse(
@@ -344,7 +344,7 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
         print(f"✅ Receta generada: {receta['nombre']}")
 
         # 7. Guardar en base de datos
-        menu_id = await save_menu_to_db(user_id, receta, request)
+        menu_id = save_menu_to_db(user_id, receta, request)  # ✅ SIN await
 
         # 8. Calcular costo aproximado de la API
         input_tokens = message.usage.input_tokens
