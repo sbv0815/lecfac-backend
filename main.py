@@ -2639,12 +2639,12 @@ async def process_video_background_task(
                     productos_ids=productos_ids,
                 )
 
-                print(f"✅ Tablas analíticas actualizadas:")
-                print(f"   - Códigos: {resultado_analytics['codigos_actualizados']}")
-                print(f"   - Historial: {resultado_analytics['historial_compras']}")
-                print(f"   - Patrones: {resultado_analytics['patrones_compra']}")
                 print(
-                    f"   - Precios: {resultado_analytics['productos_por_establecimiento']}"
+                    f"   - Historial: {resultado_analytics.get('historial_compras', 0)}"
+                )
+                print(f"   - Patrones: {resultado_analytics.get('patrones_compra', 0)}")
+                rint(
+                    f"   - Precios: {resultado_analytics.get('productos_por_establecimiento', 0)}"
                 )
 
             except Exception as e:
