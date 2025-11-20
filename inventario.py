@@ -1,6 +1,11 @@
 """
 Sistema de Inventario Personal del Usuario
 Gestiona el stock de productos del usuario y genera alertas
+
+🔄 MODIFICADO: Sistema NO ACUMULATIVO
+- Cada nueva compra REEMPLAZA la cantidad anterior
+- Se usa el codigo_lecfac para identificar el producto único
+- El sistema aprende la frecuencia de consumo basándose en las fechas de compra
 """
 
 import os
@@ -11,6 +16,11 @@ from database import get_db_connection
 def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
     """
     Actualiza el inventario del usuario automáticamente cuando sube una factura
+
+    🔄 CAMBIO IMPORTANTE: NO ACUMULATIVO
+    - Si el producto ya existe, REEMPLAZA la cantidad (no suma)
+    - Esto permite detectar el consumo real del usuario
+    - Calcula frecuencia de compra basándose en el historial
 
     Args:
         factura_id: ID de la factura procesada
@@ -82,9 +92,16 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
             inventario_existente = cursor.fetchone()
 
             if inventario_existente:
-                # Actualizar inventario existente
+                # ✅ CAMBIO CRÍTICO: REEMPLAZAR en lugar de SUMAR
                 inv_id = inventario_existente[0]
-                cantidad_actual = (inventario_existente[1] or 0) + cantidad
+
+                # 🔄 NO ACUMULATIVO: La nueva cantidad REEMPLAZA la anterior
+                cantidad_nueva = cantidad  # ← NO SUMA, solo reemplaza
+
+                print(f"🔄 Actualizando inventario (NO ACUMULATIVO):")
+                print(f"   Producto ID: {producto_id}")
+                print(f"   Cantidad anterior: {inventario_existente[1]}")
+                print(f"   Cantidad nueva: {cantidad_nueva} ← REEMPLAZA (no suma)")
 
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
@@ -95,7 +112,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                             fecha_ultima_actualizacion = CURRENT_TIMESTAMP
                         WHERE id = %s
                     """,
-                        (cantidad_actual, inv_id),
+                        (cantidad_nueva, inv_id),  # ← REEMPLAZA
                     )
                 else:
                     cursor.execute(
@@ -106,14 +123,18 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
                             fecha_ultima_actualizacion = CURRENT_TIMESTAMP
                         WHERE id = ?
                     """,
-                        (cantidad_actual, inv_id),
+                        (cantidad_nueva, inv_id),  # ← REEMPLAZA
                     )
 
-                # Calcular frecuencia de compra
+                # Calcular frecuencia de compra (detecta consumo)
                 calcular_frecuencia_compra(usuario_id, producto_id, cursor)
 
             else:
                 # Crear nuevo registro en inventario
+                print(f"➕ Creando nuevo producto en inventario:")
+                print(f"   Producto ID: {producto_id}")
+                print(f"   Cantidad inicial: {cantidad}")
+
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -144,6 +165,8 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 
         conn.close()
 
+        print(f"✅ Inventario actualizado: {productos_actualizados} productos")
+
         return {
             "success": True,
             "productos_actualizados": productos_actualizados,
@@ -151,7 +174,7 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
         }
 
     except Exception as e:
-        print(f"Error actualizando inventario: {e}")
+        print(f"❌ Error actualizando inventario: {e}")
         conn.rollback()
         conn.close()
         return {"success": False, "error": str(e)}
@@ -160,6 +183,12 @@ def actualizar_inventario_desde_factura(factura_id: int, usuario_id: int):
 def calcular_frecuencia_compra(usuario_id: int, producto_id: int, cursor):
     """
     Calcula la frecuencia de compra de un producto basándose en el historial
+
+    🧠 INTELIGENCIA DEL SISTEMA:
+    - Analiza las últimas 3 compras del producto
+    - Calcula promedio de días entre compras
+    - Estima cuándo se agotará el producto
+    - Esto permite alertas predictivas sin que el usuario registre consumo
     """
     try:
         # Obtener las últimas 3 fechas de compra
@@ -217,6 +246,12 @@ def calcular_frecuencia_compra(usuario_id: int, producto_id: int, cursor):
 
                 fecha_estimada = fecha_ultima + timedelta(days=frecuencia_promedio)
 
+                print(f"📊 Frecuencia calculada:")
+                print(f"   Producto ID: {producto_id}")
+                print(f"   Intervalos: {intervalos}")
+                print(f"   Promedio: cada {frecuencia_promedio} días")
+                print(f"   Próxima compra estimada: {fecha_estimada.date()}")
+
                 # Actualizar en la base de datos
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
@@ -250,7 +285,7 @@ def calcular_frecuencia_compra(usuario_id: int, producto_id: int, cursor):
                     )
 
     except Exception as e:
-        print(f"Error calculando frecuencia: {e}")
+        print(f"❌ Error calculando frecuencia: {e}")
 
 
 def verificar_alertas_stock(usuario_id: int, cursor=None):
@@ -366,7 +401,7 @@ def verificar_alertas_stock(usuario_id: int, cursor=None):
         return alertas_creadas
 
     except Exception as e:
-        print(f"Error verificando alertas: {e}")
+        print(f"❌ Error verificando alertas: {e}")
         if debe_cerrar_conn:
             conn.close()
         return []
@@ -473,7 +508,7 @@ def obtener_inventario_usuario(usuario_id: int):
         return productos
 
     except Exception as e:
-        print(f"Error obteniendo inventario: {e}")
+        print(f"❌ Error obteniendo inventario: {e}")
         conn.close()
         return []
 
@@ -515,7 +550,7 @@ def actualizar_cantidad_manual(
         return {"success": True, "mensaje": "Cantidad actualizada correctamente"}
 
     except Exception as e:
-        print(f"Error actualizando cantidad: {e}")
+        print(f"❌ Error actualizando cantidad: {e}")
         conn.close()
         return {"success": False, "error": str(e)}
 
@@ -572,6 +607,6 @@ def obtener_alertas_usuario(usuario_id: int, solo_activas: bool = True):
         return alertas
 
     except Exception as e:
-        print(f"Error obteniendo alertas: {e}")
+        print(f"❌ Error obteniendo alertas: {e}")
         conn.close()
         return []
