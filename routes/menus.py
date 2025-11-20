@@ -132,11 +132,12 @@ def extract_json_from_text(text: str) -> dict:
         raise
 
 
-async def get_inventario_disponible(user_id: int) -> List[dict]:
+def get_inventario_disponible(user_id: int) -> List[dict]:
     """Obtiene productos en inventario con cantidad > 0"""
     from database import get_db_connection
 
-    conn = await get_db_connection()
+    conn = get_db_connection()  # ✅ SIN await
+    cursor = conn.cursor()
 
     try:
         query = """
@@ -151,14 +152,67 @@ async def get_inventario_disponible(user_id: int) -> List[dict]:
             pm.codigo_ean as ean
         FROM inventario_usuario i
         LEFT JOIN productos_maestros_v2 pm ON i.producto_maestro_id = pm.id
-        WHERE i.usuario_id = $1 AND i.cantidad_actual > 0
+        WHERE i.usuario_id = %s AND i.cantidad_actual > 0
         ORDER BY i.fecha_estimada_agotamiento ASC NULLS LAST
         """
 
-        rows = await conn.fetch(query, user_id)
-        return [dict(row) for row in rows]
+        cursor.execute(query, (user_id,))
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+
+        return [dict(zip(columns, row)) for row in rows]
     finally:
-        await conn.close()
+        cursor.close()
+        conn.close()
+
+
+def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> int:
+    """Guarda el menú generado en la base de datos"""
+    from database import get_db_connection
+
+    conn = get_db_connection()  # ✅ SIN await
+    cursor = conn.cursor()
+
+    try:
+        query = """
+        INSERT INTO menus_generados (
+            user_id, nombre, descripcion, tipo_comida, num_personas, ocasion,
+            tiempo_prep, porciones, dificultad, calorias_aprox, costo_estimado,
+            ingredientes, pasos, tags
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """
+
+        cursor.execute(
+            query,
+            (
+                user_id,
+                receta.get("nombre"),
+                receta.get("descripcion"),
+                request.tipo_comida,
+                request.num_personas,
+                request.ocasion,
+                receta.get("tiempo_prep"),
+                receta.get("porciones"),
+                receta.get("dificultad"),
+                receta.get("calorias_aprox"),
+                receta.get("costo_estimado"),
+                json.dumps(receta.get("ingredientes", [])),
+                json.dumps(receta.get("pasos", [])),
+                json.dumps(receta.get("tags", [])),
+            ),
+        )
+
+        menu_id = cursor.fetchone()[0]
+        conn.commit()
+
+        return menu_id
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 
 async def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> int:
@@ -312,11 +366,12 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
 
 
 @router.get("/historial")
-async def get_historial_menus(user_id: int = Header(..., alias="X-User-ID")):
+def get_historial_menus(user_id: int = Header(..., alias="X-User-ID")):
     """Obtiene el historial de menús generados del usuario"""
     from database import get_db_connection
 
-    conn = await get_db_connection()
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
     try:
         query = """
@@ -325,15 +380,120 @@ async def get_historial_menus(user_id: int = Header(..., alias="X-User-ID")):
             tiempo_prep, porciones, dificultad, calorias_aprox,
             fecha_generacion, usado, favorito, calificacion
         FROM menus_generados
-        WHERE user_id = $1
+        WHERE user_id = %s
         ORDER BY fecha_generacion DESC
         LIMIT 50
         """
 
-        rows = await conn.fetch(query, user_id)
-        return {"success": True, "menus": [dict(row) for row in rows]}
+        cursor.execute(query, (user_id,))
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+
+        return {"success": True, "menus": [dict(zip(columns, row)) for row in rows]}
     finally:
-        await conn.close()
+        cursor.close()
+        conn.close()
+
+
+@router.get("/{menu_id}")
+def get_menu_detalle(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
+    """Obtiene el detalle completo de un menú"""
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+        SELECT * FROM menus_generados
+        WHERE id = %s AND user_id = %s
+        """
+
+        cursor.execute(query, (menu_id, user_id))
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(404, "Menú no encontrado")
+
+        columns = [desc[0] for desc in cursor.description]
+        menu = dict(zip(columns, row))
+
+        menu["ingredientes"] = (
+            json.loads(menu["ingredientes"]) if menu["ingredientes"] else []
+        )
+        menu["pasos"] = json.loads(menu["pasos"]) if menu["pasos"] else []
+        menu["tags"] = json.loads(menu["tags"]) if menu["tags"] else []
+
+        return {"success": True, "menu": menu}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.patch("/{menu_id}/favorito")
+def toggle_favorito(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
+    """Marca/desmarca un menú como favorito"""
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+        UPDATE menus_generados
+        SET favorito = NOT favorito
+        WHERE id = %s AND user_id = %s
+        RETURNING favorito
+        """
+
+        cursor.execute(query, (menu_id, user_id))
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(404, "Menú no encontrado")
+
+        conn.commit()
+
+        return {"success": True, "favorito": row[0]}
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.patch("/{menu_id}/usado")
+def marcar_usado(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
+    """Marca un menú como usado (ya cocinado)"""
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+        UPDATE menus_generados
+        SET usado = true
+        WHERE id = %s AND user_id = %s
+        RETURNING usado
+        """
+
+        cursor.execute(query, (menu_id, user_id))
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(404, "Menú no encontrado")
+
+        conn.commit()
+
+        return {"success": True, "usado": row[0]}
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.get("/{menu_id}")
