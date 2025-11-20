@@ -1,11 +1,12 @@
-# backend/routes/menus.py
+# menus.py - Sistema de generación de menús con IA
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import List, Optional
 import json
 from anthropic import Anthropic
 import os
+import asyncpg
 
 router = APIRouter()
 
@@ -108,78 +109,98 @@ def format_inventario_para_prompt(inventario: List[dict]) -> str:
 
 def extract_json_from_text(text: str) -> dict:
     """Extrae JSON de texto que puede contener markdown o texto adicional"""
-    # Intentar encontrar JSON entre ```json y ```
-    if "```json" in text:
-        start = text.find("```json") + 7
-        end = text.find("```", start)
-        json_text = text[start:end].strip()
-    elif "```" in text:
-        start = text.find("```") + 3
-        end = text.find("```", start)
-        json_text = text[start:end].strip()
-    else:
-        # Buscar el primer { y el último }
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        json_text = text[start:end].strip()
+    try:
+        # Intentar encontrar JSON entre ```json y ```
+        if "```json" in text:
+            start = text.find("```json") + 7
+            end = text.find("```", start)
+            json_text = text[start:end].strip()
+        elif "```" in text:
+            start = text.find("```") + 3
+            end = text.find("```", start)
+            json_text = text[start:end].strip()
+        else:
+            # Buscar el primer { y el último }
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            json_text = text[start:end].strip()
 
-    return json.loads(json_text)
+        return json.loads(json_text)
+    except Exception as e:
+        print(f"❌ Error extrayendo JSON: {str(e)}")
+        print(f"📄 Texto recibido: {text[:500]}")
+        raise
 
 
-async def get_inventario_disponible(user_id: int, conn) -> List[dict]:
+async def get_db_pool():
+    """Obtiene pool de conexiones a la base de datos"""
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise Exception("DATABASE_URL no configurada")
+
+    return await asyncpg.create_pool(database_url)
+
+
+async def get_inventario_disponible(user_id: int) -> List[dict]:
     """Obtiene productos en inventario con cantidad > 0"""
-    query = """
-    SELECT
-        i.nombre,
-        i.cantidad,
-        i.unidad,
-        i.categoria,
-        i.fecha_vencimiento,
-        i.codigo_lecfac,
-        p.marca,
-        p.ean
-    FROM inventario_personal i
-    LEFT JOIN productos_comunitarios p ON i.codigo_lecfac = p.codigo_lecfac
-    WHERE i.user_id = $1 AND i.cantidad > 0
-    ORDER BY i.fecha_vencimiento ASC NULLS LAST
-    """
+    pool = await get_db_pool()
 
-    rows = await conn.fetch(query, user_id)
-    return [dict(row) for row in rows]
+    async with pool.acquire() as conn:
+        query = """
+        SELECT
+            i.nombre,
+            i.cantidad,
+            i.unidad,
+            i.categoria,
+            i.fecha_vencimiento,
+            i.codigo_lecfac,
+            p.marca,
+            p.ean
+        FROM inventario_personal i
+        LEFT JOIN productos_comunitarios p ON i.codigo_lecfac = p.codigo_lecfac
+        WHERE i.user_id = $1 AND i.cantidad > 0
+        ORDER BY i.fecha_vencimiento ASC NULLS LAST
+        """
+
+        rows = await conn.fetch(query, user_id)
+        await pool.close()
+        return [dict(row) for row in rows]
 
 
-async def save_menu_to_db(
-    user_id: int, receta: dict, request: MenuRequest, conn
-) -> int:
+async def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> int:
     """Guarda el menú generado en la base de datos"""
-    query = """
-    INSERT INTO menus_generados (
-        user_id, nombre, descripcion, tipo_comida, num_personas, ocasion,
-        tiempo_prep, porciones, dificultad, calorias_aprox, costo_estimado,
-        ingredientes, pasos, tags
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-    RETURNING id
-    """
+    pool = await get_db_pool()
 
-    row = await conn.fetchrow(
-        query,
-        user_id,
-        receta.get("nombre"),
-        receta.get("descripcion"),
-        request.tipo_comida,
-        request.num_personas,
-        request.ocasion,
-        receta.get("tiempo_prep"),
-        receta.get("porciones"),
-        receta.get("dificultad"),
-        receta.get("calorias_aprox"),
-        receta.get("costo_estimado"),
-        json.dumps(receta.get("ingredientes", [])),
-        json.dumps(receta.get("pasos", [])),
-        json.dumps(receta.get("tags", [])),
-    )
+    async with pool.acquire() as conn:
+        query = """
+        INSERT INTO menus_generados (
+            user_id, nombre, descripcion, tipo_comida, num_personas, ocasion,
+            tiempo_prep, porciones, dificultad, calorias_aprox, costo_estimado,
+            ingredientes, pasos, tags
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id
+        """
 
-    return row["id"]
+        row = await conn.fetchrow(
+            query,
+            user_id,
+            receta.get("nombre"),
+            receta.get("descripcion"),
+            request.tipo_comida,
+            request.num_personas,
+            request.ocasion,
+            receta.get("tiempo_prep"),
+            receta.get("porciones"),
+            receta.get("dificultad"),
+            receta.get("calorias_aprox"),
+            receta.get("costo_estimado"),
+            json.dumps(receta.get("ingredientes", [])),
+            json.dumps(receta.get("pasos", [])),
+            json.dumps(receta.get("tags", [])),
+        )
+
+        await pool.close()
+        return row["id"]
 
 
 # ============================================================================
@@ -189,9 +210,7 @@ async def save_menu_to_db(
 
 @router.post("/api/menus/generar", response_model=MenuResponse)
 async def generar_menu(
-    request: MenuRequest,
-    user_id: int = Depends(get_current_user),  # Ajusta según tu auth
-    conn=Depends(get_db_connection),
+    request: MenuRequest, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
 ):
     """
     Genera un menú personalizado usando Claude Haiku 3.5
@@ -208,13 +227,15 @@ async def generar_menu(
             raise HTTPException(400, "num_personas debe estar entre 1 y 20")
 
         # 2. Obtener inventario actual del usuario
-        inventario = await get_inventario_disponible(user_id, conn)
+        inventario = await get_inventario_disponible(user_id)
 
         if not inventario:
             return MenuResponse(
                 success=False,
                 mensaje="No tienes productos en tu inventario. Agrega productos primero.",
             )
+
+        print(f"📦 Inventario obtenido: {len(inventario)} productos")
 
         # 3. Preparar prompt para Claude
         inventario_str = format_inventario_para_prompt(inventario)
@@ -237,7 +258,13 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
 """
 
         # 4. Llamar a Claude API
-        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise HTTPException(500, "ANTHROPIC_API_KEY no configurada")
+
+        client = Anthropic(api_key=api_key)
+
+        print(f"🤖 Llamando a Claude Haiku 3.5...")
 
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",  # Haiku 3.5
@@ -248,11 +275,13 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
 
         # 5. Parsear respuesta JSON
         response_text = message.content[0].text
+        print(f"📄 Respuesta de Claude (primeros 200 chars): {response_text[:200]}")
 
         try:
             receta = json.loads(response_text)
         except json.JSONDecodeError:
             # Si falla, intentar extraer JSON del texto
+            print("⚠️  Respuesta no es JSON puro, intentando extraer...")
             receta = extract_json_from_text(response_text)
 
         # 6. Validar estructura básica
@@ -261,20 +290,27 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
             if campo not in receta:
                 raise ValueError(f"La receta generada no tiene el campo '{campo}'")
 
+        print(f"✅ Receta generada: {receta['nombre']}")
+
         # 7. Guardar en base de datos
-        menu_id = await save_menu_to_db(user_id, receta, request, conn)
+        menu_id = await save_menu_to_db(user_id, receta, request)
 
         # 8. Calcular costo aproximado de la API
         input_tokens = message.usage.input_tokens
         output_tokens = message.usage.output_tokens
         costo_usd = (input_tokens * 0.001 / 1000000) + (output_tokens * 0.005 / 1000000)
 
-        print(f"✅ Menú generado - ID: {menu_id}, Costo: ${costo_usd:.4f}")
+        print(f"✅ Menú guardado - ID: {menu_id}")
+        print(f"💰 Costo API: ${costo_usd:.6f} USD")
+        print(f"📊 Tokens: {input_tokens} input, {output_tokens} output")
 
         return MenuResponse(success=True, menu_id=menu_id, receta=receta)
 
     except Exception as e:
         print(f"❌ Error generando menú: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(500, f"Error generando menú: {str(e)}")
 
 
@@ -285,69 +321,104 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
 
 @router.get("/api/menus/historial")
 async def get_historial_menus(
-    user_id: int = Depends(get_current_user), conn=Depends(get_db_connection)
+    user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
 ):
     """Obtiene el historial de menús generados del usuario"""
-    query = """
-    SELECT
-        id, nombre, descripcion, tipo_comida, num_personas,
-        tiempo_prep, porciones, dificultad, calorias_aprox,
-        fecha_generacion, usado, favorito, calificacion
-    FROM menus_generados
-    WHERE user_id = $1
-    ORDER BY fecha_generacion DESC
-    LIMIT 50
-    """
+    pool = await get_db_pool()
 
-    rows = await conn.fetch(query, user_id)
-    return {"success": True, "menus": [dict(row) for row in rows]}
+    async with pool.acquire() as conn:
+        query = """
+        SELECT
+            id, nombre, descripcion, tipo_comida, num_personas,
+            tiempo_prep, porciones, dificultad, calorias_aprox,
+            fecha_generacion, usado, favorito, calificacion
+        FROM menus_generados
+        WHERE user_id = $1
+        ORDER BY fecha_generacion DESC
+        LIMIT 50
+        """
+
+        rows = await conn.fetch(query, user_id)
+        await pool.close()
+        return {"success": True, "menus": [dict(row) for row in rows]}
 
 
 @router.get("/api/menus/{menu_id}")
 async def get_menu_detalle(
-    menu_id: int,
-    user_id: int = Depends(get_current_user),
-    conn=Depends(get_db_connection),
+    menu_id: int, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
 ):
     """Obtiene el detalle completo de un menú"""
-    query = """
-    SELECT * FROM menus_generados
-    WHERE id = $1 AND user_id = $2
-    """
+    pool = await get_db_pool()
 
-    row = await conn.fetchrow(query, menu_id, user_id)
+    async with pool.acquire() as conn:
+        query = """
+        SELECT * FROM menus_generados
+        WHERE id = $1 AND user_id = $2
+        """
 
-    if not row:
-        raise HTTPException(404, "Menú no encontrado")
+        row = await conn.fetchrow(query, menu_id, user_id)
+        await pool.close()
 
-    menu = dict(row)
-    # Parsear JSONB a objetos Python
-    menu["ingredientes"] = (
-        json.loads(menu["ingredientes"]) if menu["ingredientes"] else []
-    )
-    menu["pasos"] = json.loads(menu["pasos"]) if menu["pasos"] else []
-    menu["tags"] = json.loads(menu["tags"]) if menu["tags"] else []
+        if not row:
+            raise HTTPException(404, "Menú no encontrado")
 
-    return {"success": True, "menu": menu}
+        menu = dict(row)
+        # Parsear JSONB a objetos Python
+        menu["ingredientes"] = (
+            json.loads(menu["ingredientes"]) if menu["ingredientes"] else []
+        )
+        menu["pasos"] = json.loads(menu["pasos"]) if menu["pasos"] else []
+        menu["tags"] = json.loads(menu["tags"]) if menu["tags"] else []
+
+        return {"success": True, "menu": menu}
 
 
 @router.patch("/api/menus/{menu_id}/favorito")
 async def toggle_favorito(
-    menu_id: int,
-    user_id: int = Depends(get_current_user),
-    conn=Depends(get_db_connection),
+    menu_id: int, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
 ):
     """Marca/desmarca un menú como favorito"""
-    query = """
-    UPDATE menus_generados
-    SET favorito = NOT favorito
-    WHERE id = $1 AND user_id = $2
-    RETURNING favorito
-    """
+    pool = await get_db_pool()
 
-    row = await conn.fetchrow(query, menu_id, user_id)
+    async with pool.acquire() as conn:
+        query = """
+        UPDATE menus_generados
+        SET favorito = NOT favorito
+        WHERE id = $1 AND user_id = $2
+        RETURNING favorito
+        """
 
-    if not row:
-        raise HTTPException(404, "Menú no encontrado")
+        row = await conn.fetchrow(query, menu_id, user_id)
+        await pool.close()
 
-    return {"success": True, "favorito": row["favorito"]}
+        if not row:
+            raise HTTPException(404, "Menú no encontrado")
+
+        return {"success": True, "favorito": row["favorito"]}
+
+
+@router.patch("/api/menus/{menu_id}/usado")
+async def marcar_usado(
+    menu_id: int, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
+):
+    """Marca un menú como usado (ya cocinado)"""
+    pool = await get_db_pool()
+
+    async with pool.acquire() as conn:
+        query = """
+        UPDATE menus_generados
+        SET usado = true
+        WHERE id = $1 AND user_id = $2
+        RETURNING usado
+        """
+
+        row = await conn.fetchrow(query, menu_id, user_id)
+        await pool.close()
+
+        if not row:
+            raise HTTPException(404, "Menú no encontrado")
+
+        return {"success": True, "usado": row["usado"]}
+
+
+print("✅ Módulo menus.py cargado correctamente")
