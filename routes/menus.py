@@ -149,15 +149,19 @@ async def get_inventario_disponible(user_id: int) -> List[dict]:
     async with pool.acquire() as conn:
         query = """
         SELECT
-            nombre,
-            cantidad,
-            unidad,
-            categoria,
-            fecha_vencimiento,
-            codigo_lecfac
-        FROM inventario_usuario
-        WHERE user_id = $1 AND cantidad > 0
-        ORDER BY fecha_vencimiento ASC NULLS LAST
+            COALESCE(pm.nombre, pc.nombre_normalizado, 'Producto sin nombre') as nombre,
+            i.cantidad_actual as cantidad,
+            i.unidad_medida as unidad,
+            pm.categoria,
+            i.fecha_estimada_agotamiento as fecha_vencimiento,
+            pm.codigo_lecfac,
+            i.marca,
+            pm.codigo_ean as ean
+        FROM inventario_usuario i
+        LEFT JOIN productos_maestros pm ON i.producto_maestro_id = pm.id
+        LEFT JOIN productos_canonicos pc ON i.producto_canonico_id = pc.id
+        WHERE i.usuario_id = $1 AND i.cantidad_actual > 0
+        ORDER BY i.fecha_estimada_agotamiento ASC NULLS LAST
         """
 
         rows = await conn.fetch(query, user_id)
