@@ -1,4 +1,4 @@
-# menus.py - Sistema de generación de menús con IA
+# menus.py - Sistema de generación de menús con IA (CON TRACKING)
 
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
@@ -7,7 +7,9 @@ import json
 from anthropic import Anthropic
 import os
 
-# ✅ AGREGAR PREFIJO AL ROUTER
+# ✅ IMPORTAR TRACKER
+from api_usage_tracker import registrar_uso_api, verificar_limite_usuario
+
 router = APIRouter(prefix="/api/menus", tags=["Menús"])
 
 # ============================================================================
@@ -16,9 +18,9 @@ router = APIRouter(prefix="/api/menus", tags=["Menús"])
 
 
 class MenuRequest(BaseModel):
-    tipo_comida: str  # desayuno, almuerzo, cena, merienda, postre
+    tipo_comida: str
     num_personas: int = 2
-    ocasion: str = "casual"  # casual, formal, rapido, dietetico
+    ocasion: str = "casual"
     preferencias: Optional[List[str]] = []
 
 
@@ -27,6 +29,7 @@ class MenuResponse(BaseModel):
     menu_id: Optional[int] = None
     receta: Optional[dict] = None
     mensaje: Optional[str] = None
+    uso_api: Optional[dict] = None  # ✅ NUEVO: Info de uso
 
 
 # ============================================================================
@@ -60,19 +63,11 @@ FORMATO JSON REQUERIDO:
       "unidad": "unidades",
       "en_inventario": true,
       "codigo_lecfac": "lf_huevos-aa"
-    },
-    {
-      "nombre": "MANTEQUILLA",
-      "cantidad": 50,
-      "unidad": "gramos",
-      "en_inventario": false,
-      "codigo_lecfac": null
     }
   ],
   "pasos": [
     "Batir los huevos con sal y pimienta al gusto",
-    "Calentar mantequilla en sartén a fuego medio",
-    "..."
+    "Calentar mantequilla en sartén a fuego medio"
   ],
   "calorias_aprox": 450,
   "costo_estimado": 15000,
@@ -84,6 +79,7 @@ IMPORTANTE:
 - Incluye codigo_lecfac cuando el ingrediente esté en el inventario
 - Sé generoso con las cantidades (mejor que sobre a que falte)
 - Prioriza recetas que usen ingredientes próximos a vencer"""
+
 
 # ============================================================================
 # FUNCIONES AUXILIARES
@@ -108,7 +104,7 @@ def format_inventario_para_prompt(inventario: List[dict]) -> str:
 
 
 def extract_json_from_text(text: str) -> dict:
-    """Extrae JSON de texto que puede contener markdown o texto adicional"""
+    """Extrae JSON de texto que puede contener markdown"""
     try:
         if "```json" in text:
             start = text.find("```json") + 7
@@ -126,7 +122,6 @@ def extract_json_from_text(text: str) -> dict:
         return json.loads(json_text)
     except Exception as e:
         print(f"❌ Error extrayendo JSON: {str(e)}")
-        print(f"📄 Texto recibido: {text[:500]}")
         raise
 
 
@@ -225,6 +220,19 @@ async def generar_menu(
     """Genera un menú personalizado usando Claude Haiku 3.5"""
 
     try:
+        # ✅ PASO 1: VERIFICAR LÍMITES ANTES DE LLAMAR A CLAUDE
+        verificacion = verificar_limite_usuario(user_id, "generar_menu")
+
+        if not verificacion["permitido"]:
+            return MenuResponse(
+                success=False,
+                mensaje=f"⚠️ {verificacion['razon']}. Actualiza tu plan para continuar.",
+                uso_api={"plan": verificacion["plan"], "uso": verificacion["uso"]},
+            )
+
+        print(f"✅ Usuario {user_id} puede generar menú (Plan: {verificacion['plan']})")
+
+        # Validaciones
         tipos_validos = ["desayuno", "almuerzo", "cena", "merienda", "postre"]
         if request.tipo_comida not in tipos_validos:
             raise HTTPException(400, f"tipo_comida debe ser uno de: {tipos_validos}")
@@ -232,6 +240,7 @@ async def generar_menu(
         if request.num_personas < 1 or request.num_personas > 20:
             raise HTTPException(400, "num_personas debe estar entre 1 y 20")
 
+        # Obtener inventario
         inventario = get_inventario_disponible(user_id)
 
         if not inventario:
@@ -242,6 +251,7 @@ async def generar_menu(
 
         print(f"📦 Inventario obtenido: {len(inventario)} productos")
 
+        # Preparar prompt
         inventario_str = format_inventario_para_prompt(inventario)
         preferencias_str = (
             ", ".join(request.preferencias) if request.preferencias else "Ninguna"
@@ -261,30 +271,38 @@ Genera UNA receta deliciosa y creativa usando PRINCIPALMENTE los ingredientes de
 Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
 """
 
+        # Verificar API key
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise HTTPException(500, "ANTHROPIC_API_KEY no configurada")
 
         client = Anthropic(api_key=api_key)
+        modelo = "claude-haiku-4-5-20251001"
 
-        print(f"🤖 Llamando a Claude Haiku 3.5...")
+        print(f"🤖 Llamando a Claude ({modelo})...")
 
+        # ✅ LLAMAR A CLAUDE
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=modelo,
             max_tokens=2500,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
 
         response_text = message.content[0].text
+        input_tokens = message.usage.input_tokens
+        output_tokens = message.usage.output_tokens
+
         print(f"📄 Respuesta de Claude (primeros 200 chars): {response_text[:200]}")
 
+        # Parsear JSON
         try:
             receta = json.loads(response_text)
         except json.JSONDecodeError:
-            print("⚠️  Respuesta no es JSON puro, intentando extraer...")
+            print("⚠️ Respuesta no es JSON puro, intentando extraer...")
             receta = extract_json_from_text(response_text)
 
+        # Validar campos requeridos
         campos_requeridos = ["nombre", "ingredientes", "pasos"]
         for campo in campos_requeridos:
             if campo not in receta:
@@ -292,23 +310,51 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
 
         print(f"✅ Receta generada: {receta['nombre']}")
 
+        # Guardar en BD
         menu_id = save_menu_to_db(user_id, receta, request)
-
-        input_tokens = message.usage.input_tokens
-        output_tokens = message.usage.output_tokens
-        costo_usd = (input_tokens * 0.001 / 1000000) + (output_tokens * 0.005 / 1000000)
-
         print(f"✅ Menú guardado - ID: {menu_id}")
-        print(f"💰 Costo API: ${costo_usd:.6f} USD")
-        print(f"📊 Tokens: {input_tokens} input, {output_tokens} output")
 
-        return MenuResponse(success=True, menu_id=menu_id, receta=receta)
+        # ✅ PASO 2: REGISTRAR USO DE API
+        uso_resultado = registrar_uso_api(
+            user_id=user_id,
+            tipo_operacion="generar_menu",
+            modelo=modelo,
+            tokens_input=input_tokens,
+            tokens_output=output_tokens,
+            referencia_id=menu_id,
+            referencia_tipo="menu",
+            exitoso=True,
+        )
 
+        return MenuResponse(
+            success=True,
+            menu_id=menu_id,
+            receta=receta,
+            uso_api=uso_resultado.get("limites") if uso_resultado["success"] else None,
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error generando menú: {str(e)}")
         import traceback
 
         traceback.print_exc()
+
+        # ✅ REGISTRAR ERROR TAMBIÉN
+        try:
+            registrar_uso_api(
+                user_id=user_id,
+                tipo_operacion="generar_menu",
+                modelo="claude-haiku-4-5-20251001",
+                tokens_input=0,
+                tokens_output=0,
+                exitoso=False,
+                error_mensaje=str(e),
+            )
+        except:
+            pass
+
         raise HTTPException(500, f"Error generando menú: {str(e)}")
 
 
@@ -441,4 +487,4 @@ def marcar_usado(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
         conn.close()
 
 
-print("✅ Módulo menus.py cargado correctamente")
+print("✅ Módulo menus.py cargado (con tracking de uso)")
