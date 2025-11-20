@@ -8,7 +8,8 @@ from anthropic import Anthropic
 import os
 import asyncpg
 
-router = APIRouter()
+# ✅ AGREGAR PREFIJO AL ROUTER
+router = APIRouter(prefix="/api/menus", tags=["Menús"])
 
 # ============================================================================
 # MODELOS PYDANTIC
@@ -204,13 +205,14 @@ async def save_menu_to_db(user_id: int, receta: dict, request: MenuRequest) -> i
 
 
 # ============================================================================
-# ENDPOINT PRINCIPAL
+# ENDPOINTS - ORDEN CRÍTICO: ESPECÍFICOS PRIMERO, GENÉRICOS AL FINAL
 # ============================================================================
 
 
-@router.post("/api/menus/generar", response_model=MenuResponse)
+# ✅ 1. POST /generar (ESPECÍFICO)
+@router.post("/generar", response_model=MenuResponse)
 async def generar_menu(
-    request: MenuRequest, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
+    request: MenuRequest, user_id: int = Header(..., alias="X-User-ID")
 ):
     """
     Genera un menú personalizado usando Claude Haiku 3.5
@@ -314,15 +316,9 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional ni markdown.
         raise HTTPException(500, f"Error generando menú: {str(e)}")
 
 
-# ============================================================================
-# ENDPOINTS AUXILIARES
-# ============================================================================
-
-
-@router.get("/api/menus/historial")
-async def get_historial_menus(
-    user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
-):
+# ✅ 2. GET /historial (ESPECÍFICO)
+@router.get("/historial")
+async def get_historial_menus(user_id: int = Header(..., alias="X-User-ID")):
     """Obtiene el historial de menús generados del usuario"""
     pool = await get_db_pool()
 
@@ -343,10 +339,9 @@ async def get_historial_menus(
         return {"success": True, "menus": [dict(row) for row in rows]}
 
 
-@router.get("/api/menus/{menu_id}")
-async def get_menu_detalle(
-    menu_id: int, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
-):
+# ✅ 3. GET /{menu_id} (GENÉRICO - AL FINAL)
+@router.get("/{menu_id}")
+async def get_menu_detalle(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
     """Obtiene el detalle completo de un menú"""
     pool = await get_db_pool()
 
@@ -373,10 +368,9 @@ async def get_menu_detalle(
         return {"success": True, "menu": menu}
 
 
-@router.patch("/api/menus/{menu_id}/favorito")
-async def toggle_favorito(
-    menu_id: int, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
-):
+# ✅ 4. PATCH /{menu_id}/favorito (GENÉRICO)
+@router.patch("/{menu_id}/favorito")
+async def toggle_favorito(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
     """Marca/desmarca un menú como favorito"""
     pool = await get_db_pool()
 
@@ -397,10 +391,9 @@ async def toggle_favorito(
         return {"success": True, "favorito": row["favorito"]}
 
 
-@router.patch("/api/menus/{menu_id}/usado")
-async def marcar_usado(
-    menu_id: int, user_id: int = Header(..., alias="X-User-ID")  # ✅ CORREGIDO
-):
+# ✅ 5. PATCH /{menu_id}/usado (GENÉRICO)
+@router.patch("/{menu_id}/usado")
+async def marcar_usado(menu_id: int, user_id: int = Header(..., alias="X-User-ID")):
     """Marca un menú como usado (ya cocinado)"""
     pool = await get_db_pool()
 
