@@ -9,7 +9,7 @@ import traceback
 import json
 import uuid
 
-# LIMPIEZA DE CACHÉ AL INICIO
+# LIMPIEZA DE CACHÉ AL INICIO .
 import shutil
 
 print("🧹 Limpiando caché de Python...")
@@ -2643,7 +2643,7 @@ async def process_video_background_task(
                     f"   - Historial: {resultado_analytics.get('historial_compras', 0)}"
                 )
                 print(f"   - Patrones: {resultado_analytics.get('patrones_compra', 0)}")
-                rint(
+                print(
                     f"   - Precios: {resultado_analytics.get('productos_por_establecimiento', 0)}"
                 )
 
