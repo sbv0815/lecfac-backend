@@ -131,11 +131,6 @@ except Exception as e:
 
 print("=" * 80 + "\n")
 
-
-from routes import menus
-
-app.include_router(menus.router)
-
 from comparacion_precios import router as comparacion_router
 
 # ✅ ProductResolver removido - usando product_matcher
@@ -519,6 +514,10 @@ app = FastAPI(
     description="Sistema de gestión de facturas con procesamiento asíncrono",
     lifespan=lifespan,
 )
+
+from routes import menus
+
+app.include_router(menus.router)
 
 
 # ==========================================
