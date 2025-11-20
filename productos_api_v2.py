@@ -16,11 +16,19 @@ async def listar_productos_v2(
     categoria_id: Optional[int] = None,
     limite: int = Query(500, ge=1, le=5000),
     busqueda: Optional[str] = None,
+    solo_papas: bool = Query(False),  # ✅ NUEVO PARÁMETRO
 ):
-    """Lista productos con búsqueda - INCLUYE codigo_lecfac"""
+    """
+    Lista productos con búsqueda - INCLUYE codigo_lecfac
+
+    Parámetros:
+    - solo_papas: Si True, solo retorna productos PAPA (sin hijos)
+    """
 
     print("=" * 80)
-    print(f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}")
+    print(
+        f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}, solo_papas={solo_papas}"
+    )
     print("=" * 80)
 
     conn = None
@@ -31,7 +39,7 @@ async def listar_productos_v2(
         search_term = busqueda or search
         final_limit = limite if limite != 500 else limit
 
-        # ✅ AGREGAMOS codigo_lecfac AL SELECT
+        # ✅ AGREGAMOS codigo_lecfac, es_producto_papa y producto_papa_id AL SELECT
         query = """
             SELECT
                 pm.id,
@@ -39,6 +47,9 @@ async def listar_productos_v2(
                 pm.nombre_consolidado,
                 pm.marca,
                 pm.codigo_lecfac,
+                pm.es_producto_papa,
+                pm.producto_papa_id,
+                pm.fecha_actualizacion,
                 COALESCE(c.nombre, 'Sin categoría') as categoria,
                 COUNT(DISTINCT pe.establecimiento_id) as num_establecimientos
             FROM productos_maestros_v2 pm
@@ -48,6 +59,13 @@ async def listar_productos_v2(
 
         where_conditions = []
         params = []
+
+        # ✅ FILTRO SOLO PAPAS
+        if solo_papas:
+            where_conditions.append(
+                "(pm.es_producto_papa = TRUE OR pm.producto_papa_id IS NULL)"
+            )
+            print("👑 Filtrando solo productos PAPA")
 
         if search_term:
             where_conditions.append(
@@ -69,9 +87,10 @@ async def listar_productos_v2(
         if where_conditions:
             query += " WHERE " + " AND ".join(where_conditions)
 
-        # ✅ AGREGAMOS codigo_lecfac AL GROUP BY
+        # ✅ AGREGAMOS los nuevos campos al GROUP BY
         query += """
-            GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac, c.nombre
+            GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac,
+                    pm.es_producto_papa, pm.producto_papa_id, pm.fecha_actualizacion, c.nombre
             ORDER BY pm.id DESC
             LIMIT %s OFFSET %s
         """
@@ -114,16 +133,21 @@ async def listar_productos_v2(
                     }
                 )
 
-            # ✅ INCLUIMOS codigo_lecfac EN LA RESPUESTA
+            # ✅ INCLUIMOS nuevos campos EN LA RESPUESTA
             resultado.append(
                 {
                     "id": producto[0],
                     "codigo_ean": producto[1],
                     "nombre": producto[2],
                     "marca": producto[3],
-                    "codigo_lecfac": producto[4],  # ← NUEVO CAMPO
-                    "categoria": producto[5],
-                    "num_establecimientos": producto[6],
+                    "codigo_lecfac": producto[4],
+                    "es_producto_papa": producto[5],  # ✅ NUEVO
+                    "producto_papa_id": producto[6],  # ✅ NUEVO
+                    "fecha_actualizacion": (
+                        producto[7].isoformat() if producto[7] else None
+                    ),  # ✅ NUEVO
+                    "categoria": producto[8],
+                    "num_establecimientos": producto[9],
                     "plus": plus_info,
                 }
             )
