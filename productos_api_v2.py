@@ -422,25 +422,37 @@ async def actualizar_producto(producto_id: int, request: dict):
 
             # Solo actualizar si es diferente
             if ean_actual != ean_final:
-                # Verificar que no existe en OTRO producto
+                # ✅ NUEVA VALIDACIÓN: Verificar que no existe en OTRO producto DEL MISMO ESTABLECIMIENTO
                 if ean_final:
                     cursor.execute(
-                        "SELECT id FROM productos_maestros_v2 WHERE codigo_ean = %s AND id != %s",
-                        (ean_final, producto_id),
+                        """
+                    SELECT DISTINCT pm.id, pm.nombre_consolidado, e.nombre_normalizado
+                    FROM productos_maestros_v2 pm
+                    INNER JOIN productos_por_establecimiento ppe1 ON pm.id = ppe1.producto_maestro_id
+                    INNER JOIN productos_por_establecimiento ppe2 ON ppe2.producto_maestro_id = %s
+                    INNER JOIN establecimientos e ON ppe1.establecimiento_id = e.id
+                    WHERE pm.codigo_ean = %s
+                    AND pm.id != %s
+                    AND ppe1.establecimiento_id = ppe2.establecimiento_id
+                    LIMIT 1
+                    """,
+                        (producto_id, ean_final, producto_id),
                     )
-                    if cursor.fetchone():
-                        cursor.close()
-                        conn.close()
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"El código EAN '{ean_final}' ya existe en otro producto",
-                        )
 
-                updates.append("codigo_ean = %s")
-                params.append(ean_final)
-                print(f"   ✅ Actualizando EAN: {ean_actual} → {ean_final}")
-            else:
-                print(f"   ℹ️  EAN sin cambios: {ean_actual}")
+                conflicto = cursor.fetchone()
+                if conflicto:
+                    cursor.close()
+                    conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"El código EAN '{ean_final}' ya existe para el producto '{conflicto[1]}' en {conflicto[2]}",
+                )
+
+            updates.append("codigo_ean = %s")
+            params.append(ean_final)
+            print(f"   ✅ Actualizando EAN: {ean_actual} → {ean_final}")
+        else:
+            print(f"   ℹ️  EAN sin cambios: {ean_actual}")
 
         if "categoria_id" in request:
             updates.append("categoria_id = %s")
