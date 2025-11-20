@@ -1074,8 +1074,8 @@ async def get_admin_productos():
             FROM productos_maestros pm
             LEFT JOIN items_factura if ON if.producto_maestro_id = pm.id
             GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.nombre_comercial,
-                     pm.marca, pm.categoria, pm.subcategoria, pm.precio_promedio_global,
-                     pm.total_reportes, pm.primera_vez_reportado, pm.ultima_actualizacion
+                    pm.marca, pm.categoria, pm.subcategoria, pm.precio_promedio_global,
+                    pm.total_reportes, pm.primera_vez_reportado, pm.ultima_actualizacion
             ORDER BY pm.total_reportes DESC, pm.id DESC
             LIMIT 500
         """
