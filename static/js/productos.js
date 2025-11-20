@@ -556,7 +556,7 @@ async function guardarEdicion() {
 
     const apiBase = getApiBase();
 
-    // ✅ USAR LOS IDs CORRECTOS DEL HTML
+    // Obtener datos del formulario
     const productoId = document.getElementById('edit-id').value;
     const nombreConsolidado = document.getElementById('edit-nombre-norm').value;
     const marca = document.getElementById('edit-marca').value;
@@ -568,7 +568,6 @@ async function guardarEdicion() {
         return;
     }
 
-    // Validar que al menos haya algo para actualizar
     if (!nombreConsolidado.trim()) {
         mostrarAlerta('❌ El nombre del producto no puede estar vacío', 'error');
         return;
@@ -576,43 +575,45 @@ async function guardarEdicion() {
 
     try {
         // =============================================================
-        // 1. GUARDAR DATOS DEL PRODUCTO (nombre, marca, EAN, categoría)
+        // 1️⃣ GUARDAR PRODUCTO (nombre, marca, EAN, categoría)
         // =============================================================
-        const datosActualizados = {
+        const datosProducto = {
             nombre_consolidado: nombreConsolidado.trim(),
-            marca: marca.trim(),
-            codigo_ean: codigoEan.trim()
+            marca: marca.trim() || null,
+            codigo_ean: codigoEan.trim() || null
         };
 
-        if (categoria && categoria.trim()) {
-            datosActualizados.categoria = categoria.trim();
+        // Solo agregar categoría si tiene valor
+        if (categoria && categoria.trim() && categoria !== 'Sin categoría') {
+            datosProducto.categoria = categoria.trim();
         }
 
-        console.log('📦 Datos producto a enviar:', datosActualizados);
+        console.log('📦 Guardando producto:', datosProducto);
 
-        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
+        const responseProducto = await fetch(`${apiBase}/api/v2/productos/${productoId}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(datosActualizados)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datosProducto)
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
-            throw new Error(errorData.error || `HTTP ${response.status}`);
+        if (!responseProducto.ok) {
+            const errorData = await responseProducto.json().catch(() => ({ error: 'Error desconocido' }));
+            console.error('❌ Error del servidor:', errorData);
+            throw new Error(errorData.detail || errorData.error || `HTTP ${responseProducto.status}`);
         }
 
-        const resultado = await response.json();
-        console.log('✅ Producto actualizado:', resultado);
+        const resultadoProducto = await responseProducto.json();
+        console.log('✅ Producto actualizado:', resultadoProducto);
 
         // =============================================================
-        // 2. GUARDAR PLUs (si hay cambios)
+        // 2️⃣ GUARDAR PLUs
         // =============================================================
         const plusData = recopilarPLUsParaGuardar();
 
-        if (plusData.plus.length > 0 || plusData.plus_a_eliminar.length > 0) {
-            console.log('💾 Guardando PLUs...', plusData);
+        console.log('📋 PLUs recopilados para guardar:', plusData);
+
+        if (plusData.plus.length > 0) {
+            console.log('💾 Guardando PLUs al backend...');
 
             const responsePlus = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`, {
                 method: 'PUT',
@@ -624,30 +625,28 @@ async function guardarEdicion() {
                 const resultadoPlus = await responsePlus.json();
                 console.log('✅ PLUs actualizados:', resultadoPlus);
 
-                // Mostrar detalle de cambios en PLUs
-                if (resultadoPlus.actualizados > 0 || resultadoPlus.creados > 0 || resultadoPlus.eliminados > 0) {
-                    const detalles = [];
-                    if (resultadoPlus.actualizados > 0) detalles.push(`${resultadoPlus.actualizados} actualizado(s)`);
-                    if (resultadoPlus.creados > 0) detalles.push(`${resultadoPlus.creados} creado(s)`);
-                    if (resultadoPlus.eliminados > 0) detalles.push(`${resultadoPlus.eliminados} eliminado(s)`);
+                const detalles = [];
+                if (resultadoPlus.actualizados > 0) detalles.push(`${resultadoPlus.actualizados} actualizado(s)`);
+                if (resultadoPlus.creados > 0) detalles.push(`${resultadoPlus.creados} creado(s)`);
+                if (resultadoPlus.eliminados > 0) detalles.push(`${resultadoPlus.eliminados} eliminado(s)`);
 
-                    mostrarAlerta(`✅ Producto y PLUs guardados: ${detalles.join(', ')}`, 'success');
-                } else {
-                    mostrarAlerta('✅ Producto actualizado correctamente', 'success');
-                }
+                mostrarAlerta(
+                    detalles.length > 0
+                        ? `✅ Producto y PLUs guardados: ${detalles.join(', ')}`
+                        : '✅ Producto actualizado correctamente',
+                    'success'
+                );
             } else {
-                console.warn('⚠️ Error guardando PLUs, pero producto se guardó');
-                mostrarAlerta('✅ Producto guardado (con advertencia en PLUs)', 'warning');
+                const errorPlus = await responsePlus.json().catch(() => ({ error: 'Error en PLUs' }));
+                console.error('❌ Error guardando PLUs:', errorPlus);
+                mostrarAlerta('⚠️ Producto guardado pero hubo error en PLUs', 'warning');
             }
         } else {
             mostrarAlerta('✅ Producto actualizado correctamente', 'success');
         }
 
-        // Cerrar modal
+        // Cerrar modal y recargar
         cerrarModal('modal-editar');
-
-        // Recargar productos
-        console.log('🔄 Recargando lista de productos...');
         await cargarProductos(paginaActual);
 
     } catch (error) {
@@ -665,19 +664,22 @@ async function guardarEdicion() {
 function recopilarPLUsParaGuardar() {
     const plusItems = document.querySelectorAll('.plu-item');
     const plus = [];
-    const plus_a_eliminar = [];
 
     console.log(`📋 Recopilando ${plusItems.length} PLUs del formulario...`);
 
     plusItems.forEach((item, index) => {
-        const pluId = item.dataset.pluId; // Puede ser undefined para PLUs nuevos
+        const pluId = item.dataset.pluId;
         const establecimientoSelect = item.querySelector('.plu-establecimiento');
         const codigoInput = item.querySelector('.plu-codigo');
         const precioInput = item.querySelector('.plu-precio');
 
-        // Extraer valores
-        const establecimientoId = establecimientoSelect ? parseInt(establecimientoSelect.value) : null;
-        const codigo = codigoInput ? codigoInput.value.trim() : '';
+        if (!establecimientoSelect || !codigoInput) {
+            console.warn(`⚠️ PLU ${index + 1}: Faltan campos`);
+            return;
+        }
+
+        const establecimientoId = parseInt(establecimientoSelect.value);
+        const codigo = codigoInput.value.trim();
         const precio = precioInput ? parseFloat(precioInput.value) || 0 : 0;
 
         console.log(`   PLU ${index + 1}:`, {
@@ -687,31 +689,32 @@ function recopilarPLUsParaGuardar() {
             precio
         });
 
-        // Validar que tenga datos mínimos requeridos
-        if (codigo && establecimientoId) {
-            const pluData = {
-                codigo_plu: codigo,
-                establecimiento_id: establecimientoId,
-                precio_unitario: precio
-            };
-
-            // Si tiene ID, es una actualización
-            if (pluId && pluId !== '' && pluId !== 'undefined') {
-                pluData.id = parseInt(pluId);
-            }
-
-            plus.push(pluData);
-            console.log(`   ✅ PLU válido agregado:`, pluData);
-        } else {
-            console.warn(`   ⚠️ PLU ${index + 1} incompleto - Establecimiento: ${establecimientoId}, Código: "${codigo}"`);
+        // Validar datos mínimos
+        if (!codigo || !establecimientoId) {
+            console.warn(`   ⚠️ PLU ${index + 1} incompleto`);
+            return;
         }
+
+        const pluData = {
+            codigo_plu: codigo,
+            establecimiento_id: establecimientoId,
+            precio_unitario: precio
+        };
+
+        // Si tiene ID válido, es actualización
+        if (pluId && pluId !== '' && pluId !== 'undefined' && pluId !== 'null') {
+            pluData.id = parseInt(pluId);
+        }
+
+        plus.push(pluData);
+        console.log(`   ✅ PLU válido:`, pluData);
     });
 
     console.log(`📊 Total PLUs válidos: ${plus.length}`);
 
     return {
         plus,
-        plus_a_eliminar
+        plus_a_eliminar: []
     };
 }
 
