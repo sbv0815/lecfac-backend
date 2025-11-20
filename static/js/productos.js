@@ -655,9 +655,7 @@ async function guardarEdicion() {
     }
 }
 
-// =============================================================
-// ✅ RECOPILAR PLUs PARA GUARDAR
-// =============================================================
+
 // =============================================================
 // ✅ RECOPILAR PLUs PARA GUARDAR - VERSIÓN CORREGIDA
 // =============================================================
@@ -1057,29 +1055,6 @@ async function cargarPLUsProducto(productoId) {
     }
 }
 // =============================================================
-// RECOPILAR PLUs DEL FORMULARIO
-// =============================================================
-function recopilarPLUs() {
-    const plusItems = document.querySelectorAll('.plu-item');
-    const plus = [];
-
-    plusItems.forEach(item => {
-        const establecimiento = item.querySelector('.plu-establecimiento')?.value.trim();
-        const codigo = item.querySelector('.plu-codigo')?.value.trim();
-
-        if (establecimiento && codigo) {
-            plus.push({
-                nombre_establecimiento: establecimiento.toUpperCase(),
-                codigo_plu: codigo,
-                ultima_vez_visto: new Date().toISOString().split('T')[0]
-            });
-        }
-    });
-
-    return plus;
-}
-
-// =============================================================
 // 🔧 FUNCIONES DE ADMINISTRACIÓN Y CORRECCIÓN
 // =============================================================
 
@@ -1429,7 +1404,6 @@ window.eliminarProducto = eliminarProducto;
 window.mostrarAlerta = mostrarAlerta;
 window.agregarPLU = agregarPLU;
 window.cargarPLUsProducto = cargarPLUsProducto;
-window.recopilarPLUs = recopilarPLUs;
 window.cargarAnomalias = cargarAnomalias;
 window.aplicarCorreccionMasiva = aplicarCorreccionMasiva;
 window.detectarDuplicados = detectarDuplicados;
