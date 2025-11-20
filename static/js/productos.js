@@ -313,11 +313,17 @@ function mostrarProductos(productos) {
                     </button>
                 </td>
             </tr>
+            <button class="btn-small btn-primary" onclick="verHistorial(${p.id})" title="Ver historial">
+            📊
+            </button>
         `;
         tbody.insertAdjacentHTML("beforeend", row);
     });
 }
 
+function verHistorial(id) {
+    window.open(`/historial_precios.html?id=${id}`, '_blank');
+}
 // =============================================================
 // Actualizar estadísticas y paginación
 // =============================================================

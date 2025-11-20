@@ -810,7 +810,16 @@
                     <div class="section-header">
                         📊 Estadísticas
                     </div>
-
+                    <div style="margin-bottom: 15px; padding: 10px; background: #f9fafb; border-radius: 6px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="toggle-solo-papas" onchange="toggleSoloPapas()"
+                                style="margin-right: 8px;">
+                            <span style="font-weight: 500;">Ocultar productos hijo (mostrar solo PAPAS)</span>
+                            <span style="margin-left: 10px; font-size: 12px; color: #666;">
+                                Los productos hijo son el historial de precios
+                            </span>
+                        </label>
+                    </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
                         <div class="form-group">
                             <label>Veces Comprado</label>
