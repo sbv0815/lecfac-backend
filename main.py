@@ -23,6 +23,11 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import List, Optional
 from contextlib import asynccontextmanager
+from api_usage_tracker import (
+    registrar_uso_api,
+    verificar_limite_usuario,
+    obtener_estadisticas_usuario,
+)
 
 # ==========================================
 # IMPORTS DE FASTAPI
@@ -1270,6 +1275,25 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
     conn = None
 
     try:
+        # Obtener usuario_id del token
+        authorization = request.headers.get("Authorization") if request else None
+        usuario_id = get_user_id_from_token(authorization)
+        print(f"🆔 Usuario autenticado: {usuario_id}")
+
+        # ✅ NUEVO: Verificar límites ANTES de procesar
+        verificacion = verificar_limite_usuario(usuario_id, "ocr_factura")
+        if not verificacion["permitido"]:
+            print(f"⛔ Usuario {usuario_id} bloqueado: {verificacion['razon']}")
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "Límite alcanzado",
+                    "mensaje": verificacion["razon"],
+                    "plan": verificacion["plan"],
+                    "uso": verificacion["uso"],
+                },
+            )
+
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         content = await file.read()
         temp_file.write(content)
@@ -1279,7 +1303,23 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
 
         result = parse_invoice_with_claude(temp_file.name)
 
+        # ✅ NUEVO: Capturar tokens usados
+        usage_info = result.get("usage", {})
+        tokens_input = usage_info.get("input_tokens", 0)
+        tokens_output = usage_info.get("output_tokens", 0)
+        modelo = usage_info.get("modelo", "claude-sonnet-4-20250514")
+
         if not result.get("success"):
+            # ✅ Registrar intento fallido
+            registrar_uso_api(
+                user_id=usuario_id,
+                tipo_operacion="ocr_factura",
+                modelo=modelo,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                exitoso=False,
+                error_mensaje=result.get("error", "Error desconocido"),
+            )
             raise HTTPException(400, result.get("error", "Error procesando"))
 
         data = result["data"]
@@ -1334,11 +1374,6 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
             establecimiento_raw, cadena
         )
 
-        # Obtener usuario_id del token
-        authorization = request.headers.get("Authorization") if request else None
-        usuario_id = get_user_id_from_token(authorization)
-        print(f"🆔 Usuario autenticado: {usuario_id}")
-
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 """
@@ -1377,6 +1412,18 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
 
         print(f"✅ Factura creada: ID {factura_id}")
 
+        # ✅ NUEVO: Registrar uso exitoso con referencia a la factura
+        uso_registrado = registrar_uso_api(
+            user_id=usuario_id,
+            tipo_operacion="ocr_factura",
+            modelo=modelo,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            referencia_id=factura_id,
+            referencia_tipo="factura",
+            exitoso=True,
+        )
+
         # Guardar reporte de anomalías si hubo correcciones
         if resultado_deteccion.get("duplicados_detectados"):
             metricas = resultado_deteccion.get("metricas", {})
@@ -1406,10 +1453,6 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
-                # ========================================
-                # ✅ NUEVO: Usar ProductResolver
-                # ========================================
-                # ✅ CAMBIO B: Usar buscar_o_crear_producto_inteligente
                 producto_maestro_id = buscar_o_crear_producto_inteligente(
                     codigo=codigo_ean_valido or "",
                     nombre=nombre,
@@ -1417,12 +1460,11 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                     establecimiento=establecimiento_raw,
                     cursor=cursor,
                     conn=conn,
-                    establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
+                    establecimiento_id=establecimiento_id,
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
 
-                # Guardar en items_factura
                 if os.environ.get("DATABASE_TYPE") == "postgresql":
                     cursor.execute(
                         """
@@ -1521,6 +1563,12 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
             "productos_guardados": productos_guardados,
             "imagen_guardada": imagen_guardada,
             "deteccion_duplicados": resultado_deteccion.get("metricas", {}),
+            # ✅ NUEVO: Info de uso en respuesta
+            "uso_api": (
+                uso_registrado.get("limites", {})
+                if uso_registrado.get("success")
+                else None
+            ),
         }
 
     except HTTPException:
@@ -9241,6 +9289,89 @@ async def obtener_historial_precios(papa_id: int):
             conn.close()
         return {"success": False, "error": str(e)}
 
+
+# ==========================================
+# ENDPOINTS DE USO DE API
+# ==========================================
+
+
+@app.get("/api/usuario/uso-api")
+async def get_uso_api(request: Request):
+    """Obtener estadísticas de uso de API del usuario"""
+    try:
+        authorization = request.headers.get("Authorization")
+        usuario_id = get_user_id_from_token(authorization)
+
+        stats = obtener_estadisticas_usuario(usuario_id)
+        return stats
+
+    except Exception as e:
+        print(f"❌ Error obteniendo uso API: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/uso-api/resumen")
+async def get_uso_api_admin():
+    """Resumen de uso de API para admin"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as operaciones,
+                COALESCE(SUM(tokens_total), 0) as tokens,
+                COALESCE(SUM(costo_total_usd), 0) as costo_usd,
+                COUNT(DISTINCT user_id) as usuarios_activos
+            FROM uso_api
+            WHERE mes_año = TO_CHAR(NOW(), 'YYYY-MM')
+        """
+        )
+
+        mes_actual = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT
+                tipo_operacion,
+                COUNT(*) as operaciones,
+                COALESCE(SUM(tokens_total), 0) as tokens,
+                COALESCE(SUM(costo_total_usd), 0) as costo_usd
+            FROM uso_api
+            WHERE mes_año = TO_CHAR(NOW(), 'YYYY-MM')
+            GROUP BY tipo_operacion
+        """
+        )
+
+        por_operacion = {}
+        for row in cursor.fetchall():
+            por_operacion[row[0]] = {
+                "operaciones": row[1],
+                "tokens": row[2] or 0,
+                "costo_usd": float(row[3] or 0),
+            }
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "mes_actual": {
+                "operaciones": mes_actual[0] or 0,
+                "tokens": mes_actual[1] or 0,
+                "costo_usd": float(mes_actual[2] or 0),
+                "usuarios_activos": mes_actual[3] or 0,
+            },
+            "por_operacion": por_operacion,
+        }
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints de uso de API registrados")
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)

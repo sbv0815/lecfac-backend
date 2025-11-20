@@ -603,6 +603,11 @@ Antes de responder:
 
         print("=" * 80)
 
+        # ✅ NUEVO: Capturar tokens usados para tracking
+        # ✅ Capturar tokens para tracking
+        tokens_input = message.usage.input_tokens
+        tokens_output = message.usage.output_tokens
+
         return {
             "success": True,
             "data": {
@@ -618,6 +623,13 @@ Antes de responder:
                     "total_declarado": total_declarado,
                 },
             },
+            # ✅ NUEVO: Info de tokens para tracking
+            "usage": {
+                "input_tokens": tokens_input,
+                "output_tokens": tokens_output,
+                "total_tokens": tokens_input + tokens_output,
+                "modelo": "claude-sonnet-4-20250514",
+            },
         }
 
     except json.JSONDecodeError as e:
@@ -625,13 +637,55 @@ Antes de responder:
         print(
             f"Respuesta: {response_text[:500] if 'response_text' in locals() else 'N/A'}"
         )
-        return {"success": False, "error": "Error parseando respuesta JSON"}
+        # Intentar capturar tokens si message existe
+        usage_data = {}
+        if "message" in locals() and hasattr(message, "usage"):
+            usage_data = {
+                "input_tokens": message.usage.input_tokens,
+                "output_tokens": message.usage.output_tokens,
+                "total_tokens": message.usage.input_tokens
+                + message.usage.output_tokens,
+                "modelo": "claude-sonnet-4-20250514",
+            }
+        else:
+            usage_data = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "modelo": "claude-sonnet-4-20250514",
+            }
+
+        return {
+            "success": False,
+            "error": "Error parseando respuesta JSON",
+            "usage": usage_data,
+        }
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
 
         traceback.print_exc()
-        return {"success": False, "error": f"Error: {str(e)}"}
+
+        # Intentar capturar tokens si message existe
+        usage_data = {}
+        if "message" in locals() and hasattr(message, "usage"):
+            usage_data = {
+                "input_tokens": message.usage.input_tokens,
+                "output_tokens": message.usage.output_tokens,
+                "total_tokens": message.usage.input_tokens
+                + message.usage.output_tokens,
+                "modelo": "claude-sonnet-4-20250514",
+            }
+        else:
+            usage_data = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "modelo": "claude-sonnet-4-20250514",
+            }
+
+        return {"success": False, "error": f"Error: {str(e)}", "usage": usage_data}
 
 
 print("=" * 80)
