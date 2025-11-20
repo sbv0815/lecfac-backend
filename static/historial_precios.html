@@ -3,13 +3,18 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Historial de Precios - LecFac</title>
     <style>
-        /* Estilos similares a productos.html */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
-            margin: 0;
             padding: 20px;
         }
 
@@ -24,34 +29,87 @@
 
         .header {
             margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #111827;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .btn-back {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 500;
+            margin-top: 15px;
+        }
+
+        .btn-back:hover {
+            background: #5a67d8;
+        }
+
+        .establecimiento-group {
+            margin-bottom: 50px;
+        }
+
+        .establecimiento-header {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 25px;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .timeline {
             position: relative;
-            padding-left: 40px;
+            padding-left: 50px;
         }
 
         .timeline::before {
             content: '';
             position: absolute;
-            left: 15px;
+            left: 20px;
             top: 0;
             bottom: 0;
-            width: 2px;
-            background: #e5e7eb;
+            width: 3px;
+            background: linear-gradient(to bottom, #667eea, #e5e7eb);
         }
 
         .timeline-item {
             position: relative;
-            margin-bottom: 30px;
-            padding: 15px;
+            margin-bottom: 25px;
+            padding: 20px;
             background: #f9fafb;
-            border-radius: 8px;
-            border-left: 4px solid #3b82f6;
+            border-radius: 10px;
+            border-left: 4px solid #cbd5e1;
+            transition: all 0.3s;
+        }
+
+        .timeline-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
         .timeline-item.actual {
-            background: #f0fdf4;
+            background: linear-gradient(135deg, #ecfdf5, #d1fae5);
             border-left-color: #10b981;
         }
 
@@ -62,70 +120,125 @@
 
         .timeline-dot {
             position: absolute;
-            left: -33px;
-            top: 20px;
-            width: 12px;
-            height: 12px;
+            left: -38px;
+            top: 25px;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
-            background: #3b82f6;
-            border: 3px solid white;
-            box-shadow: 0 0 0 2px #e5e7eb;
+            background: #cbd5e1;
+            border: 4px solid white;
+            box-shadow: 0 0 0 3px #e5e7eb;
+            z-index: 10;
         }
 
         .timeline-item.actual .timeline-dot {
             background: #10b981;
+            box-shadow: 0 0 0 3px #d1fae5, 0 0 0 6px rgba(16, 185, 129, 0.2);
+            animation: pulse 2s infinite;
         }
 
-        .establecimiento-group {
-            margin-bottom: 40px;
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
         }
 
-        .establecimiento-header {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            padding: 10px;
-            background: #eff6ff;
-            border-radius: 6px;
+        .precio-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
         }
 
         .precio-actual {
-            font-size: 24px;
+            font-size: 32px;
             font-weight: 700;
             color: #10b981;
         }
 
         .precio-historico {
-            font-size: 18px;
-            color: #666;
+            font-size: 24px;
+            font-weight: 600;
+            color: #6b7280;
         }
 
-        .fecha {
-            font-size: 12px;
-            color: #999;
+        .badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .badge {
             display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
             font-weight: 600;
         }
 
         .badge-actual {
-            background: #d1fae5;
-            color: #059669;
+            background: #10b981;
+            color: white;
         }
 
         .badge-vigente {
-            background: #dbeafe;
-            color: #1d4ed8;
+            background: #3b82f6;
+            color: white;
         }
 
         .badge-desactualizado {
-            background: #fef3c7;
-            color: #d97706;
+            background: #f59e0b;
+            color: white;
+        }
+
+        .fecha-info {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .meta-info {
+            display: flex;
+            gap: 15px;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #6b7280;
+            font-size: 18px;
+        }
+
+        .error {
+            text-align: center;
+            padding: 60px;
+            color: #dc2626;
+            background: #fee2e2;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 60px;
+            color: #6b7280;
+        }
+
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
         }
     </style>
 </head>
@@ -133,16 +246,14 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1 id="producto-nombre">Cargando...</h1>
+            <h1 id="producto-nombre">Cargando historial...</h1>
             <p id="producto-info"></p>
-            <button onclick="window.history.back()" style="padding: 8px 16px; margin-top: 10px;">
-                ← Volver a Productos
-            </button>
+            <a href="/productos.html" class="btn-back">← Volver a Productos</a>
         </div>
 
         <div id="historial-container">
-            <div style="text-align: center; padding: 40px;">
-                Cargando historial...
+            <div class="loading">
+                📊 Cargando historial de precios...
             </div>
         </div>
     </div>
@@ -150,13 +261,12 @@
     <script>
         const API_BASE = 'https://lecfac-backend-production.up.railway.app';
 
-        // Obtener ID del producto desde URL
         const urlParams = new URLSearchParams(window.location.search);
         const productoId = urlParams.get('id');
 
         if (!productoId) {
             document.getElementById('historial-container').innerHTML = `
-                <div style="text-align: center; padding: 40px; color: #dc2626;">
+                <div class="error">
                     ❌ No se especificó un producto
                 </div>
             `;
@@ -165,28 +275,30 @@
         }
 
         async function cargarHistorial(id) {
+            console.log(`📊 Cargando historial del producto ${id}`);
+
             try {
                 const response = await fetch(`${API_BASE}/api/admin/productos/${id}/historial`);
                 const data = await response.json();
+
+                console.log('✅ Datos recibidos:', data);
 
                 if (!data.success) {
                     throw new Error(data.error || 'Error cargando historial');
                 }
 
-                // Actualizar header
                 document.getElementById('producto-nombre').textContent = data.producto.nombre;
                 document.getElementById('producto-info').innerHTML = `
                     <strong>Marca:</strong> ${data.producto.marca || 'N/A'} |
-                    <strong>Código LecFac:</strong> ${data.producto.codigo_lecfac}
+                    <strong>Código LecFac:</strong> <code style="background: #e0f2fe; padding: 2px 6px; border-radius: 4px;">${data.producto.codigo_lecfac}</code>
                 `;
 
-                // Renderizar historial
                 renderizarHistorial(data.historial_por_establecimiento);
 
             } catch (error) {
                 console.error('❌ Error:', error);
                 document.getElementById('historial-container').innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: #dc2626;">
+                    <div class="error">
                         ❌ Error: ${error.message}
                     </div>
                 `;
@@ -198,8 +310,10 @@
 
             if (!historialPorEstablecimiento || historialPorEstablecimiento.length === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px;">
-                        No hay historial de precios para este producto
+                    <div class="empty">
+                        <div class="empty-icon">📭</div>
+                        <h3>No hay historial de precios</h3>
+                        <p>Este producto aún no tiene registros de precios</p>
                     </div>
                 `;
                 return;
@@ -225,15 +339,17 @@
                     const fechaFormateada = fecha.toLocaleDateString('es-CO', {
                         year: 'numeric',
                         month: 'long',
-                        day: 'numeric'
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
                     });
 
                     let badges = '';
                     if (esActual) {
-                        badges += '<span class="badge badge-actual">✅ PRECIO ACTUAL</span> ';
+                        badges += '<span class="badge badge-actual">✅ PRECIO ACTUAL</span>';
                     }
                     if (registro.vigente) {
-                        badges += '<span class="badge badge-vigente">Vigente</span>';
+                        badges += '<span class="badge badge-vigente">📅 Vigente</span>';
                     } else {
                         badges += '<span class="badge badge-desactualizado">⚠️ Desactualizado</span>';
                     }
@@ -241,19 +357,24 @@
                     html += `
                         <div class="timeline-item ${claseItem}">
                             <div class="timeline-dot"></div>
-                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                            <div class="precio-container">
                                 <div class="${precioClass}">
                                     $${registro.precio.toLocaleString('es-CO')}
                                 </div>
-                                <div>
+                                <div class="badges">
                                     ${badges}
                                 </div>
                             </div>
-                            <div class="fecha">
-                                📅 ${fechaFormateada} (hace ${registro.dias_desde_actualizacion} días)
+                            <div class="fecha-info">
+                                📅 ${fechaFormateada}
+                                <span style="color: ${registro.vigente ? '#10b981' : '#f59e0b'};">
+                                    (${registro.dias_desde_actualizacion} día${registro.dias_desde_actualizacion !== 1 ? 's' : ''})
+                                </span>
                             </div>
-                            <div style="font-size: 12px; color: #999; margin-top: 5px;">
-                                PLU: ${registro.plu} | Producto ID: ${registro.producto_id}
+                            <div class="meta-info">
+                                <span>📍 PLU: ${registro.plu}</span>
+                                <span>🆔 Producto ID: ${registro.producto_id}</span>
+                                <span>${registro.es_papa ? '👑 PAPA' : '👶 HIJO'}</span>
                             </div>
                         </div>
                     `;
@@ -266,6 +387,7 @@
             });
 
             container.innerHTML = html;
+            console.log('✅ Historial renderizado');
         }
     </script>
 </body>

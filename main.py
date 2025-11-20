@@ -8850,9 +8850,9 @@ async def test_deploy():
     }
 
 
-# En main.py o nuevo archivo comparador_api.py
-
-
+# ============================================================================
+# ENDPOINTS PARA COMPARACIÓN DE PRECIOS E HISTORIAL
+# ============================================================================
 @app.get("/api/productos/comparar/{codigo_lecfac}")
 async def comparar_precios_producto(codigo_lecfac: str):
     """
@@ -8913,17 +8913,13 @@ async def comparar_precios_producto(codigo_lecfac: str):
                 "mensaje": "Este producto aún no tiene precios registrados",
             }
 
-        # 3. Formatear precios con indicador de vigencia
+        # 3. Formatear precios
         precios = []
-        precio_min = precios_raw[0][3]  # El más barato (ya ordenado ASC)
+        precio_min = precios_raw[0][3]
 
         for row in precios_raw:
             est_id, establecimiento, plu, precio, fecha_act, dias = row
-
-            # Determinar vigencia (30 días)
             vigente = dias <= 30
-
-            # Calcular ahorro vs precio mínimo
             diferencia = precio - precio_min
             porcentaje_diferencia = (
                 (diferencia / precio_min * 100) if precio_min > 0 else 0
@@ -8965,6 +8961,159 @@ async def comparar_precios_producto(codigo_lecfac: str):
 
     except Exception as e:
         print(f"❌ Error comparando precios: {e}")
+        if conn:
+            conn.close()
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/admin/productos/{papa_id}/historial")
+async def obtener_historial_precios(papa_id: int):
+    """
+    Retorna TODO el historial de precios de un producto papa
+    Incluye el papa + todos los hijos con sus precios históricos
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        print(f"\n📊 [HISTORIAL] Obteniendo historial del producto {papa_id}")
+
+        # 1. Obtener info del producto (puede ser papa o hijo)
+        cursor.execute(
+            """
+            SELECT
+                id,
+                nombre_consolidado,
+                marca,
+                codigo_lecfac,
+                es_producto_papa,
+                producto_papa_id
+            FROM productos_maestros_v2
+            WHERE id = %s
+        """,
+            (papa_id,),
+        )
+
+        producto_info = cursor.fetchone()
+
+        if not producto_info:
+            return {"success": False, "error": "Producto no encontrado"}
+
+        prod_id, nombre, marca, codigo_lecfac, es_papa, papa_id_ref = producto_info
+
+        # Si es un hijo, obtener el ID del papa
+        if not es_papa and papa_id_ref:
+            papa_id = papa_id_ref
+            cursor.execute(
+                """
+                SELECT nombre_consolidado, marca, codigo_lecfac
+                FROM productos_maestros_v2
+                WHERE id = %s
+            """,
+                (papa_id,),
+            )
+            papa_data = cursor.fetchone()
+            if papa_data:
+                nombre, marca, codigo_lecfac = papa_data
+
+        print(f"   Producto: {nombre}")
+        print(f"   Es papa: {es_papa}")
+        print(f"   Papa ID final: {papa_id}")
+
+        # 2. Obtener TODOS los precios (papa + hijos)
+        cursor.execute(
+            """
+            SELECT
+                pm.id as producto_id,
+                pm.es_producto_papa,
+                e.id as establecimiento_id,
+                e.nombre_normalizado as establecimiento,
+                ppe.codigo_plu,
+                ppe.precio_unitario,
+                ppe.fecha_actualizacion,
+                ppe.fecha_creacion,
+                EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ppe.fecha_actualizacion))/86400 as dias_desde_actualizacion
+            FROM productos_maestros_v2 pm
+            INNER JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            INNER JOIN establecimientos e ON ppe.establecimiento_id = e.id
+            WHERE pm.id = %s OR pm.producto_papa_id = %s
+            ORDER BY e.nombre_normalizado, ppe.fecha_actualizacion DESC
+        """,
+            (papa_id, papa_id),
+        )
+
+        resultados = cursor.fetchall()
+
+        print(f"   Registros encontrados: {len(resultados)}")
+
+        # 3. Agrupar por establecimiento
+        historial_por_establecimiento = {}
+
+        for row in resultados:
+            (
+                prod_id,
+                es_papa_reg,
+                est_id,
+                establecimiento,
+                plu,
+                precio,
+                fecha_act,
+                fecha_cre,
+                dias,
+            ) = row
+
+            if establecimiento not in historial_por_establecimiento:
+                historial_por_establecimiento[establecimiento] = {
+                    "establecimiento_id": est_id,
+                    "establecimiento": establecimiento,
+                    "precio_actual": None,
+                    "historial": [],
+                }
+
+            registro = {
+                "producto_id": prod_id,
+                "es_papa": es_papa_reg,
+                "plu": plu,
+                "precio": int(precio),
+                "fecha_actualizacion": fecha_act.isoformat() if fecha_act else None,
+                "fecha_creacion": fecha_cre.isoformat() if fecha_cre else None,
+                "dias_desde_actualizacion": int(dias),
+                "vigente": dias <= 30,
+            }
+
+            # El primero es el precio actual
+            if historial_por_establecimiento[establecimiento]["precio_actual"] is None:
+                historial_por_establecimiento[establecimiento][
+                    "precio_actual"
+                ] = registro
+
+            historial_por_establecimiento[establecimiento]["historial"].append(registro)
+
+        cursor.close()
+        conn.close()
+
+        print(
+            f"   ✅ Historial agrupado en {len(historial_por_establecimiento)} establecimientos"
+        )
+
+        return {
+            "success": True,
+            "producto": {
+                "papa_id": papa_id,
+                "nombre": nombre,
+                "marca": marca,
+                "codigo_lecfac": codigo_lecfac,
+            },
+            "historial_por_establecimiento": list(
+                historial_por_establecimiento.values()
+            ),
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo historial: {e}")
+        import traceback
+
+        traceback.print_exc()
         if conn:
             conn.close()
         return {"success": False, "error": str(e)}
