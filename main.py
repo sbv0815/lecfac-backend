@@ -1307,6 +1307,11 @@ async def buscar_productos_referencia_publico(
         conn.close()
 
 
+@app.get("/buscador-referencia")
+async def serve_buscador_referencia():
+    return FileResponse("static/buscador_referencia.html")
+
+
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...), request: Request = None):
     """Procesar factura con OCR - Para imágenes individuales"""
@@ -1346,7 +1351,7 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
 
         result = parse_invoice_with_claude(temp_file.name)
 
-        # ✅ NUEVO: Capturar tokens usados
+        # ✅ NUEVO: Capturar tokens usados revisar
         usage_info = result.get("usage", {})
         tokens_input = usage_info.get("input_tokens", 0)
         tokens_output = usage_info.get("output_tokens", 0)
