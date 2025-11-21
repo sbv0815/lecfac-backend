@@ -70,6 +70,8 @@ from storage import save_image_to_db, get_image_from_db
 from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 from comparador_api import router as comparador_router
+from fastapi.responses import FileResponse, HTMLResponse
+
 
 # ==========================================
 # FORZAR RECARGA DE MÓDULOS - NUEVO
@@ -9427,6 +9429,246 @@ async def get_uso_api_admin():
 
 
 print("✅ Endpoints de uso de API registrados")
+
+# ============================================
+# ENDPOINTS DE USO DE API - ADMINISTRACIÓN
+# ============================================
+
+
+@app.get("/api/admin/uso-api/resumen")
+async def get_uso_api_resumen_admin(dias: int = 30, user_id: Optional[int] = None):
+    """
+    Dashboard de uso de API para administración.
+    - Resumen general de consumo
+    - Breakdown por usuario
+    - Costos totales
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # 1. Resumen general
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) as total_llamadas,
+                COUNT(DISTINCT factura_id) as facturas_procesadas,
+                COUNT(DISTINCT user_id) as usuarios_activos,
+                COALESCE(SUM(tokens_input), 0) as total_tokens_input,
+                COALESCE(SUM(tokens_output), 0) as total_tokens_output,
+                COALESCE(SUM(costo_usd), 0) as costo_total_usd
+            FROM uso_api
+            WHERE fecha >= NOW() - INTERVAL '%s days'
+        """,
+            (dias,),
+        )
+
+        row = cur.fetchone()
+        resumen_general = {
+            "total_llamadas": row[0],
+            "facturas_procesadas": row[1],
+            "usuarios_activos": row[2],
+            "total_tokens_input": row[3],
+            "total_tokens_output": row[4],
+            "total_tokens": row[3] + row[4],
+            "costo_total_usd": float(row[5]),
+            "costo_total_cop": float(row[5]) * 4200,  # Tasa aproximada
+        }
+
+        # 2. Uso por día (para gráfica)
+        cur.execute(
+            """
+            SELECT
+                DATE(fecha) as dia,
+                COUNT(*) as llamadas,
+                COUNT(DISTINCT factura_id) as facturas,
+                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
+                COALESCE(SUM(costo_usd), 0) as costo
+            FROM uso_api
+            WHERE fecha >= NOW() - INTERVAL '%s days'
+            GROUP BY DATE(fecha)
+            ORDER BY dia DESC
+        """,
+            (dias,),
+        )
+
+        uso_por_dia = []
+        for row in cur.fetchall():
+            uso_por_dia.append(
+                {
+                    "fecha": row[0].isoformat() if row[0] else None,
+                    "llamadas": row[1],
+                    "facturas": row[2],
+                    "tokens": row[3],
+                    "costo_usd": float(row[4]),
+                }
+            )
+
+        # 3. Uso por usuario
+        query_usuarios = """
+            SELECT
+                u.user_id,
+                u.tokens_usados_mes,
+                u.facturas_procesadas_mes,
+                u.limite_tokens_mes,
+                u.limite_facturas_mes,
+                u.plan,
+                COALESCE(SUM(a.costo_usd), 0) as costo_periodo
+            FROM limites_usuario u
+            LEFT JOIN uso_api a ON u.user_id = a.user_id
+                AND a.fecha >= NOW() - INTERVAL '%s days'
+        """
+
+        if user_id:
+            query_usuarios += " WHERE u.user_id = %s"
+            query_usuarios += " GROUP BY u.user_id, u.tokens_usados_mes, u.facturas_procesadas_mes, u.limite_tokens_mes, u.limite_facturas_mes, u.plan"
+            cur.execute(query_usuarios, (dias, user_id))
+        else:
+            query_usuarios += " GROUP BY u.user_id, u.tokens_usados_mes, u.facturas_procesadas_mes, u.limite_tokens_mes, u.limite_facturas_mes, u.plan"
+            query_usuarios += " ORDER BY u.tokens_usados_mes DESC"
+            cur.execute(query_usuarios, (dias,))
+
+        uso_por_usuario = []
+        for row in cur.fetchall():
+            porcentaje_tokens = (row[1] / row[3] * 100) if row[3] > 0 else 0
+            porcentaje_facturas = (row[2] / row[4] * 100) if row[4] > 0 else 0
+
+            uso_por_usuario.append(
+                {
+                    "user_id": row[0],
+                    "plan": row[5],
+                    "tokens_usados": row[1],
+                    "limite_tokens": row[3],
+                    "porcentaje_tokens": round(porcentaje_tokens, 1),
+                    "facturas_procesadas": row[2],
+                    "limite_facturas": row[4],
+                    "porcentaje_facturas": round(porcentaje_facturas, 1),
+                    "costo_periodo_usd": float(row[6]),
+                }
+            )
+
+        # 4. Top endpoints más usados
+        cur.execute(
+            """
+            SELECT
+                endpoint,
+                COUNT(*) as llamadas,
+                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
+                COALESCE(SUM(costo_usd), 0) as costo
+            FROM uso_api
+            WHERE fecha >= NOW() - INTERVAL '%s days'
+            GROUP BY endpoint
+            ORDER BY llamadas DESC
+            LIMIT 10
+        """,
+            (dias,),
+        )
+
+        uso_por_endpoint = []
+        for row in cur.fetchall():
+            uso_por_endpoint.append(
+                {
+                    "endpoint": row[0],
+                    "llamadas": row[1],
+                    "tokens": row[2],
+                    "costo_usd": float(row[3]),
+                }
+            )
+
+        cur.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "periodo_dias": dias,
+            "resumen": resumen_general,
+            "uso_por_dia": uso_por_dia,
+            "uso_por_usuario": uso_por_usuario,
+            "uso_por_endpoint": uso_por_endpoint,
+        }
+
+    except Exception as e:
+        print(f"Error en uso-api resumen: {e}")
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/uso-api/detalle")
+async def get_uso_api_detalle_admin(
+    user_id: Optional[int] = None,
+    factura_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """
+    Detalle de llamadas individuales a la API.
+    Útil para debugging y auditoría.
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        query = """
+            SELECT
+                id, user_id, factura_id, endpoint, modelo,
+                tokens_input, tokens_output, costo_usd, fecha
+            FROM uso_api
+            WHERE 1=1
+        """
+        params = []
+
+        if user_id:
+            query += " AND user_id = %s"
+            params.append(user_id)
+
+        if factura_id:
+            query += " AND factura_id = %s"
+            params.append(factura_id)
+
+        query += " ORDER BY fecha DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        cur.execute(query, params)
+
+        registros = []
+        for row in cur.fetchall():
+            registros.append(
+                {
+                    "id": row[0],
+                    "user_id": row[1],
+                    "factura_id": row[2],
+                    "endpoint": row[3],
+                    "modelo": row[4],
+                    "tokens_input": row[5],
+                    "tokens_output": row[6],
+                    "tokens_total": row[5] + row[6],
+                    "costo_usd": float(row[7]),
+                    "fecha": row[8].isoformat() if row[8] else None,
+                }
+            )
+
+        cur.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "total": len(registros),
+            "limit": limit,
+            "offset": offset,
+            "registros": registros,
+        }
+
+    except Exception as e:
+        print(f"Error en uso-api detalle: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin/uso-api", response_class=HTMLResponse)
+async def admin_uso_api_page():
+    return FileResponse("static/admin_uso_api.html")
+
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
