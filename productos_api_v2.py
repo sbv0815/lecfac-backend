@@ -427,13 +427,15 @@ async def actualizar_producto(producto_id: int, request: dict):
             print(f"   ✅ Actualizando marca: {marca}")
 
         # ✅ CORREGIDO: Procesar codigo_ean (INDEPENDIENTE de marca)
+        # EAN puede repetirse - es la llave global del producto
+        advertencia_ean = None
         if "codigo_ean" in request:
             ean_value = request["codigo_ean"].strip() if request["codigo_ean"] else None
             ean_final = ean_value if ean_value else None
 
             # Solo actualizar si es diferente
             if ean_actual != ean_final:
-                # Verificar que no existe en OTRO producto
+                # Verificar si existe en OTRO producto (solo advertencia, no bloqueo)
                 if ean_final:
                     cursor.execute(
                         """
@@ -441,19 +443,21 @@ async def actualizar_producto(producto_id: int, request: dict):
                         FROM productos_maestros_v2 pm
                         WHERE pm.codigo_ean = %s
                         AND pm.id != %s
-                        LIMIT 1
+                        LIMIT 5
                         """,
                         (ean_final, producto_id),
                     )
 
-                    conflicto = cursor.fetchone()
+                    conflictos = cursor.fetchall()
 
-                    if conflicto:
-                        cursor.close()
-                        conn.close()
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"El código EAN '{ean_final}' ya existe para el producto '{conflicto[1]}' (ID: {conflicto[0]})",
+                    if conflictos:
+                        # Solo advertencia, NO bloquear
+                        productos_con_ean = ", ".join(
+                            [f"'{c[1]}' (ID:{c[0]})" for c in conflictos]
+                        )
+                        advertencia_ean = f"⚠️ Este EAN ya existe en: {productos_con_ean}. Considera fusionar estos productos."
+                        print(
+                            f"   ⚠️ ADVERTENCIA: EAN {ean_final} existe en otros productos: {productos_con_ean}"
                         )
 
                 updates.append("codigo_ean = %s")
@@ -515,7 +519,7 @@ async def actualizar_producto(producto_id: int, request: dict):
         logger.info(f"✅ Producto {producto_id} actualizado exitosamente")
         print(f"   ✅ Resultado: {updated}")
 
-        return {
+        response = {
             "success": True,
             "producto": {
                 "id": updated[0],
@@ -526,6 +530,12 @@ async def actualizar_producto(producto_id: int, request: dict):
                 "codigo_lecfac": updated[5],
             },
         }
+
+        # Agregar advertencia si existe
+        if advertencia_ean:
+            response["advertencia"] = advertencia_ean
+
+        return response
 
     except HTTPException:
         raise
