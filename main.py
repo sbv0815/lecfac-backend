@@ -1266,6 +1266,47 @@ async def health_check():
         )
 
 
+@app.get("/api/productos-referencia/buscar")
+async def buscar_productos_referencia_publico(
+    busqueda: str = Query(..., min_length=1), limite: int = Query(50, ge=1, le=200)
+):
+    """Buscar en productos_referencia - PÚBLICO"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        search_param = f"%{busqueda}%"
+        cursor.execute(
+            """
+            SELECT id, codigo_ean, nombre, marca, categoria, presentacion
+            FROM productos_referencia
+            WHERE LOWER(nombre) LIKE LOWER(%s)
+            OR LOWER(marca) LIKE LOWER(%s)
+            OR codigo_ean LIKE %s
+            ORDER BY nombre
+            LIMIT %s
+        """,
+            (search_param, search_param, search_param, limite),
+        )
+
+        productos = [
+            {
+                "id": r[0],
+                "codigo_ean": r[1],
+                "nombre": r[2],
+                "marca": r[3],
+                "categoria": r[4],
+                "presentacion": r[5],
+            }
+            for r in cursor.fetchall()
+        ]
+
+        return {"success": True, "productos": productos, "total": len(productos)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.post("/invoices/parse")
 async def parse_invoice(file: UploadFile = File(...), request: Request = None):
     """Procesar factura con OCR - Para imágenes individuales"""
@@ -9593,49 +9634,6 @@ async def admin_uso_api_page():
 # AGREGAR ESTE CÓDIGO A TU main.py
 # Endpoint público para buscar en productos_referencia
 # ============================================================
-
-
-@app.get("/api/productos-referencia/buscar")
-async def buscar_productos_referencia_publico(
-    busqueda: str = Query(..., min_length=1), limite: int = Query(50, ge=1, le=200)
-):
-    """Buscar en productos_referencia - PÚBLICO"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        search_param = f"%{busqueda}%"
-        cursor.execute(
-            """
-            SELECT id, codigo_ean, nombre, marca, categoria, presentacion
-            FROM productos_referencia
-            WHERE LOWER(nombre) LIKE LOWER(%s)
-            OR LOWER(marca) LIKE LOWER(%s)
-            OR codigo_ean LIKE %s
-            ORDER BY nombre
-            LIMIT %s
-        """,
-            (search_param, search_param, search_param, limite),
-        )
-
-        productos = [
-            {
-                "id": r[0],
-                "codigo_ean": r[1],
-                "nombre": r[2],
-                "marca": r[3],
-                "categoria": r[4],
-                "presentacion": r[5],
-            }
-            for r in cursor.fetchall()
-        ]
-
-        return {"success": True, "productos": productos, "total": len(productos)}
-    finally:
-        cursor.close()
-        conn.close()
-
-
 @app.get("/api/productos-referencia/stats")
 async def stats_productos_referencia():
     """
