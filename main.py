@@ -9597,60 +9597,40 @@ async def admin_uso_api_page():
 
 @app.get("/api/productos-referencia/buscar")
 async def buscar_productos_referencia_publico(
-    busqueda: str = Query(..., min_length=1, description="Término de búsqueda"),
-    limite: int = Query(50, ge=1, le=200, description="Límite de resultados"),
+    busqueda: str = Query(..., min_length=1), limite: int = Query(50, ge=1, le=200)
 ):
-    """
-    Buscar en productos_referencia (público, sin autenticación)
-    Busca por nombre, marca o código EAN
-    """
-    print(f"🔍 Buscando en productos_referencia: '{busqueda}'")
-
+    """Buscar en productos_referencia - PÚBLICO"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
         search_param = f"%{busqueda}%"
-
         cursor.execute(
             """
-            SELECT id, codigo_ean, nombre, marca, categoria, presentacion, unidad_medida
+            SELECT id, codigo_ean, nombre, marca, categoria, presentacion
             FROM productos_referencia
             WHERE LOWER(nombre) LIKE LOWER(%s)
-               OR LOWER(marca) LIKE LOWER(%s)
-               OR codigo_ean LIKE %s
+            OR LOWER(marca) LIKE LOWER(%s)
+            OR codigo_ean LIKE %s
             ORDER BY nombre
             LIMIT %s
         """,
             (search_param, search_param, search_param, limite),
         )
 
-        productos = []
-        for row in cursor.fetchall():
-            productos.append(
-                {
-                    "id": row[0],
-                    "codigo_ean": row[1],
-                    "nombre": row[2],
-                    "marca": row[3],
-                    "categoria": row[4],
-                    "presentacion": row[5],
-                    "unidad_medida": row[6],
-                }
-            )
+        productos = [
+            {
+                "id": r[0],
+                "codigo_ean": r[1],
+                "nombre": r[2],
+                "marca": r[3],
+                "categoria": r[4],
+                "presentacion": r[5],
+            }
+            for r in cursor.fetchall()
+        ]
 
-        print(f"✅ Encontrados {len(productos)} productos")
-
-        return {
-            "success": True,
-            "productos": productos,
-            "total": len(productos),
-            "busqueda": busqueda,
-        }
-
-    except Exception as e:
-        print(f"❌ Error buscando: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": True, "productos": productos, "total": len(productos)}
     finally:
         cursor.close()
         conn.close()
