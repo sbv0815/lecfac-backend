@@ -9430,148 +9430,131 @@ async def get_uso_api_admin():
 
 print("✅ Endpoints de uso de API registrados")
 
+
 # ============================================
 # ENDPOINTS DE USO DE API - ADMINISTRACIÓN
 # ============================================
-
-
 @app.get("/api/admin/uso-api/resumen")
-async def get_uso_api_resumen_admin(dias: int = 30, user_id: Optional[int] = None):
+async def get_uso_api_resumen_admin(dias: int = 30):
     """
     Dashboard de uso de API para administración.
-    - Resumen general de consumo
-    - Breakdown por usuario
-    - Costos totales
     """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # 1. Resumen general
+        # Obtener primer día del mes actual
+        from datetime import datetime, timedelta
+
+        hoy = datetime.now()
+        primer_dia_mes = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # 1. Resumen del mes actual
         cur.execute(
             """
             SELECT
-                COUNT(*) as total_llamadas,
-                COUNT(DISTINCT factura_id) as facturas_procesadas,
-                COUNT(DISTINCT user_id) as usuarios_activos,
-                COALESCE(SUM(tokens_input), 0) as total_tokens_input,
-                COALESCE(SUM(tokens_output), 0) as total_tokens_output,
-                COALESCE(SUM(costo_usd), 0) as costo_total_usd
+                COUNT(*) as operaciones,
+                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
+                COALESCE(SUM(costo_usd), 0) as costo_usd,
+                COUNT(DISTINCT user_id) as usuarios_activos
             FROM uso_api
-            WHERE fecha >= NOW() - INTERVAL '%s days'
+            WHERE fecha >= %s
         """,
-            (dias,),
+            (primer_dia_mes,),
         )
 
         row = cur.fetchone()
-        resumen_general = {
-            "total_llamadas": row[0],
-            "facturas_procesadas": row[1],
-            "usuarios_activos": row[2],
-            "total_tokens_input": row[3],
-            "total_tokens_output": row[4],
-            "total_tokens": row[3] + row[4],
-            "costo_total_usd": float(row[5]),
-            "costo_total_cop": float(row[5]) * 4200,  # Tasa aproximada
+        mes_actual = {
+            "operaciones": row[0],
+            "tokens": row[1],
+            "costo_usd": float(row[2]),
+            "usuarios_activos": row[3],
         }
 
-        # 2. Uso por día (para gráfica)
+        # 2. Desglose por tipo de operación
         cur.execute(
             """
             SELECT
-                DATE(fecha) as dia,
-                COUNT(*) as llamadas,
-                COUNT(DISTINCT factura_id) as facturas,
+                COALESCE(endpoint, 'sin_clasificar') as operacion,
+                COUNT(*) as operaciones,
                 COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
-                COALESCE(SUM(costo_usd), 0) as costo
+                COALESCE(SUM(costo_usd), 0) as costo_usd
             FROM uso_api
-            WHERE fecha >= NOW() - INTERVAL '%s days'
-            GROUP BY DATE(fecha)
-            ORDER BY dia DESC
+            WHERE fecha >= %s
+            GROUP BY endpoint
+            ORDER BY costo_usd DESC
         """,
-            (dias,),
+            (primer_dia_mes,),
         )
 
-        uso_por_dia = []
+        por_operacion = {}
         for row in cur.fetchall():
-            uso_por_dia.append(
-                {
-                    "fecha": row[0].isoformat() if row[0] else None,
-                    "llamadas": row[1],
-                    "facturas": row[2],
-                    "tokens": row[3],
-                    "costo_usd": float(row[4]),
-                }
-            )
+            por_operacion[row[0]] = {
+                "operaciones": row[1],
+                "tokens": row[2],
+                "costo_usd": float(row[3]),
+            }
 
-        # 3. Uso por usuario
-        query_usuarios = """
+        # 3. Desglose por usuario
+        cur.execute(
+            """
             SELECT
-                u.user_id,
-                u.tokens_usados_mes,
-                u.facturas_procesadas_mes,
-                u.limite_tokens_mes,
-                u.limite_facturas_mes,
-                u.plan,
-                COALESCE(SUM(a.costo_usd), 0) as costo_periodo
-            FROM limites_usuario u
-            LEFT JOIN uso_api a ON u.user_id = a.user_id
-                AND a.fecha >= NOW() - INTERVAL '%s days'
-        """
+                ua.user_id,
+                COALESCE(u.email, u.nombre, 'Usuario ' || ua.user_id::text) as nombre,
+                COUNT(*) as operaciones,
+                COALESCE(SUM(ua.tokens_input + ua.tokens_output), 0) as tokens,
+                COALESCE(SUM(ua.costo_usd), 0) as costo_usd,
+                MAX(ua.fecha) as ultima_actividad
+            FROM uso_api ua
+            LEFT JOIN usuarios u ON ua.user_id = u.id
+            WHERE ua.fecha >= %s
+            GROUP BY ua.user_id, u.email, u.nombre
+            ORDER BY costo_usd DESC
+        """,
+            (primer_dia_mes,),
+        )
 
-        if user_id:
-            query_usuarios += " WHERE u.user_id = %s"
-            query_usuarios += " GROUP BY u.user_id, u.tokens_usados_mes, u.facturas_procesadas_mes, u.limite_tokens_mes, u.limite_facturas_mes, u.plan"
-            cur.execute(query_usuarios, (dias, user_id))
-        else:
-            query_usuarios += " GROUP BY u.user_id, u.tokens_usados_mes, u.facturas_procesadas_mes, u.limite_tokens_mes, u.limite_facturas_mes, u.plan"
-            query_usuarios += " ORDER BY u.tokens_usados_mes DESC"
-            cur.execute(query_usuarios, (dias,))
-
-        uso_por_usuario = []
+        por_usuario = []
         for row in cur.fetchall():
-            porcentaje_tokens = (row[1] / row[3] * 100) if row[3] > 0 else 0
-            porcentaje_facturas = (row[2] / row[4] * 100) if row[4] > 0 else 0
-
-            uso_por_usuario.append(
+            por_usuario.append(
                 {
                     "user_id": row[0],
-                    "plan": row[5],
-                    "tokens_usados": row[1],
-                    "limite_tokens": row[3],
-                    "porcentaje_tokens": round(porcentaje_tokens, 1),
-                    "facturas_procesadas": row[2],
-                    "limite_facturas": row[4],
-                    "porcentaje_facturas": round(porcentaje_facturas, 1),
-                    "costo_periodo_usd": float(row[6]),
+                    "nombre": row[1],
+                    "operaciones": row[2],
+                    "tokens": row[3],
+                    "costo_usd": float(row[4]),
+                    "ultima_actividad": row[5].isoformat() if row[5] else None,
                 }
             )
 
-        # 4. Top endpoints más usados
+        # 4. Detalle por usuario y operación (para el desplegable)
         cur.execute(
             """
             SELECT
-                endpoint,
-                COUNT(*) as llamadas,
+                user_id,
+                COALESCE(endpoint, 'sin_clasificar') as operacion,
+                COUNT(*) as operaciones,
                 COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
-                COALESCE(SUM(costo_usd), 0) as costo
+                COALESCE(SUM(costo_usd), 0) as costo_usd
             FROM uso_api
-            WHERE fecha >= NOW() - INTERVAL '%s days'
-            GROUP BY endpoint
-            ORDER BY llamadas DESC
-            LIMIT 10
+            WHERE fecha >= %s
+            GROUP BY user_id, endpoint
+            ORDER BY user_id, costo_usd DESC
         """,
-            (dias,),
+            (primer_dia_mes,),
         )
 
-        uso_por_endpoint = []
+        detalle_usuario = {}
         for row in cur.fetchall():
-            uso_por_endpoint.append(
+            user_id = str(row[0])
+            if user_id not in detalle_usuario:
+                detalle_usuario[user_id] = []
+            detalle_usuario[user_id].append(
                 {
-                    "endpoint": row[0],
-                    "llamadas": row[1],
-                    "tokens": row[2],
-                    "costo_usd": float(row[3]),
+                    "operacion": row[1],
+                    "operaciones": row[2],
+                    "tokens": row[3],
+                    "costo_usd": float(row[4]),
                 }
             )
 
@@ -9580,11 +9563,10 @@ async def get_uso_api_resumen_admin(dias: int = 30, user_id: Optional[int] = Non
 
         return {
             "success": True,
-            "periodo_dias": dias,
-            "resumen": resumen_general,
-            "uso_por_dia": uso_por_dia,
-            "uso_por_usuario": uso_por_usuario,
-            "uso_por_endpoint": uso_por_endpoint,
+            "mes_actual": mes_actual,
+            "por_operacion": por_operacion,
+            "por_usuario": por_usuario,
+            "detalle_usuario": detalle_usuario,
         }
 
     except Exception as e:
