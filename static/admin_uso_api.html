@@ -47,28 +47,6 @@
             font-size: 32px;
         }
 
-        /* Filtros */
-        .filtros {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .filtros select,
-        .filtros input {
-            padding: 10px 15px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
-            font-size: 14px;
-        }
-
-        .filtros select option {
-            background: #1a1a2e;
-        }
-
         .btn-refresh {
             padding: 10px 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -88,7 +66,7 @@
         /* Cards de resumen */
         .cards-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -117,6 +95,10 @@
             margin-bottom: 5px;
         }
 
+        .card-value.small {
+            font-size: 24px;
+        }
+
         .card-label {
             color: rgba(255, 255, 255, 0.6);
             font-size: 14px;
@@ -131,6 +113,16 @@
         .card.highlight {
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
             border-color: rgba(102, 126, 234, 0.5);
+        }
+
+        .card.green {
+            background: linear-gradient(135deg, rgba(0, 184, 148, 0.2) 0%, rgba(0, 206, 201, 0.2) 100%);
+            border-color: rgba(0, 184, 148, 0.4);
+        }
+
+        .card.orange {
+            background: linear-gradient(135deg, rgba(253, 203, 110, 0.2) 0%, rgba(225, 112, 85, 0.2) 100%);
+            border-color: rgba(253, 203, 110, 0.4);
         }
 
         /* Secciones */
@@ -160,6 +152,13 @@
         .chart-container {
             position: relative;
             height: 300px;
+        }
+
+        /* Grid 2 columnas */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
         }
 
         /* Tablas */
@@ -198,6 +197,7 @@
             background: rgba(255, 255, 255, 0.1);
             border-radius: 4px;
             overflow: hidden;
+            margin-top: 5px;
         }
 
         .progress-fill {
@@ -218,27 +218,37 @@
             background: linear-gradient(90deg, #e17055, #d63031);
         }
 
+        .progress-fill.blue {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
         /* Badge */
         .badge {
             padding: 5px 12px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
+            display: inline-block;
         }
 
-        .badge.free {
-            background: rgba(0, 184, 148, 0.2);
+        .badge.ocr {
+            background: rgba(102, 126, 234, 0.3);
+            color: #a29bfe;
+        }
+
+        .badge.menu {
+            background: rgba(0, 184, 148, 0.3);
             color: #00b894;
         }
 
-        .badge.premium {
-            background: rgba(253, 203, 110, 0.2);
+        .badge.test {
+            background: rgba(253, 203, 110, 0.3);
             color: #fdcb6e;
         }
 
-        .badge.enterprise {
-            background: rgba(108, 92, 231, 0.2);
-            color: #a29bfe;
+        .badge.other {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.6);
         }
 
         /* Loading */
@@ -264,34 +274,6 @@
             }
         }
 
-        /* Grid 2 columnas */
-        .grid-2 {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 25px;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                gap: 20px;
-            }
-
-            .filtros {
-                width: 100%;
-                justify-content: center;
-            }
-
-            .cards-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .grid-2 {
-                grid-template-columns: 1fr;
-            }
-        }
-
         /* Toast notification */
         .toast {
             position: fixed;
@@ -305,6 +287,7 @@
             transform: translateY(100px);
             opacity: 0;
             transition: all 0.3s ease;
+            z-index: 1000;
         }
 
         .toast.show {
@@ -322,8 +305,127 @@
             font-weight: 600;
         }
 
-        .money.negative {
-            color: #e17055;
+        /* Operación item */
+        .operacion-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .operacion-info {
+            flex: 1;
+        }
+
+        .operacion-nombre {
+            font-weight: 600;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .operacion-stats {
+            display: flex;
+            gap: 20px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 13px;
+        }
+
+        .operacion-costo {
+            text-align: right;
+        }
+
+        .operacion-costo .valor {
+            font-size: 20px;
+            font-weight: bold;
+            color: #00b894;
+        }
+
+        .operacion-costo .label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Info box */
+        .info-box {
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .info-box-icon {
+            font-size: 24px;
+        }
+
+        .info-box-text {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .cards-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .operacion-item {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .operacion-stats {
+                justify-content: center;
+            }
+        }
+
+        /* Mes indicator */
+        .mes-indicator {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mes-indicator .dot {
+            width: 8px;
+            height: 8px;
+            background: #00b894;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
     </style>
 </head>
@@ -333,13 +435,11 @@
         <!-- Header -->
         <div class="header">
             <h1><span>📊</span> Uso de API - LecFac</h1>
-            <div class="filtros">
-                <select id="selectDias">
-                    <option value="7">Últimos 7 días</option>
-                    <option value="30" selected>Últimos 30 días</option>
-                    <option value="60">Últimos 60 días</option>
-                    <option value="90">Últimos 90 días</option>
-                </select>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div class="mes-indicator">
+                    <span class="dot"></span>
+                    <span id="mesActual">Cargando...</span>
+                </div>
                 <button class="btn-refresh" onclick="cargarDatos()">
                     🔄 Actualizar
                 </button>
@@ -353,55 +453,67 @@
             </div>
         </div>
 
-        <!-- Gráfica de uso diario -->
-        <div class="section">
-            <div class="section-header">
-                <h2>📈 Consumo Diario</h2>
-            </div>
-            <div class="chart-container">
-                <canvas id="chartUsoDiario"></canvas>
-            </div>
-        </div>
-
         <!-- Grid 2 columnas -->
         <div class="grid-2">
-            <!-- Uso por Usuario -->
+            <!-- Desglose por operación -->
             <div class="section">
                 <div class="section-header">
-                    <h2>👥 Uso por Usuario</h2>
+                    <h2>🔧 Consumo por Operación</h2>
                 </div>
-                <div class="table-container" id="tablaUsuarios">
+                <div id="listaOperaciones">
                     <div class="loading">
                         <div class="spinner"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Uso por Endpoint -->
+            <!-- Gráfica de distribución -->
             <div class="section">
                 <div class="section-header">
-                    <h2>🔗 Uso por Endpoint</h2>
+                    <h2>📈 Distribución de Costos</h2>
                 </div>
-                <div class="table-container" id="tablaEndpoints">
-                    <div class="loading">
-                        <div class="spinner"></div>
-                    </div>
+                <div class="chart-container">
+                    <canvas id="chartDistribucion"></canvas>
                 </div>
             </div>
         </div>
 
-        <!-- Detalle de llamadas recientes -->
+        <!-- Métricas calculadas -->
         <div class="section">
             <div class="section-header">
-                <h2>📋 Llamadas Recientes</h2>
-                <select id="selectUserFilter" onchange="cargarDetalle()">
-                    <option value="">Todos los usuarios</option>
-                </select>
+                <h2>📐 Métricas Calculadas</h2>
             </div>
-            <div class="table-container" id="tablaDetalle">
-                <div class="loading">
-                    <div class="spinner"></div>
-                </div>
+            <div class="cards-grid" id="metricsCards" style="margin-bottom: 0;">
+                <!-- Se llena dinámicamente -->
+            </div>
+
+            <div class="info-box">
+                <span class="info-box-icon">💡</span>
+                <span class="info-box-text" id="infoProyeccion">Calculando proyección...</span>
+            </div>
+        </div>
+
+        <!-- Tabla detallada -->
+        <div class="section">
+            <div class="section-header">
+                <h2>📋 Detalle por Operación</h2>
+            </div>
+            <div class="table-container">
+                <table id="tablaDetalle">
+                    <thead>
+                        <tr>
+                            <th>Operación</th>
+                            <th>Llamadas</th>
+                            <th>Tokens</th>
+                            <th>% del Total</th>
+                            <th>Costo USD</th>
+                            <th>Costo COP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaDetalleBody">
+                        <!-- Se llena dinámicamente -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -412,7 +524,8 @@
     <script>
         // Configuración
         const API_BASE = window.location.origin;
-        let chartUsoDiario = null;
+        const TASA_COP = 4200; // Tasa de cambio aproximada
+        let chartDistribucion = null;
 
         // Mostrar toast
         function showToast(message, isError = false) {
@@ -427,366 +540,328 @@
             return new Intl.NumberFormat('es-CO').format(num);
         }
 
-        function formatMoney(usd) {
-            const cop = usd * 4200;
-            return `$${usd.toFixed(4)} USD (~$${formatNumber(Math.round(cop))} COP)`;
+        function formatUSD(num) {
+            return '$' + num.toFixed(4);
         }
 
-        // Obtener color del progress bar
-        function getProgressColor(percentage) {
-            if (percentage < 60) return 'green';
-            if (percentage < 85) return 'yellow';
-            return 'red';
+        function formatCOP(usd) {
+            return '$' + formatNumber(Math.round(usd * TASA_COP));
         }
 
-        // Cargar datos principales
+        // Obtener badge class según operación
+        function getBadgeClass(operacion) {
+            if (operacion.includes('ocr') || operacion.includes('factura')) return 'ocr';
+            if (operacion.includes('menu')) return 'menu';
+            if (operacion.includes('test')) return 'test';
+            return 'other';
+        }
+
+        // Obtener nombre legible de operación
+        function getNombreOperacion(key) {
+            const nombres = {
+                'ocr_factura': '🧾 OCR de Facturas',
+                'generar_menu': '🍽️ Generación de Menús',
+                'test': '🧪 Pruebas',
+                'analisis': '📊 Análisis',
+                'matching': '🔗 Matching de Productos'
+            };
+            return nombres[key] || '📌 ' + key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        // Cargar datos
         async function cargarDatos() {
-            const dias = document.getElementById('selectDias').value;
-
             try {
-                const response = await fetch(`${API_BASE}/api/admin/uso-api/resumen?dias=${dias}`);
+                const response = await fetch(`${API_BASE}/api/admin/uso-api/resumen?dias=30`);
                 const data = await response.json();
 
+                console.log('Datos recibidos:', data);
+
                 if (data.success) {
-                    renderCards(data.resumen);
-                    renderChartDiario(data.uso_por_dia);
-                    renderTablaUsuarios(data.uso_por_usuario);
-                    renderTablaEndpoints(data.uso_por_endpoint);
-                    actualizarSelectUsuarios(data.uso_por_usuario);
-                    cargarDetalle();
-                    showToast('Datos actualizados correctamente');
+                    // Actualizar indicador de mes
+                    const ahora = new Date();
+                    document.getElementById('mesActual').textContent =
+                        ahora.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+
+                    renderCards(data.mes_actual);
+                    renderOperaciones(data.por_operacion, data.mes_actual);
+                    renderChart(data.por_operacion);
+                    renderMetricas(data.mes_actual, data.por_operacion);
+                    renderTabla(data.por_operacion, data.mes_actual);
+
+                    showToast('✅ Datos actualizados');
                 } else {
                     showToast('Error al cargar datos', true);
                 }
             } catch (error) {
                 console.error('Error:', error);
-                showToast('Error de conexión', true);
+                showToast('Error de conexión: ' + error.message, true);
+
+                // Mostrar error en cards
+                document.getElementById('cardsResumen').innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: rgba(255,255,255,0.5);">
+                        ❌ Error al cargar datos. Verifica la conexión.
+                    </div>
+                `;
             }
         }
 
-        // Renderizar cards de resumen
-        function renderCards(resumen) {
+        // Renderizar cards principales
+        function renderCards(mesActual) {
             const container = document.getElementById('cardsResumen');
+
+            const costoPromedio = mesActual.operaciones > 0
+                ? mesActual.costo_usd / mesActual.operaciones
+                : 0;
+
             container.innerHTML = `
-                <div class="card">
-                    <div class="card-icon">📄</div>
-                    <div class="card-value">${formatNumber(resumen.facturas_procesadas)}</div>
-                    <div class="card-label">Facturas Procesadas</div>
+                <div class="card highlight">
+                    <div class="card-icon">💰</div>
+                    <div class="card-value">${formatUSD(mesActual.costo_usd)}</div>
+                    <div class="card-label">Costo Total USD</div>
+                    <div class="card-sublabel">${formatCOP(mesActual.costo_usd)} COP</div>
                 </div>
                 <div class="card">
                     <div class="card-icon">🔢</div>
-                    <div class="card-value">${formatNumber(resumen.total_tokens)}</div>
-                    <div class="card-label">Tokens Totales</div>
-                    <div class="card-sublabel">In: ${formatNumber(resumen.total_tokens_input)} | Out: ${formatNumber(resumen.total_tokens_output)}</div>
+                    <div class="card-value">${formatNumber(mesActual.tokens)}</div>
+                    <div class="card-label">Tokens Consumidos</div>
+                    <div class="card-sublabel">Este mes</div>
                 </div>
                 <div class="card">
                     <div class="card-icon">📞</div>
-                    <div class="card-value">${formatNumber(resumen.total_llamadas)}</div>
-                    <div class="card-label">Llamadas API</div>
+                    <div class="card-value">${mesActual.operaciones}</div>
+                    <div class="card-label">Operaciones API</div>
+                    <div class="card-sublabel">Llamadas totales</div>
                 </div>
                 <div class="card">
                     <div class="card-icon">👥</div>
-                    <div class="card-value">${resumen.usuarios_activos}</div>
+                    <div class="card-value">${mesActual.usuarios_activos}</div>
                     <div class="card-label">Usuarios Activos</div>
+                    <div class="card-sublabel">Este mes</div>
                 </div>
-                <div class="card highlight">
-                    <div class="card-icon">💰</div>
-                    <div class="card-value">$${resumen.costo_total_usd.toFixed(2)}</div>
-                    <div class="card-label">Costo Total USD</div>
-                    <div class="card-sublabel">~$${formatNumber(Math.round(resumen.costo_total_cop))} COP</div>
-                </div>
-                <div class="card">
+                <div class="card green">
                     <div class="card-icon">📊</div>
-                    <div class="card-value">$${resumen.facturas_procesadas > 0 ? (resumen.costo_total_usd / resumen.facturas_procesadas).toFixed(4) : '0'}</div>
-                    <div class="card-label">Costo / Factura</div>
-                    <div class="card-sublabel">~$${resumen.facturas_procesadas > 0 ? formatNumber(Math.round((resumen.costo_total_usd / resumen.facturas_procesadas) * 4200)) : '0'} COP</div>
+                    <div class="card-value small">${formatUSD(costoPromedio)}</div>
+                    <div class="card-label">Costo Promedio</div>
+                    <div class="card-sublabel">Por operación</div>
                 </div>
             `;
         }
 
-        // Renderizar gráfica de uso diario
-        function renderChartDiario(usoPorDia) {
-            const ctx = document.getElementById('chartUsoDiario').getContext('2d');
+        // Renderizar lista de operaciones
+        function renderOperaciones(porOperacion, mesActual) {
+            const container = document.getElementById('listaOperaciones');
 
-            // Ordenar por fecha ascendente
-            const datosOrdenados = [...usoPorDia].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-
-            const labels = datosOrdenados.map(d => {
-                const fecha = new Date(d.fecha);
-                return fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
-            });
-
-            const tokensData = datosOrdenados.map(d => d.tokens);
-            const facturasData = datosOrdenados.map(d => d.facturas);
-            const costoData = datosOrdenados.map(d => d.costo_usd);
-
-            if (chartUsoDiario) {
-                chartUsoDiario.destroy();
+            if (!porOperacion || Object.keys(porOperacion).length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:rgba(255,255,255,0.5);">No hay operaciones registradas</p>';
+                return;
             }
 
-            chartUsoDiario = new Chart(ctx, {
-                type: 'line',
+            let html = '';
+
+            // Ordenar por costo descendente
+            const operacionesOrdenadas = Object.entries(porOperacion)
+                .sort((a, b) => b[1].costo_usd - a[1].costo_usd);
+
+            operacionesOrdenadas.forEach(([key, op]) => {
+                const porcentaje = mesActual.costo_usd > 0
+                    ? (op.costo_usd / mesActual.costo_usd * 100)
+                    : 0;
+
+                html += `
+                    <div class="operacion-item">
+                        <div class="operacion-info">
+                            <div class="operacion-nombre">
+                                ${getNombreOperacion(key)}
+                                <span class="badge ${getBadgeClass(key)}">${key}</span>
+                            </div>
+                            <div class="operacion-stats">
+                                <span>📞 ${op.operaciones} llamadas</span>
+                                <span>🔢 ${formatNumber(op.tokens)} tokens</span>
+                            </div>
+                            <div class="progress-bar" style="max-width: 300px;">
+                                <div class="progress-fill blue" style="width: ${porcentaje}%"></div>
+                            </div>
+                        </div>
+                        <div class="operacion-costo">
+                            <div class="valor">${formatUSD(op.costo_usd)}</div>
+                            <div class="label">${porcentaje.toFixed(1)}% del total</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Renderizar gráfica
+        function renderChart(porOperacion) {
+            const ctx = document.getElementById('chartDistribucion').getContext('2d');
+
+            if (chartDistribucion) {
+                chartDistribucion.destroy();
+            }
+
+            const labels = Object.keys(porOperacion).map(k => getNombreOperacion(k).replace(/^.+\s/, ''));
+            const data = Object.values(porOperacion).map(op => op.costo_usd);
+            const colors = [
+                'rgba(102, 126, 234, 0.8)',
+                'rgba(0, 184, 148, 0.8)',
+                'rgba(253, 203, 110, 0.8)',
+                'rgba(225, 112, 85, 0.8)',
+                'rgba(162, 155, 254, 0.8)'
+            ];
+
+            chartDistribucion = new Chart(ctx, {
+                type: 'doughnut',
                 data: {
                     labels: labels,
-                    datasets: [
-                        {
-                            label: 'Tokens',
-                            data: tokensData,
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                            fill: true,
-                            tension: 0.4,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: 'Facturas',
-                            data: facturasData,
-                            borderColor: '#00b894',
-                            backgroundColor: 'rgba(0, 184, 148, 0.1)',
-                            fill: true,
-                            tension: 0.4,
-                            yAxisID: 'y1'
-                        }
-                    ]
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderColor: 'rgba(26, 26, 46, 0.8)',
+                        borderWidth: 3
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false
-                    },
                     plugins: {
                         legend: {
-                            labels: { color: 'rgba(255,255,255,0.8)' }
+                            position: 'bottom',
+                            labels: {
+                                color: 'rgba(255,255,255,0.8)',
+                                padding: 15,
+                                font: { size: 12 }
+                            }
                         },
                         tooltip: {
                             callbacks: {
-                                afterBody: function (context) {
-                                    const index = context[0].dataIndex;
-                                    return `Costo: $${costoData[index].toFixed(4)} USD`;
+                                label: function (context) {
+                                    const value = context.raw;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${formatUSD(value)} (${percentage}%)`;
                                 }
                             }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: { color: 'rgba(255,255,255,0.6)' },
-                            grid: { color: 'rgba(255,255,255,0.05)' }
-                        },
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: {
-                                display: true,
-                                text: 'Tokens',
-                                color: 'rgba(255,255,255,0.6)'
-                            },
-                            ticks: { color: 'rgba(255,255,255,0.6)' },
-                            grid: { color: 'rgba(255,255,255,0.05)' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: {
-                                display: true,
-                                text: 'Facturas',
-                                color: 'rgba(255,255,255,0.6)'
-                            },
-                            ticks: { color: 'rgba(255,255,255,0.6)' },
-                            grid: { drawOnChartArea: false }
                         }
                     }
                 }
             });
         }
 
-        // Renderizar tabla de usuarios
-        function renderTablaUsuarios(usuarios) {
-            const container = document.getElementById('tablaUsuarios');
+        // Renderizar métricas calculadas
+        function renderMetricas(mesActual, porOperacion) {
+            const container = document.getElementById('metricsCards');
 
-            if (usuarios.length === 0) {
-                container.innerHTML = '<p style="text-align:center; padding:20px; color:rgba(255,255,255,0.5);">No hay datos de usuarios</p>';
+            // Calcular métricas
+            const tokensPromedio = mesActual.operaciones > 0
+                ? Math.round(mesActual.tokens / mesActual.operaciones)
+                : 0;
+
+            const costoOCR = porOperacion.ocr_factura?.costo_usd || 0;
+            const operacionesOCR = porOperacion.ocr_factura?.operaciones || 0;
+            const costoPromedioFactura = operacionesOCR > 0 ? costoOCR / operacionesOCR : 0;
+
+            // Proyección mensual (asumiendo día actual del mes)
+            const hoy = new Date();
+            const diaDelMes = hoy.getDate();
+            const diasEnMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+            const proyeccionMensual = (mesActual.costo_usd / diaDelMes) * diasEnMes;
+
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-icon">⚡</div>
+                    <div class="card-value">${formatNumber(tokensPromedio)}</div>
+                    <div class="card-label">Tokens / Operación</div>
+                    <div class="card-sublabel">Promedio</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">🧾</div>
+                    <div class="card-value small">${formatUSD(costoPromedioFactura)}</div>
+                    <div class="card-label">Costo / Factura OCR</div>
+                    <div class="card-sublabel">${formatCOP(costoPromedioFactura)} COP</div>
+                </div>
+                <div class="card orange">
+                    <div class="card-icon">📅</div>
+                    <div class="card-value small">${formatUSD(proyeccionMensual)}</div>
+                    <div class="card-label">Proyección Mes</div>
+                    <div class="card-sublabel">${formatCOP(proyeccionMensual)} COP</div>
+                </div>
+            `;
+
+            // Info de proyección
+            document.getElementById('infoProyeccion').innerHTML = `
+                <strong>Proyección:</strong> Al ritmo actual (día ${diaDelMes} de ${diasEnMes}),
+                el gasto mensual sería de <strong class="money">${formatUSD(proyeccionMensual)}</strong>
+                (${formatCOP(proyeccionMensual)} COP).
+                Costo promedio por factura: <strong class="money">${formatCOP(costoPromedioFactura)} COP</strong>
+            `;
+        }
+
+        // Renderizar tabla detallada
+        function renderTabla(porOperacion, mesActual) {
+            const tbody = document.getElementById('tablaDetalleBody');
+
+            if (!porOperacion || Object.keys(porOperacion).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay datos</td></tr>';
                 return;
             }
 
-            let html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Usuario</th>
-                            <th>Plan</th>
-                            <th>Tokens</th>
-                            <th>Facturas</th>
-                            <th>Costo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
+            let html = '';
+            let totalOps = 0, totalTokens = 0, totalCosto = 0;
 
-            usuarios.forEach(u => {
-                const badgeClass = u.plan || 'free';
+            Object.entries(porOperacion).forEach(([key, op]) => {
+                const porcentaje = mesActual.tokens > 0
+                    ? (op.tokens / mesActual.tokens * 100)
+                    : 0;
+
+                totalOps += op.operaciones;
+                totalTokens += op.tokens;
+                totalCosto += op.costo_usd;
+
                 html += `
                     <tr>
-                        <td><strong>#${u.user_id}</strong></td>
-                        <td><span class="badge ${badgeClass}">${u.plan || 'free'}</span></td>
                         <td>
-                            <div>${formatNumber(u.tokens_usados)} / ${formatNumber(u.limite_tokens)}</div>
-                            <div class="progress-bar">
-                                <div class="progress-fill ${getProgressColor(u.porcentaje_tokens)}" style="width: ${Math.min(u.porcentaje_tokens, 100)}%"></div>
+                            <span class="badge ${getBadgeClass(key)}">${key}</span>
+                        </td>
+                        <td>${formatNumber(op.operaciones)}</td>
+                        <td>${formatNumber(op.tokens)}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div class="progress-bar" style="width: 100px;">
+                                    <div class="progress-fill blue" style="width: ${porcentaje}%"></div>
+                                </div>
+                                <span>${porcentaje.toFixed(1)}%</span>
                             </div>
-                            <small style="color:rgba(255,255,255,0.5)">${u.porcentaje_tokens}%</small>
                         </td>
-                        <td>
-                            <div>${u.facturas_procesadas} / ${u.limite_facturas}</div>
-                            <div class="progress-bar">
-                                <div class="progress-fill ${getProgressColor(u.porcentaje_facturas)}" style="width: ${Math.min(u.porcentaje_facturas, 100)}%"></div>
-                            </div>
-                            <small style="color:rgba(255,255,255,0.5)">${u.porcentaje_facturas}%</small>
-                        </td>
-                        <td class="money">$${u.costo_periodo_usd.toFixed(4)}</td>
+                        <td class="money">${formatUSD(op.costo_usd)}</td>
+                        <td>${formatCOP(op.costo_usd)}</td>
                     </tr>
                 `;
             });
 
-            html += '</tbody></table>';
-            container.innerHTML = html;
-        }
-
-        // Renderizar tabla de endpoints
-        function renderTablaEndpoints(endpoints) {
-            const container = document.getElementById('tablaEndpoints');
-
-            if (endpoints.length === 0) {
-                container.innerHTML = '<p style="text-align:center; padding:20px; color:rgba(255,255,255,0.5);">No hay datos de endpoints</p>';
-                return;
-            }
-
-            let html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Endpoint</th>
-                            <th>Llamadas</th>
-                            <th>Tokens</th>
-                            <th>Costo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            // Fila de totales
+            html += `
+                <tr style="background: rgba(255,255,255,0.05); font-weight: bold;">
+                    <td>TOTAL</td>
+                    <td>${formatNumber(totalOps)}</td>
+                    <td>${formatNumber(totalTokens)}</td>
+                    <td>100%</td>
+                    <td class="money">${formatUSD(totalCosto)}</td>
+                    <td>${formatCOP(totalCosto)}</td>
+                </tr>
             `;
 
-            endpoints.forEach(e => {
-                html += `
-                    <tr>
-                        <td><code style="background:rgba(255,255,255,0.1); padding:3px 8px; border-radius:4px;">${e.endpoint}</code></td>
-                        <td>${formatNumber(e.llamadas)}</td>
-                        <td>${formatNumber(e.tokens)}</td>
-                        <td class="money">$${e.costo_usd.toFixed(4)}</td>
-                    </tr>
-                `;
-            });
-
-            html += '</tbody></table>';
-            container.innerHTML = html;
-        }
-
-        // Actualizar select de usuarios
-        function actualizarSelectUsuarios(usuarios) {
-            const select = document.getElementById('selectUserFilter');
-            const currentValue = select.value;
-
-            select.innerHTML = '<option value="">Todos los usuarios</option>';
-            usuarios.forEach(u => {
-                select.innerHTML += `<option value="${u.user_id}">Usuario #${u.user_id}</option>`;
-            });
-
-            select.value = currentValue;
-        }
-
-        // Cargar detalle de llamadas
-        async function cargarDetalle() {
-            const userId = document.getElementById('selectUserFilter').value;
-            const container = document.getElementById('tablaDetalle');
-
-            let url = `${API_BASE}/api/admin/uso-api/detalle?limit=50`;
-            if (userId) url += `&user_id=${userId}`;
-
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (data.success) {
-                    renderTablaDetalle(data.registros);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-            }
-        }
-
-        // Renderizar tabla de detalle
-        function renderTablaDetalle(registros) {
-            const container = document.getElementById('tablaDetalle');
-
-            if (registros.length === 0) {
-                container.innerHTML = '<p style="text-align:center; padding:20px; color:rgba(255,255,255,0.5);">No hay registros</p>';
-                return;
-            }
-
-            let html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Usuario</th>
-                            <th>Factura</th>
-                            <th>Endpoint</th>
-                            <th>Modelo</th>
-                            <th>Tokens</th>
-                            <th>Costo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-
-            registros.forEach(r => {
-                const fecha = new Date(r.fecha);
-                const fechaStr = fecha.toLocaleDateString('es-CO', {
-                    day: '2-digit',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-
-                html += `
-                    <tr>
-                        <td>${fechaStr}</td>
-                        <td>#${r.user_id}</td>
-                        <td>${r.factura_id ? '#' + r.factura_id : '-'}</td>
-                        <td><code style="font-size:11px;">${r.endpoint || '-'}</code></td>
-                        <td><small>${r.modelo || '-'}</small></td>
-                        <td>
-                            <span title="In: ${r.tokens_input} | Out: ${r.tokens_output}">
-                                ${formatNumber(r.tokens_total)}
-                            </span>
-                        </td>
-                        <td class="money">$${r.costo_usd.toFixed(4)}</td>
-                    </tr>
-                `;
-            });
-
-            html += '</tbody></table>';
-            container.innerHTML = html;
+            tbody.innerHTML = html;
         }
 
         // Inicializar
         document.addEventListener('DOMContentLoaded', () => {
             cargarDatos();
-        });
 
-        // Actualizar cuando cambie el período
-        document.getElementById('selectDias').addEventListener('change', cargarDatos);
+            // Auto-refresh cada 5 minutos
+            setInterval(cargarDatos, 5 * 60 * 1000);
+        });
     </script>
 </body>
 
