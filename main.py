@@ -9368,73 +9368,6 @@ async def get_uso_api(request: Request):
 
 
 @app.get("/api/admin/uso-api/resumen")
-async def get_uso_api_admin():
-    """Resumen de uso de API para admin"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            SELECT
-                COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_total), 0) as tokens,
-                COALESCE(SUM(costo_total_usd), 0) as costo_usd,
-                COUNT(DISTINCT user_id) as usuarios_activos
-            FROM uso_api
-            WHERE mes_año = TO_CHAR(NOW(), 'YYYY-MM')
-        """
-        )
-
-        mes_actual = cursor.fetchone()
-
-        cursor.execute(
-            """
-            SELECT
-                tipo_operacion,
-                COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_total), 0) as tokens,
-                COALESCE(SUM(costo_total_usd), 0) as costo_usd
-            FROM uso_api
-            WHERE mes_año = TO_CHAR(NOW(), 'YYYY-MM')
-            GROUP BY tipo_operacion
-        """
-        )
-
-        por_operacion = {}
-        for row in cursor.fetchall():
-            por_operacion[row[0]] = {
-                "operaciones": row[1],
-                "tokens": row[2] or 0,
-                "costo_usd": float(row[3] or 0),
-            }
-
-        cursor.close()
-        conn.close()
-
-        return {
-            "success": True,
-            "mes_actual": {
-                "operaciones": mes_actual[0] or 0,
-                "tokens": mes_actual[1] or 0,
-                "costo_usd": float(mes_actual[2] or 0),
-                "usuarios_activos": mes_actual[3] or 0,
-            },
-            "por_operacion": por_operacion,
-        }
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-print("✅ Endpoints de uso de API registrados")
-
-
-# ============================================
-# ENDPOINTS DE USO DE API - ADMINISTRACIÓN
-# ============================================
-@app.get("/api/admin/uso-api/resumen")
 async def get_uso_api_resumen_admin(dias: int = 30):
     """
     Dashboard de uso de API para administración.
@@ -9443,8 +9376,7 @@ async def get_uso_api_resumen_admin(dias: int = 30):
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Obtener primer día del mes actual
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         hoy = datetime.now()
         primer_dia_mes = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -9454,11 +9386,11 @@ async def get_uso_api_resumen_admin(dias: int = 30):
             """
             SELECT
                 COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
-                COALESCE(SUM(costo_usd), 0) as costo_usd,
+                COALESCE(SUM(tokens_total), 0) as tokens,
+                COALESCE(SUM(costo_total_usd), 0) as costo_usd,
                 COUNT(DISTINCT user_id) as usuarios_activos
             FROM uso_api
-            WHERE fecha >= %s
+            WHERE fecha_operacion >= %s
         """,
             (primer_dia_mes,),
         )
@@ -9475,13 +9407,13 @@ async def get_uso_api_resumen_admin(dias: int = 30):
         cur.execute(
             """
             SELECT
-                COALESCE(endpoint, 'sin_clasificar') as operacion,
+                COALESCE(tipo_operacion, 'sin_clasificar') as operacion,
                 COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
-                COALESCE(SUM(costo_usd), 0) as costo_usd
+                COALESCE(SUM(tokens_total), 0) as tokens,
+                COALESCE(SUM(costo_total_usd), 0) as costo_usd
             FROM uso_api
-            WHERE fecha >= %s
-            GROUP BY endpoint
+            WHERE fecha_operacion >= %s
+            GROUP BY tipo_operacion
             ORDER BY costo_usd DESC
         """,
             (primer_dia_mes,),
@@ -9502,12 +9434,12 @@ async def get_uso_api_resumen_admin(dias: int = 30):
                 ua.user_id,
                 COALESCE(u.email, u.nombre, 'Usuario ' || ua.user_id::text) as nombre,
                 COUNT(*) as operaciones,
-                COALESCE(SUM(ua.tokens_input + ua.tokens_output), 0) as tokens,
-                COALESCE(SUM(ua.costo_usd), 0) as costo_usd,
-                MAX(ua.fecha) as ultima_actividad
+                COALESCE(SUM(ua.tokens_total), 0) as tokens,
+                COALESCE(SUM(ua.costo_total_usd), 0) as costo_usd,
+                MAX(ua.fecha_operacion) as ultima_actividad
             FROM uso_api ua
             LEFT JOIN usuarios u ON ua.user_id = u.id
-            WHERE ua.fecha >= %s
+            WHERE ua.fecha_operacion >= %s
             GROUP BY ua.user_id, u.email, u.nombre
             ORDER BY costo_usd DESC
         """,
@@ -9527,18 +9459,18 @@ async def get_uso_api_resumen_admin(dias: int = 30):
                 }
             )
 
-        # 4. Detalle por usuario y operación (para el desplegable) y buscar uso.
+        # 4. Detalle por usuario y operación
         cur.execute(
             """
             SELECT
                 user_id,
-                COALESCE(endpoint, 'sin_clasificar') as operacion,
+                COALESCE(tipo_operacion, 'sin_clasificar') as operacion,
                 COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
-                COALESCE(SUM(costo_usd), 0) as costo_usd
+                COALESCE(SUM(tokens_total), 0) as tokens,
+                COALESCE(SUM(costo_total_usd), 0) as costo_usd
             FROM uso_api
-            WHERE fecha >= %s
-            GROUP BY user_id, endpoint
+            WHERE fecha_operacion >= %s
+            GROUP BY user_id, tipo_operacion
             ORDER BY user_id, costo_usd DESC
         """,
             (primer_dia_mes,),
@@ -9575,6 +9507,11 @@ async def get_uso_api_resumen_admin(dias: int = 30):
 
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# ENDPOINTS DE USO DE API - ADMINISTRACIÓN
+# ============================================
 
 
 @app.get("/api/admin/uso-api/detalle")
