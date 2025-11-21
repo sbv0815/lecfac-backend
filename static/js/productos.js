@@ -501,6 +501,11 @@ async function guardarEdicion() {
         const resultadoProducto = await responseProducto.json();
         console.log('✅ Producto actualizado:', resultadoProducto);
 
+        // Mostrar advertencia si hay EAN duplicado
+        if (resultadoProducto.advertencia) {
+            mostrarAlerta(resultadoProducto.advertencia, 'warning');
+        }
+
         // 2️⃣ GUARDAR PLUs
         console.log('🔍 Recopilando PLUs...');
         const plusData = recopilarPLUsParaGuardar();
