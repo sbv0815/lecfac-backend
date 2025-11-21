@@ -1,4 +1,4 @@
-# VERSION: 2024-11-19-CODIGO-LECFAC - Soporte para codigo_lecfac
+# VERSION: 2024-11-21-FIX-EAN - Corregido bug de ean_actual
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -16,15 +16,11 @@ async def listar_productos_v2(
     categoria_id: Optional[int] = None,
     limite: int = Query(500, ge=1, le=5000),
     busqueda: Optional[str] = None,
-    solo_papas: bool = Query(False),  # ✅ NUEVO PARÁMETRO
+    solo_papas: bool = Query(False),
 ):
     """
     Lista productos con búsqueda - INCLUYE codigo_lecfac
-
-    Parámetros:
-    - solo_papas: Si True, solo retorna productos PAPA (sin hijos)
     """
-
     print("=" * 80)
     print(
         f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}, solo_papas={solo_papas}"
@@ -39,7 +35,6 @@ async def listar_productos_v2(
         search_term = busqueda or search
         final_limit = limite if limite != 500 else limit
 
-        # ✅ AGREGAMOS codigo_lecfac, es_producto_papa y producto_papa_id AL SELECT
         query = """
             SELECT
                 pm.id,
@@ -60,7 +55,6 @@ async def listar_productos_v2(
         where_conditions = []
         params = []
 
-        # ✅ FILTRO SOLO PAPAS
         if solo_papas:
             where_conditions.append(
                 "(pm.es_producto_papa = TRUE OR pm.producto_papa_id IS NULL)"
@@ -87,7 +81,6 @@ async def listar_productos_v2(
         if where_conditions:
             query += " WHERE " + " AND ".join(where_conditions)
 
-        # ✅ AGREGAMOS los nuevos campos al GROUP BY
         query += """
             GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac,
                     pm.es_producto_papa, pm.producto_papa_id, pm.fecha_actualizacion, c.nombre
@@ -133,7 +126,6 @@ async def listar_productos_v2(
                     }
                 )
 
-            # ✅ INCLUIMOS nuevos campos EN LA RESPUESTA
             resultado.append(
                 {
                     "id": producto[0],
@@ -141,11 +133,11 @@ async def listar_productos_v2(
                     "nombre": producto[2],
                     "marca": producto[3],
                     "codigo_lecfac": producto[4],
-                    "es_producto_papa": producto[5],  # ✅ NUEVO
-                    "producto_papa_id": producto[6],  # ✅ NUEVO
+                    "es_producto_papa": producto[5],
+                    "producto_papa_id": producto[6],
                     "fecha_actualizacion": (
                         producto[7].isoformat() if producto[7] else None
-                    ),  # ✅ NUEVO
+                    ),
                     "categoria": producto[8],
                     "num_establecimientos": producto[9],
                     "plus": plus_info,
@@ -201,7 +193,6 @@ async def listar_categorias():
 async def obtener_producto_individual(producto_id: int):
     """
     Obtiene UN producto por ID - INCLUYE codigo_lecfac
-    VERSION: 2024-11-19-CODIGO-LECFAC
     """
     print(f"📋 [Router] GET producto ID: {producto_id}")
 
@@ -210,7 +201,6 @@ async def obtener_producto_individual(producto_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # ✅ AGREGAMOS codigo_lecfac AL SELECT
         cursor.execute(
             """
             SELECT
@@ -240,7 +230,6 @@ async def obtener_producto_individual(producto_id: int):
 
         logger.info(f"✅ Producto: {producto[2]}")
 
-        # Obtener PLUs
         cursor.execute(
             """
             SELECT
@@ -272,7 +261,6 @@ async def obtener_producto_individual(producto_id: int):
         cursor.close()
         conn.close()
 
-        # ✅ INCLUIMOS codigo_lecfac EN LA RESPUESTA
         return {
             "id": producto[0],
             "codigo_ean": producto[1] or "",
@@ -284,7 +272,7 @@ async def obtener_producto_individual(producto_id: int):
             "veces_comprado": producto[6] or 0,
             "num_establecimientos": len(plus_info),
             "es_producto_papa": producto[7] or False,
-            "codigo_lecfac": producto[8],  # ← NUEVO CAMPO
+            "codigo_lecfac": producto[8],
             "plus": plus_info,
         }
 
@@ -305,7 +293,6 @@ async def obtener_producto_individual(producto_id: int):
 async def obtener_plus_producto(producto_id: int):
     """
     Obtiene los PLUs de un producto en diferentes establecimientos
-    VERSION: 2024-11-18-18:00
     """
     print(f"📍 [Router] GET PLUs del producto ID: {producto_id}")
 
@@ -314,7 +301,6 @@ async def obtener_plus_producto(producto_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar que el producto existe
         cursor.execute(
             "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
@@ -324,7 +310,6 @@ async def obtener_plus_producto(producto_id: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # Obtener PLUs
         cursor.execute(
             """
             SELECT
@@ -390,7 +375,7 @@ async def obtener_plus_producto(producto_id: int):
 async def actualizar_producto(producto_id: int, request: dict):
     """
     Actualiza un producto (nombre, marca, categoría, EAN)
-    VERSION: 2024-11-19-CORREGIDO - Fix EAN vacío
+    VERSION: 2024-11-21-FIX - Corregido bug de indentación en ean_actual
     """
     print(f"✏️ [Router] PUT producto ID: {producto_id}")
     print(f"   Datos recibidos: {request}")
@@ -402,7 +387,7 @@ async def actualizar_producto(producto_id: int, request: dict):
 
         # Verificar que existe
         cursor.execute(
-            "SELECT nombre_consolidado FROM productos_maestros_v2 WHERE id = %s",
+            "SELECT nombre_consolidado, codigo_ean FROM productos_maestros_v2 WHERE id = %s",
             (producto_id,),
         )
 
@@ -415,80 +400,79 @@ async def actualizar_producto(producto_id: int, request: dict):
 
         print(f"   Producto actual: {producto_actual[0]}")
 
+        # ✅ CORREGIDO: Obtener EAN actual desde el inicio
+        ean_actual = producto_actual[1]
+
         # Construir UPDATE dinámico
         updates = []
         params = []
 
+        # ✅ CORREGIDO: Procesar nombre_consolidado
         if "nombre_consolidado" in request:
-            nombre = request["nombre_consolidado"].strip()
-            if nombre:  # Solo actualizar si no está vacío
+            nombre = (
+                request["nombre_consolidado"].strip()
+                if request["nombre_consolidado"]
+                else ""
+            )
+            if nombre:
                 updates.append("nombre_consolidado = %s")
                 params.append(nombre)
                 print(f"   ✅ Actualizando nombre: {nombre}")
 
+        # ✅ CORREGIDO: Procesar marca (SEPARADO del EAN)
         if "marca" in request:
             marca = request["marca"].strip() if request["marca"] else None
             updates.append("marca = %s")
             params.append(marca)
             print(f"   ✅ Actualizando marca: {marca}")
 
-            if "codigo_ean" in request:
-                # Leer EAN actual del producto
-                cursor.execute(
-                    "SELECT codigo_ean FROM productos_maestros_v2 WHERE id = %s",
-                    (producto_id,),
-                )
-            ean_result = cursor.fetchone()
-            ean_actual = ean_result[0] if ean_result else None
-
-            # Procesar EAN nuevo
+        # ✅ CORREGIDO: Procesar codigo_ean (INDEPENDIENTE de marca)
+        if "codigo_ean" in request:
             ean_value = request["codigo_ean"].strip() if request["codigo_ean"] else None
             ean_final = ean_value if ean_value else None
 
             # Solo actualizar si es diferente
             if ean_actual != ean_final:
-                # ✅ VALIDACIÓN CORRECTA - Verificar que no existe en OTRO producto DEL MISMO ESTABLECIMIENTO
+                # Verificar que no existe en OTRO producto
                 if ean_final:
                     cursor.execute(
                         """
-                    SELECT DISTINCT pm.id, pm.nombre_consolidado, e.nombre_normalizado
-                    FROM productos_maestros_v2 pm
-                    INNER JOIN productos_por_establecimiento ppe1 ON pm.id = ppe1.producto_maestro_id
-                    INNER JOIN productos_por_establecimiento ppe2 ON ppe2.producto_maestro_id = %s
-                    INNER JOIN establecimientos e ON ppe1.establecimiento_id = e.id
-                    WHERE pm.codigo_ean = %s
-                    AND pm.id != %s
-                    AND ppe1.establecimiento_id = ppe2.establecimiento_id
-                    LIMIT 1
-                    """,
-                        (producto_id, ean_final, producto_id),
+                        SELECT pm.id, pm.nombre_consolidado
+                        FROM productos_maestros_v2 pm
+                        WHERE pm.codigo_ean = %s
+                        AND pm.id != %s
+                        LIMIT 1
+                        """,
+                        (ean_final, producto_id),
                     )
 
-                conflicto = cursor.fetchone()
+                    conflicto = cursor.fetchone()
 
-                # ✅ CRÍTICO: Solo lanzar error si conflicto NO es None
-                if conflicto and conflicto[0]:  # Verificar que existe y tiene datos
-                    cursor.close()
-                    conn.close()
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"El código EAN '{ean_final}' ya existe para el producto '{conflicto[1]}' en {conflicto[2]}",
-                )
+                    if conflicto:
+                        cursor.close()
+                        conn.close()
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"El código EAN '{ean_final}' ya existe para el producto '{conflicto[1]}' (ID: {conflicto[0]})",
+                        )
 
-            updates.append("codigo_ean = %s")
-            params.append(ean_final)
-            print(f"   ✅ Actualizando EAN: {ean_actual} → {ean_final}")
-        else:
-            print(f"   ℹ️  EAN sin cambios: {ean_actual}")
+                updates.append("codigo_ean = %s")
+                params.append(ean_final)
+                print(f"   ✅ Actualizando EAN: {ean_actual} → {ean_final}")
+            else:
+                print(f"   ℹ️ EAN sin cambios: {ean_actual}")
 
+        # Procesar categoria_id
         if "categoria_id" in request:
             updates.append("categoria_id = %s")
             params.append(request["categoria_id"])
             print(f"   ✅ Actualizando categoria_id: {request['categoria_id']}")
 
+        # Procesar categoría por nombre
         if "categoria" in request and "categoria_id" not in request:
-            # Si se envió nombre de categoría, buscar su ID
-            categoria_nombre = request["categoria"].strip()
+            categoria_nombre = (
+                request["categoria"].strip() if request["categoria"] else ""
+            )
             if categoria_nombre and categoria_nombre != "Sin categoría":
                 cursor.execute(
                     "SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(%s)",
@@ -539,7 +523,7 @@ async def actualizar_producto(producto_id: int, request: dict):
                 "marca": updated[2],
                 "codigo_ean": updated[3],
                 "categoria_id": updated[4],
-                "codigo_lecfac": updated[5],  # ← INCLUIDO EN RESPUESTA
+                "codigo_lecfac": updated[5],
             },
         }
 
@@ -558,7 +542,7 @@ async def actualizar_producto(producto_id: int, request: dict):
 
 @router.put("/api/v2/productos/{producto_id}/plus")
 async def actualizar_plus_producto(producto_id: int, request: dict):
-    """Actualiza los PLUs de un producto - VERSION: 2024-11-19"""
+    """Actualiza los PLUs de un producto"""
     print(f"🔧 [Router] PUT PLUs del producto ID: {producto_id}")
     print(f"   Datos: {request}")
 
@@ -567,14 +551,12 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar producto existe
         cursor.execute(
             "SELECT id FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # 1. ELIMINAR PLUs marcados
         plus_eliminados = 0
         if "plus_a_eliminar" in request and request["plus_a_eliminar"]:
             for plu_id in request["plus_a_eliminar"]:
@@ -585,7 +567,6 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
                 plus_eliminados += cursor.rowcount
             print(f"   🗑️ {plus_eliminados} PLUs eliminados")
 
-        # 2. ACTUALIZAR/CREAR PLUs
         plus_actualizados = 0
         plus_creados = 0
 
@@ -601,7 +582,6 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
                     continue
 
                 if plu_id:
-                    # Actualizar existente
                     cursor.execute(
                         """
                         UPDATE productos_por_establecimiento
@@ -614,7 +594,6 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
                         plus_actualizados += 1
                         print(f"   ✅ PLU {plu_id} actualizado: {codigo}")
                 else:
-                    # Crear nuevo
                     cursor.execute(
                         """
                         SELECT id FROM productos_por_establecimiento
@@ -669,7 +648,6 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
 async def eliminar_producto(producto_id: int):
     """
     Elimina un producto y TODAS sus referencias
-    VERSION: 2024-11-18-19:40
     """
     print(f"🗑️ [Router] DELETE producto ID: {producto_id}")
 
@@ -678,7 +656,6 @@ async def eliminar_producto(producto_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar que existe
         cursor.execute(
             "SELECT nombre_consolidado FROM productos_maestros_v2 WHERE id = %s",
             (producto_id,),
@@ -693,7 +670,6 @@ async def eliminar_producto(producto_id: int):
 
         nombre = producto[0]
 
-        # ELIMINACIONES CRÍTICAS
         cursor.execute(
             "DELETE FROM precios_productos WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -722,7 +698,6 @@ async def eliminar_producto(producto_id: int):
         inventario_eliminado = cursor.rowcount
         logger.info(f"   📦 {inventario_eliminado} registros de inventario eliminados")
 
-        # ELIMINACIÓN FINAL
         cursor.execute(
             "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
