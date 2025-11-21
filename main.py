@@ -9527,7 +9527,7 @@ async def get_uso_api_resumen_admin(dias: int = 30):
                 }
             )
 
-        # 4. Detalle por usuario y operación (para el desplegable)
+        # 4. Detalle por usuario y operación (para el desplegable) y buscar uso.
         cur.execute(
             """
             SELECT
