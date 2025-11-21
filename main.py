@@ -9589,6 +9589,116 @@ async def admin_uso_api_page():
     return FileResponse("static/admin_uso_api.html")
 
 
+# ============================================================
+# AGREGAR ESTE CÓDIGO A TU main.py
+# Endpoint público para buscar en productos_referencia
+# ============================================================
+
+
+@app.get("/api/productos-referencia/buscar")
+async def buscar_productos_referencia_publico(
+    busqueda: str = Query(..., min_length=1, description="Término de búsqueda"),
+    limite: int = Query(50, ge=1, le=200, description="Límite de resultados"),
+):
+    """
+    Buscar en productos_referencia (público, sin autenticación)
+    Busca por nombre, marca o código EAN
+    """
+    print(f"🔍 Buscando en productos_referencia: '{busqueda}'")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        search_param = f"%{busqueda}%"
+
+        cursor.execute(
+            """
+            SELECT id, codigo_ean, nombre, marca, categoria, presentacion, unidad_medida
+            FROM productos_referencia
+            WHERE LOWER(nombre) LIKE LOWER(%s)
+               OR LOWER(marca) LIKE LOWER(%s)
+               OR codigo_ean LIKE %s
+            ORDER BY nombre
+            LIMIT %s
+        """,
+            (search_param, search_param, search_param, limite),
+        )
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append(
+                {
+                    "id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "categoria": row[4],
+                    "presentacion": row[5],
+                    "unidad_medida": row[6],
+                }
+            )
+
+        print(f"✅ Encontrados {len(productos)} productos")
+
+        return {
+            "success": True,
+            "productos": productos,
+            "total": len(productos),
+            "busqueda": busqueda,
+        }
+
+    except Exception as e:
+        print(f"❌ Error buscando: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/api/productos-referencia/stats")
+async def stats_productos_referencia():
+    """
+    Estadísticas de productos_referencia vs productos_maestros_v2
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Total en productos_referencia
+        cursor.execute("SELECT COUNT(*) FROM productos_referencia")
+        total_referencia = cursor.fetchone()[0]
+
+        # Total en productos_maestros_v2
+        cursor.execute("SELECT COUNT(*) FROM productos_maestros_v2")
+        total_maestros = cursor.fetchone()[0]
+
+        # EANs que coinciden en ambas tablas
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT pr.codigo_ean)
+            FROM productos_referencia pr
+            INNER JOIN productos_maestros_v2 pm ON pr.codigo_ean = pm.codigo_ean
+            WHERE pr.codigo_ean IS NOT NULL AND pr.codigo_ean != ''
+              AND pm.codigo_ean IS NOT NULL AND pm.codigo_ean != ''
+        """
+        )
+        coincidencias = cursor.fetchone()[0]
+
+        return {
+            "total_referencia": total_referencia,
+            "total_maestros": total_maestros,
+            "coincidencias": coincidencias,
+        }
+
+    except Exception as e:
+        print(f"❌ Error stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
