@@ -349,8 +349,8 @@
             container.innerHTML = '<div class="loading">Buscando...</div>';
 
             try {
-                // Buscar en productos_referencia
-                const response = await fetch(`${API_BASE}/api/productos-referencia?busqueda=${encodeURIComponent(termino)}&limite=100`);
+                // Buscar en productos_referencia (endpoint público)
+                const response = await fetch(`${API_BASE}/api/productos-referencia/buscar?busqueda=${encodeURIComponent(termino)}&limite=100`);
 
                 if (!response.ok) {
                     throw new Error('Error en la búsqueda');
