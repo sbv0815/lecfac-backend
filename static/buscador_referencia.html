@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador de Productos Referencia - LecFac</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .search-box {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .search-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 14px 18px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #059669;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #10b981;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .results {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .results-header {
+            background: #f9fafb;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f3f4f6;
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        .ean-code {
+            font-family: 'Courier New', monospace;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .badge-info {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #10b981;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .highlight {
+            background: #fef08a;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .producto-nombre {
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .producto-meta {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .search-row {
+                flex-direction: column;
+            }
+
+            .search-input {
+                width: 100%;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th,
+            td {
+                padding: 10px 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Buscador de Productos Referencia</h1>
+            <p>Busca por nombre, marca o código EAN en la base de datos de referencia</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="total-referencia">-</div>
+                <div class="stat-label">Productos Referencia</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-maestros">-</div>
+                <div class="stat-label">Productos Maestros</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-coincidencias">-</div>
+                <div class="stat-label">EANs Coincidentes</div>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <div class="search-row">
+                <input type="text" id="busqueda" class="search-input"
+                    placeholder="Escribe nombre, marca o código EAN..." onkeypress="if(event.key === 'Enter') buscar()">
+                <button class="btn btn-primary" onclick="buscar()">🔍 Buscar</button>
+                <button class="btn btn-secondary" onclick="limpiar()">🔄 Limpiar</button>
+            </div>
+        </div>
+
+        <div class="results">
+            <div class="results-header">
+                📦 Resultados de Búsqueda (<span id="count-resultados">0</span>)
+            </div>
+            <div id="tabla-container">
+                <div class="empty-state">
+                    <div class="icon">🔎</div>
+                    <p>Escribe algo para buscar en productos_referencia</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://lecfac-backend-production.up.railway.app';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarEstadisticas();
+            document.getElementById('busqueda').focus();
+        });
+
+        async function cargarEstadisticas() {
+            try {
+                const response = await fetch(`${API_BASE}/api/productos-referencia/stats`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('total-referencia').textContent = data.total_referencia || '-';
+                    document.getElementById('total-maestros').textContent = data.total_maestros || '-';
+                    document.getElementById('total-coincidencias').textContent = data.coincidencias || '-';
+                }
+            } catch (error) {
+                console.log('Stats no disponibles');
+            }
+        }
+
+        async function buscar() {
+            const termino = document.getElementById('busqueda').value.trim();
+
+            if (!termino) {
+                alert('Escribe algo para buscar');
+                return;
+            }
+
+            const container = document.getElementById('tabla-container');
+            container.innerHTML = '<div class="loading">Buscando...</div>';
+
+            try {
+                // Buscar en productos_referencia
+                const response = await fetch(`${API_BASE}/api/productos-referencia?busqueda=${encodeURIComponent(termino)}&limite=100`);
+
+                if (!response.ok) {
+                    throw new Error('Error en la búsqueda');
+                }
+
+                const data = await response.json();
+                const productos = data.productos || data || [];
+
+                mostrarResultados(productos, termino);
+
+            } catch (error) {
+                console.error('Error:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">❌</div>
+                        <p>Error al buscar: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function mostrarResultados(productos, termino) {
+            const container = document.getElementById('tabla-container');
+            document.getElementById('count-resultados').textContent = productos.length;
+
+            if (productos.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">🤷</div>
+                        <p>No se encontraron productos para "<strong>${termino}</strong>"</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Código EAN</th>
+                            <th>Nombre</th>
+                            <th>Marca</th>
+                            <th>Categoría</th>
+                            <th>Presentación</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            productos.forEach(p => {
+                const nombre = resaltarCoincidencia(p.nombre || '-', termino);
+                const marca = resaltarCoincidencia(p.marca || '-', termino);
+                const ean = p.codigo_ean || '-';
+
+                html += `
+                    <tr>
+                        <td>${p.id}</td>
+                        <td><span class="ean-code">${ean}</span></td>
+                        <td>
+                            <div class="producto-nombre">${nombre}</div>
+                        </td>
+                        <td>${marca}</td>
+                        <td><span class="badge badge-info">${p.categoria || 'Sin categoría'}</span></td>
+                        <td>${p.presentacion || '-'}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function resaltarCoincidencia(texto, termino) {
+            if (!texto || !termino) return texto;
+            const regex = new RegExp(`(${termino})`, 'gi');
+            return texto.replace(regex, '<span class="highlight">$1</span>');
+        }
+
+        function limpiar() {
+            document.getElementById('busqueda').value = '';
+            document.getElementById('count-resultados').textContent = '0';
+            document.getElementById('tabla-container').innerHTML = `
+                <div class="empty-state">
+                    <div class="icon">🔎</div>
+                    <p>Escribe algo para buscar en productos_referencia</p>
+                </div>
+            `;
+            document.getElementById('busqueda').focus();
+        }
+    </script>
+</body>
+
+</html>
