@@ -222,7 +222,7 @@ function mostrarError(error) {
 }
 
 // =============================================================
-// ⭐ MOSTRAR PRODUCTOS
+// ⭐ MOSTRAR PRODUCTOS - CORREGIDO
 // =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
@@ -288,6 +288,7 @@ function mostrarProductos(productos) {
             estadoBadges.join(' ') :
             '<span class="badge badge-success">Completo</span>';
 
+        // ✅ CORREGIDO: Todos los botones dentro de la celda de acciones
         const row = `
             <tr>
                 <td class="checkbox-cell">
@@ -308,14 +309,14 @@ function mostrarProductos(productos) {
                     <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
                         ✏️
                     </button>
+                    <button class="btn-small btn-primary" onclick="verHistorial(${p.id})" title="Ver historial">
+                        📊
+                    </button>
                     <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
                         🗑️
                     </button>
                 </td>
             </tr>
-            <button class="btn-small btn-primary" onclick="verHistorial(${p.id})" title="Ver historial">
-            📊
-            </button>
         `;
         tbody.insertAdjacentHTML("beforeend", row);
     });
@@ -324,6 +325,7 @@ function mostrarProductos(productos) {
 function verHistorial(id) {
     window.open(`/historial_precios.html?id=${id}`, '_blank');
 }
+
 // =============================================================
 // Actualizar estadísticas y paginación
 // =============================================================
@@ -1058,6 +1060,7 @@ window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
 window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
 window.agregarPLUEditable = agregarPLUEditable;
 window.habilitarCamposEdicion = habilitarCamposEdicion;
+window.verHistorial = verHistorial;
 
 console.log('✅ Productos.js v3.0 INTEGRADO cargado correctamente');
 
