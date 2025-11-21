@@ -397,6 +397,163 @@
             }
         }
 
+        /* Usuario accordion */
+        .usuario-card {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s ease;
+        }
+
+        .usuario-card:hover {
+            border-color: rgba(102, 126, 234, 0.3);
+        }
+
+        .usuario-card.expanded {
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+
+        .usuario-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .usuario-header:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .usuario-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+
+        .usuario-avatar {
+            width: 45px;
+            height: 45px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .usuario-nombre {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 3px;
+        }
+
+        .usuario-meta {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12px;
+        }
+
+        .usuario-stats {
+            display: flex;
+            gap: 25px;
+            align-items: center;
+        }
+
+        .usuario-stat {
+            text-align: center;
+        }
+
+        .usuario-stat-value {
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .usuario-stat-label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+        }
+
+        .usuario-costo {
+            text-align: right;
+            min-width: 120px;
+        }
+
+        .usuario-costo-value {
+            font-size: 22px;
+            font-weight: bold;
+            color: #00b894;
+        }
+
+        .usuario-costo-cop {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .usuario-toggle {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s;
+            font-size: 14px;
+        }
+
+        .usuario-card.expanded .usuario-toggle {
+            transform: rotate(180deg);
+        }
+
+        .usuario-detalle {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .usuario-card.expanded .usuario-detalle {
+            max-height: 500px;
+        }
+
+        .usuario-detalle-content {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .usuario-detalle table {
+            font-size: 14px;
+        }
+
+        .usuario-detalle th {
+            font-size: 11px;
+            padding: 10px 15px;
+        }
+
+        .usuario-detalle td {
+            padding: 10px 15px;
+        }
+
+        .usuario-porcentaje-bar {
+            width: 100%;
+            max-width: 150px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .usuario-porcentaje-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 3px;
+        }
+
         /* Mes indicator */
         .mes-indicator {
             background: rgba(255, 255, 255, 0.1);
@@ -474,6 +631,19 @@
                 </div>
                 <div class="chart-container">
                     <canvas id="chartDistribucion"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Consumo por Usuario (Desplegable) -->
+        <div class="section">
+            <div class="section-header">
+                <h2>👥 Consumo por Usuario</h2>
+                <span id="totalUsuarios" style="color: rgba(255,255,255,0.5); font-size: 14px;">Cargando...</span>
+            </div>
+            <div id="listaUsuarios">
+                <div class="loading">
+                    <div class="spinner"></div>
                 </div>
             </div>
         </div>
@@ -585,6 +755,7 @@
                     renderCards(data.mes_actual);
                     renderOperaciones(data.por_operacion, data.mes_actual);
                     renderChart(data.por_operacion);
+                    renderUsuarios(data.por_usuario, data.detalle_usuario, data.mes_actual);
                     renderMetricas(data.mes_actual, data.por_operacion);
                     renderTabla(data.por_operacion, data.mes_actual);
 
@@ -691,6 +862,155 @@
             });
 
             container.innerHTML = html;
+        }
+
+        // Renderizar lista de usuarios con desplegable
+        function renderUsuarios(porUsuario, detalleUsuario, mesActual) {
+            const container = document.getElementById('listaUsuarios');
+            const totalSpan = document.getElementById('totalUsuarios');
+
+            if (!porUsuario || porUsuario.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:rgba(255,255,255,0.5); padding: 30px;">No hay datos de usuarios este mes</p>';
+                totalSpan.textContent = '0 usuarios';
+                return;
+            }
+
+            totalSpan.textContent = `${porUsuario.length} usuario${porUsuario.length !== 1 ? 's' : ''} activo${porUsuario.length !== 1 ? 's' : ''}`;
+
+            let html = '';
+
+            porUsuario.forEach((usuario, index) => {
+                const iniciales = getIniciales(usuario.nombre);
+                const porcentajeCosto = mesActual.costo_usd > 0
+                    ? (usuario.costo_usd / mesActual.costo_usd * 100)
+                    : 0;
+                const ultimaActividad = usuario.ultima_actividad
+                    ? formatFechaRelativa(usuario.ultima_actividad)
+                    : 'Sin actividad';
+
+                // Detalle de operaciones del usuario
+                const detalle = detalleUsuario ? detalleUsuario[usuario.user_id] || [] : [];
+
+                html += `
+                    <div class="usuario-card" id="usuario-${usuario.user_id}">
+                        <div class="usuario-header" onclick="toggleUsuario(${usuario.user_id})">
+                            <div class="usuario-info">
+                                <div class="usuario-avatar">${iniciales}</div>
+                                <div>
+                                    <div class="usuario-nombre">${escapeHtml(usuario.nombre)}</div>
+                                    <div class="usuario-meta">ID: ${usuario.user_id} • Última actividad: ${ultimaActividad}</div>
+                                </div>
+                            </div>
+                            <div class="usuario-stats">
+                                <div class="usuario-stat">
+                                    <div class="usuario-stat-value">${usuario.operaciones}</div>
+                                    <div class="usuario-stat-label">Operaciones</div>
+                                </div>
+                                <div class="usuario-stat">
+                                    <div class="usuario-stat-value">${formatNumber(usuario.tokens)}</div>
+                                    <div class="usuario-stat-label">Tokens</div>
+                                </div>
+                            </div>
+                            <div class="usuario-costo">
+                                <div class="usuario-costo-value">${formatUSD(usuario.costo_usd)}</div>
+                                <div class="usuario-costo-cop">${formatCOP(usuario.costo_usd)} • ${porcentajeCosto.toFixed(1)}%</div>
+                                <div class="usuario-porcentaje-bar">
+                                    <div class="usuario-porcentaje-fill" style="width: ${Math.min(porcentajeCosto, 100)}%"></div>
+                                </div>
+                            </div>
+                            <div class="usuario-toggle">▼</div>
+                        </div>
+                        <div class="usuario-detalle">
+                            <div class="usuario-detalle-content">
+                                ${renderDetalleUsuario(detalle, usuario)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Renderizar detalle de un usuario
+        function renderDetalleUsuario(detalle, usuario) {
+            if (!detalle || detalle.length === 0) {
+                return '<p style="color: rgba(255,255,255,0.5); text-align: center;">Sin desglose disponible</p>';
+            }
+
+            let html = `
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Operación</th>
+                            <th>Llamadas</th>
+                            <th>Tokens</th>
+                            <th>Costo USD</th>
+                            <th>% del Usuario</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            detalle.forEach(op => {
+                const porcentaje = usuario.costo_usd > 0
+                    ? (op.costo_usd / usuario.costo_usd * 100)
+                    : 0;
+
+                html += `
+                    <tr>
+                        <td><span class="badge ${getBadgeClass(op.operacion)}">${op.operacion}</span></td>
+                        <td>${formatNumber(op.operaciones)}</td>
+                        <td>${formatNumber(op.tokens)}</td>
+                        <td class="money">${formatUSD(op.costo_usd)}</td>
+                        <td>${porcentaje.toFixed(1)}%</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        // Toggle desplegable usuario
+        function toggleUsuario(userId) {
+            const card = document.getElementById(`usuario-${userId}`);
+            if (card) {
+                card.classList.toggle('expanded');
+            }
+        }
+
+        // Obtener iniciales del nombre
+        function getIniciales(nombre) {
+            if (!nombre) return '?';
+            const palabras = nombre.trim().split(/\s+/);
+            if (palabras.length >= 2) {
+                return (palabras[0][0] + palabras[1][0]).toUpperCase();
+            }
+            return nombre.substring(0, 2).toUpperCase();
+        }
+
+        // Formatear fecha relativa
+        function formatFechaRelativa(fechaStr) {
+            const fecha = new Date(fechaStr);
+            const ahora = new Date();
+            const diffMs = ahora - fecha;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHoras = Math.floor(diffMs / 3600000);
+            const diffDias = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'Hace un momento';
+            if (diffMins < 60) return `Hace ${diffMins} min`;
+            if (diffHoras < 24) return `Hace ${diffHoras}h`;
+            if (diffDias < 7) return `Hace ${diffDias} día${diffDias !== 1 ? 's' : ''}`;
+            return fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+        }
+
+        // Escapar HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Renderizar gráfica
