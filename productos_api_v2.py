@@ -820,3 +820,24 @@ async def eliminar_producto(producto_id: int):
             conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+from lecfac_enricher import ProductEnricher
+
+enricher = ProductEnricher()
+
+
+@app.post("/api/productos/enriquecer/{plu}")
+async def enriquecer_producto(plu: str):
+    """
+    Enriquece un producto usando scraping de Carulla
+    """
+    try:
+        producto = await enricher.enriquecer_por_plu(plu, "Carulla")
+
+        if producto:
+            return {"success": True, "data": producto}
+        else:
+            return {"success": False, "error": "Producto no encontrado"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
