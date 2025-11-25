@@ -1,17 +1,17 @@
 ﻿"""
 ============================================================================
 SISTEMA DE PROCESAMIENTO AUTOMATICO DE OCR PARA FACTURAS
-VERSION 4.0 - USA productos_maestros_v2
+VERSION 4.1 - FILTRADO MEJORADO DE MEDIOS DE PAGO
 ============================================================================
 
 CAMBIOS EN ESTA VERSION:
-- ✅ USA productos_maestros_v2 (tabla nueva)
-- ✅ PLUs se guardan en productos_por_establecimiento
-- ✅ Marca productos frescos en V2
-- ✅ Integrado con product_matcher V9.0
+- ✅ Filtrado robusto de medios de pago colombianos (REDEBAN, MASTERCARD, etc.)
+- ✅ Detecta patrones de números de tarjeta enmascarados
+- ✅ Lista actualizada con PSE, Nequi, Daviplata
+- ✅ Mantiene todas las funcionalidades de V4.0
 
 AUTOR: LecFac Team
-ULTIMA ACTUALIZACION: 2025-11-15
+ULTIMA ACTUALIZACION: 2025-11-25
 ============================================================================
 """
 
@@ -141,13 +141,18 @@ def validar_producto(
 
 
 def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
-    """Filtro post-procesamiento de basura"""
+    """
+    Filtro post-procesamiento de basura - VERSION 4.1
+    Incluye filtrado robusto de medios de pago colombianos
+    """
     if not nombre or not nombre.strip():
         return True, "Nombre vacío"
 
     nombre_lower = nombre.lower().strip()
 
+    # ========== LISTA NEGRA EXACTA ==========
     lista_negra_exacta = [
+        # Servicios
         "domicilio web",
         "domicilio",
         "web",
@@ -155,6 +160,7 @@ def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
         "exhibicion",
         "espaciador",
         "separador",
+        # Totales
         "subtotal",
         "total",
         "iva",
@@ -165,27 +171,69 @@ def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
         "pago",
         "precio final",
         "perico final",
+        # Bolsas
         "bolsa para empacar",
         "bsa p empacar",
         "bsa p empacar olim",
         "bsa p empacar olimpica",
         "bolsa para empacar olimpica",
+        # Medios de pago - AMPLIADO V4.1
+        "redeban",
+        "redeban multicolor",
+        "red multicolor",
+        "multicolor",
+        "mastercard",
+        "visa",
+        "credibanco",
+        "datafono",
+        "terminal",
+        "aprobado",
+        "autorizado",
+        "autorizacion",
+        "transaccion",
+        "codigo aprobacion",
+        "cod aprobacion",
+        "num aprobacion",
+        "referencia",
+        "voucher",
+        "comprobante",
+        "recibo",
+        "american express",
+        "amex",
+        "diners",
+        "diners club",
+        # Apps de pago colombianas
+        "pse",
+        "nequi",
+        "daviplata",
+        "bancolombia",
     ]
 
     for texto_prohibido in lista_negra_exacta:
         if nombre_lower == texto_prohibido:
             return True, f"Lista negra exacta: '{texto_prohibido}'"
 
+    # ========== PALABRAS PROHIBIDAS (CONTIENE) ==========
     palabras_prohibidas_contenidas = [
         "empacar",
         "empaque",
         "perico final",
         "precio final",
+        "redeban",
+        "mastercard",
+        "credibanco",
+        "datafono",
+        "aprobado",
+        "autorizado",
+        "voucher",
+        "comprobante de pago",
     ]
+
     for palabra in palabras_prohibidas_contenidas:
         if palabra in nombre_lower:
             return True, f"Contiene palabra prohibida: '{palabra}'"
 
+    # ========== PREFIJOS SOSPECHOSOS ==========
     prefijos_sospechosos = [
         "domicilio",
         "display",
@@ -200,23 +248,36 @@ def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
         "bolsa para",
         "bsa p",
         "bsa ",
+        "tarjeta ",
+        "credito ",
+        "debito ",
+        "pago ",
+        "terminal ",
     ]
+
     for prefijo in prefijos_sospechosos:
         if nombre_lower.startswith(prefijo):
             return True, f"Prefijo sospechoso: '{prefijo}'"
 
+    # ========== PATRONES ESPECIALES ==========
+
+    # Patrón de peso/medida
     if re.match(r"^\d+\.?\d*/kg", nombre_lower):
         return True, "Patrón de peso/medida"
 
+    # Patrón de multiplicador
     if re.match(r"^x\s*\d+\.?\d+", nombre_lower):
         return True, "Patrón de multiplicador"
 
+    # Solo números
     if nombre.replace(" ", "").replace(".", "").isdigit():
         return True, "Solo números"
 
+    # Nombre muy corto
     if len(nombre_lower) < 3:
         return True, "Nombre muy corto"
 
+    # ========== PALABRAS COMUNES BASURA ==========
     palabras_comunes_basura = [
         "web",
         "total",
@@ -229,9 +290,23 @@ def validar_no_basura_backend(nombre: str) -> Tuple[bool, str]:
         "pago",
         "credito",
         "debito",
+        "visa",
+        "mastercard",
+        "nequi",
+        "daviplata",
     ]
+
     if nombre_lower in palabras_comunes_basura:
         return True, f"Palabra común basura: '{nombre_lower}'"
+
+    # ========== PATRONES DE NÚMEROS DE TARJETA ==========
+    # Ejemplo: "MASTERCARD ************1234" o "VISA ****5678"
+    if re.search(r"\*{4,}", nombre):
+        return True, "Patrón de número de tarjeta enmascarado"
+
+    # Patrón: "RR MASTERCARD DR" o similar
+    if re.match(r"^[A-Z]{2,3}\s+(MASTERCARD|VISA|AMEX|DINERS)", nombre.upper()):
+        return True, "Patrón de código de tarjeta"
 
     return False, ""
 
@@ -442,7 +517,7 @@ def guardar_plu_establecimiento(
 
 
 class OCRProcessor:
-    """Procesador automatico de facturas con OCR - Version 4.0 con V2"""
+    """Procesador automatico de facturas con OCR - Version 4.1 con filtrado mejorado"""
 
     def __init__(self):
         self.is_running = False
@@ -469,12 +544,12 @@ class OCRProcessor:
         self.worker_thread.start()
 
         print("=" * 80)
-        print("🚀 PROCESADOR OCR V4.0 - USA productos_maestros_v2")
+        print("🚀 PROCESADOR OCR V4.1 - FILTRADO MEJORADO")
         print("=" * 80)
+        print("✅ Filtra REDEBAN, MASTERCARD, VISA, PSE, Nequi, etc.")
         print("✅ product_matcher V9.0 integrado")
         print("✅ Guarda en productos_maestros_v2")
         print("✅ PLUs en productos_por_establecimiento")
-        print("✅ NO agrega PLU al nombre del producto")
         print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica y mas")
         print("=" * 80)
 
@@ -747,7 +822,7 @@ class OCRProcessor:
         cadena: str,
         establecimiento_id: Optional[int] = None,
     ) -> Optional[int]:
-        """VERSION 4.0 - Guarda en productos_maestros_v2"""
+        """VERSION 4.1 - Guarda en productos_maestros_v2 con filtrado mejorado"""
         try:
             codigo_raw = str(product.get("codigo", "")).strip()
             nombre = str(product.get("nombre", "")).strip()
@@ -782,7 +857,6 @@ class OCRProcessor:
                 return None
 
             try:
-                # ⭐ CAMBIO: Pasar establecimiento_id para búsqueda por PLU
                 producto_maestro_id = buscar_producto_v2(
                     codigo=(
                         codigo_limpio
@@ -794,7 +868,7 @@ class OCRProcessor:
                     establecimiento=establecimiento,
                     cursor=cursor,
                     conn=conn,
-                    establecimiento_id=establecimiento_id,  # ← NUEVO
+                    establecimiento_id=establecimiento_id,
                 )
 
                 if not producto_maestro_id:
@@ -856,7 +930,7 @@ class OCRProcessor:
                             precio=precio,
                         )
 
-                    # ⭐ CAMBIO: Marcar como fresco en V2
+                    # Marcar como fresco en V2
                     if es_producto_fresco(nombre):
                         try:
                             cursor.execute(
@@ -911,12 +985,12 @@ class OCRProcessor:
 
 
 print("=" * 80)
-print("🚀 OCR PROCESSOR V4.0 - USA productos_maestros_v2")
+print("🚀 OCR PROCESSOR V4.1 - FILTRADO MEJORADO DE MEDIOS DE PAGO")
 print("=" * 80)
+print("✅ Filtra REDEBAN, MASTERCARD, VISA, PSE, Nequi, Daviplata")
+print("✅ Detecta patrones de números de tarjeta")
 print("✅ Guarda productos en productos_maestros_v2")
 print("✅ PLUs en productos_por_establecimiento")
-print("✅ NO agrega PLU al nombre")
-print("✅ product_matcher V9.0 integrado")
 print("=" * 80)
 
 processor = OCRProcessor()

@@ -1,14 +1,12 @@
 """
-claude_invoice.py - VERSIÓN 6.0 - LECTURA EXACTA COMO HUMANO
+claude_invoice.py - VERSIÓN 6.1 - FILTRADO MEJORADO DE MEDIOS DE PAGO
 ========================================================================
 
-🎯 VERSIÓN 6.0 - LECTURA INTELIGENTE:
-- ✅ Detecta formato automáticamente (Éxito, Olímpica, Farmatodo, etc.)
-- ✅ Lee EXACTAMENTE lo que está en la factura
-- ✅ NO inventa productos ni cantidades
-- ✅ Respeta PLUs diferentes = productos diferentes
-- ✅ NO agrupa por PLU (cada línea es un ítem)
-- ✅ Validación: suma de precios ≈ total factura
+🎯 VERSIÓN 6.1 - MEJORAS:
+- ✅ Filtrado robusto de medios de pago (REDEBAN, MASTERCARD, VISA, etc.)
+- ✅ Detecta información bancaria y transacciones
+- ✅ Lista actualizada para Colombia (PSE, Nequi, Daviplata, etc.)
+- ✅ Mantiene todas las funcionalidades de V6.0
 """
 
 import anthropic
@@ -22,10 +20,11 @@ from datetime import datetime
 
 
 # ==============================================================================
-# FILTRO DE TEXTO BASURA
+# FILTRO DE TEXTO BASURA - VERSION 6.1 MEJORADA
 # ==============================================================================
 
 PALABRAS_BASURA = [
+    # Promociones y descuentos
     "ahorra",
     "ahorro",
     "descuento",
@@ -39,18 +38,49 @@ PALABRAS_BASURA = [
     "gratis",
     "v.ahorro",
     "precio final",
+    # Totales y resúmenes
     "subtotal",
     "total",
     "iva",
     "propina",
     "cambio",
     "efectivo",
+    "total item",
+    # Medios de pago y transacciones - AMPLIADO
     "tarjeta",
     "credito",
     "debito",
     "pago",
     "recibido",
     "devuelta",
+    "redeban",
+    "mastercard",
+    "visa",
+    "credibanco",
+    "datafono",
+    "terminal",
+    "aprobado",
+    "autorizado",
+    "autorizacion",
+    "transaccion",
+    "pse",
+    "nequi",
+    "daviplata",
+    "bancolombia",
+    "multicolor",
+    "red multicolor",
+    "codigo aprobacion",
+    "cod aprobacion",
+    "num aprobacion",
+    "referencia",
+    "voucher",
+    "comprobante",
+    "recibo",
+    "american express",
+    "amex",
+    "diners",
+    "diners club",
+    # Servicios y extras
     "domicilio",
     "domicilio web",
     "display",
@@ -61,12 +91,11 @@ PALABRAS_BASURA = [
     "bsa p empacar",
     "bsa p/empacar",
     "biodegradable",
-    "total item",
 ]
 
 
 def es_texto_basura(nombre: str) -> Tuple[bool, str]:
-    """Detecta si un texto es basura promocional"""
+    """Detecta si un texto es basura promocional o información de pago"""
     if not nombre or len(nombre.strip()) < 3:
         return True, "Nombre muy corto"
 
@@ -210,7 +239,7 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 
 
 # ==============================================================================
-# PROCESAMIENTO CON CLAUDE VISION - V6.0 LECTURA EXACTA
+# PROCESAMIENTO CON CLAUDE VISION - V6.1 FILTRADO MEJORADO
 # ==============================================================================
 
 
@@ -220,12 +249,13 @@ def parse_invoice_with_claude(
     aplicar_aprendizaje: bool = True,
 ) -> Dict:
     """
-    Procesa factura con Claude Vision API - V6.0
+    Procesa factura con Claude Vision API - V6.1
     Lee EXACTAMENTE como un humano leería la factura
+    Con filtrado mejorado de medios de pago
     """
     try:
         print("=" * 80)
-        print("🤖 CLAUDE INVOICE V6.0 - LECTURA EXACTA COMO HUMANO")
+        print("🤖 CLAUDE INVOICE V6.1 - FILTRADO MEJORADO DE PAGOS")
         if establecimiento_preseleccionado:
             print(f"🏪 ESTABLECIMIENTO: {establecimiento_preseleccionado.upper()}")
         print("=" * 80)
@@ -249,7 +279,7 @@ def parse_invoice_with_claude(
             else '"NOMBRE_DEL_ESTABLECIMIENTO"'
         )
 
-        # ========== PROMPT V6.0 - LECTURA EXACTA ==========
+        # ========== PROMPT V6.1 - CON INSTRUCCIONES DE FILTRADO ==========
         prompt = f"""Eres un experto en leer facturas colombianas. Tu trabajo es leer EXACTAMENTE lo que está escrito, sin inventar ni modificar nada.
 
 # 🔍 PASO 1: IDENTIFICA EL FORMATO DE LA FACTURA
@@ -369,10 +399,14 @@ PROTECTOR CAREFREE SIN FRAGANCIA LARGOS X40UN
    - Suma de todos los precios ≈ SUBTOTAL de la factura
    - Si "Total Item: 5" → debe haber 5 productos en la lista
 
-5. **IGNORAR LÍNEAS QUE NO SON PRODUCTOS**
-   - "SUBTOTAL", "TOTAL", "IVA"
-   - "DESCUENTO", "AHORRO" (líneas informativas)
-   - "Total Item: X" (resumen)
+5. **🚫 IGNORAR COMPLETAMENTE ESTAS LÍNEAS (NO SON PRODUCTOS):**
+   - Métodos de pago: "TARJETA", "CREDITO", "DEBITO", "REDEBAN", "MASTERCARD", "VISA", "CREDIBANCO", "MULTICOLOR"
+   - Transacciones: "APROBADO", "AUTORIZADO", "VOUCHER", "CODIGO APROBACION"
+   - Apps de pago: "PSE", "NEQUI", "DAVIPLATA", "BANCOLOMBIA"
+   - Totales: "SUBTOTAL", "TOTAL", "IVA", "PROPINA", "CAMBIO"
+   - Descuentos: "DESCUENTO", "AHORRO" (líneas informativas)
+   - Resúmenes: "Total Item: X"
+   - Servicios: "DOMICILIO", "BOLSA", "EMPACAR"
 
 # 📝 FORMATO DE RESPUESTA
 
@@ -410,6 +444,11 @@ PLU    DETALLE    PRECIO
 3313024 Crema Leche Semi      5.240
 Total Item: 5
 SUBTOTAL: 49.540
+
+PAGO:
+MASTERCARD ************1234
+REDEBAN MULTICOLOR
+APROBADO
 ```
 
 **EXTRACCIÓN CORRECTA:**
@@ -429,6 +468,7 @@ SUBTOTAL: 49.540
 **VALIDACIÓN:**
 - 5 productos = Total Item: 5 ✓
 - 11450 + 11050 + 11050 + 10750 + 5240 = 49540 ✓
+- MASTERCARD y REDEBAN NO están en la lista ✓
 - Cada PLU leído correctamente ✓
 
 # ✅ VERIFICACIÓN FINAL
@@ -437,8 +477,9 @@ Antes de responder:
 1. ¿Identifiqué correctamente el formato? ✓
 2. ¿Leí cada PLU exactamente como aparece? ✓
 3. ¿La cantidad es 1 por defecto (no el número de línea)? ✓
-4. ¿La suma de precios ≈ total de la factura? ✓
-5. ¿No inventé ningún producto? ✓
+4. ¿Eliminé TODA información de medios de pago? ✓
+5. ¿La suma de precios ≈ total de la factura? ✓
+6. ¿No inventé ningún producto? ✓
 
 **ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON VÁLIDO:**"""
 
@@ -509,7 +550,7 @@ Antes de responder:
         productos_finales = []
         suma_total = 0
 
-        print(f"\n🔧 POST-PROCESAMIENTO (lectura exacta):")
+        print(f"\n🔧 POST-PROCESAMIENTO (lectura exacta + filtrado):")
 
         for prod in data.get("productos", []):
             codigo = str(prod.get("codigo", "")).strip()
@@ -518,7 +559,7 @@ Antes de responder:
             cantidad = float(prod.get("cantidad", 1))
             unidad = prod.get("unidad", "un")
 
-            # Filtrar basura
+            # Filtrar basura (incluyendo medios de pago)
             es_basura, razon = es_texto_basura(nombre)
             if es_basura:
                 print(f"   🗑️  Ignorado: '{nombre[:40]}' - {razon}")
@@ -586,7 +627,7 @@ Antes de responder:
         plus_unicos = set(p.get("codigo") for p in productos_finales if p.get("codigo"))
 
         print(f"\n" + "=" * 80)
-        print(f"📊 RESULTADOS OCR V6.0 - LECTURA EXACTA:")
+        print(f"📊 RESULTADOS OCR V6.1 - FILTRADO MEJORADO:")
         print(f"   🏪 Establecimiento: {data.get('establecimiento', 'N/A')}")
         print(f"   📅 Fecha: {data.get('fecha', 'N/A')}")
         print(f"   💰 Total factura: ${total_declarado:,}")
@@ -594,7 +635,7 @@ Antes de responder:
         print(f"   🏷️  PLUs únicos: {len(plus_unicos)}")
         print(f"   ❓ Sin código: {sin_codigo}")
 
-        print(f"\n📋 PRODUCTOS EXTRAÍDOS (exactamente como en factura):")
+        print(f"\n📋 PRODUCTOS EXTRAÍDOS (sin medios de pago):")
         for i, prod in enumerate(productos_finales, 1):
             codigo_str = prod["codigo"] if prod["codigo"] else "SIN-COD"
             print(
@@ -603,8 +644,7 @@ Antes de responder:
 
         print("=" * 80)
 
-        # ✅ NUEVO: Capturar tokens usados para tracking
-        # ✅ Capturar tokens para tracking
+        # Capturar tokens para tracking
         tokens_input = message.usage.input_tokens
         tokens_output = message.usage.output_tokens
 
@@ -613,7 +653,7 @@ Antes de responder:
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-v6.0-lectura-exacta",
+                    "metodo": "claude-vision-v6.1-filtrado-mejorado",
                     "modelo": "claude-sonnet-4-20250514",
                     "establecimiento_confirmado": bool(establecimiento_preseleccionado),
                     "items_totales": len(productos_finales),
@@ -623,7 +663,6 @@ Antes de responder:
                     "total_declarado": total_declarado,
                 },
             },
-            # ✅ NUEVO: Info de tokens para tracking
             "usage": {
                 "input_tokens": tokens_input,
                 "output_tokens": tokens_output,
@@ -637,7 +676,6 @@ Antes de responder:
         print(
             f"Respuesta: {response_text[:500] if 'response_text' in locals() else 'N/A'}"
         )
-        # Intentar capturar tokens si message existe
         usage_data = {}
         if "message" in locals() and hasattr(message, "usage"):
             usage_data = {
@@ -667,7 +705,6 @@ Antes de responder:
 
         traceback.print_exc()
 
-        # Intentar capturar tokens si message existe
         usage_data = {}
         if "message" in locals() and hasattr(message, "usage"):
             usage_data = {
@@ -689,11 +726,11 @@ Antes de responder:
 
 
 print("=" * 80)
-print("✅ claude_invoice.py V6.0 - LECTURA EXACTA COMO HUMANO")
+print("✅ claude_invoice.py V6.1 - FILTRADO MEJORADO DE MEDIOS DE PAGO")
 print("=" * 80)
 print("🎯 CARACTERÍSTICAS:")
 print("   ✅ Detecta formato automáticamente")
-print("   ✅ Lee EXACTAMENTE lo que está en la factura")
+print("   ✅ Filtra REDEBAN, MASTERCARD, VISA, PSE, etc.")
 print("   ✅ NO agrupa por PLU (cada línea = un ítem)")
 print("   ✅ Respeta PLUs diferentes = productos diferentes")
 print("   ✅ Valida suma vs total de factura")
