@@ -1,4 +1,4 @@
-# VERSION: 2024-11-21-FIX-EAN - Corregido bug de ean_actual
+# VERSION: 2024-11-25-FIX-DELETE - Corregido eliminación con historial_compras_usuario
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -658,6 +658,7 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
 async def eliminar_producto(producto_id: int):
     """
     Elimina un producto y TODAS sus referencias
+    VERSION: 2024-11-25-FIX-DELETE - Incluye historial_compras_usuario
     """
     print(f"🗑️ [Router] DELETE producto ID: {producto_id}")
 
@@ -680,6 +681,7 @@ async def eliminar_producto(producto_id: int):
 
         nombre = producto[0]
 
+        # 1. Eliminar precios
         cursor.execute(
             "DELETE FROM precios_productos WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -687,6 +689,7 @@ async def eliminar_producto(producto_id: int):
         precios_eliminados = cursor.rowcount
         logger.info(f"   💰 {precios_eliminados} precios eliminados")
 
+        # 2. Eliminar PLUs
         cursor.execute(
             "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -694,6 +697,7 @@ async def eliminar_producto(producto_id: int):
         plus_eliminados = cursor.rowcount
         logger.info(f"   🗑️ {plus_eliminados} PLUs eliminados")
 
+        # 3. Desvincular items de factura
         cursor.execute(
             "UPDATE items_factura SET producto_maestro_id = NULL WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -701,6 +705,7 @@ async def eliminar_producto(producto_id: int):
         items_desvinculados = cursor.rowcount
         logger.info(f"   🔗 {items_desvinculados} items desvinculados")
 
+        # 4. Eliminar inventario
         cursor.execute(
             "DELETE FROM inventario_usuario WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -708,6 +713,15 @@ async def eliminar_producto(producto_id: int):
         inventario_eliminado = cursor.rowcount
         logger.info(f"   📦 {inventario_eliminado} registros de inventario eliminados")
 
+        # 5. 🆕 Eliminar historial de compras (ESTO FALTABA)
+        cursor.execute(
+            "DELETE FROM historial_compras_usuario WHERE producto_id = %s",
+            (producto_id,),
+        )
+        historial_eliminado = cursor.rowcount
+        logger.info(f"   📊 {historial_eliminado} registros de historial eliminados")
+
+        # 6. Eliminar el producto maestro
         cursor.execute(
             "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
@@ -726,6 +740,7 @@ async def eliminar_producto(producto_id: int):
                 "plus_eliminados": plus_eliminados,
                 "items_desvinculados": items_desvinculados,
                 "inventario_eliminado": inventario_eliminado,
+                "historial_eliminado": historial_eliminado,
             },
         }
     except HTTPException:
