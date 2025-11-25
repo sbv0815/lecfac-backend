@@ -657,8 +657,8 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
 @router.delete("/api/v2/productos/{producto_id}")
 async def eliminar_producto(producto_id: int):
     """
-    Elimina un producto y TODAS sus referencias
-    VERSION: 2024-11-25-FIX-DELETE - Incluye historial_compras_usuario
+    Elimina un producto y TODAS sus referencias (12 tablas)
+    VERSION: 2024-11-25-FIX-DELETE-COMPLETE - Limpieza completa de todas las foreign keys
     """
     print(f"🗑️ [Router] DELETE producto ID: {producto_id}")
 
@@ -680,8 +680,11 @@ async def eliminar_producto(producto_id: int):
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
         nombre = producto[0]
+        print(f"   🗑️  Eliminando producto: {nombre}")
 
-        # 1. Eliminar precios
+        # ========== LIMPIEZA DE TODAS LAS TABLAS RELACIONADAS ==========
+
+        # 1. Eliminar precios históricos
         cursor.execute(
             "DELETE FROM precios_productos WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -689,7 +692,7 @@ async def eliminar_producto(producto_id: int):
         precios_eliminados = cursor.rowcount
         logger.info(f"   💰 {precios_eliminados} precios eliminados")
 
-        # 2. Eliminar PLUs
+        # 2. Eliminar PLUs por establecimiento
         cursor.execute(
             "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -697,7 +700,7 @@ async def eliminar_producto(producto_id: int):
         plus_eliminados = cursor.rowcount
         logger.info(f"   🗑️ {plus_eliminados} PLUs eliminados")
 
-        # 3. Desvincular items de factura
+        # 3. Desvincular items de factura (UPDATE a NULL)
         cursor.execute(
             "UPDATE items_factura SET producto_maestro_id = NULL WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -705,7 +708,7 @@ async def eliminar_producto(producto_id: int):
         items_desvinculados = cursor.rowcount
         logger.info(f"   🔗 {items_desvinculados} items desvinculados")
 
-        # 4. Eliminar inventario
+        # 4. Eliminar inventario de usuario
         cursor.execute(
             "DELETE FROM inventario_usuario WHERE producto_maestro_id = %s",
             (producto_id,),
@@ -713,7 +716,7 @@ async def eliminar_producto(producto_id: int):
         inventario_eliminado = cursor.rowcount
         logger.info(f"   📦 {inventario_eliminado} registros de inventario eliminados")
 
-        # 5. 🆕 Eliminar historial de compras (ESTO FALTABA)
+        # 5. Eliminar historial de compras
         cursor.execute(
             "DELETE FROM historial_compras_usuario WHERE producto_id = %s",
             (producto_id,),
@@ -721,7 +724,63 @@ async def eliminar_producto(producto_id: int):
         historial_eliminado = cursor.rowcount
         logger.info(f"   📊 {historial_eliminado} registros de historial eliminados")
 
-        # 6. Eliminar el producto maestro
+        # 6. Eliminar patrones de compra
+        cursor.execute(
+            "DELETE FROM patrones_compra WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        patrones_eliminados = cursor.rowcount
+        logger.info(f"   📈 {patrones_eliminados} patrones de compra eliminados")
+
+        # 7. Eliminar productos en grupo
+        cursor.execute(
+            "DELETE FROM productos_en_grupo WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        grupos_eliminados = cursor.rowcount
+        logger.info(f"   👥 {grupos_eliminados} relaciones de grupo eliminadas")
+
+        # 8. Eliminar códigos alternativos
+        cursor.execute(
+            "DELETE FROM codigos_alternativos WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        codigos_eliminados = cursor.rowcount
+        logger.info(f"   🔖 {codigos_eliminados} códigos alternativos eliminados")
+
+        # 9. Eliminar variantes de nombres
+        cursor.execute(
+            "DELETE FROM variantes_nombres WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        variantes_eliminadas = cursor.rowcount
+        logger.info(f"   📝 {variantes_eliminadas} variantes de nombres eliminadas")
+
+        # 10. Eliminar precios históricos v2
+        cursor.execute(
+            "DELETE FROM precios_historicos_v2 WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        precios_v2_eliminados = cursor.rowcount
+        logger.info(f"   💵 {precios_v2_eliminados} precios históricos v2 eliminados")
+
+        # 11. Eliminar log de mejoras de nombres
+        cursor.execute(
+            "DELETE FROM log_mejoras_nombres WHERE producto_maestro_id = %s",
+            (producto_id,),
+        )
+        log_eliminado = cursor.rowcount
+        logger.info(f"   📋 {log_eliminado} registros de log eliminados")
+
+        # 12. Actualizar productos que tengan este como producto_papa (self-reference)
+        cursor.execute(
+            "UPDATE productos_maestros_v2 SET producto_papa_id = NULL WHERE producto_papa_id = %s",
+            (producto_id,),
+        )
+        hijos_desvinculados = cursor.rowcount
+        logger.info(f"   👶 {hijos_desvinculados} productos hijo desvinculados")
+
+        # 13. FINALMENTE - Eliminar el producto maestro
         cursor.execute(
             "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )
@@ -741,6 +800,13 @@ async def eliminar_producto(producto_id: int):
                 "items_desvinculados": items_desvinculados,
                 "inventario_eliminado": inventario_eliminado,
                 "historial_eliminado": historial_eliminado,
+                "patrones_eliminados": patrones_eliminados,
+                "grupos_eliminados": grupos_eliminados,
+                "codigos_eliminados": codigos_eliminados,
+                "variantes_eliminadas": variantes_eliminadas,
+                "precios_v2_eliminados": precios_v2_eliminados,
+                "log_eliminado": log_eliminado,
+                "hijos_desvinculados": hijos_desvinculados,
             },
         }
     except HTTPException:
