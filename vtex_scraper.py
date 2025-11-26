@@ -280,6 +280,7 @@ class VTEXScraper:
             "url": None,
             "verificado": False,
             "enriquecido": False,
+            "encontrado": False,
             "candidatos": [],
             "mensaje": "",
         }
@@ -328,6 +329,7 @@ class VTEXScraper:
             resultado["precio_web"] = producto["precio"]
             resultado["url"] = producto["url"]
             resultado["enriquecido"] = True
+            resultado["encontrado"] = True
 
             if resultado["verificado"]:
                 resultado["mensaje"] = "✅ Producto verificado"

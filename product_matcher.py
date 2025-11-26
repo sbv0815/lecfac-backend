@@ -1,15 +1,20 @@
 """
-product_matcher.py - VERSIÓN 9.3 - DETECCIÓN AUTOMÁTICA DE PAPAS (MEJORADO)
+product_matcher.py - VERSIÓN 9.4 - CON ENRIQUECIMIENTO WEB (VTEX)
 ========================================================================
 
-🎯 CAMBIOS V9.3:
+🎯 CAMBIOS V9.4:
+- ✅ NUEVO: PASO 3.5 - Enriquecimiento Web antes de crear producto
+- ✅ Busca en cache local (plu_supermercado_mapping) primero
+- ✅ Si no hay cache → Consulta API VTEX (Carulla, Éxito, Jumbo, Olímpica)
+- ✅ Usa nombre WEB (correcto) en lugar del OCR (con errores)
+- ✅ Obtiene EAN del PLU automáticamente
+- ✅ Guarda en cache para futuras consultas
+
+🎯 CAMBIOS V9.3 (heredados):
 - ✅ BUSCA PAPAS PRIMERO antes de crear productos
 - ✅ Si existe PAPA → Usa sus datos (nombre, marca, categoría)
 - ✅ CREA registro en productos_por_establecimiento si no existe
 - ✅ ACTUALIZA precios SIEMPRE (min, max, actual)
-- ✅ Actualiza estadísticas del PAPA automáticamente
-- ✅ Soporta búsqueda por EAN (JUMBO) y PLU (OLÍMPICA)
-- ✅ GARANTIZA que todos los datos estén completos
 """
 
 import re
@@ -18,7 +23,10 @@ from typing import Optional, Dict, Any, Tuple
 import traceback
 
 
-# Importar módulos
+# ============================================================================
+# IMPORTAR MÓDULOS
+# ============================================================================
+
 CORRECCIONES_OCR_AVAILABLE = False
 
 try:
@@ -45,6 +53,20 @@ except ImportError:
     PLU_CONSOLIDATOR_AVAILABLE = False
     ENABLE_PLU_CONSOLIDATION = False
     print("⚠️  plu_consolidator.py no disponible")
+
+# 🆕 V9.4: Importar Web Enricher para enriquecimiento vía scraping VTEX
+try:
+    from web_enricher import WebEnricher, es_supermercado_vtex
+
+    WEB_ENRICHER_AVAILABLE = True
+except ImportError:
+    WEB_ENRICHER_AVAILABLE = False
+    print("⚠️  web_enricher.py no disponible")
+
+
+# ============================================================================
+# FUNCIONES AUXILIARES
+# ============================================================================
 
 
 def normalizar_nombre_producto(
@@ -282,13 +304,49 @@ def validar_nombre_con_sistema_completo(
     item_factura_id: int = None,
     cursor=None,
     establecimiento_id: int = None,
+    datos_web: Dict[str, Any] = None,  # 🆕 V9.4: Datos del web enricher
 ) -> dict:
-    """V9.0: Sistema con jerarquía de validación"""
+    """V9.4: Sistema con jerarquía de validación + datos web"""
 
     tipo_codigo = clasificar_codigo_tipo(codigo)
     cadena = detectar_cadena(establecimiento)
     marcar_revision = False
     razon_revision = ""
+
+    # 🆕 V9.4: SI TENEMOS DATOS WEB → Usar directamente (95% confianza)
+    if datos_web and datos_web.get("encontrado"):
+        nombre_web = datos_web.get("nombre_web", "")
+        if nombre_web:
+            print(f"   ✅ USANDO DATOS WEB (enriquecimiento)")
+            print(f"   📝 Nombre web: {nombre_web}")
+            print(f"   🎯 Confianza: 95% (fuente web)")
+
+            # Guardar en aprendizaje si está disponible
+            if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
+                try:
+                    aprendizaje_mgr.guardar_correccion_aprendida(
+                        ocr_original=nombre_ocr_original,
+                        ocr_normalizado=nombre_corregido,
+                        nombre_validado=nombre_web,
+                        establecimiento=cadena,
+                        confianza_inicial=0.95,
+                        codigo_ean=datos_web.get("codigo_ean", codigo),
+                    )
+                except Exception as e:
+                    print(f"      ⚠️ Error guardando aprendizaje: {e}")
+
+            return {
+                "nombre_final": nombre_web,
+                "fue_validado": True,
+                "confianza": 0.95,
+                "categoria_confianza": "muy_alta",
+                "fuente": f"web_{datos_web.get('fuente', 'vtex')}",
+                "detalles": f"Enriquecido desde {datos_web.get('supermercado', 'web')}",
+                "necesita_revision": False,
+                "razon_revision": "",
+                "marca": datos_web.get("marca"),
+                "codigo_ean_web": datos_web.get("codigo_ean"),
+            }
 
     # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (99%)
     if tipo_codigo == "EAN" and codigo and cursor:
@@ -722,7 +780,7 @@ def buscar_papa_primero(
 
 
 # ═══════════════════════════════════════════════════════════════
-# FUNCIÓN PRINCIPAL MODIFICADA
+# FUNCIÓN PRINCIPAL MODIFICADA - V9.4 CON ENRIQUECIMIENTO WEB
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -739,20 +797,21 @@ def buscar_o_crear_producto_inteligente(
     establecimiento_id: int = None,
 ) -> Optional[int]:
     """
-    ⭐ VERSIÓN 9.3: Función principal - BUSCA PAPAS PRIMERO (MEJORADO)
-    ✅ Prioridad 1: Buscar PAPA (si existe)
-    ✅ Prioridad 2: Buscar producto existente
-    ✅ Prioridad 3: Crear nuevo producto
-    ✅ GARANTIZA actualización completa de datos
-    ✅ NO agrega PLU al nombre
-    ✅ Busca en tabla V2
-    ✅ GUARDA PLU en productos_por_establecimiento
+    ⭐ VERSIÓN 9.4: Función principal con ENRIQUECIMIENTO WEB
+
+    FLUJO:
+    ✅ PASO 0: Buscar PAPA (si existe)
+    ✅ PASO 1: Buscar PLU exacto en productos_por_establecimiento
+    ✅ PASO 2: Buscar EAN en productos_maestros_v2
+    ✅ PASO 3: Buscar por nombre similar
+    🆕 PASO 3.5: ENRIQUECIMIENTO WEB (si es supermercado VTEX)
+    ✅ PASO 4: Crear nuevo producto (con datos web si existen)
     """
     import os
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.3 (con PAPAS MEJORADO):")
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.4 (con ENRIQUECIMIENTO WEB):")
     print(f"   Código: {codigo or 'Sin código'}")
-    print(f"   Nombre: {nombre[:50]}")
+    print(f"   Nombre OCR: {nombre[:50]}")
     print(f"   Precio: ${precio:,}")
     print(f"   Establecimiento: {establecimiento}")
     print(f"   Establecimiento ID: {establecimiento_id}")
@@ -766,9 +825,9 @@ def buscar_o_crear_producto_inteligente(
     param = "%s" if is_postgresql else "?"
 
     # ═══════════════════════════════════════════════════════════════
-    # 🎯 PASO 0: BUSCAR PAPA PRIMERO (FUNCIONALIDAD MEJORADA V9.3)
+    # 🎯 PASO 0: BUSCAR PAPA PRIMERO
     # ═══════════════════════════════════════════════════════════════
-    print(f"\n   🔍 BUSCANDO PAPA...")
+    print(f"\n   🔍 PASO 0: Buscando PAPA...")
     papa_encontrado = buscar_papa_primero(
         codigo=codigo,
         establecimiento_id=establecimiento_id,
@@ -787,6 +846,7 @@ def buscar_o_crear_producto_inteligente(
     # PASO 1: BUSCAR POR PLU EXACTO EN productos_por_establecimiento
     # ═══════════════════════════════════════════════════════════════
     if tipo_codigo == "PLU" and codigo and establecimiento_id:
+        print(f"\n   🔍 PASO 1: Buscando PLU exacto...")
         try:
             cursor.execute(
                 """
@@ -850,6 +910,7 @@ def buscar_o_crear_producto_inteligente(
     # PASO 2: BUSCAR POR EAN EXISTENTE EN V2
     # ═══════════════════════════════════════════════════════════════
     if tipo_codigo == "EAN" and codigo:
+        print(f"\n   🔍 PASO 2: Buscando EAN en V2...")
         try:
             cursor.execute(
                 f"SELECT id, nombre_consolidado FROM productos_maestros_v2 WHERE codigo_ean = {param}",
@@ -888,6 +949,7 @@ def buscar_o_crear_producto_inteligente(
         # PASO 3: BUSCAR POR NOMBRE SIMILAR EN V2
         # ═══════════════════════════════════════════════════════════════
         if not codigo or tipo_codigo == "DESCONOCIDO":
+            print(f"\n   🔍 PASO 3: Buscando por nombre similar...")
             try:
                 search_pattern = f"%{nombre_normalizado[:50]}%"
                 cursor.execute(
@@ -950,9 +1012,71 @@ def buscar_o_crear_producto_inteligente(
                 traceback.print_exc()
 
         # ═══════════════════════════════════════════════════════════════
+        # 🆕 PASO 3.5: ENRIQUECIMIENTO WEB (VTEX)
+        # ═══════════════════════════════════════════════════════════════
+        datos_web = None
+
+        if WEB_ENRICHER_AVAILABLE and codigo:
+            print(f"\n   🌐 PASO 3.5: Enriquecimiento Web...")
+
+            # Verificar si es supermercado VTEX
+            if es_supermercado_vtex(establecimiento):
+                try:
+                    enricher = WebEnricher(cursor, conn)
+                    resultado_web = enricher.enriquecer(
+                        codigo=codigo,
+                        nombre_ocr=nombre,
+                        establecimiento=establecimiento,
+                        precio_ocr=precio,
+                    )
+
+                    if resultado_web.encontrado:
+                        datos_web = resultado_web.to_dict()
+                        print(f"      ✅ Datos web obtenidos:")
+                        print(f"         Nombre: {datos_web['nombre_web'][:50]}")
+                        print(f"         EAN: {datos_web['codigo_ean'] or 'N/A'}")
+                        print(f"         Marca: {datos_web['marca'] or 'N/A'}")
+                        print(f"         Fuente: {datos_web['fuente']}")
+
+                        # 🆕 Si obtuvimos EAN del web y no teníamos, buscar si ya existe
+                        if datos_web.get("codigo_ean") and tipo_codigo == "PLU":
+                            ean_web = datos_web["codigo_ean"]
+                            cursor.execute(
+                                f"SELECT id FROM productos_maestros_v2 WHERE codigo_ean = {param}",
+                                (ean_web,),
+                            )
+                            existe = cursor.fetchone()
+
+                            if existe:
+                                producto_id = existe[0]
+                                print(
+                                    f"      ✅ Producto encontrado por EAN web: ID={producto_id}"
+                                )
+
+                                # Guardar PLU en productos_por_establecimiento
+                                if establecimiento_id:
+                                    guardar_plu_en_establecimiento(
+                                        cursor,
+                                        conn,
+                                        producto_id,
+                                        establecimiento_id,
+                                        codigo,
+                                        precio,
+                                    )
+
+                                return producto_id
+                    else:
+                        print(f"      ℹ️ No se encontró en web")
+
+                except Exception as e:
+                    print(f"      ⚠️ Error en enriquecimiento web: {e}")
+            else:
+                print(f"      ℹ️ {establecimiento} no es supermercado VTEX")
+
+        # ═══════════════════════════════════════════════════════════════
         # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2
         # ═══════════════════════════════════════════════════════════════
-        print(f"   ℹ️  Producto no encontrado → Creando en V2...")
+        print(f"\n   📝 PASO 4: Creando producto nuevo...")
 
         aprendizaje_mgr = None
 
@@ -962,6 +1086,7 @@ def buscar_o_crear_producto_inteligente(
             except Exception as e:
                 print(f"   ⚠️ Error AprendizajeManager: {e}")
 
+        # 🆕 V9.4: Pasar datos_web a la validación
         resultado_validacion = validar_nombre_con_sistema_completo(
             nombre_ocr_original=nombre,
             nombre_corregido=nombre_normalizado,
@@ -974,20 +1099,29 @@ def buscar_o_crear_producto_inteligente(
             item_factura_id=item_factura_id,
             cursor=cursor,
             establecimiento_id=establecimiento_id,
+            datos_web=datos_web,  # 🆕 Pasar datos del web enricher
         )
 
         nombre_final = resultado_validacion["nombre_final"]
         marca_final = resultado_validacion.get("marca")
 
+        # 🆕 Si obtuvimos EAN del web, usarlo
+        codigo_ean_final = None
+        if tipo_codigo == "EAN":
+            codigo_ean_final = codigo
+        elif datos_web and datos_web.get("codigo_ean"):
+            codigo_ean_final = datos_web["codigo_ean"]
+            print(f"   🔗 Usando EAN del web: {codigo_ean_final}")
+
         print(f"   📊 Fuente: {resultado_validacion['fuente']}")
         print(f"   🎯 Confianza: {resultado_validacion['confianza']:.0%}")
 
-        # CREAR EN productos_maestros_v2 (SIN agregar PLU al nombre)
+        # CREAR EN productos_maestros_v2
         producto_id = crear_producto_en_v2(
             cursor=cursor,
             conn=conn,
             nombre_normalizado=nombre_final,
-            codigo_ean=codigo if tipo_codigo == "EAN" else None,
+            codigo_ean=codigo_ean_final,
             marca=marca_final,
         )
 
@@ -1026,21 +1160,24 @@ def buscar_o_crear_producto_inteligente(
 
 
 # ═══════════════════════════════════════════════════════════════
-# MENSAJE DE CARGA PARA PODER VER
+# MENSAJE DE CARGA
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
-print("✅ product_matcher.py V9.3 - CON DETECCIÓN AUTOMÁTICA DE PAPAS (MEJORADO)")
+print("✅ product_matcher.py V9.4 - CON ENRIQUECIMIENTO WEB (VTEX)")
 print("=" * 80)
-print("🎯 CAMBIOS V9.3:")
+print("🎯 CAMBIOS V9.4:")
+print("   🆕 PASO 3.5: Enriquecimiento Web antes de crear producto")
+print("   🆕 Busca en cache local (plu_supermercado_mapping) primero")
+print("   🆕 Si no hay cache → Consulta API VTEX")
+print("   🆕 Usa nombre WEB (correcto) en lugar del OCR (con errores)")
+print("   🆕 Obtiene EAN del PLU automáticamente")
+print("   🆕 Guarda en cache para futuras consultas")
+print("=" * 80)
+print("🎯 CAMBIOS V9.3 (heredados):")
 print("   ✅ Busca PAPAS PRIMERO (antes de crear productos)")
-print("   ✅ Si existe PAPA → Usa sus datos normalizados")
 print("   ✅ CREA registro en productos_por_establecimiento si no existe")
 print("   ✅ ACTUALIZA precios SIEMPRE (min, max, actual)")
-print("   ✅ Actualiza estadísticas del PAPA automáticamente")
-print("   ✅ Soporta búsqueda por EAN (JUMBO) y PLU (OLÍMPICA)")
-print("   ✅ GARANTIZA que todos los datos estén completos")
-print("   ✅ NO agrega PLU al nombre del producto")
-print("   ✅ GUARDA PLUs en productos_por_establecimiento")
 print("=" * 80)
 print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
+print(f"{'✅' if WEB_ENRICHER_AVAILABLE else '⚠️ '} Web Enricher (VTEX)")
 print("=" * 80)
