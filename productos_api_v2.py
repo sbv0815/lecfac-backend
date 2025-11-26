@@ -827,7 +827,7 @@ from lecfac_enricher import ProductEnricher
 enricher = ProductEnricher()
 
 
-@app.post("/api/productos/enriquecer/{plu}")
+@router.post("/api/productos/enriquecer/{plu}")
 async def enriquecer_producto(plu: str):
     """
     Enriquece un producto usando scraping de Carulla
