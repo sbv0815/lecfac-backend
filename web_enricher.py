@@ -2,8 +2,13 @@
 ============================================================================
 WEB ENRICHER - SISTEMA DE ENRIQUECIMIENTO DE PRODUCTOS VÍA WEB
 ============================================================================
-Versión: 1.0
+Versión: 1.1
 Fecha: 2025-11-26
+
+🔧 CAMBIOS V1.1:
+- Fix: Subir umbral de similitud de 0.3 a 0.6 (evita matches incorrectos)
+- Fix: NO buscar por nombre si tiene menos de 6 caracteres
+- Fix: Logging mejorado para rechazos por baja similitud
 
 PROPÓSITO:
 - Enriquecer datos de productos usando APIs web (VTEX)
@@ -550,40 +555,51 @@ class WebEnricher:
                 except Exception as e:
                     print(f"      ⚠️ Error buscando EAN: {str(e)[:50]}")
 
-            # 3. Buscar por NOMBRE (fallback)
+            # 3. Buscar por NOMBRE (fallback) - SOLO si el nombre tiene suficiente información
+            # 🔧 V1.1: Evitar matches incorrectos con nombres muy cortos
             if not producto and nombre_ocr:
-                # Limpiar nombre para búsqueda
                 nombre_limpio = self._limpiar_nombre_busqueda(nombre_ocr)
-                url_nombre = f"{base_url}/api/catalog_system/pub/products/search/{urllib.parse.quote(nombre_limpio)}"
-                print(f"      📝 Buscando nombre: '{nombre_limpio}'")
 
-                try:
-                    resp = requests.get(url_nombre, headers=headers, timeout=10)
-                    if resp.status_code in [200, 206]:
-                        data = resp.json()
-                        if data and len(data) > 0:
-                            # Buscar el mejor match
-                            mejor_match = None
-                            mejor_score = 0
+                # NO buscar por nombre si es muy corto (menos de 6 caracteres)
+                if len(nombre_limpio) < 6:
+                    print(f"      ℹ️ Nombre muy corto para buscar: '{nombre_limpio}'")
+                else:
+                    url_nombre = f"{base_url}/api/catalog_system/pub/products/search/{urllib.parse.quote(nombre_limpio)}"
+                    print(f"      📝 Buscando nombre: '{nombre_limpio}'")
 
-                            for item in data[:5]:
-                                prod = self._parsear_producto_vtex(item, base_url)
-                                if prod:
-                                    # Calcular similitud simple
-                                    score = self._calcular_similitud_simple(
-                                        nombre_limpio.upper(), prod["nombre"].upper()
+                    try:
+                        resp = requests.get(url_nombre, headers=headers, timeout=10)
+                        if resp.status_code in [200, 206]:
+                            data = resp.json()
+                            if data and len(data) > 0:
+                                # Buscar el mejor match
+                                mejor_match = None
+                                mejor_score = 0
+
+                                for item in data[:5]:
+                                    prod = self._parsear_producto_vtex(item, base_url)
+                                    if prod:
+                                        # Calcular similitud simple
+                                        score = self._calcular_similitud_simple(
+                                            nombre_limpio.upper(),
+                                            prod["nombre"].upper(),
+                                        )
+                                        if score > mejor_score:
+                                            mejor_score = score
+                                            mejor_match = prod
+
+                                # 🔧 V1.1: Umbral más alto (0.6 en vez de 0.3) para evitar matches incorrectos
+                                if mejor_match and mejor_score >= 0.6:
+                                    producto = mejor_match
+                                    print(
+                                        f"      ✅ Encontrado por nombre (score={mejor_score:.2f})"
                                     )
-                                    if score > mejor_score:
-                                        mejor_score = score
-                                        mejor_match = prod
-
-                            if mejor_match and mejor_score >= 0.3:
-                                producto = mejor_match
-                                print(
-                                    f"      ✅ Encontrado por nombre (score={mejor_score:.2f})"
-                                )
-                except Exception as e:
-                    print(f"      ⚠️ Error buscando nombre: {str(e)[:50]}")
+                                elif mejor_match:
+                                    print(
+                                        f"      ⚠️ Match rechazado por baja similitud (score={mejor_score:.2f} < 0.6)"
+                                    )
+                    except Exception as e:
+                        print(f"      ⚠️ Error buscando nombre: {str(e)[:50]}")
 
             if producto:
                 return producto
