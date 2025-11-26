@@ -26,7 +26,6 @@ SUPERMERCADOS SOPORTADOS:
 
 import os
 import time
-import asyncio
 import traceback
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
@@ -144,24 +143,6 @@ class WebEnricher:
     def __init__(self, cursor, conn):
         self.cursor = cursor
         self.conn = conn
-        self._vtex_scraper_class = None
-        self._scraper_loaded = False
-
-    def _load_scraper(self):
-        """Carga el módulo vtex_scraper de forma lazy"""
-        if self._scraper_loaded:
-            return
-
-        try:
-            from vtex_scraper import VTEXScraper
-
-            self._vtex_scraper_class = VTEXScraper
-            self._scraper_loaded = True
-            print("   ✅ VTEXScraper cargado")
-        except ImportError as e:
-            print(f"   ⚠️ VTEXScraper no disponible: {e}")
-            self._vtex_scraper_class = None
-            self._scraper_loaded = True  # Marcar como intentado
 
     # ========================================================================
     # MÉTODO PRINCIPAL
@@ -508,57 +489,211 @@ class WebEnricher:
         supermercado_key: str,
         tipo_codigo: str,
     ) -> Optional[Dict]:
-        """Consulta la API VTEX para obtener datos del producto"""
+        """
+        Consulta la API VTEX para obtener datos del producto.
+        Versión SÍNCRONA usando requests (compatible con FastAPI).
+        """
+        import requests
+        import urllib.parse
 
-        self._load_scraper()
+        # Configuración por supermercado
+        VTEX_CONFIG = {
+            "carulla": "https://www.carulla.com",
+            "exito": "https://www.exito.com",
+            "jumbo": "https://www.tiendasjumbo.co",
+            "olimpica": "https://www.olimpica.com",
+        }
 
-        if not hasattr(self, "_vtex_scraper_class") or not self._vtex_scraper_class:
-            print(f"      ⚠️ Scraper no disponible")
+        base_url = VTEX_CONFIG.get(supermercado_key)
+        if not base_url:
+            print(f"      ⚠️ Supermercado {supermercado_key} no configurado")
             return None
 
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "es-CO,es;q=0.9",
+        }
+
+        producto = None
+
         try:
-            # Crear instancia del scraper para el supermercado específico
-            scraper = self._vtex_scraper_class(supermercado=supermercado_key)
+            # 1. Buscar por PLU primero
+            if tipo_codigo == "PLU" and codigo and len(codigo) >= 3:
+                url_plu = f"{base_url}/api/catalog_system/pub/products/search?fq=alternateIds_RefId:{codigo}"
+                print(f"      🏷️ Buscando PLU: {url_plu[:80]}...")
 
-            # Ejecutar búsqueda async de forma sync
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+                try:
+                    resp = requests.get(url_plu, headers=headers, timeout=10)
+                    if resp.status_code in [200, 206]:
+                        data = resp.json()
+                        if data and len(data) > 0:
+                            producto = self._parsear_producto_vtex(data[0], base_url)
+                            if producto:
+                                print(f"      ✅ Encontrado por PLU!")
+                except Exception as e:
+                    print(f"      ⚠️ Error buscando PLU: {str(e)[:50]}")
 
-            try:
-                # Usar el método enriquecer() que tiene toda la lógica
-                resultado = loop.run_until_complete(
-                    scraper.enriquecer(
-                        nombre_ocr=nombre_ocr,
-                        plu_ocr=codigo if tipo_codigo == "PLU" else None,
-                        ean_ocr=codigo if tipo_codigo == "EAN" else None,
-                    )
-                )
-            finally:
-                loop.close()
+            # 2. Buscar por EAN
+            if not producto and tipo_codigo == "EAN" and codigo and len(codigo) >= 8:
+                url_ean = f"{base_url}/api/catalog_system/pub/products/search?fq=alternateIds_Ean:{codigo}"
+                print(f"      📊 Buscando EAN: {codigo}")
 
-            # Verificar si encontró algo
-            if (
-                resultado
-                and resultado.get("encontrado")
-                or resultado.get("enriquecido")
-            ):
-                return {
-                    "plu": resultado.get("plu_web", codigo),
-                    "ean": resultado.get("ean_web", ""),
-                    "nombre": resultado.get("nombre_completo", ""),
-                    "marca": "",  # VTEX no retorna marca directamente
-                    "presentacion": "",
-                    "categoria": "",
-                    "precio": resultado.get("precio_web", 0),
-                    "url": resultado.get("url", ""),
-                }
+                try:
+                    resp = requests.get(url_ean, headers=headers, timeout=10)
+                    if resp.status_code in [200, 206]:
+                        data = resp.json()
+                        if data and len(data) > 0:
+                            producto = self._parsear_producto_vtex(data[0], base_url)
+                            if producto:
+                                print(f"      ✅ Encontrado por EAN!")
+                except Exception as e:
+                    print(f"      ⚠️ Error buscando EAN: {str(e)[:50]}")
 
+            # 3. Buscar por NOMBRE (fallback)
+            if not producto and nombre_ocr:
+                # Limpiar nombre para búsqueda
+                nombre_limpio = self._limpiar_nombre_busqueda(nombre_ocr)
+                url_nombre = f"{base_url}/api/catalog_system/pub/products/search/{urllib.parse.quote(nombre_limpio)}"
+                print(f"      📝 Buscando nombre: '{nombre_limpio}'")
+
+                try:
+                    resp = requests.get(url_nombre, headers=headers, timeout=10)
+                    if resp.status_code in [200, 206]:
+                        data = resp.json()
+                        if data and len(data) > 0:
+                            # Buscar el mejor match
+                            mejor_match = None
+                            mejor_score = 0
+
+                            for item in data[:5]:
+                                prod = self._parsear_producto_vtex(item, base_url)
+                                if prod:
+                                    # Calcular similitud simple
+                                    score = self._calcular_similitud_simple(
+                                        nombre_limpio.upper(), prod["nombre"].upper()
+                                    )
+                                    if score > mejor_score:
+                                        mejor_score = score
+                                        mejor_match = prod
+
+                            if mejor_match and mejor_score >= 0.3:
+                                producto = mejor_match
+                                print(
+                                    f"      ✅ Encontrado por nombre (score={mejor_score:.2f})"
+                                )
+                except Exception as e:
+                    print(f"      ⚠️ Error buscando nombre: {str(e)[:50]}")
+
+            if producto:
+                return producto
+
+            print(f"      ❌ No encontrado en VTEX")
             return None
 
         except Exception as e:
             print(f"      ⚠️ Error consultando VTEX: {e}")
             traceback.print_exc()
             return None
+
+    def _parsear_producto_vtex(self, item: Dict, base_url: str) -> Optional[Dict]:
+        """Parsea un producto del JSON de VTEX"""
+        try:
+            nombre = item.get("productName", "")
+            if not nombre:
+                return None
+
+            link = item.get("link", "")
+            plu = None
+            ean = None
+            precio = None
+
+            if item.get("items") and len(item["items"]) > 0:
+                sku = item["items"][0]
+                ean = sku.get("ean", "")
+
+                # Obtener PLU de referenceId
+                ref_ids = sku.get("referenceId", [])
+                if ref_ids and isinstance(ref_ids, list):
+                    for ref in ref_ids:
+                        if isinstance(ref, dict) and ref.get("Value"):
+                            plu = ref["Value"]
+                            break
+
+                if not plu:
+                    plu = item.get("productReference", "") or item.get("productId", "")
+
+                # Precio
+                sellers = sku.get("sellers", [])
+                if sellers:
+                    oferta = sellers[0].get("commertialOffer", {})
+                    precio = int(oferta.get("Price", 0)) or None
+
+            # URL completa
+            if link and not link.startswith("http"):
+                link = f"{base_url}{link}"
+
+            return {
+                "plu": str(plu) if plu else "",
+                "ean": str(ean) if ean else "",
+                "nombre": nombre,
+                "marca": "",
+                "presentacion": "",
+                "categoria": "",
+                "precio": precio or 0,
+                "url": link,
+            }
+        except Exception as e:
+            print(f"      ⚠️ Error parseando producto: {e}")
+            return None
+
+    def _limpiar_nombre_busqueda(self, nombre: str) -> str:
+        """Limpia el nombre OCR para búsqueda"""
+        import re
+
+        # Abreviaciones comunes colombianas
+        abreviaciones = {
+            "QSO": "queso",
+            "LCH": "leche",
+            "DESLAC": "deslactosada",
+            "DESCREM": "descremada",
+            "UND": "unidad",
+            "GR": "gramos",
+            "KG": "kilo",
+            "LT": "litro",
+            "ML": "mililitros",
+            "MARG": "margarina",
+            "YOG": "yogurt",
+            "JAM": "jamon",
+            "ARR": "arroz",
+            "AZUC": "azucar",
+            "ACEIT": "aceite",
+        }
+
+        palabras = nombre.upper().split()
+        resultado = []
+
+        for palabra in palabras:
+            limpia = re.sub(r"[^A-Z0-9]", "", palabra)
+            if limpia in abreviaciones:
+                resultado.append(abreviaciones[limpia])
+            elif len(limpia) >= 2:  # Ignorar caracteres sueltos
+                resultado.append(limpia.lower())
+
+        return " ".join(resultado)
+
+    def _calcular_similitud_simple(self, s1: str, s2: str) -> float:
+        """Calcula similitud simple entre dos strings"""
+        palabras1 = set(s1.split())
+        palabras2 = set(s2.split())
+
+        if not palabras1 or not palabras2:
+            return 0.0
+
+        interseccion = len(palabras1 & palabras2)
+        union = len(palabras1 | palabras2)
+
+        return interseccion / union if union > 0 else 0.0
 
     # ========================================================================
     # UTILIDADES
