@@ -2,8 +2,12 @@
 ============================================================================
 WEB ENRICHER - SISTEMA DE ENRIQUECIMIENTO DE PRODUCTOS VÍA WEB
 ============================================================================
-Versión: 1.1
+Versión: 1.2
 Fecha: 2025-11-26
+
+🔧 CAMBIOS V1.2:
+- Fix: VALIDACIÓN DE PRECIO - rechaza si precio web es >5x o <0.2x del OCR
+- Esto evita matches incorrectos (celulares, aires acondicionados, llantas)
 
 🔧 CAMBIOS V1.1:
 - Fix: Subir umbral de similitud de 0.3 a 0.6 (evita matches incorrectos)
@@ -19,7 +23,8 @@ FLUJO:
 1. Buscar en plu_supermercado_mapping (cache rápido) → < 1ms
 2. Buscar en productos_web_enriched (cache completo) → < 5ms
 3. Consultar API VTEX (solo si no hay cache) → ~2-5 segundos
-4. Guardar resultado en cache para futuras consultas
+4. VALIDAR PRECIO: Si precio web difiere mucho → rechazar
+5. Guardar resultado en cache para futuras consultas
 
 SUPERMERCADOS SOPORTADOS:
 - Carulla (VTEX)
@@ -249,18 +254,57 @@ class WebEnricher:
         )
 
         if datos_vtex:
+            precio_web = datos_vtex.get("precio", 0)
+            nombre_web = datos_vtex.get("nombre", "")
+
+            # 🔧 V1.1: VALIDACIÓN DE PRECIO
+            # Si el precio web es muy diferente al OCR, rechazar el match
+            # Esto evita matches incorrectos como "CELULAR" cuando el precio es $22,000
+            if precio_ocr > 0 and precio_web > 0:
+                ratio = precio_web / precio_ocr
+
+                # Si el precio web es más de 5x o menos de 0.2x del OCR → rechazar
+                if ratio > 5.0:
+                    print(
+                        f"      ⚠️ RECHAZADO: Precio web (${precio_web:,}) es {ratio:.1f}x mayor que OCR (${precio_ocr:,})"
+                    )
+                    print(f"         Producto web: {nombre_web[:50]}")
+
+                    # Registrar como no encontrado
+                    self._registrar_consulta(
+                        tipo="plu" if tipo_codigo == "PLU" else "ean",
+                        termino=codigo,
+                        supermercado=supermercado_key,
+                        encontrado=False,
+                    )
+                    return resultado
+
+                if ratio < 0.2:
+                    print(
+                        f"      ⚠️ RECHAZADO: Precio web (${precio_web:,}) es {ratio:.1f}x menor que OCR (${precio_ocr:,})"
+                    )
+                    print(f"         Producto web: {nombre_web[:50]}")
+
+                    self._registrar_consulta(
+                        tipo="plu" if tipo_codigo == "PLU" else "ean",
+                        termino=codigo,
+                        supermercado=supermercado_key,
+                        encontrado=False,
+                    )
+                    return resultado
+
             print(f"      ✅ ENCONTRADO EN VTEX")
-            print(f"         Nombre: {datos_vtex.get('nombre', '')[:50]}")
+            print(f"         Nombre: {nombre_web[:50]}")
 
             resultado.encontrado = True
             resultado.fuente = "api_vtex"
             resultado.codigo_plu = datos_vtex.get("plu", codigo)
             resultado.codigo_ean = datos_vtex.get("ean", "")
-            resultado.nombre_web = datos_vtex.get("nombre", "")
+            resultado.nombre_web = nombre_web
             resultado.marca = datos_vtex.get("marca", "")
             resultado.presentacion = datos_vtex.get("presentacion", "")
             resultado.categoria = datos_vtex.get("categoria", "")
-            resultado.precio_web = datos_vtex.get("precio", 0)
+            resultado.precio_web = precio_web
             resultado.url_producto = datos_vtex.get("url", "")
 
             # Guardar en ambos caches

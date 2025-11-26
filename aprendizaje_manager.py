@@ -243,7 +243,7 @@ class AprendizajeManager:
                     {placeholder}, {placeholder}, 1, 0,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE
                 )
-                ON CONFLICT (ocr_normalizado, establecimiento_key)
+                ON CONFLICT (ocr_normalizado, establecimiento)
                 DO UPDATE SET
                     nombre_validado = EXCLUDED.nombre_validado,
                     codigo_ean = COALESCE(EXCLUDED.codigo_ean, correcciones_aprendidas.codigo_ean),
