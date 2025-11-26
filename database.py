@@ -417,11 +417,45 @@ def create_postgresql_tables():
                 bloquear_al_limite BOOLEAN DEFAULT FALSE,
                 fecha_reset TIMESTAMP,
                 fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                costo_acumulado_mes DECIMAL(10,6) DEFAULT 0,
+                costo_total_historico DECIMAL(10,6) DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """
         )
         print("   ✓ Tabla limites_usuario verificada")
+
+        # Verificar y agregar columnas de costos si no existen (migración)
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'limites_usuario'
+        """
+        )
+        columnas_limites = [row[0] for row in cursor.fetchall()]
+
+        columnas_limites_requeridas = {
+            "costo_acumulado_mes": "DECIMAL(10,6) DEFAULT 0",
+            "costo_total_historico": "DECIMAL(10,6) DEFAULT 0",
+            "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        }
+
+        for columna, tipo in columnas_limites_requeridas.items():
+            if columna not in columnas_limites:
+                try:
+                    cursor.execute(
+                        f"""
+                        ALTER TABLE limites_usuario
+                        ADD COLUMN {columna} {tipo}
+                    """
+                    )
+                    conn.commit()
+                    print(f"   ✅ Columna '{columna}' agregada a limites_usuario")
+                except Exception as e:
+                    print(f"   ⚠️ {columna}: {e}")
+                    conn.rollback()
 
         # ============================================
         # TABLA: uso_api (tracking de costos)
@@ -637,12 +671,16 @@ def create_postgresql_tables():
         # ============================================
         # 1.2.4. PRODUCTOS_MAESTROS_V2 (TABLA PRINCIPAL V9.3)
         # ============================================
+        # ============================================
+        # 1.2.4. PRODUCTOS_MAESTROS_V2 (TABLA PRINCIPAL V9.3)
+        # ============================================
         print("🆕 Creando tabla productos_maestros_v2...")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS productos_maestros_v2 (
                 id SERIAL PRIMARY KEY,
                 codigo_ean VARCHAR(20),
+                codigo_lecfac VARCHAR(20) UNIQUE,
                 nombre_consolidado VARCHAR(200) NOT NULL,
                 marca VARCHAR(100),
                 categoria_id INTEGER,
@@ -660,6 +698,30 @@ def create_postgresql_tables():
         conn.commit()
         print("✓ Tabla 'productos_maestros_v2' creada")
 
+        # Verificar y agregar columna codigo_lecfac si no existe (migración)
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'productos_maestros_v2'
+        """
+        )
+        columnas_pm_v2 = [row[0] for row in cursor.fetchall()]
+
+        if "codigo_lecfac" not in columnas_pm_v2:
+            try:
+                cursor.execute(
+                    """
+                    ALTER TABLE productos_maestros_v2
+                    ADD COLUMN codigo_lecfac VARCHAR(20) UNIQUE
+                """
+                )
+                conn.commit()
+                print("   ✅ Columna 'codigo_lecfac' agregada a productos_maestros_v2")
+            except Exception as e:
+                print(f"   ⚠️ codigo_lecfac: {e}")
+                conn.rollback()
+
         # Índices para productos_maestros_v2
         crear_indice_seguro(
             "CREATE INDEX IF NOT EXISTS idx_pm_v2_ean ON productos_maestros_v2(codigo_ean)",
@@ -670,8 +732,8 @@ def create_postgresql_tables():
             "productos_maestros_v2.nombre",
         )
         crear_indice_seguro(
-            "CREATE INDEX IF NOT EXISTS idx_pm_v2_papa ON productos_maestros_v2(es_producto_papa)",
-            "productos_maestros_v2.papa",
+            "CREATE INDEX IF NOT EXISTS idx_pm_v2_lecfac ON productos_maestros_v2(codigo_lecfac)",
+            "productos_maestros_v2.codigo_lecfac",
         )
 
         # ============================================
