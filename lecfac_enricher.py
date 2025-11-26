@@ -1,13 +1,23 @@
 """
 Integración Scraper Carulla <> LecFac
 Enriquece productos automáticamente cuando se detectan nuevos PLUs
-Versión: 1.0
+Versión: 1.1 - Import opcional de scraper
 """
 
 import asyncio
-from carulla_scraper import CarullaScraper
 from typing import Optional, Dict
 import logging
+
+# Import opcional del scraper - no falla si falta playwright
+try:
+    from carulla_scraper import CarullaScraper
+
+    SCRAPER_AVAILABLE = True
+except ImportError:
+    CarullaScraper = None
+    SCRAPER_AVAILABLE = False
+    print("⚠️ CarullaScraper no disponible - playwright no instalado")
+    print("   El servidor funcionará sin enriquecimiento externo")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,7 +29,10 @@ class ProductEnricher:
     """
 
     def __init__(self):
-        self.scraper = CarullaScraper()
+        if SCRAPER_AVAILABLE:
+            self.scraper = CarullaScraper()
+        else:
+            self.scraper = None
         self.cache = {}  # Cache simple en memoria
 
     async def enriquecer_por_plu(
@@ -27,14 +40,11 @@ class ProductEnricher:
     ) -> Optional[Dict]:
         """
         Busca información de un producto por PLU
-
-        Args:
-            plu: Código PLU del producto
-            supermercado: Nombre del supermercado
-
-        Returns:
-            Dict con datos enriquecidos o None
         """
+        if not SCRAPER_AVAILABLE:
+            logger.warning("⚠️ Scraper no disponible - saltando enriquecimiento")
+            return None
+
         cache_key = f"{supermercado}_{plu}"
 
         # Revisar cache
@@ -43,21 +53,14 @@ class ProductEnricher:
             return self.cache[cache_key]
 
         try:
-            # Buscar en Carulla por PLU
-            # Nota: Esto requiere una estrategia de búsqueda
-            # Podrías mantener un índice URL -> PLU
-
             logger.info(f"🔍 Buscando PLU {plu} en {supermercado}...")
 
-            # Por ahora, búsqueda genérica
-            # En producción, necesitarías un índice o sitemap
             productos = await self.scraper.scrape_busqueda(
                 f"PLU {plu}", max_productos=5
             )
 
             for producto in productos:
                 if producto["plu"] == plu:
-                    # Guardar en cache
                     self.cache[cache_key] = producto
                     logger.info(f"✅ Producto encontrado: {producto['nombre']}")
                     return producto
@@ -74,29 +77,23 @@ class ProductEnricher:
     ) -> Optional[Dict]:
         """
         Busca información de un producto por nombre
-
-        Args:
-            nombre: Nombre del producto (puede ser parcial)
-            supermercado: Nombre del supermercado
-
-        Returns:
-            Dict con datos enriquecidos o None
         """
+        if not SCRAPER_AVAILABLE:
+            logger.warning("⚠️ Scraper no disponible - saltando enriquecimiento")
+            return None
+
         try:
             logger.info(f"🔍 Buscando '{nombre}' en {supermercado}...")
 
-            # Buscar productos similares
             productos = await self.scraper.scrape_busqueda(nombre, max_productos=3)
 
             if not productos:
                 logger.warning(f"⚠️ No se encontraron resultados para '{nombre}'")
                 return None
 
-            # Retornar el primero (mejor match)
             mejor_match = productos[0]
             logger.info(f"✅ Mejor match: {mejor_match['nombre']}")
 
-            # Guardar en cache
             cache_key = f"{supermercado}_{mejor_match['plu']}"
             self.cache[cache_key] = mejor_match
 
@@ -109,20 +106,13 @@ class ProductEnricher:
     async def enriquecer_producto_lecfac(self, producto_lecfac: Dict) -> Dict:
         """
         Enriquece un producto de LecFac con datos scrapeados
-
-        Args:
-            producto_lecfac: Dict con datos básicos del OCR
-                {
-                    'nombre': 'MOZARELL FINESSE',
-                    'plu': '426036',
-                    'precio': 26100,
-                    'supermercado': 'Carulla'
-                }
-
-        Returns:
-            Dict con datos enriquecidos
         """
         resultado = producto_lecfac.copy()
+
+        if not SCRAPER_AVAILABLE:
+            resultado["fuente_enriquecimiento"] = "scraper_no_disponible"
+            resultado["confianza"] = "baja"
+            return resultado
 
         # Intentar por PLU primero (más preciso)
         if "plu" in producto_lecfac and producto_lecfac["plu"]:
@@ -131,7 +121,6 @@ class ProductEnricher:
             )
 
             if datos_scrapeados:
-                # Enriquecer con nombre completo
                 resultado["nombre_completo"] = datos_scrapeados["nombre"]
                 resultado["nombre_original_ocr"] = producto_lecfac["nombre"]
                 resultado["fuente_enriquecimiento"] = "scraping_carulla"
@@ -178,9 +167,12 @@ async def ejemplo_enriquecer_lote():
     """
     Simula el enriquecimiento de productos de una factura completa
     """
+    if not SCRAPER_AVAILABLE:
+        print("⚠️ Scraper no disponible - ejemplo no puede ejecutarse")
+        return []
+
     enricher = ProductEnricher()
 
-    # Productos de ejemplo del OCR
     productos_ocr = [
         {
             "nombre": "MOZARELL FINESSE",
@@ -196,7 +188,7 @@ async def ejemplo_enriquecer_lote():
         },
         {
             "nombre": "LECHE ENTERA",
-            "plu": None,  # Sin PLU
+            "plu": None,
             "precio": 4500,
             "supermercado": "Carulla",
         },
@@ -221,7 +213,6 @@ async def ejemplo_enriquecer_lote():
         )
         print(f"   Confianza: {producto_enriquecido.get('confianza', 'N/A')}")
 
-        # Rate limiting
         await asyncio.sleep(3)
 
     print("\n" + "=" * 70)
@@ -237,6 +228,10 @@ async def ejemplo_individual():
     """
     Enriquece un solo producto
     """
+    if not SCRAPER_AVAILABLE:
+        print("⚠️ Scraper no disponible - ejemplo no puede ejecutarse")
+        return None
+
     enricher = ProductEnricher()
 
     producto = {
@@ -261,7 +256,4 @@ async def ejemplo_individual():
 
 
 if __name__ == "__main__":
-    # Descomentar el que quieras probar
-
-    # asyncio.run(ejemplo_individual())
     asyncio.run(ejemplo_enriquecer_lote())
