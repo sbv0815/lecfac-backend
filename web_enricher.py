@@ -2,8 +2,13 @@
 ============================================================================
 WEB ENRICHER - SISTEMA DE ENRIQUECIMIENTO DE PRODUCTOS VÍA WEB
 ============================================================================
-Versión: 1.2
+Versión: 1.3
 Fecha: 2025-11-26
+
+🔧 CAMBIOS V1.3:
+- Fix: VALIDAR NOMBRE OCR vs NOMBRE WEB en búsqueda por PLU
+- Si OCR dice "CHOCOLATE" pero web dice "RON", rechaza el match
+- Detecta cuando el OCR lee mal el PLU (ej: 3622453 vs 3622153)
 
 🔧 CAMBIOS V1.2:
 - Fix: VALIDACIÓN DE PRECIO - rechaza si precio web es >5x o <0.2x del OCR
@@ -23,8 +28,9 @@ FLUJO:
 1. Buscar en plu_supermercado_mapping (cache rápido) → < 1ms
 2. Buscar en productos_web_enriched (cache completo) → < 5ms
 3. Consultar API VTEX (solo si no hay cache) → ~2-5 segundos
-4. VALIDAR PRECIO: Si precio web difiere mucho → rechazar
-5. Guardar resultado en cache para futuras consultas
+4. VALIDAR NOMBRE: Si OCR y Web no coinciden → rechazar
+5. VALIDAR PRECIO: Si precio web difiere mucho → rechazar
+6. Guardar resultado en cache para futuras consultas
 
 SUPERMERCADOS SOPORTADOS:
 - Carulla (VTEX)
@@ -577,9 +583,44 @@ class WebEnricher:
                     if resp.status_code in [200, 206]:
                         data = resp.json()
                         if data and len(data) > 0:
-                            producto = self._parsear_producto_vtex(data[0], base_url)
-                            if producto:
-                                print(f"      ✅ Encontrado por PLU!")
+                            producto_candidato = self._parsear_producto_vtex(
+                                data[0], base_url
+                            )
+                            if producto_candidato:
+                                # 🔧 V1.3: VALIDAR que el nombre web tenga relación con el OCR
+                                # Esto detecta cuando el OCR leyó mal el PLU
+                                nombre_web = producto_candidato.get(
+                                    "nombre", ""
+                                ).upper()
+                                nombre_ocr_upper = (
+                                    nombre_ocr.upper() if nombre_ocr else ""
+                                )
+
+                                similitud_nombre = self._calcular_similitud_simple(
+                                    nombre_ocr_upper, nombre_web
+                                )
+                                palabras_comunes = self._contar_palabras_comunes(
+                                    nombre_ocr_upper, nombre_web
+                                )
+
+                                print(
+                                    f"      🔍 Validando nombre: OCR='{nombre_ocr_upper[:30]}' vs Web='{nombre_web[:30]}'"
+                                )
+                                print(
+                                    f"         Similitud: {similitud_nombre:.2f}, Palabras comunes: {palabras_comunes}"
+                                )
+
+                                # Si no hay NINGUNA palabra en común y similitud < 0.1, rechazar
+                                # Esto detecta casos como "CHOCOLATE" vs "RON VIEJO DE CALDAS"
+                                if palabras_comunes == 0 and similitud_nombre < 0.15:
+                                    print(
+                                        f"      ⚠️ RECHAZADO: Nombre OCR no coincide con producto web"
+                                    )
+                                    print(f"         Posible error de OCR en el PLU")
+                                    producto = None  # No aceptar este match
+                                else:
+                                    producto = producto_candidato
+                                    print(f"      ✅ Encontrado por PLU!")
                 except Exception as e:
                     print(f"      ⚠️ Error buscando PLU: {str(e)[:50]}")
 
@@ -754,6 +795,46 @@ class WebEnricher:
         union = len(palabras1 | palabras2)
 
         return interseccion / union if union > 0 else 0.0
+
+    def _contar_palabras_comunes(self, s1: str, s2: str) -> int:
+        """
+        🆕 V1.3: Cuenta palabras significativas en común entre dos strings.
+        Ignora palabras muy cortas (< 3 chars) y palabras comunes.
+        """
+        import re
+
+        # Palabras a ignorar (muy comunes en productos)
+        IGNORAR = {
+            "DE",
+            "LA",
+            "EL",
+            "EN",
+            "CON",
+            "SIN",
+            "POR",
+            "PARA",
+            "UND",
+            "UN",
+            "UNA",
+            "GR",
+            "ML",
+            "KG",
+            "LT",
+            "X",
+        }
+
+        # Extraer palabras significativas (>= 3 caracteres)
+        palabras1 = set(
+            p for p in re.findall(r"\b[A-Z]{3,}\b", s1.upper()) if p not in IGNORAR
+        )
+        palabras2 = set(
+            p for p in re.findall(r"\b[A-Z]{3,}\b", s2.upper()) if p not in IGNORAR
+        )
+
+        # Contar intersección
+        comunes = palabras1 & palabras2
+
+        return len(comunes)
 
     # ========================================================================
     # UTILIDADES
