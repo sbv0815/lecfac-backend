@@ -441,6 +441,81 @@ def create_postgresql_tables():
         )
         print("✓ Tabla 'productos_maestros' creada")
 
+        # ============================================
+        # 1.2.4. PRODUCTOS_MAESTROS_V2 (TABLA PRINCIPAL V9.3)
+        # ============================================
+        print("🆕 Creando tabla productos_maestros_v2...")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS productos_maestros_v2 (
+                id SERIAL PRIMARY KEY,
+                codigo_ean VARCHAR(20),
+                nombre_consolidado VARCHAR(200) NOT NULL,
+                marca VARCHAR(100),
+                categoria_id INTEGER,
+                peso_neto DECIMAL(10,2),
+                unidad_medida VARCHAR(10),
+                confianza_datos DECIMAL(3,2) DEFAULT 0.5,
+                veces_visto INTEGER DEFAULT 1,
+                fecha_primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                estado VARCHAR(20) DEFAULT 'pendiente',
+                es_producto_papa BOOLEAN DEFAULT FALSE
+            )
+        """
+        )
+        conn.commit()
+        print("✓ Tabla 'productos_maestros_v2' creada")
+
+        # Índices para productos_maestros_v2
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_pm_v2_ean ON productos_maestros_v2(codigo_ean)",
+            "productos_maestros_v2.ean",
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_pm_v2_nombre ON productos_maestros_v2(nombre_consolidado)",
+            "productos_maestros_v2.nombre",
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_pm_v2_papa ON productos_maestros_v2(es_producto_papa)",
+            "productos_maestros_v2.papa",
+        )
+
+        # ============================================
+        # 1.2.5. PRODUCTOS_POR_ESTABLECIMIENTO (PRECIOS POR TIENDA)
+        # ============================================
+        print("🆕 Creando tabla productos_por_establecimiento...")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS productos_por_establecimiento (
+                id SERIAL PRIMARY KEY,
+                producto_maestro_id INTEGER REFERENCES productos_maestros_v2(id),
+                establecimiento_id INTEGER REFERENCES establecimientos(id),
+                codigo_plu VARCHAR(50),
+                precio_actual INTEGER,
+                precio_unitario INTEGER,
+                precio_minimo INTEGER,
+                precio_maximo INTEGER,
+                total_reportes INTEGER DEFAULT 1,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(producto_maestro_id, establecimiento_id)
+            )
+        """
+        )
+        conn.commit()
+        print("✓ Tabla 'productos_por_establecimiento' creada")
+
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_ppe_plu ON productos_por_establecimiento(codigo_plu)",
+            "productos_por_establecimiento.plu",
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_ppe_est ON productos_por_establecimiento(establecimiento_id)",
+            "productos_por_establecimiento.establecimiento",
+        )
+
         # Agregar columnas de migración y auditoría si no existen
         cursor.execute(
             """
