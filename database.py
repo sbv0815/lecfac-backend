@@ -334,6 +334,40 @@ def create_postgresql_tables():
         print("   ✓ Categorías básicas insertadas")
 
         # ============================================
+        # 1.1.3. PRODUCTOS_REVISION_ADMIN
+        # ============================================
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS productos_revision_admin (
+                id SERIAL PRIMARY KEY,
+                producto_maestro_id INTEGER UNIQUE NOT NULL,
+                nombre_ocr_original VARCHAR(200),
+                nombre_sugerido VARCHAR(200),
+                codigo_producto VARCHAR(50),
+                establecimiento VARCHAR(100),
+                motivo_revision VARCHAR(500),
+                razon_revision VARCHAR(500),
+                estado VARCHAR(20) DEFAULT 'pendiente',
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_revision TIMESTAMP,
+                revisado_por INTEGER,
+                notas_revision TEXT
+            )
+        """
+        )
+        conn.commit()
+        print("✓ Tabla 'productos_revision_admin' creada")
+
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_revision_estado ON productos_revision_admin(estado)",
+            "productos_revision_admin.estado",
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_revision_producto ON productos_revision_admin(producto_maestro_id)",
+            "productos_revision_admin.producto",
+        )
+
+        # ============================================
         # 1.2. NUEVA ARQUITECTURA DE PRODUCTOS
         # ============================================
 
