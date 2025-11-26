@@ -400,8 +400,62 @@ def create_postgresql_tables():
         )
 
         # ============================================
-        # FIX: Eliminar foreign key problemático de items_factura
+        # TABLA: limites_usuario (sistema de planes)
         # ============================================
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS limites_usuario (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER UNIQUE NOT NULL,
+                plan VARCHAR(50) DEFAULT 'free',
+                tokens_usados_mes INTEGER DEFAULT 0,
+                limite_tokens_mes INTEGER DEFAULT 100000,
+                facturas_usadas_mes INTEGER DEFAULT 0,
+                limite_facturas_mes INTEGER DEFAULT 50,
+                menus_usados_mes INTEGER DEFAULT 0,
+                limite_menus_mes INTEGER DEFAULT 10,
+                bloquear_al_limite BOOLEAN DEFAULT FALSE,
+                fecha_reset TIMESTAMP,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+        print("   ✓ Tabla limites_usuario verificada")
+
+        # ============================================
+        # TABLA: uso_api (tracking de costos)
+        # ============================================
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS uso_api (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                tipo_operacion VARCHAR(50) NOT NULL,
+                modelo VARCHAR(100),
+                tokens_input INTEGER DEFAULT 0,
+                tokens_output INTEGER DEFAULT 0,
+                costo_input_usd DECIMAL(10,6) DEFAULT 0,
+                costo_output_usd DECIMAL(10,6) DEFAULT 0,
+                referencia_id INTEGER,
+                referencia_tipo VARCHAR(50),
+                exitoso BOOLEAN DEFAULT TRUE,
+                error_mensaje TEXT,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+        print("   ✓ Tabla uso_api verificada")
+
+        # Insertar límites por defecto para usuario 1 si no existe
+        cursor.execute(
+            """
+            INSERT INTO limites_usuario (user_id, plan, limite_tokens_mes, limite_facturas_mes)
+            VALUES (1, 'premium', 1000000, 500)
+            ON CONFLICT (user_id) DO NOTHING
+        """
+        )
+        print("   ✓ Límites de usuario verificados")
         # ============================================
         # FIX: Eliminar TODOS los foreign keys hacia productos_maestros (legacy)
         # ============================================
@@ -414,6 +468,7 @@ def create_postgresql_tables():
             ("patrones_compra", "patrones_compra_producto_maestro_id_fkey"),
             ("alertas_usuario", "alertas_usuario_producto_maestro_id_fkey"),
             ("precios_historicos", "precios_historicos_producto_id_fkey"),
+            ("historial_compras_usuario", "historial_compras_usuario_producto_id_fkey"),
         ]
 
         for tabla, constraint in constraints_to_drop:
