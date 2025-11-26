@@ -402,19 +402,29 @@ def create_postgresql_tables():
         # ============================================
         # FIX: Eliminar foreign key problemático de items_factura
         # ============================================
-        print("🔧 Verificando constraints de items_factura...")
-        try:
-            cursor.execute(
-                """
-                ALTER TABLE items_factura
-                DROP CONSTRAINT IF EXISTS items_factura_producto_maestro_id_fkey
-            """
-            )
-            conn.commit()
-            print("   ✓ Constraint legacy eliminado")
-        except Exception as e:
-            print(f"   ⚠️ Constraint: {e}")
-            conn.rollback()
+        # ============================================
+        # FIX: Eliminar TODOS los foreign keys hacia productos_maestros (legacy)
+        # ============================================
+        print("🔧 Eliminando constraints legacy...")
+        constraints_to_drop = [
+            ("items_factura", "items_factura_producto_maestro_id_fkey"),
+            ("inventario_usuario", "inventario_usuario_producto_maestro_id_fkey"),
+            ("precios_productos", "precios_productos_producto_maestro_id_fkey"),
+            ("precios_productos", "precios_productos_producto_id_fkey"),
+            ("patrones_compra", "patrones_compra_producto_maestro_id_fkey"),
+            ("alertas_usuario", "alertas_usuario_producto_maestro_id_fkey"),
+            ("precios_historicos", "precios_historicos_producto_id_fkey"),
+        ]
+
+        for tabla, constraint in constraints_to_drop:
+            try:
+                cursor.execute(
+                    f"ALTER TABLE {tabla} DROP CONSTRAINT IF EXISTS {constraint}"
+                )
+                conn.commit()
+                print(f"   ✓ {constraint} eliminado")
+            except Exception as e:
+                conn.rollback()
 
         # ============================================
         # 1.2. NUEVA ARQUITECTURA DE PRODUCTOS
