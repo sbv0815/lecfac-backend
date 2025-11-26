@@ -105,37 +105,22 @@ import inspect
 
 try:
     source_code = inspect.getsource(product_matcher.buscar_o_crear_producto_inteligente)
-
-    tiene_fix = "productos_maestros_v2" in source_code
-
-    # Buscar múltiples indicadores del fix
-    tiene_fix_1 = "fetchone() retornó None" in source_code
-    tiene_fix_2 = "fallback manual" in source_code.lower()
-    tiene_fix_3 = "if not resultado:" in source_code
-
-    fix_completo = tiene_fix_1 or (tiene_fix_2 and tiene_fix_3)
-
+    # Verificar indicadores de V9.3
+    tiene_v2 = "productos_maestros_v2" in source_code
+    tiene_papa = "buscar_papa_primero" in source_code
+    tiene_plu = "productos_por_establecimiento" in source_code
+    version_correcta = tiene_v2 and tiene_papa and tiene_plu
     print(f"\n{'='*80}")
-    print(f"🔧 VERIFICACIÓN DE FIX:")
-    print(f"   - String 'fetchone() retornó None': {'✅' if tiene_fix_1 else '❌'}")
-    print(f"   - String 'fallback manual': {'✅' if tiene_fix_2 else '❌'}")
-    print(f"   - String 'if not resultado': {'✅' if tiene_fix_3 else '❌'}")
+    print(f"🔧 VERIFICACIÓN DE PRODUCT_MATCHER V9.3:")
+    print(f"   - productos_maestros_v2: {'✅' if tiene_v2 else '❌'}")
+    print(f"   - buscar_papa_primero: {'✅' if tiene_papa else '❌'}")
+    print(f"   - productos_por_establecimiento: {'✅' if tiene_plu else '❌'}")
     print(
-        f"   - RESULTADO FINAL: {'✅ FIX PRESENTE' if fix_completo else '❌ FIX AUSENTE'}"
+        f"   - RESULTADO: {'✅ V9.3 DETECTADO' if version_correcta else '❌ VERSIÓN INCORRECTA'}"
     )
     print(f"{'='*80}\n")
-
-    if not fix_completo:
-        print("⚠️⚠️⚠️ WARNING: CÓDIGO DESACTUALIZADO DETECTADO ⚠️⚠️⚠️")
-        print("El servidor se iniciará pero FALLARÁ al guardar productos")
-        print("Verifica que product_matcher.py V6.1 esté en Git")
-
 except Exception as e:
-    print(f"❌ Error verificando fix: {e}")
-    import traceback
-
-    traceback.print_exc()
-
+    print(f"⚠️ Error verificando versión: {e}")
 print("=" * 80 + "\n")
 
 from comparacion_precios import router as comparacion_router
