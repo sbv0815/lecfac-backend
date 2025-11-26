@@ -63,6 +63,9 @@ SUPERMERCADOS_VTEX = {
     "JUMBO": "jumbo",
     "OLIMPICA": "olimpica",
     "OLÍMPICA": "olimpica",
+    # 🆕 V1.3: Nuevos supermercados
+    "ALKOSTO": "alkosto",
+    "MAKRO": "makro",
 }
 
 
@@ -557,6 +560,9 @@ class WebEnricher:
             "exito": "https://www.exito.com",
             "jumbo": "https://www.tiendasjumbo.co",
             "olimpica": "https://www.olimpica.com",
+            # 🆕 V1.3: Nuevos supermercados
+            "alkosto": "https://www.alkosto.com",
+            "makro": "https://www.makro.com.co",
         }
 
         base_url = VTEX_CONFIG.get(supermercado_key)
