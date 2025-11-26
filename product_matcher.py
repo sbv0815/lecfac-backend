@@ -1,9 +1,15 @@
 """
-product_matcher.py - VERSIÓN 9.4 - CON ENRIQUECIMIENTO WEB (VTEX)
+product_matcher.py - VERSIÓN 9.5 - ACTUALIZACIÓN DE PRODUCTOS CON DATOS WEB
 ========================================================================
 
-🎯 CAMBIOS V9.4:
-- ✅ NUEVO: PASO 3.5 - Enriquecimiento Web antes de crear producto
+🎯 CAMBIOS V9.5:
+- ✅ NUEVO: Actualiza productos EXISTENTES con datos del web
+- ✅ Cuando encuentra producto en PASO 1/2/3 → Consulta web → Actualiza nombre/EAN
+- ✅ Prioriza nombre del web sobre nombre OCR (más preciso)
+- ✅ Mantiene historial de precios intacto
+
+🎯 CAMBIOS V9.4 (heredados):
+- ✅ PASO 3.5 - Enriquecimiento Web antes de crear producto
 - ✅ Busca en cache local (plu_supermercado_mapping) primero
 - ✅ Si no hay cache → Consulta API VTEX (Carulla, Éxito, Jumbo, Olímpica)
 - ✅ Usa nombre WEB (correcto) en lugar del OCR (con errores)
@@ -587,6 +593,122 @@ def guardar_plu_en_establecimiento(
 
 
 # ═══════════════════════════════════════════════════════════════
+# 🆕 V9.5: ACTUALIZAR PRODUCTO EXISTENTE CON DATOS WEB
+# ═══════════════════════════════════════════════════════════════
+
+
+def actualizar_producto_con_datos_web(
+    producto_id: int,
+    codigo: str,
+    nombre_ocr: str,
+    establecimiento: str,
+    precio: int,
+    cursor,
+    conn,
+    establecimiento_id: int = None,
+) -> bool:
+    """
+    🆕 V9.5: Actualiza un producto EXISTENTE con datos del web enricher.
+
+    - Consulta el web enricher
+    - Si encuentra datos mejores → Actualiza nombre, EAN, marca
+    - Actualiza el cache plu_supermercado_mapping con producto_maestro_id
+
+    Returns:
+        True si se actualizó, False si no
+    """
+    if not WEB_ENRICHER_AVAILABLE:
+        return False
+
+    if not es_supermercado_vtex(establecimiento):
+        return False
+
+    try:
+        print(
+            f"   🔄 V9.5: Verificando datos web para producto existente ID={producto_id}"
+        )
+
+        enricher = WebEnricher(cursor, conn)
+        resultado_web = enricher.enriquecer(
+            codigo=codigo,
+            nombre_ocr=nombre_ocr,
+            establecimiento=establecimiento,
+            precio_ocr=precio,
+        )
+
+        if not resultado_web.encontrado:
+            print(f"      ℹ️ No se encontró en web, manteniendo datos actuales")
+            return False
+
+        datos_web = resultado_web.to_dict()
+        nombre_web = datos_web.get("nombre_web", "")
+        ean_web = datos_web.get("codigo_ean", "")
+        marca_web = datos_web.get("marca", "")
+
+        if not nombre_web:
+            return False
+
+        # Normalizar nombre para guardar
+        nombre_web_normalizado = nombre_web.upper().strip()
+
+        print(f"      ✅ Actualizando producto con datos web:")
+        print(f"         Nombre: {nombre_web_normalizado[:50]}")
+        print(f"         EAN: {ean_web or 'N/A'}")
+
+        # Actualizar productos_maestros_v2
+        if ean_web:
+            cursor.execute(
+                """
+                UPDATE productos_maestros_v2
+                SET nombre_consolidado = %s,
+                    codigo_ean = COALESCE(codigo_ean, %s),
+                    marca = COALESCE(marca, %s),
+                    confianza_datos = GREATEST(confianza_datos, 0.95),
+                    fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """,
+                (nombre_web_normalizado, ean_web, marca_web or None, producto_id),
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE productos_maestros_v2
+                SET nombre_consolidado = %s,
+                    marca = COALESCE(marca, %s),
+                    confianza_datos = GREATEST(confianza_datos, 0.95),
+                    fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """,
+                (nombre_web_normalizado, marca_web or None, producto_id),
+            )
+
+        # Actualizar plu_supermercado_mapping con el producto_maestro_id
+        supermercado_key = establecimiento.upper()
+        for key in ["OLIMPICA", "CARULLA", "EXITO", "JUMBO"]:
+            if key in supermercado_key:
+                supermercado_key = key.lower()
+                break
+
+        cursor.execute(
+            """
+            UPDATE plu_supermercado_mapping
+            SET producto_maestro_id = %s
+            WHERE codigo_plu = %s AND LOWER(supermercado) = %s
+        """,
+            (producto_id, codigo, supermercado_key),
+        )
+
+        conn.commit()
+        print(f"      ✅ Producto ID={producto_id} actualizado con datos web")
+        return True
+
+    except Exception as e:
+        print(f"      ⚠️ Error actualizando con datos web: {e}")
+        traceback.print_exc()
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════
 # 🎯 FASE 1.1: FUNCIÓN MEJORADA - BUSCAR PAPA PRIMERO
 # ═══════════════════════════════════════════════════════════════
 
@@ -797,19 +919,19 @@ def buscar_o_crear_producto_inteligente(
     establecimiento_id: int = None,
 ) -> Optional[int]:
     """
-    ⭐ VERSIÓN 9.4: Función principal con ENRIQUECIMIENTO WEB
+    ⭐ VERSIÓN 9.5: Función principal con ACTUALIZACIÓN DE PRODUCTOS EXISTENTES
 
     FLUJO:
     ✅ PASO 0: Buscar PAPA (si existe)
-    ✅ PASO 1: Buscar PLU exacto en productos_por_establecimiento
-    ✅ PASO 2: Buscar EAN en productos_maestros_v2
-    ✅ PASO 3: Buscar por nombre similar
+    ✅ PASO 1: Buscar PLU exacto → Si encuentra, ACTUALIZA con datos web
+    ✅ PASO 2: Buscar EAN → Si encuentra, ACTUALIZA con datos web
+    ✅ PASO 3: Buscar por nombre similar → Si encuentra, ACTUALIZA con datos web
     🆕 PASO 3.5: ENRIQUECIMIENTO WEB (si es supermercado VTEX)
     ✅ PASO 4: Crear nuevo producto (con datos web si existen)
     """
     import os
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.4 (con ENRIQUECIMIENTO WEB):")
+    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.5 (ACTUALIZA EXISTENTES CON WEB):")
     print(f"   Código: {codigo or 'Sin código'}")
     print(f"   Nombre OCR: {nombre[:50]}")
     print(f"   Precio: ${precio:,}")
@@ -902,6 +1024,19 @@ def buscar_o_crear_producto_inteligente(
                 )
 
                 conn.commit()
+
+                # 🆕 V9.5: Actualizar con datos web si es supermercado VTEX
+                actualizar_producto_con_datos_web(
+                    producto_id=producto_id,
+                    codigo=codigo,
+                    nombre_ocr=nombre,
+                    establecimiento=establecimiento,
+                    precio=precio,
+                    cursor=cursor,
+                    conn=conn,
+                    establecimiento_id=establecimiento_id,
+                )
+
                 return producto_id
         except Exception as e:
             print(f"   ⚠️ Error buscando PLU en productos_por_establecimiento: {e}")
@@ -939,6 +1074,18 @@ def buscar_o_crear_producto_inteligente(
                     guardar_plu_en_establecimiento(
                         cursor, conn, producto_id, establecimiento_id, codigo, precio
                     )
+
+                # 🆕 V9.5: Actualizar con datos web si es supermercado VTEX
+                actualizar_producto_con_datos_web(
+                    producto_id=producto_id,
+                    codigo=codigo,
+                    nombre_ocr=nombre,
+                    establecimiento=establecimiento,
+                    precio=precio,
+                    cursor=cursor,
+                    conn=conn,
+                    establecimiento_id=establecimiento_id,
+                )
 
                 return producto_id
         except Exception as e:
@@ -1004,6 +1151,18 @@ def buscar_o_crear_producto_inteligente(
                                 codigo,
                                 precio,
                             )
+
+                        # 🆕 V9.5: Actualizar con datos web si es supermercado VTEX
+                        actualizar_producto_con_datos_web(
+                            producto_id=producto_id,
+                            codigo=codigo,
+                            nombre_ocr=nombre,
+                            establecimiento=establecimiento,
+                            precio=precio,
+                            cursor=cursor,
+                            conn=conn,
+                            establecimiento_id=establecimiento_id,
+                        )
 
                         return producto_id
 
@@ -1163,15 +1322,20 @@ def buscar_o_crear_producto_inteligente(
 # MENSAJE DE CARGA
 # ═══════════════════════════════════════════════════════════════
 print("=" * 80)
-print("✅ product_matcher.py V9.4 - CON ENRIQUECIMIENTO WEB (VTEX)")
+print("✅ product_matcher.py V9.5 - ACTUALIZACIÓN DE PRODUCTOS CON DATOS WEB")
 print("=" * 80)
-print("🎯 CAMBIOS V9.4:")
-print("   🆕 PASO 3.5: Enriquecimiento Web antes de crear producto")
-print("   🆕 Busca en cache local (plu_supermercado_mapping) primero")
-print("   🆕 Si no hay cache → Consulta API VTEX")
-print("   🆕 Usa nombre WEB (correcto) en lugar del OCR (con errores)")
-print("   🆕 Obtiene EAN del PLU automáticamente")
-print("   🆕 Guarda en cache para futuras consultas")
+print("🎯 CAMBIOS V9.5:")
+print("   🆕 Actualiza productos EXISTENTES con datos del web")
+print("   🆕 Cuando encuentra producto → Consulta web → Actualiza nombre/EAN")
+print("   🆕 Prioriza nombre del web sobre nombre OCR")
+print("=" * 80)
+print("🎯 CAMBIOS V9.4 (heredados):")
+print("   ✅ PASO 3.5: Enriquecimiento Web antes de crear producto")
+print("   ✅ Busca en cache local (plu_supermercado_mapping) primero")
+print("   ✅ Si no hay cache → Consulta API VTEX")
+print("   ✅ Usa nombre WEB (correcto) en lugar del OCR (con errores)")
+print("   ✅ Obtiene EAN del PLU automáticamente")
+print("   ✅ Guarda en cache para futuras consultas")
 print("=" * 80)
 print("🎯 CAMBIOS V9.3 (heredados):")
 print("   ✅ Busca PAPAS PRIMERO (antes de crear productos)")
