@@ -40,7 +40,7 @@ python-docx==1.1.0
 openpyxl==3.1.2
 
 # PDF (pypdf reemplaza a PyPDF2 que está deprecated)
-pypdf==5.1.0
+pypdf==5.3.0
 
 # HTTP async
-aiohttp==3.11.7
+aiohttp==3.11.10
