@@ -289,6 +289,51 @@ def create_postgresql_tables():
         print("✓ Tabla 'establecimientos' creada")
 
         # ============================================
+        # 1.1.2. CATEGORÍAS
+        # ============================================
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS categorias (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) UNIQUE NOT NULL,
+                descripcion TEXT,
+                icono VARCHAR(50),
+                color VARCHAR(20),
+                activo BOOLEAN DEFAULT TRUE,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+        conn.commit()
+        print("✓ Tabla 'categorias' creada")
+
+        # Insertar categorías básicas si no existen
+        categorias_basicas = [
+            ("Lácteos", "Leche, quesos, yogurt"),
+            ("Carnes", "Res, cerdo, pollo"),
+            ("Frutas y Verduras", "Productos frescos"),
+            ("Panadería", "Pan, galletas"),
+            ("Bebidas", "Jugos, gaseosas, agua"),
+            ("Aseo Personal", "Jabón, shampoo"),
+            ("Aseo Hogar", "Detergentes, limpiadores"),
+            ("Granos y Cereales", "Arroz, frijoles, avena"),
+            ("Enlatados", "Atún, sardinas, conservas"),
+            ("Snacks", "Papas, dulces"),
+            ("Congelados", "Productos congelados"),
+            ("Otros", "Otros productos"),
+        ]
+        for nombre, desc in categorias_basicas:
+            try:
+                cursor.execute(
+                    "INSERT INTO categorias (nombre, descripcion) VALUES (%s, %s) ON CONFLICT (nombre) DO NOTHING",
+                    (nombre, desc),
+                )
+            except:
+                pass
+        conn.commit()
+        print("   ✓ Categorías básicas insertadas")
+
+        # ============================================
         # 1.2. NUEVA ARQUITECTURA DE PRODUCTOS
         # ============================================
 
