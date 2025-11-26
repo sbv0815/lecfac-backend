@@ -366,6 +366,55 @@ def create_postgresql_tables():
             "CREATE INDEX IF NOT EXISTS idx_revision_producto ON productos_revision_admin(producto_maestro_id)",
             "productos_revision_admin.producto",
         )
+        # ============================================
+        # 1.1.4. CORRECCIONES_APRENDIDAS (Sistema de aprendizaje)
+        # ============================================
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS correcciones_aprendidas (
+                id SERIAL PRIMARY KEY,
+                ocr_original TEXT NOT NULL,
+                ocr_normalizado TEXT NOT NULL,
+                nombre_validado TEXT NOT NULL,
+                establecimiento VARCHAR(100),
+                codigo_ean VARCHAR(20),
+                confianza DECIMAL(3,2) DEFAULT 0.5,
+                veces_confirmado INTEGER DEFAULT 1,
+                veces_rechazado INTEGER DEFAULT 0,
+                activo BOOLEAN DEFAULT TRUE,
+                fecha_primera_vez TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_ultima_confirmacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+        conn.commit()
+        print("✓ Tabla 'correcciones_aprendidas' creada")
+
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_correcciones_ocr ON correcciones_aprendidas(ocr_normalizado)",
+            "correcciones_aprendidas.ocr",
+        )
+        crear_indice_seguro(
+            "CREATE INDEX IF NOT EXISTS idx_correcciones_est ON correcciones_aprendidas(establecimiento)",
+            "correcciones_aprendidas.establecimiento",
+        )
+
+        # ============================================
+        # FIX: Eliminar foreign key problemático de items_factura
+        # ============================================
+        print("🔧 Verificando constraints de items_factura...")
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE items_factura
+                DROP CONSTRAINT IF EXISTS items_factura_producto_maestro_id_fkey
+            """
+            )
+            conn.commit()
+            print("   ✓ Constraint legacy eliminado")
+        except Exception as e:
+            print(f"   ⚠️ Constraint: {e}")
+            conn.rollback()
 
         # ============================================
         # 1.2. NUEVA ARQUITECTURA DE PRODUCTOS
