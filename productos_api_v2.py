@@ -496,7 +496,7 @@ async def actualizar_producto(producto_id: int, request: dict):
             return {"success": False, "error": "No hay campos para actualizar"}
 
         # Agregar fecha de actualización
-        updates.append("fecha_actualizacion = CURRENT_TIMESTAMP")
+        updates.append("fecha_ultima_actualizacion = CURRENT_TIMESTAMP")
         params.append(producto_id)
 
         query = f"""
