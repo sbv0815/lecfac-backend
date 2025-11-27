@@ -768,32 +768,37 @@ async def eliminar_producto(producto_id: int):
         print(f"   🗑️  Eliminando producto: {nombre}")
 
         # ========== LIMPIEZA DE TODAS LAS TABLAS RELACIONADAS ==========
-        # Función auxiliar para eliminar de tablas que pueden o no existir
-        def safe_delete(table_name, column_name="producto_maestro_id"):
-            try:
-                cursor.execute(
-                    f"DELETE FROM {table_name} WHERE {column_name} = %s",
-                    (producto_id,),
+        # Función para verificar si una tabla existe
+        def table_exists(table_name):
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = %s
                 )
-                return cursor.rowcount
-            except Exception as e:
-                if "does not exist" in str(e):
-                    conn.rollback()  # Limpiar el error
-                    return 0
-                raise
+            """,
+                (table_name,),
+            )
+            return cursor.fetchone()[0]
+
+        # Función auxiliar para eliminar de tablas
+        def safe_delete(table_name, column_name="producto_maestro_id"):
+            if not table_exists(table_name):
+                return 0
+            cursor.execute(
+                f"DELETE FROM {table_name} WHERE {column_name} = %s",
+                (producto_id,),
+            )
+            return cursor.rowcount
 
         def safe_update(table_name, column_name="producto_maestro_id"):
-            try:
-                cursor.execute(
-                    f"UPDATE {table_name} SET {column_name} = NULL WHERE {column_name} = %s",
-                    (producto_id,),
-                )
-                return cursor.rowcount
-            except Exception as e:
-                if "does not exist" in str(e):
-                    conn.rollback()
-                    return 0
-                raise
+            if not table_exists(table_name):
+                return 0
+            cursor.execute(
+                f"UPDATE {table_name} SET {column_name} = NULL WHERE {column_name} = %s",
+                (producto_id,),
+            )
+            return cursor.rowcount
 
         # 1. Eliminar precios históricos
         precios_eliminados = safe_delete("precios_productos")
@@ -820,11 +825,11 @@ async def eliminar_producto(producto_id: int):
         logger.info(f"   📈 {patrones_eliminados} patrones de compra eliminados")
 
         # 7-11. Eliminar de tablas opcionales (pueden no existir)
-        grupos_eliminados = safe_delete("productos_en_grupo")
-        codigos_eliminados = safe_delete("codigos_alternativos")
-        variantes_eliminadas = safe_delete("variantes_nombres")
-        precios_v2_eliminados = safe_delete("precios_historicos_v2")
-        log_eliminado = safe_delete("log_mejoras_nombres")
+        safe_delete("productos_en_grupo")
+        safe_delete("codigos_alternativos")
+        safe_delete("variantes_nombres")
+        safe_delete("precios_historicos_v2")
+        safe_delete("log_mejoras_nombres")
 
         # 12. FINALMENTE - Eliminar el producto maestro
         cursor.execute(
