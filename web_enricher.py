@@ -2,13 +2,8 @@
 ============================================================================
 WEB ENRICHER - SISTEMA DE ENRIQUECIMIENTO DE PRODUCTOS VÍA WEB
 ============================================================================
-Versión: 1.4
+Versión: 1.3
 Fecha: 2025-11-27
-
-🔧 CAMBIOS V1.4:
-- 🆕 FALLBACK LOSPRECIOS.CO para tiendas sin VTEX (D1, Ara, etc.)
-- Requiere variable de entorno LOSPRECIOS_API_KEY
-- Integración con losprecios_client.py
 
 🔧 CAMBIOS V1.3:
 - Fix: VALIDAR NOMBRE OCR vs NOMBRE WEB en búsqueda por PLU
@@ -23,28 +18,31 @@ Fecha: 2025-11-27
 🔧 CAMBIOS V1.1:
 - Fix: Subir umbral de similitud de 0.3 a 0.6 (evita matches incorrectos)
 - Fix: NO buscar por nombre si tiene menos de 6 caracteres
-- Fix: Logging mejorado para rechazos por baja similitud
 
 PROPÓSITO:
-- Enriquecer datos de productos usando APIs web (VTEX + losprecios.co)
+- Enriquecer datos de productos usando APIs web VTEX
 - Cache de 3 niveles para minimizar consultas externas
 - Obtener nombres correctos, EAN, marcas desde webs de supermercados
 
 FLUJO:
-1. Buscar en plu_supermercado_mapping (cache rápido) → < 1ms
-2. Buscar en productos_web_enriched (cache completo) → < 5ms
-3. Si es VTEX → Consultar API VTEX
-4. Si NO es VTEX → Consultar losprecios.co
-5. VALIDAR NOMBRE: Si OCR y Web no coinciden → rechazar
-6. VALIDAR PRECIO: Si precio web difiere mucho → rechazar
-7. Guardar resultado en cache para futuras consultas
+1. Buscar en plu_supermercado_mapping (cache rápido)
+2. Buscar en productos_web_enriched (cache completo)
+3. Consultar API VTEX (si es supermercado soportado)
+4. VALIDAR NOMBRE: Si OCR y Web no coinciden → rechazar
+5. VALIDAR PRECIO: Si precio web difiere mucho → rechazar
+6. Guardar resultado en cache
 
-SUPERMERCADOS SOPORTADOS:
-VTEX:
-- Carulla, Éxito, Jumbo, Olímpica, Alkosto, Makro
+SUPERMERCADOS SOPORTADOS (VTEX):
+- Carulla
+- Éxito
+- Jumbo
+- Olímpica
+- Alkosto
+- Makro
 
-LOSPRECIOS.CO (requiere API key):
+TIENDAS SIN SOPORTE WEB (usan datos OCR):
 - D1, Ara, Farmatodo, Cruz Verde
+- Se mejoran con correcciones manuales y validación cruzada
 ============================================================================
 """
 
@@ -200,14 +198,10 @@ class WebEnricher:
         # Verificar si es supermercado VTEX
         supermercado_key = normalizar_supermercado(establecimiento)
         if not supermercado_key:
-            # 🆕 V1.3: Intentar con losprecios.co para tiendas NO-VTEX (D1, Ara, etc.)
-            return self._consultar_losprecios_fallback(
-                codigo=codigo,
-                nombre_ocr=nombre_ocr,
-                establecimiento=establecimiento,
-                precio_ocr=precio_ocr,
-                resultado=resultado,
-            )
+            # Para tiendas sin VTEX (D1, Ara, etc.), usar datos del OCR
+            # Se irán mejorando con correcciones manuales y validación cruzada
+            print(f"   ℹ️ {establecimiento} no tiene API web - usando datos OCR")
+            return resultado
 
         # Clasificar código
         tipo_codigo = self._clasificar_codigo(codigo)
@@ -549,115 +543,6 @@ class WebEnricher:
             self.conn.commit()
         except Exception as e:
             print(f"      ⚠️ Error incrementando uso: {e}")
-
-    # ========================================================================
-    # 🆕 V1.3: FALLBACK LOSPRECIOS.CO (PARA D1, ARA, ETC.)
-    # ========================================================================
-
-    def _consultar_losprecios_fallback(
-        self,
-        codigo: str,
-        nombre_ocr: str,
-        establecimiento: str,
-        precio_ocr: int,
-        resultado: ProductoEnriquecido,
-    ) -> ProductoEnriquecido:
-        """
-        🆕 V1.3: Consulta losprecios.co para tiendas que NO usan VTEX.
-
-        Tiendas soportadas: D1, Ara, Farmatodo, Cruz Verde, etc.
-
-        Args:
-            codigo: PLU o EAN
-            nombre_ocr: Nombre del OCR
-            establecimiento: Nombre de la tienda
-            precio_ocr: Precio de la factura
-            resultado: Objeto resultado a llenar
-
-        Returns:
-            ProductoEnriquecido con datos de losprecios.co
-        """
-        import os
-
-        # Verificar si tenemos API key
-        api_key = os.getenv("LOSPRECIOS_API_KEY", "")
-        if not api_key:
-            print(
-                f"   ℹ️ {establecimiento} no es VTEX y no hay API key de losprecios.co"
-            )
-            return resultado
-
-        try:
-            # Importar el cliente
-            from losprecios_client import (
-                LosPreciosClient,
-                obtener_tienda_id,
-                es_tienda_losprecios,
-            )
-
-            # Verificar si la tienda está en losprecios.co
-            tienda_id = obtener_tienda_id(establecimiento)
-            if not tienda_id:
-                print(f"   ℹ️ {establecimiento} no está disponible en losprecios.co")
-                return resultado
-
-            print(f"   🔍 Consultando losprecios.co para {establecimiento}...")
-
-            client = LosPreciosClient(api_key)
-
-            # Clasificar código
-            tipo_codigo = self._clasificar_codigo(codigo)
-
-            # Primero buscar por EAN si parece ser EAN
-            producto_lp = None
-            if tipo_codigo == "EAN" and codigo and len(codigo) >= 8:
-                producto_lp = client.buscar_por_ean(codigo)
-
-            # Si no encontró por EAN, buscar por nombre
-            if not producto_lp and nombre_ocr:
-                productos = client.buscar_por_nombre(nombre_ocr, tienda_id=tienda_id)
-                if productos:
-                    # Tomar el mejor match
-                    producto_lp = productos[0]
-
-            if producto_lp and producto_lp.nombre:
-                # Validar precio si tenemos ambos
-                if precio_ocr > 0 and producto_lp.precio > 0:
-                    ratio = producto_lp.precio / precio_ocr
-                    if ratio > 5.0 or ratio < 0.2:
-                        print(
-                            f"      ⚠️ RECHAZADO: Precio losprecios (${producto_lp.precio:,.0f}) difiere mucho del OCR (${precio_ocr:,})"
-                        )
-                        return resultado
-
-                # Llenar resultado
-                resultado.encontrado = True
-                resultado.codigo_plu = codigo if tipo_codigo == "PLU" else ""
-                resultado.codigo_ean = producto_lp.codigo_ean or ""
-                resultado.nombre_web = producto_lp.nombre.upper()
-                resultado.marca = producto_lp.marca or ""
-                resultado.presentacion = (
-                    f"{producto_lp.tamaño} {producto_lp.unidad}".strip()
-                )
-                resultado.precio_web = int(producto_lp.precio)
-                resultado.fuente = "losprecios.co"
-
-                print(f"      ✅ Encontrado en losprecios.co: {resultado.nombre_web}")
-
-                # Guardar en cache para futuras consultas
-                self._guardar_en_cache_plu(resultado)
-
-            else:
-                print(f"      ℹ️ No encontrado en losprecios.co")
-
-            return resultado
-
-        except ImportError:
-            print(f"   ⚠️ No se pudo importar losprecios_client.py")
-            return resultado
-        except Exception as e:
-            print(f"   ⚠️ Error consultando losprecios.co: {str(e)[:50]}")
-            return resultado
 
     # ========================================================================
     # CONSULTA VTEX
