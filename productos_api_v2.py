@@ -1,4 +1,4 @@
-# VERSION: 2024-11-25-FIX-DELETE - Corregido eliminación con historial_compras_usuario
+# VERSION: 2024-11-27-PAPA-V4 - Sistema de Aprendizaje PAPA
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
@@ -17,13 +17,14 @@ async def listar_productos_v2(
     limite: int = Query(500, ge=1, le=5000),
     busqueda: Optional[str] = None,
     solo_papas: bool = Query(False),
+    filtro: Optional[str] = None,  # 🆕 V4: Filtro por fuente
 ):
     """
-    Lista productos con búsqueda - INCLUYE codigo_lecfac
+    Lista productos con búsqueda - INCLUYE campos PAPA
     """
     print("=" * 80)
     print(
-        f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}, solo_papas={solo_papas}"
+        f"🔥 [MAIN] /api/v2/productos llamado - busqueda={busqueda}, solo_papas={solo_papas}, filtro={filtro}"
     )
     print("=" * 80)
 
@@ -35,6 +36,7 @@ async def listar_productos_v2(
         search_term = busqueda or search
         final_limit = limite if limite != 500 else limit
 
+        # 🆕 V4: Incluir campos PAPA en el SELECT
         query = """
             SELECT
                 pm.id,
@@ -46,7 +48,9 @@ async def listar_productos_v2(
                 pm.producto_papa_id,
                 pm.fecha_actualizacion,
                 COALESCE(c.nombre, 'Sin categoría') as categoria,
-                COUNT(DISTINCT pe.establecimiento_id) as num_establecimientos
+                COUNT(DISTINCT pe.establecimiento_id) as num_establecimientos,
+                pm.confianza_datos,
+                pm.fuente_datos
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
             LEFT JOIN productos_por_establecimiento pe ON pm.id = pe.producto_maestro_id
@@ -60,6 +64,28 @@ async def listar_productos_v2(
                 "(pm.es_producto_papa = TRUE OR pm.producto_papa_id IS NULL)"
             )
             print("👑 Filtrando solo productos PAPA")
+
+        # 🆕 V4: Filtros por fuente de datos
+        if filtro:
+            if filtro == "papa":
+                where_conditions.append("pm.es_producto_papa = TRUE")
+                print("👑 Filtrando productos PAPA validados")
+            elif filtro == "web":
+                where_conditions.append(
+                    "pm.fuente_datos = 'WEB' AND pm.es_producto_papa = FALSE"
+                )
+                print("🌐 Filtrando productos WEB")
+            elif filtro == "ocr":
+                where_conditions.append(
+                    "pm.fuente_datos = 'OCR' AND pm.es_producto_papa = FALSE"
+                )
+                print("📝 Filtrando productos OCR")
+            elif filtro == "sin_ean":
+                where_conditions.append("pm.codigo_ean IS NULL")
+                print("⚠️ Filtrando productos sin EAN")
+            elif filtro == "sin_marca":
+                where_conditions.append("(pm.marca IS NULL OR pm.marca = '')")
+                print("⚠️ Filtrando productos sin marca")
 
         if search_term:
             where_conditions.append(
@@ -83,7 +109,8 @@ async def listar_productos_v2(
 
         query += """
             GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac,
-                    pm.es_producto_papa, pm.producto_papa_id, pm.fecha_actualizacion, c.nombre
+                    pm.es_producto_papa, pm.producto_papa_id, pm.fecha_actualizacion, c.nombre,
+                    pm.confianza_datos, pm.fuente_datos
             ORDER BY pm.id DESC
             LIMIT %s OFFSET %s
         """
@@ -126,6 +153,7 @@ async def listar_productos_v2(
                     }
                 )
 
+            # 🆕 V4: Incluir campos PAPA en respuesta
             resultado.append(
                 {
                     "id": producto[0],
@@ -133,13 +161,15 @@ async def listar_productos_v2(
                     "nombre": producto[2],
                     "marca": producto[3],
                     "codigo_lecfac": producto[4],
-                    "es_producto_papa": producto[5],
+                    "es_producto_papa": producto[5] or False,
                     "producto_papa_id": producto[6],
                     "fecha_actualizacion": (
                         producto[7].isoformat() if producto[7] else None
                     ),
                     "categoria": producto[8],
                     "num_establecimientos": producto[9],
+                    "confianza_datos": float(producto[10]) if producto[10] else 0.5,
+                    "fuente_datos": producto[11] or "OCR",
                     "plus": plus_info,
                 }
             )
@@ -192,7 +222,7 @@ async def listar_categorias():
 @router.get("/api/v2/productos/{producto_id}")
 async def obtener_producto_individual(producto_id: int):
     """
-    Obtiene UN producto por ID - INCLUYE codigo_lecfac
+    Obtiene UN producto por ID - INCLUYE campos PAPA
     """
     print(f"📋 [Router] GET producto ID: {producto_id}")
 
@@ -201,6 +231,7 @@ async def obtener_producto_individual(producto_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # 🆕 V4: Incluir campos PAPA
         cursor.execute(
             """
             SELECT
@@ -212,7 +243,11 @@ async def obtener_producto_individual(producto_id: int):
                 c.nombre as categoria_nombre,
                 pm.veces_visto,
                 pm.es_producto_papa,
-                pm.codigo_lecfac
+                pm.codigo_lecfac,
+                pm.confianza_datos,
+                pm.fuente_datos,
+                pm.fecha_validacion,
+                pm.producto_papa_id
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
             WHERE pm.id = %s
@@ -261,6 +296,7 @@ async def obtener_producto_individual(producto_id: int):
         cursor.close()
         conn.close()
 
+        # 🆕 V4: Respuesta con campos PAPA
         return {
             "id": producto[0],
             "codigo_ean": producto[1] or "",
@@ -273,6 +309,10 @@ async def obtener_producto_individual(producto_id: int):
             "num_establecimientos": len(plus_info),
             "es_producto_papa": producto[7] or False,
             "codigo_lecfac": producto[8],
+            "confianza_datos": float(producto[9]) if producto[9] else 0.5,
+            "fuente_datos": producto[10] or "OCR",
+            "fecha_validacion": producto[11].isoformat() if producto[11] else None,
+            "producto_papa_id": producto[12],
             "plus": plus_info,
         }
 
@@ -374,8 +414,8 @@ async def obtener_plus_producto(producto_id: int):
 @router.put("/api/v2/productos/{producto_id}")
 async def actualizar_producto(producto_id: int, request: dict):
     """
-    Actualiza un producto (nombre, marca, categoría, EAN)
-    VERSION: 2024-11-21-FIX - Corregido bug de indentación en ean_actual
+    Actualiza un producto (nombre, marca, categoría, EAN) + campos PAPA
+    VERSION: 2024-11-27-PAPA-V4 - Soporte sistema de aprendizaje
     """
     print(f"✏️ [Router] PUT producto ID: {producto_id}")
     print(f"   Datos recibidos: {request}")
@@ -387,7 +427,7 @@ async def actualizar_producto(producto_id: int, request: dict):
 
         # Verificar que existe
         cursor.execute(
-            "SELECT nombre_consolidado, codigo_ean FROM productos_maestros_v2 WHERE id = %s",
+            "SELECT nombre_consolidado, codigo_ean, es_producto_papa, fuente_datos FROM productos_maestros_v2 WHERE id = %s",
             (producto_id,),
         )
 
@@ -400,14 +440,15 @@ async def actualizar_producto(producto_id: int, request: dict):
 
         print(f"   Producto actual: {producto_actual[0]}")
 
-        # ✅ CORREGIDO: Obtener EAN actual desde el inicio
         ean_actual = producto_actual[1]
+        era_papa = producto_actual[2]
+        fuente_actual = producto_actual[3]
 
         # Construir UPDATE dinámico
         updates = []
         params = []
 
-        # ✅ CORREGIDO: Procesar nombre_consolidado
+        # Procesar nombre_consolidado
         if "nombre_consolidado" in request:
             nombre = (
                 request["nombre_consolidado"].strip()
@@ -419,23 +460,20 @@ async def actualizar_producto(producto_id: int, request: dict):
                 params.append(nombre)
                 print(f"   ✅ Actualizando nombre: {nombre}")
 
-        # ✅ CORREGIDO: Procesar marca (SEPARADO del EAN)
+        # Procesar marca
         if "marca" in request:
             marca = request["marca"].strip() if request["marca"] else None
             updates.append("marca = %s")
             params.append(marca)
             print(f"   ✅ Actualizando marca: {marca}")
 
-        # ✅ CORREGIDO: Procesar codigo_ean (INDEPENDIENTE de marca)
-        # EAN puede repetirse - es la llave global del producto
+        # Procesar codigo_ean
         advertencia_ean = None
         if "codigo_ean" in request:
             ean_value = request["codigo_ean"].strip() if request["codigo_ean"] else None
             ean_final = ean_value if ean_value else None
 
-            # Solo actualizar si es diferente
             if ean_actual != ean_final:
-                # Verificar si existe en OTRO producto (solo advertencia, no bloqueo)
                 if ean_final:
                     cursor.execute(
                         """
@@ -451,20 +489,23 @@ async def actualizar_producto(producto_id: int, request: dict):
                     conflictos = cursor.fetchall()
 
                     if conflictos:
-                        # Solo advertencia, NO bloquear
                         productos_con_ean = ", ".join(
                             [f"'{c[1]}' (ID:{c[0]})" for c in conflictos]
                         )
                         advertencia_ean = f"⚠️ Este EAN ya existe en: {productos_con_ean}. Considera fusionar estos productos."
                         print(
-                            f"   ⚠️ ADVERTENCIA: EAN {ean_final} existe en otros productos: {productos_con_ean}"
+                            f"   ⚠️ ADVERTENCIA: EAN {ean_final} existe en otros productos"
                         )
 
                 updates.append("codigo_ean = %s")
                 params.append(ean_final)
                 print(f"   ✅ Actualizando EAN: {ean_actual} → {ean_final}")
-            else:
-                print(f"   ℹ️ EAN sin cambios: {ean_actual}")
+
+                # 🆕 V4: Si se agrega EAN, actualizar fuente a WEB (si no era PAPA)
+                if ean_final and not era_papa and "es_producto_papa" not in request:
+                    updates.append("fuente_datos = 'WEB'")
+                    updates.append("confianza_datos = 0.8")
+                    print(f"   🌐 Actualizando fuente a WEB por tener EAN")
 
         # Procesar categoria_id
         if "categoria_id" in request:
@@ -487,8 +528,61 @@ async def actualizar_producto(producto_id: int, request: dict):
                     updates.append("categoria_id = %s")
                     params.append(cat_row[0])
                     print(
-                        f"   ✅ Actualizando categoría por nombre: {categoria_nombre} (ID: {cat_row[0]})"
+                        f"   ✅ Actualizando categoría: {categoria_nombre} (ID: {cat_row[0]})"
                     )
+
+        # ========================================
+        # 🆕 V4: CAMPOS DEL SISTEMA PAPA
+        # ========================================
+
+        # Procesar es_producto_papa
+        if "es_producto_papa" in request:
+            es_papa = request["es_producto_papa"]
+
+            if es_papa:
+                # Marcar como PAPA
+                updates.append("es_producto_papa = TRUE")
+                updates.append("fecha_validacion = CURRENT_TIMESTAMP")
+                updates.append("fuente_datos = 'PAPA'")
+                updates.append("confianza_datos = 1.0")
+                print(f"   👑 Marcando como PAPA (validado)")
+            else:
+                # Quitar marca de PAPA
+                updates.append("es_producto_papa = FALSE")
+                updates.append("fecha_validacion = NULL")
+
+                # Restaurar fuente basada en si tiene EAN
+                cursor.execute(
+                    "SELECT codigo_ean FROM productos_maestros_v2 WHERE id = %s",
+                    (producto_id,),
+                )
+                row = cursor.fetchone()
+                tiene_ean = row and row[0] and len(row[0]) >= 8
+
+                if tiene_ean:
+                    updates.append("fuente_datos = 'WEB'")
+                    updates.append("confianza_datos = 0.8")
+                    print(f"   🌐 Restaurando fuente a WEB (tiene EAN)")
+                else:
+                    updates.append("fuente_datos = 'OCR'")
+                    updates.append("confianza_datos = 0.5")
+                    print(f"   📝 Restaurando fuente a OCR (sin EAN)")
+
+        # Procesar confianza_datos (si se envía explícitamente)
+        if "confianza_datos" in request and request["confianza_datos"] is not None:
+            if "es_producto_papa" not in request:  # Solo si no se está cambiando PAPA
+                confianza = float(request["confianza_datos"])
+                updates.append("confianza_datos = %s")
+                params.append(confianza)
+                print(f"   📊 Actualizando confianza: {confianza}")
+
+        # Procesar fuente_datos (si se envía explícitamente)
+        if "fuente_datos" in request and request["fuente_datos"]:
+            if "es_producto_papa" not in request:  # Solo si no se está cambiando PAPA
+                fuente = request["fuente_datos"]
+                updates.append("fuente_datos = %s")
+                params.append(fuente)
+                print(f"   📌 Actualizando fuente: {fuente}")
 
         if not updates:
             cursor.close()
@@ -496,14 +590,15 @@ async def actualizar_producto(producto_id: int, request: dict):
             return {"success": False, "error": "No hay campos para actualizar"}
 
         # Agregar fecha de actualización
-        updates.append("fecha_ultima_actualizacion = CURRENT_TIMESTAMP")
+        updates.append("fecha_actualizacion = CURRENT_TIMESTAMP")
         params.append(producto_id)
 
         query = f"""
             UPDATE productos_maestros_v2
             SET {', '.join(updates)}
             WHERE id = %s
-            RETURNING id, nombre_consolidado, marca, codigo_ean, categoria_id, codigo_lecfac
+            RETURNING id, nombre_consolidado, marca, codigo_ean, categoria_id, codigo_lecfac,
+                      es_producto_papa, confianza_datos, fuente_datos
         """
 
         print(f"   🔍 Query: {query}")
@@ -528,10 +623,12 @@ async def actualizar_producto(producto_id: int, request: dict):
                 "codigo_ean": updated[3],
                 "categoria_id": updated[4],
                 "codigo_lecfac": updated[5],
+                "es_producto_papa": updated[6],
+                "confianza_datos": float(updated[7]) if updated[7] else 0.5,
+                "fuente_datos": updated[8] or "OCR",
             },
         }
 
-        # Agregar advertencia si existe
         if advertencia_ean:
             response["advertencia"] = advertencia_ean
 
@@ -821,6 +918,95 @@ async def eliminar_producto(producto_id: int):
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================================
+# 🆕 V4: ENDPOINTS DE ESTADÍSTICAS PAPA
+# ============================================================
+
+
+@router.get("/api/v2/productos/estadisticas/fuentes")
+async def estadisticas_por_fuente():
+    """
+    Obtiene estadísticas de productos por fuente de datos
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                fuente_datos,
+                es_producto_papa,
+                COUNT(*) as cantidad,
+                ROUND(AVG(confianza_datos)::numeric, 2) as confianza_promedio
+            FROM productos_maestros_v2
+            GROUP BY fuente_datos, es_producto_papa
+            ORDER BY fuente_datos, es_producto_papa
+        """
+        )
+
+        rows = cursor.fetchall()
+
+        # Contar totales
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN es_producto_papa = TRUE THEN 1 ELSE 0 END) as papas,
+                SUM(CASE WHEN fuente_datos = 'WEB' AND es_producto_papa = FALSE THEN 1 ELSE 0 END) as web,
+                SUM(CASE WHEN fuente_datos = 'OCR' AND es_producto_papa = FALSE THEN 1 ELSE 0 END) as ocr,
+                SUM(CASE WHEN codigo_ean IS NOT NULL THEN 1 ELSE 0 END) as con_ean,
+                SUM(CASE WHEN codigo_ean IS NULL THEN 1 ELSE 0 END) as sin_ean
+            FROM productos_maestros_v2
+        """
+        )
+
+        totales = cursor.fetchone()
+
+        cursor.close()
+
+        total = totales[0] or 0
+        papas = totales[1] or 0
+        web = totales[2] or 0
+        ocr = totales[3] or 0
+
+        calidad = round(((papas + web) / total * 100), 1) if total > 0 else 0
+
+        return {
+            "success": True,
+            "estadisticas": {
+                "total": total,
+                "papas": papas,
+                "web": web,
+                "ocr": ocr,
+                "con_ean": totales[4] or 0,
+                "sin_ean": totales[5] or 0,
+                "porcentaje_calidad": calidad,
+            },
+            "detalle": [
+                {
+                    "fuente": row[0],
+                    "es_papa": row[1],
+                    "cantidad": row[2],
+                    "confianza_promedio": float(row[3]) if row[3] else 0.5,
+                }
+                for row in rows
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo estadísticas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+
+# ============================================================
+# ENDPOINT DE ENRIQUECIMIENTO (mantener compatibilidad)
+# ============================================================
 
 from lecfac_enricher import ProductEnricher
 

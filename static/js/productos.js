@@ -1,4 +1,4 @@
-console.log("🚀 Inicializando Gestión de Productos v3.0 - INTEGRADO CON PLUs");
+console.log("🚀 Inicializando Gestión de Productos v4.0 - SISTEMA DE APRENDIZAJE PAPA");
 
 // =============================================================
 // Variables globales
@@ -9,7 +9,7 @@ let totalPaginas = 1;
 let productosCache = [];
 let coloresCache = null;
 let timeoutBusqueda = null;
-let establecimientosCache = []; // ✅ NUEVO - Para gestión de PLUs
+let establecimientosCache = [];
 
 // =============================================================
 // 🌐 Base API
@@ -19,7 +19,7 @@ function getApiBase() {
 }
 
 // =============================================================
-// ✅ CARGAR ESTABLECIMIENTOS (Integrado desde funciones_plu_modal.js)
+// ✅ CARGAR ESTABLECIMIENTOS
 // =============================================================
 async function cargarEstablecimientosCache() {
     if (establecimientosCache.length > 0) {
@@ -83,7 +83,6 @@ async function cargarProductos(pagina = 1) {
         }
 
         console.log(`📦 Cargando productos - Página ${pagina}`);
-        console.log("🌐 URL:", url);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -103,7 +102,7 @@ async function cargarProductos(pagina = 1) {
 
         paginaActual = pagina;
 
-        console.log(`✅ ${totalProductos} productos totales, mostrando ${productosPagina.length} en página ${pagina}`);
+        console.log(`✅ ${totalProductos} productos totales, mostrando ${productosPagina.length}`);
 
         if (productosCache.length === 0 && busqueda) {
             mostrarSinResultados(busqueda);
@@ -191,7 +190,7 @@ function mostrarSinResultados(busqueda) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="13" style="text-align: center; padding: 40px;">
+                <td colspan="14" style="text-align: center; padding: 40px;">
                     <p style="font-size: 18px; margin-bottom: 10px;">
                         No se encontraron productos para: <strong>"${busqueda}"</strong>
                     </p>
@@ -209,7 +208,7 @@ function mostrarError(error) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="13" style="text-align: center; padding: 40px; color: #dc2626;">
+                <td colspan="14" style="text-align: center; padding: 40px; color: #dc2626;">
                     <p>❌ Error cargando productos</p>
                     <p style="font-size: 14px; color: #666;">${error.message}</p>
                     <button class="btn-primary" onclick="cargarProductos(${paginaActual})" style="margin-top: 10px;">
@@ -222,7 +221,72 @@ function mostrarError(error) {
 }
 
 // =============================================================
-// ⭐ MOSTRAR PRODUCTOS - CORREGIDO
+// 🆕 V4.0: DETERMINAR FUENTE DEL DATO
+// =============================================================
+function determinarFuenteDato(producto) {
+    /*
+     * Determina de dónde viene el dato:
+     * - 👑 PAPA: Producto padre validado (es_producto_papa = true)
+     * - 🌐 WEB: Tiene EAN y nombre largo (vino del web enricher)
+     * - 📝 OCR: Solo tiene datos del OCR (puede tener errores)
+     */
+
+    // Si es producto PAPA → máxima confianza
+    if (producto.es_producto_papa) {
+        return {
+            fuente: 'PAPA',
+            icono: '👑',
+            color: '#059669',
+            bgColor: '#d1fae5',
+            texto: 'Validado',
+            confianza: 100,
+            descripcion: 'Datos verificados manualmente'
+        };
+    }
+
+    // Usar fuente_datos del backend si existe
+    if (producto.fuente_datos === 'WEB') {
+        return {
+            fuente: 'WEB',
+            icono: '🌐',
+            color: '#2563eb',
+            bgColor: '#dbeafe',
+            texto: 'Web',
+            confianza: Math.round((producto.confianza_datos || 0.8) * 100),
+            descripcion: 'Datos del catálogo web'
+        };
+    }
+
+    // Si tiene EAN válido (13+ dígitos) y nombre largo → probablemente del WEB
+    const tieneEAN = producto.codigo_ean && producto.codigo_ean.length >= 8;
+    const nombreLargo = producto.nombre && producto.nombre.length > 20;
+
+    if (tieneEAN && nombreLargo) {
+        return {
+            fuente: 'WEB',
+            icono: '🌐',
+            color: '#2563eb',
+            bgColor: '#dbeafe',
+            texto: 'Web',
+            confianza: Math.round((producto.confianza_datos || 0.7) * 100),
+            descripcion: 'Datos del catálogo web'
+        };
+    }
+
+    // Por defecto → OCR (puede tener errores)
+    return {
+        fuente: 'OCR',
+        icono: '📝',
+        color: '#d97706',
+        bgColor: '#fef3c7',
+        texto: 'OCR',
+        confianza: Math.round((producto.confianza_datos || 0.5) * 100),
+        descripcion: '⚠️ Datos de factura - puede tener errores'
+    };
+}
+
+// =============================================================
+// ⭐ MOSTRAR PRODUCTOS - V4.0 CON FUENTE DE DATOS
 // =============================================================
 function mostrarProductos(productos) {
     const tbody = document.getElementById("productos-body");
@@ -233,7 +297,7 @@ function mostrarProductos(productos) {
     if (!productos || productos.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="13" style="text-align: center; padding: 40px;">
+                <td colspan="14" style="text-align: center; padding: 40px;">
                     No hay productos para mostrar
                 </td>
             </tr>
@@ -242,6 +306,7 @@ function mostrarProductos(productos) {
     }
 
     productos.forEach((p) => {
+        // Procesar PLUs
         let plusArray = p.plus;
         if (typeof p.plus === 'string') {
             try {
@@ -254,58 +319,98 @@ function mostrarProductos(productos) {
             plusArray = [];
         }
 
-        let plusHTML = '<span style="color: #999;">Sin PLUs</span>';
-        let establecimientosHTML = '<span style="color: #999;">-</span>';
-
+        // PLUs HTML
+        let plusHTML = '<span style="color: #999; font-size: 11px;">Sin PLUs</span>';
         if (plusArray && plusArray.length > 0) {
             plusHTML = plusArray.map(plu =>
-                `<span class="badge badge-info">${plu.codigo || 'N/A'}</span>`
-            ).join(' ');
-
-            establecimientosHTML = plusArray.map(plu =>
-                `<span class="badge badge-success">🏪 ${plu.establecimiento || 'Desconocido'}</span>`
+                `<code style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 3px; font-size: 11px;">${plu.codigo || 'N/A'}</code>`
             ).join(' ');
         }
 
+        // Establecimiento HTML
+        let establecimientosHTML = '<span style="color: #999;">-</span>';
+        if (plusArray && plusArray.length > 0) {
+            establecimientosHTML = plusArray.map(plu =>
+                `<span style="background: #d1fae5; color: #059669; padding: 2px 6px; border-radius: 3px; font-size: 10px;">${plu.establecimiento || '?'}</span>`
+            ).join(' ');
+        }
+
+        // Precio
         let precioHTML = '<span style="color: #999;">-</span>';
         if (plusArray && plusArray.length > 0 && plusArray[0].precio > 0) {
             precioHTML = `$${parseInt(plusArray[0].precio).toLocaleString('es-CO')}`;
         }
 
-        const marcaHTML = p.marca || '<span style="color: #999;">Sin marca</span>';
-        const categoriaHTML = p.categoria || '<span style="color: #999;">Sin categoría</span>';
+        // 🆕 V4.0: FUENTE DEL DATO
+        const fuenteInfo = determinarFuenteDato(p);
+        const fuenteHTML = `
+            <span style="
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                background: ${fuenteInfo.bgColor};
+                color: ${fuenteInfo.color};
+                padding: 3px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: 600;
+                cursor: help;
+            " title="${fuenteInfo.descripcion} (Confianza: ${fuenteInfo.confianza}%)">
+                ${fuenteInfo.icono} ${fuenteInfo.texto}
+            </span>
+        `;
 
-        let codigoLecfacHTML = '<span style="color: #999;">-</span>';
-        if (p.codigo_lecfac) {
-            codigoLecfacHTML = `<code style="background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${p.codigo_lecfac}</code>`;
+        // EAN con indicador
+        let eanHTML = '<span style="color: #999; font-size: 11px;">-</span>';
+        if (p.codigo_ean) {
+            const eanColor = fuenteInfo.fuente === 'PAPA' ? '#059669' :
+                fuenteInfo.fuente === 'WEB' ? '#2563eb' : '#666';
+            eanHTML = `<code style="font-size: 11px; color: ${eanColor};">${p.codigo_ean}</code>`;
         }
 
-        const estadoBadges = [];
-        if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning">Sin EAN</span>');
-        if (!p.marca) estadoBadges.push('<span class="badge badge-warning">Sin Marca</span>');
-        if (p.categoria === 'Sin categoría' || !p.categoria) estadoBadges.push('<span class="badge badge-warning">Sin Categoría</span>');
-        const estadoHTML = estadoBadges.length > 0 ?
-            estadoBadges.join(' ') :
-            '<span class="badge badge-success">Completo</span>';
+        // Nombre con estilo según fuente
+        const nombreStyle = fuenteInfo.fuente === 'OCR' ?
+            'color: #92400e; font-style: italic;' :
+            'color: #111;';
 
-        // ✅ CORREGIDO: Todos los botones dentro de la celda de acciones
+        // Marca
+        const marcaHTML = p.marca || '<span style="color: #999; font-size: 11px;">-</span>';
+
+        // Estado badges
+        const estadoBadges = [];
+        if (!p.codigo_ean) estadoBadges.push('<span class="badge badge-warning" style="font-size: 10px;">Sin EAN</span>');
+        if (!p.marca) estadoBadges.push('<span class="badge badge-warning" style="font-size: 10px;">Sin Marca</span>');
+
+        // 🆕 Botón para marcar como PAPA
+        const botonPapa = p.es_producto_papa ?
+            `<button class="btn-small" style="background: #d1fae5; color: #059669; border: 1px solid #059669; cursor: pointer;"
+                     onclick="quitarPapa(${p.id})" title="✓ Validado - Click para quitar">
+                👑
+            </button>` :
+            `<button class="btn-small" style="background: #f3f4f6; color: #6b7280; cursor: pointer;"
+                     onclick="marcarComoPapa(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}')" title="Marcar como validado (PAPA)">
+                ⭐
+            </button>`;
+
+        // Fila con estilo según fuente
+        const rowStyle = fuenteInfo.fuente === 'OCR' ? 'background: #fffbeb;' : '';
+
         const row = `
-            <tr>
+            <tr style="${rowStyle}">
                 <td class="checkbox-cell">
                     <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
                 </td>
-                <td>${p.id}</td>
-                <td>${p.codigo_ean || '<span style="color: #999;">-</span>'}</td>
+                <td style="font-size: 12px;">${p.id}</td>
+                <td>${fuenteHTML}</td>
+                <td>${eanHTML}</td>
                 <td>${plusHTML}</td>
                 <td>${establecimientosHTML}</td>
-                <td><strong>${p.nombre || '-'}</strong></td>
-                <td>${marcaHTML}</td>
-                <td>${categoriaHTML}</td>
-                <td>${codigoLecfacHTML}</td>
-                <td>${precioHTML}</td>
-                <td>${p.num_establecimientos || 0}</td>
-                <td>${estadoHTML}</td>
-                <td>
+                <td style="${nombreStyle}"><strong>${p.nombre || '-'}</strong></td>
+                <td style="font-size: 12px;">${marcaHTML}</td>
+                <td style="font-size: 12px;">${precioHTML}</td>
+                <td style="font-size: 11px;">${estadoBadges.join(' ') || '<span style="color: #059669;">✓</span>'}</td>
+                <td style="white-space: nowrap;">
+                    ${botonPapa}
                     <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
                         ✏️
                     </button>
@@ -327,17 +432,110 @@ function verHistorial(id) {
 }
 
 // =============================================================
+// 🆕 V4.0: MARCAR COMO PRODUCTO PAPA (VALIDADO)
+// =============================================================
+async function marcarComoPapa(id, nombre) {
+    const confirmMsg = `¿Marcar "${nombre}" como producto VALIDADO (PAPA)?
+
+Esto significa que:
+✅ El PLU es correcto
+✅ El EAN es correcto
+✅ El nombre es correcto
+
+Los futuros escaneos usarán estos datos como referencia.`;
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                es_producto_papa: true,
+                confianza_datos: 1.0,
+                fuente_datos: 'PAPA'
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Error al marcar como PAPA');
+        }
+
+        mostrarAlerta(`✅ "${nombre}" marcado como producto VALIDADO`, 'success');
+        cargarProductos(paginaActual);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        mostrarAlerta(`❌ Error: ${error.message}`, 'error');
+    }
+}
+
+// =============================================================
+// 🆕 V4.0: QUITAR MARCA DE PAPA
+// =============================================================
+async function quitarPapa(id) {
+    if (!confirm('¿Quitar la validación de este producto?\n\nVolverá a mostrar la fuente original (WEB u OCR).')) {
+        return;
+    }
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                es_producto_papa: false,
+                fuente_datos: null  // El backend determinará si es WEB u OCR
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Error');
+        }
+
+        mostrarAlerta('✅ Validación removida', 'success');
+        cargarProductos(paginaActual);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        mostrarAlerta(`❌ Error: ${error.message}`, 'error');
+    }
+}
+
+// =============================================================
 // Actualizar estadísticas y paginación
 // =============================================================
 function actualizarEstadisticas(data) {
     const stats = document.querySelectorAll('.stat-value');
     if (stats.length >= 4 && data) {
-        stats[0].textContent = data.total || '0';
-        const conEan = productosCache.filter(p => p.codigo_ean).length;
-        stats[1].textContent = conEan;
-        const sinMarca = productosCache.filter(p => !p.marca).length;
-        stats[2].textContent = sinMarca;
-        stats[3].textContent = '0';
+        stats[0].textContent = data.total || productosCache.length || '0';
+
+        // Contar por fuente
+        const papas = productosCache.filter(p => p.es_producto_papa).length;
+        const conEanWeb = productosCache.filter(p => p.codigo_ean && !p.es_producto_papa).length;
+        const soloOcr = productosCache.filter(p => !p.codigo_ean && !p.es_producto_papa).length;
+
+        if (stats.length >= 4) {
+            stats[1].textContent = papas;
+            stats[2].textContent = conEanWeb;
+            stats[3].textContent = soloOcr;
+        }
+    }
+
+    // Actualizar labels si existen
+    const labels = document.querySelectorAll('.stat-label');
+    if (labels.length >= 4) {
+        labels[0].textContent = 'Total Productos';
+        labels[1].textContent = '👑 Validados (PAPA)';
+        labels[2].textContent = '🌐 Con EAN (Web)';
+        labels[3].textContent = '📝 Solo OCR (revisar)';
     }
 }
 
@@ -367,7 +565,7 @@ function limpiarFiltros() {
 }
 
 // =============================================================
-// ✅ EDITAR PRODUCTO
+// ✅ EDITAR PRODUCTO - V4.0 CON FUENTE
 // =============================================================
 async function editarProducto(id) {
     console.log("✏️ Editando producto:", id);
@@ -386,7 +584,7 @@ async function editarProducto(id) {
         // Llenar formulario
         document.getElementById("edit-id").value = producto.id;
         document.getElementById("edit-ean").value = producto.codigo_ean || "";
-        document.getElementById("edit-nombre-norm").value = producto.nombre_consolidado || "";
+        document.getElementById("edit-nombre-norm").value = producto.nombre_consolidado || producto.nombre || "";
         document.getElementById("edit-nombre-com").value = producto.nombre_comercial || "";
         document.getElementById("edit-marca").value = producto.marca || "";
         document.getElementById("edit-categoria").value = producto.categoria || "";
@@ -398,6 +596,16 @@ async function editarProducto(id) {
         document.getElementById("edit-precio-promedio").value = producto.precio_promedio ?
             `$${producto.precio_promedio.toLocaleString('es-CO')}` : "Sin datos";
         document.getElementById("edit-num-establecimientos").value = producto.num_establecimientos || "0";
+
+        // 🆕 V4.0: Mostrar fuente del dato en el modal
+        const fuenteInfo = determinarFuenteDato(producto);
+        mostrarFuenteEnModal(fuenteInfo, producto);
+
+        // Checkbox de PAPA
+        const checkPapa = document.getElementById("edit-es-papa");
+        if (checkPapa) {
+            checkPapa.checked = producto.es_producto_papa || false;
+        }
 
         // Habilitar campos
         habilitarCamposEdicion();
@@ -415,11 +623,60 @@ async function editarProducto(id) {
 }
 
 // =============================================================
+// 🆕 V4.0: MOSTRAR FUENTE EN MODAL
+// =============================================================
+function mostrarFuenteEnModal(fuenteInfo, producto) {
+    // Buscar o crear contenedor de fuente
+    let fuenteContainer = document.getElementById("edit-fuente-container");
+
+    if (!fuenteContainer) {
+        // Crear el contenedor si no existe (lo insertamos antes del primer form-group)
+        const formRow = document.querySelector('.modal-body .form-row');
+        if (formRow) {
+            fuenteContainer = document.createElement('div');
+            fuenteContainer.id = 'edit-fuente-container';
+            fuenteContainer.style.cssText = 'grid-column: 1 / -1; margin-bottom: 15px;';
+            formRow.parentNode.insertBefore(fuenteContainer, formRow);
+        }
+    }
+
+    if (fuenteContainer) {
+        const warningHtml = fuenteInfo.fuente === 'OCR' ?
+            `<p style="color: #d97706; margin-top: 8px; font-size: 13px;">
+                ⚠️ Este producto viene del OCR y puede tener errores.
+                <strong>Verifica los datos antes de marcar como PAPA.</strong>
+            </p>` : '';
+
+        fuenteContainer.innerHTML = `
+            <div style="
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                background: ${fuenteInfo.bgColor};
+                color: ${fuenteInfo.color};
+                padding: 12px 16px;
+                border-radius: 8px;
+                border-left: 4px solid ${fuenteInfo.color};
+            ">
+                <span style="font-size: 24px;">${fuenteInfo.icono}</span>
+                <div>
+                    <div style="font-weight: 600; font-size: 14px;">
+                        Fuente: ${fuenteInfo.texto}
+                    </div>
+                    <div style="font-size: 12px; opacity: 0.9;">
+                        Confianza: ${fuenteInfo.confianza}% - ${fuenteInfo.descripcion}
+                    </div>
+                </div>
+            </div>
+            ${warningHtml}
+        `;
+    }
+}
+
+// =============================================================
 // Habilitar campos de edición
 // =============================================================
 function habilitarCamposEdicion() {
-    console.log('🔓 Habilitando campos de edición...');
-
     const camposEditables = [
         'edit-ean',
         'edit-nombre-norm',
@@ -438,7 +695,6 @@ function habilitarCamposEdicion() {
             campo.style.background = 'white';
             campo.style.cursor = 'text';
             campo.style.border = '1px solid #d1d5db';
-            console.log(`   ✅ Campo habilitado: ${fieldId}`);
         }
     });
 
@@ -449,17 +705,20 @@ function habilitarCamposEdicion() {
 }
 
 // =============================================================
-// ✅ GUARDAR EDICIÓN - VERSIÓN INTEGRADA
+// ✅ GUARDAR EDICIÓN - V4.0 CON PAPA
 // =============================================================
 async function guardarEdicion() {
-    console.log('💾 Iniciando guardado de edición...');
+    console.log('💾 Guardando edición...');
 
     const apiBase = getApiBase();
     const productoId = document.getElementById('edit-id').value;
     const nombreConsolidado = document.getElementById('edit-nombre-norm').value;
     const marca = document.getElementById('edit-marca').value;
     const codigoEan = document.getElementById('edit-ean').value;
-    const categoria = document.getElementById('edit-categoria').value;
+
+    // 🆕 V4.0: Checkbox de PAPA
+    const checkPapa = document.getElementById("edit-es-papa");
+    const esPapa = checkPapa ? checkPapa.checked : false;
 
     if (!productoId) {
         mostrarAlerta('❌ Error: No se encontró el ID del producto', 'error');
@@ -476,13 +735,15 @@ async function guardarEdicion() {
         const datosProducto = {
             nombre_consolidado: nombreConsolidado.trim(),
             marca: marca.trim() || null,
-            codigo_ean: codigoEan.trim() || null
+            codigo_ean: codigoEan.trim() || null,
+            es_producto_papa: esPapa
         };
 
-        // NO enviar categoría si es texto libre sin soporte backend
-        // if (categoria && categoria.trim() && categoria !== 'Sin categoría') {
-        //     datosProducto.categoria = categoria.trim();
-        // }
+        // Si se marca como PAPA, establecer máxima confianza
+        if (esPapa) {
+            datosProducto.confianza_datos = 1.0;
+            datosProducto.fuente_datos = 'PAPA';
+        }
 
         console.log('📦 Guardando producto:', datosProducto);
 
@@ -494,7 +755,6 @@ async function guardarEdicion() {
 
         if (!responseProducto.ok) {
             const errorData = await responseProducto.json().catch(() => ({ error: 'Error desconocido' }));
-            console.error('❌ Error del servidor:', errorData);
             throw new Error(errorData.detail || errorData.error || `HTTP ${responseProducto.status}`);
         }
 
@@ -507,15 +767,9 @@ async function guardarEdicion() {
         }
 
         // 2️⃣ GUARDAR PLUs
-        console.log('🔍 Recopilando PLUs...');
         const plusData = recopilarPLUsParaGuardar();
 
-        console.log('📋 PLUs recopilados:', plusData);
-
         if (plusData.plus.length > 0) {
-            console.log('💾 Enviando PLUs al backend...');
-            console.log('📤 Payload:', JSON.stringify(plusData, null, 2));
-
             const responsePlus = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -525,28 +779,14 @@ async function guardarEdicion() {
             if (responsePlus.ok) {
                 const resultadoPlus = await responsePlus.json();
                 console.log('✅ PLUs actualizados:', resultadoPlus);
-
-                const detalles = [];
-                if (resultadoPlus.actualizados > 0) detalles.push(`${resultadoPlus.actualizados} actualizado(s)`);
-                if (resultadoPlus.creados > 0) detalles.push(`${resultadoPlus.creados} creado(s)`);
-                if (resultadoPlus.eliminados > 0) detalles.push(`${resultadoPlus.eliminados} eliminado(s)`);
-
-                mostrarAlerta(
-                    detalles.length > 0
-                        ? `✅ Producto y PLUs guardados: ${detalles.join(', ')}`
-                        : '✅ Producto actualizado correctamente',
-                    'success'
-                );
-            } else {
-                const errorPlus = await responsePlus.json().catch(() => ({ error: 'Error en PLUs' }));
-                console.error('❌ Error guardando PLUs:', errorPlus);
-                mostrarAlerta('⚠️ Producto guardado pero hubo error en PLUs: ' + (errorPlus.detail || errorPlus.error), 'warning');
             }
-        } else {
-            console.log('ℹ️ No hay PLUs para guardar');
-            mostrarAlerta('✅ Producto actualizado correctamente', 'success');
         }
 
+        const mensajeExito = esPapa ?
+            '✅ Producto VALIDADO (PAPA) y guardado correctamente' :
+            '✅ Producto actualizado correctamente';
+
+        mostrarAlerta(mensajeExito, 'success');
         cerrarModal('modal-editar');
         await cargarProductos(paginaActual);
 
@@ -557,7 +797,7 @@ async function guardarEdicion() {
 }
 
 // =============================================================
-// ✅ CARGAR PLUs DEL PRODUCTO - VERSIÓN INTEGRADA
+// ✅ CARGAR PLUs DEL PRODUCTO
 // =============================================================
 async function cargarPLUsProducto(productoId) {
     console.log(`📋 Cargando PLUs del producto ${productoId}`);
@@ -568,7 +808,6 @@ async function cargarPLUsProducto(productoId) {
         return;
     }
 
-    // Asegurar que los establecimientos estén cargados
     await cargarEstablecimientosCache();
 
     const apiBase = getApiBase();
@@ -583,20 +822,12 @@ async function cargarPLUsProducto(productoId) {
         contenedor.innerHTML = '';
 
         if (!data.plus || data.plus.length === 0) {
-            console.log('ℹ️ No hay PLUs, agregando uno vacío');
             agregarPLUEditable();
             return;
         }
 
         data.plus.forEach((plu, index) => {
             const pluId = plu.id || '';
-
-            console.log(`   PLU ${index + 1}:`, {
-                id: pluId,
-                codigo: plu.codigo_plu,
-                establecimiento_id: plu.establecimiento_id,
-                precio: plu.precio_unitario
-            });
 
             const pluDiv = document.createElement('div');
             pluDiv.className = 'plu-item';
@@ -617,25 +848,15 @@ async function cargarPLUsProducto(productoId) {
                     </div>
                     <div class="form-group">
                         <label style="display: block; margin-bottom: 5px;">Código PLU</label>
-                        <input type="text"
-                               class="plu-codigo"
-                               value="${plu.codigo_plu || ''}"
-                               placeholder="Ej: 1234"
-                               style="width: 100%; padding: 8px;">
+                        <input type="text" class="plu-codigo" value="${plu.codigo_plu || ''}"
+                               placeholder="Ej: 1234" style="width: 100%; padding: 8px;">
                     </div>
                     <div class="form-group">
                         <label style="display: block; margin-bottom: 5px;">Precio</label>
-                        <input type="number"
-                               class="plu-precio"
-                               value="${plu.precio_unitario || 0}"
-                               placeholder="0"
-                               min="0"
-                               step="1"
-                               style="width: 100%; padding: 8px;">
+                        <input type="number" class="plu-precio" value="${plu.precio_unitario || 0}"
+                               placeholder="0" min="0" step="1" style="width: 100%; padding: 8px;">
                     </div>
-                    <button type="button"
-                            class="btn-remove-plu"
-                            onclick="this.closest('.plu-item').remove();"
+                    <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
                             style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
                         🗑️
                     </button>
@@ -644,8 +865,6 @@ async function cargarPLUsProducto(productoId) {
 
             contenedor.appendChild(pluDiv);
         });
-
-        console.log(`✅ ${data.plus.length} PLUs cargados`);
 
     } catch (error) {
         console.error('❌ Error cargando PLUs:', error);
@@ -657,8 +876,6 @@ async function cargarPLUsProducto(productoId) {
 // ✅ AGREGAR PLU EDITABLE
 // =============================================================
 async function agregarPLUEditable() {
-    console.log('➕ Agregando nuevo PLU');
-
     await cargarEstablecimientosCache();
 
     const contenedor = document.getElementById('contenedorPLUs');
@@ -672,7 +889,7 @@ async function agregarPLUEditable() {
     pluDiv.dataset.pluId = '';
 
     pluDiv.innerHTML = `
-        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px; background: #f0fdf4;">
+        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #10b981; border-radius: 6px; margin-bottom: 10px; background: #f0fdf4;">
             <div class="form-group">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500;">Establecimiento</label>
                 <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
@@ -684,23 +901,15 @@ async function agregarPLUEditable() {
             </div>
             <div class="form-group">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500;">Código PLU</label>
-                <input type="text"
-                       class="plu-codigo"
-                       placeholder="Ej: 1234"
+                <input type="text" class="plu-codigo" placeholder="Ej: 1234"
                        style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
             </div>
             <div class="form-group">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500;">Precio</label>
-                <input type="number"
-                       class="plu-precio"
-                       placeholder="0"
-                       min="0"
-                       step="1"
+                <input type="number" class="plu-precio" placeholder="0" min="0" step="1"
                        style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
             </div>
-            <button type="button"
-                    class="btn-remove-plu"
-                    onclick="this.closest('.plu-item').remove();"
+            <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
                     style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
                 🗑️
             </button>
@@ -708,17 +917,14 @@ async function agregarPLUEditable() {
     `;
 
     contenedor.appendChild(pluDiv);
-    console.log('✅ Nuevo PLU agregado');
 }
 
 // =============================================================
-// ✅ RECOPILAR PLUs PARA GUARDAR - VERSIÓN INTEGRADA
+// ✅ RECOPILAR PLUs PARA GUARDAR
 // =============================================================
 function recopilarPLUsParaGuardar() {
     const plusItems = document.querySelectorAll('.plu-item');
     const plus = [];
-
-    console.log(`📋 Recopilando ${plusItems.length} PLUs del formulario...`);
 
     plusItems.forEach((item, index) => {
         const pluId = item.dataset.pluId;
@@ -726,26 +932,13 @@ function recopilarPLUsParaGuardar() {
         const codigoInput = item.querySelector('.plu-codigo');
         const precioInput = item.querySelector('.plu-precio');
 
-        if (!establecimientoSelect || !codigoInput) {
-            console.warn(`⚠️ PLU ${index + 1}: Faltan campos`);
-            return;
-        }
+        if (!establecimientoSelect || !codigoInput) return;
 
         const establecimientoId = parseInt(establecimientoSelect.value);
         const codigo = codigoInput.value.trim();
         const precio = precioInput ? parseFloat(precioInput.value) || 0 : 0;
 
-        console.log(`   PLU ${index + 1}:`, {
-            pluId: pluId || 'NUEVO',
-            establecimientoId,
-            codigo,
-            precio
-        });
-
-        if (!codigo || !establecimientoId) {
-            console.warn(`   ⚠️ PLU ${index + 1} incompleto`);
-            return;
-        }
+        if (!codigo || !establecimientoId) return;
 
         const pluData = {
             codigo_plu: codigo,
@@ -758,15 +951,9 @@ function recopilarPLUsParaGuardar() {
         }
 
         plus.push(pluData);
-        console.log(`   ✅ PLU válido:`, pluData);
     });
 
-    console.log(`📊 Total PLUs válidos: ${plus.length}`);
-
-    return {
-        plus,
-        plus_a_eliminar: []
-    };
+    return { plus, plus_a_eliminar: [] };
 }
 
 // =============================================================
@@ -774,6 +961,12 @@ function recopilarPLUsParaGuardar() {
 // =============================================================
 function cerrarModal(modalId) {
     document.getElementById(modalId)?.classList.remove("active");
+
+    // Limpiar contenedor de fuente al cerrar
+    const fuenteContainer = document.getElementById("edit-fuente-container");
+    if (fuenteContainer) {
+        fuenteContainer.innerHTML = '';
+    }
 }
 
 function switchTab(tabName) {
@@ -805,11 +998,6 @@ function toggleProductSelection(id) {
 
     document.getElementById('btn-fusionar').disabled = selected < 2;
     document.getElementById('btn-deseleccionar').disabled = selected === 0;
-
-    const btnCorreccion = document.getElementById('btn-correccion-masiva');
-    if (btnCorreccion) {
-        btnCorreccion.disabled = selected === 0;
-    }
 }
 
 function deseleccionarTodos() {
@@ -868,14 +1056,6 @@ function mostrarAlerta(mensaje, tipo = 'info') {
     }
 
     const alert = document.createElement('div');
-    const alertClasses = {
-        'success': 'alert-success',
-        'error': 'alert-error',
-        'warning': 'alert-warning',
-        'info': 'alert-info'
-    };
-
-    alert.className = `alert ${alertClasses[tipo] || 'alert-info'}`;
     alert.innerHTML = mensaje;
     alert.style.cssText = `
         margin-bottom: 10px;
@@ -896,40 +1076,9 @@ function mostrarAlerta(mensaje, tipo = 'info') {
     }, 5000);
 }
 
-// Agregar estilos de animación
-if (!document.getElementById('alert-animations')) {
-    const style = document.createElement('style');
-    style.id = 'alert-animations';
-    style.textContent = `
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-        @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            to {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-        }
-    `;
-    document.head.appendChild(style);
-}
-
 // =============================================================
-// 🔧 FUNCIONES DE ADMINISTRACIÓN
+// CARGAR ANOMALÍAS - V4.0 CON ESTADÍSTICAS DE FUENTE
 // =============================================================
-let anomaliasCache = [];
-
 async function cargarAnomalias() {
     const apiBase = getApiBase();
     const container = document.getElementById('calidad-stats');
@@ -939,33 +1088,33 @@ async function cargarAnomalias() {
     container.innerHTML = '<div class="loading"></div> Analizando datos...';
 
     try {
-        const response = await fetch(`${apiBase}/api/admin/anomalias`);
-        if (!response.ok) throw new Error('Error cargando anomalías');
+        // Usar los datos en cache para estadísticas rápidas
+        const papas = productosCache.filter(p => p.es_producto_papa).length;
+        const web = productosCache.filter(p => !p.es_producto_papa && p.codigo_ean).length;
+        const ocr = productosCache.filter(p => !p.es_producto_papa && !p.codigo_ean).length;
+        const total = productosCache.length;
 
-        const data = await response.json();
-        anomaliasCache = data.productos || [];
-        const stats = data.estadisticas;
+        const porcentajeCalidad = total > 0 ?
+            Math.round(((papas + web) / total) * 100) : 0;
 
         container.innerHTML = `
-            <div class="stat-card">
-                <div class="stat-value">${stats.total}</div>
-                <div class="stat-label">Total Productos</div>
-            </div>
             <div class="stat-card" style="background: linear-gradient(135deg, #d1fae5, #a7f3d0);">
-                <div class="stat-value" style="color: #059669;">${stats.completos}</div>
-                <div class="stat-label">✅ Completos</div>
+                <div class="stat-value" style="color: #059669;">👑 ${papas}</div>
+                <div class="stat-label">Validados (PAPA)</div>
             </div>
-            <div class="stat-card warning">
-                <div class="stat-value">${stats.problematicos}</div>
-                <div class="stat-label">⚠️ Con Problemas</div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #dbeafe, #bfdbfe);">
+                <div class="stat-value" style="color: #2563eb;">🌐 ${web}</div>
+                <div class="stat-label">Desde Web</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #fef3c7, #fde68a);">
+                <div class="stat-value" style="color: #d97706;">📝 ${ocr}</div>
+                <div class="stat-label">Solo OCR (revisar)</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" style="color: #2563eb;">${stats.porcentaje_calidad}%</div>
-                <div class="stat-label">Calidad General</div>
+                <div class="stat-value" style="color: #2563eb;">${porcentajeCalidad}%</div>
+                <div class="stat-label">Calidad de Datos</div>
             </div>
         `;
-
-        console.log(`✅ ${anomaliasCache.length} productos analizados`);
 
     } catch (error) {
         console.error('❌ Error:', error);
@@ -973,20 +1122,17 @@ async function cargarAnomalias() {
     }
 }
 
+// =============================================================
+// DETECTAR DUPLICADOS
+// =============================================================
 async function detectarDuplicados() {
     const container = document.getElementById('duplicados-container');
     if (!container) return;
 
     container.innerHTML = '<div class="loading"></div> Analizando duplicados...';
 
-    const apiBase = getApiBase();
-
     try {
-        const response = await fetch(`${apiBase}/api/v2/productos?limite=1000`);
-        if (!response.ok) throw new Error('Error cargando productos');
-
-        const data = await response.json();
-        const productos = data.productos || [];
+        const productos = productosCache;
 
         const grupos = {};
         productos.forEach(p => {
@@ -1022,9 +1168,11 @@ async function detectarDuplicados() {
                 <div style="display: grid; gap: 10px; margin-top: 10px;">`;
 
             items.forEach(p => {
+                const fuenteInfo = determinarFuenteDato(p);
                 html += `
-                    <div style="padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px;">
-                        <strong>ID ${p.id}: ${p.nombre || 'Sin nombre'}</strong>
+                    <div style="padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: ${fuenteInfo.bgColor};">
+                        <span style="font-size: 12px; color: ${fuenteInfo.color};">${fuenteInfo.icono} ${fuenteInfo.texto}</span>
+                        <strong> ID ${p.id}: ${p.nombre || 'Sin nombre'}</strong>
                         <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" style="margin-left: 10px;">
                             ✏️ Editar
                         </button>
@@ -1066,21 +1214,38 @@ window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
 window.agregarPLUEditable = agregarPLUEditable;
 window.habilitarCamposEdicion = habilitarCamposEdicion;
 window.verHistorial = verHistorial;
+window.marcarComoPapa = marcarComoPapa;
+window.quitarPapa = quitarPapa;
+window.determinarFuenteDato = determinarFuenteDato;
 
-console.log('✅ Productos.js v3.0 INTEGRADO cargado correctamente');
+console.log('✅ Productos.js v4.0 SISTEMA DE APRENDIZAJE PAPA cargado');
 
 // =============================================================
 // Inicialización
 // =============================================================
 document.addEventListener("DOMContentLoaded", async function () {
-    console.log('🚀 Inicializando aplicación...');
+    console.log('🚀 Inicializando aplicación v4.0...');
+
+    // Agregar estilos de animación
+    if (!document.getElementById('alert-animations')) {
+        const style = document.createElement('style');
+        style.id = 'alert-animations';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(400px); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
 
     configurarBuscadorTiempoReal();
-
-    // Precargar establecimientos
     await cargarEstablecimientosCache();
-
     await cargarProductos(1);
 
-    console.log("✅ Sistema inicializado correctamente");
+    console.log("✅ Sistema v4.0 inicializado");
 });
