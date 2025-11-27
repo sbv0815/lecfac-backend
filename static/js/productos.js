@@ -410,19 +410,23 @@ function mostrarProductos(productos) {
                 <td style="font-size: 12px;">${precioHTML}</td>
                 <td style="font-size: 11px;">${estadoBadges.join(' ') || '<span style="color: #059669;">✓</span>'}</td>
                 <td style="white-space: nowrap;">
-                    ${botonPapa}
-                    <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
-                        ✏️
-                    </button>
-                    <button class="btn-small btn-primary" onclick="verHistorial(${p.id})" title="Ver historial">
-                        📊
+    ${botonPapa}
+    <button class="btn-small btn-primary" onclick="editarProducto(${p.id})" title="Editar">
+        ✏️
+    </button>
+    <button class="btn-small" style="background: #fef3c7; color: #92400e;"
+            onclick="verFacturaOriginal(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}')"
+            title="Ver factura original">
+                🧾
+                </button>
+                <button class="btn-small btn-primary" onclick="verHistorial(${p.id})" title="Ver historial">
+                     📊
                     </button>
                     <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
-                        🗑️
+                 🗑️
                     </button>
                 </td>
-            </tr>
-        `;
+                    `;
         tbody.insertAdjacentHTML("beforeend", row);
     });
 }
