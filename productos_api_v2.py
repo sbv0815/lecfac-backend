@@ -45,7 +45,6 @@ async def listar_productos_v2(
                 pm.marca,
                 pm.codigo_lecfac,
                 pm.es_producto_papa,
-                pm.producto_papa_id,
                 pm.fecha_actualizacion,
                 COALESCE(c.nombre, 'Sin categoría') as categoria,
                 COUNT(DISTINCT pe.establecimiento_id) as num_establecimientos,
@@ -60,9 +59,7 @@ async def listar_productos_v2(
         params = []
 
         if solo_papas:
-            where_conditions.append(
-                "(pm.es_producto_papa = TRUE OR pm.producto_papa_id IS NULL)"
-            )
+            where_conditions.append("pm.es_producto_papa = TRUE")
             print("👑 Filtrando solo productos PAPA")
 
         # 🆕 V4: Filtros por fuente de datos
@@ -109,7 +106,7 @@ async def listar_productos_v2(
 
         query += """
             GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac,
-                    pm.es_producto_papa, pm.producto_papa_id, pm.fecha_actualizacion, c.nombre,
+                    pm.es_producto_papa, pm.fecha_actualizacion, c.nombre,
                     pm.confianza_datos, pm.fuente_datos
             ORDER BY pm.id DESC
             LIMIT %s OFFSET %s
@@ -162,14 +159,13 @@ async def listar_productos_v2(
                     "marca": producto[3],
                     "codigo_lecfac": producto[4],
                     "es_producto_papa": producto[5] or False,
-                    "producto_papa_id": producto[6],
                     "fecha_actualizacion": (
-                        producto[7].isoformat() if producto[7] else None
+                        producto[6].isoformat() if producto[6] else None
                     ),
-                    "categoria": producto[8],
-                    "num_establecimientos": producto[9],
-                    "confianza_datos": float(producto[10]) if producto[10] else 0.5,
-                    "fuente_datos": producto[11] or "OCR",
+                    "categoria": producto[7],
+                    "num_establecimientos": producto[8],
+                    "confianza_datos": float(producto[9]) if producto[9] else 0.5,
+                    "fuente_datos": producto[10] or "OCR",
                     "plus": plus_info,
                 }
             )
@@ -246,8 +242,7 @@ async def obtener_producto_individual(producto_id: int):
                 pm.codigo_lecfac,
                 pm.confianza_datos,
                 pm.fuente_datos,
-                pm.fecha_validacion,
-                pm.producto_papa_id
+                pm.fecha_validacion
             FROM productos_maestros_v2 pm
             LEFT JOIN categorias c ON pm.categoria_id = c.id
             WHERE pm.id = %s
@@ -312,7 +307,6 @@ async def obtener_producto_individual(producto_id: int):
             "confianza_datos": float(producto[9]) if producto[9] else 0.5,
             "fuente_datos": producto[10] or "OCR",
             "fecha_validacion": producto[11].isoformat() if producto[11] else None,
-            "producto_papa_id": producto[12],
             "plus": plus_info,
         }
 
@@ -869,15 +863,7 @@ async def eliminar_producto(producto_id: int):
         log_eliminado = cursor.rowcount
         logger.info(f"   📋 {log_eliminado} registros de log eliminados")
 
-        # 12. Actualizar productos que tengan este como producto_papa (self-reference)
-        cursor.execute(
-            "UPDATE productos_maestros_v2 SET producto_papa_id = NULL WHERE producto_papa_id = %s",
-            (producto_id,),
-        )
-        hijos_desvinculados = cursor.rowcount
-        logger.info(f"   👶 {hijos_desvinculados} productos hijo desvinculados")
-
-        # 13. FINALMENTE - Eliminar el producto maestro
+        # 12. FINALMENTE - Eliminar el producto maestro
         cursor.execute(
             "DELETE FROM productos_maestros_v2 WHERE id = %s", (producto_id,)
         )

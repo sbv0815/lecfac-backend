@@ -9108,11 +9108,22 @@ async def comparar_precios_producto(codigo_lecfac: str):
         return {"success": False, "error": str(e)}
 
 
+# ============================================
+# FUNCIÓN CORREGIDA - REEMPLAZA LAS DOS DUPLICADAS EN main.py
+# ============================================
+# BUSCAR Y ELIMINAR las dos funciones duplicadas que empiezan con:
+#   @app.get("/api/admin/productos/{papa_id}/historial")
+#   async def obtener_historial_precios(papa_id: int):
+#
+# Y REEMPLAZAR con esta única versión:
+# ============================================
+
+
 @app.get("/api/admin/productos/{papa_id}/historial")
 async def obtener_historial_precios(papa_id: int):
     """
-    Retorna TODO el historial de precios de un producto papa
-    Incluye el papa + todos los hijos con sus precios históricos
+    Retorna el historial de precios de un producto
+    V4.0: Sin dependencia de producto_papa_id
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -9120,7 +9131,7 @@ async def obtener_historial_precios(papa_id: int):
     try:
         print(f"\n📊 [HISTORIAL] Obteniendo historial del producto {papa_id}")
 
-        # 1. Obtener info del producto (puede ser papa o hijo)
+        # 1. Obtener info del producto
         cursor.execute(
             """
             SELECT
@@ -9129,7 +9140,8 @@ async def obtener_historial_precios(papa_id: int):
                 marca,
                 codigo_lecfac,
                 es_producto_papa,
-                producto_papa_id
+                fuente_datos,
+                confianza_datos
             FROM productos_maestros_v2
             WHERE id = %s
         """,
@@ -9139,30 +9151,20 @@ async def obtener_historial_precios(papa_id: int):
         producto_info = cursor.fetchone()
 
         if not producto_info:
+            cursor.close()
+            conn.close()
             return {"success": False, "error": "Producto no encontrado"}
 
-        prod_id, nombre, marca, codigo_lecfac, es_papa, papa_id_ref = producto_info
-
-        # Si es un hijo, obtener el ID del papa
-        if not es_papa and papa_id_ref:
-            papa_id = papa_id_ref
-            cursor.execute(
-                """
-                SELECT nombre_consolidado, marca, codigo_lecfac
-                FROM productos_maestros_v2
-                WHERE id = %s
-            """,
-                (papa_id,),
-            )
-            papa_data = cursor.fetchone()
-            if papa_data:
-                nombre, marca, codigo_lecfac = papa_data
+        prod_id, nombre, marca, codigo_lecfac, es_papa, fuente_datos, confianza = (
+            producto_info
+        )
 
         print(f"   Producto: {nombre}")
-        print(f"   Es papa: {es_papa}")
-        print(f"   Papa ID final: {papa_id}")
+        print(f"   Es PAPA: {es_papa}")
+        print(f"   Fuente: {fuente_datos}")
 
-        # 2. Obtener TODOS los precios (papa + hijos)
+        # 2. Obtener historial de precios de ESTE producto
+        # (Ya no buscamos "hijos" porque no existe producto_papa_id)
         cursor.execute(
             """
             SELECT
@@ -9178,10 +9180,10 @@ async def obtener_historial_precios(papa_id: int):
             FROM productos_maestros_v2 pm
             INNER JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
             INNER JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            WHERE pm.id = %s OR pm.producto_papa_id = %s
+            WHERE pm.id = %s
             ORDER BY e.nombre_normalizado, ppe.fecha_actualizacion DESC
         """,
-            (papa_id, papa_id),
+            (papa_id,),
         )
 
         resultados = cursor.fetchall()
@@ -9216,14 +9218,14 @@ async def obtener_historial_precios(papa_id: int):
                 "producto_id": prod_id,
                 "es_papa": es_papa_reg,
                 "plu": plu,
-                "precio": int(precio),
+                "precio": int(precio) if precio else 0,
                 "fecha_actualizacion": fecha_act.isoformat() if fecha_act else None,
                 "fecha_creacion": fecha_cre.isoformat() if fecha_cre else None,
-                "dias_desde_actualizacion": int(dias),
-                "vigente": dias <= 30,
+                "dias_desde_actualizacion": int(dias) if dias else 0,
+                "vigente": (dias or 0) <= 30,
             }
 
-            # El primero es el precio actual
+            # El primero es el precio actual (más reciente por el ORDER BY)
             if historial_por_establecimiento[establecimiento]["precio_actual"] is None:
                 historial_por_establecimiento[establecimiento][
                     "precio_actual"
@@ -9241,10 +9243,13 @@ async def obtener_historial_precios(papa_id: int):
         return {
             "success": True,
             "producto": {
-                "papa_id": papa_id,
+                "id": papa_id,
                 "nombre": nombre,
                 "marca": marca,
                 "codigo_lecfac": codigo_lecfac,
+                "es_producto_papa": es_papa or False,
+                "fuente_datos": fuente_datos or "OCR",
+                "confianza_datos": float(confianza) if confianza else 0.5,
             },
             "historial_por_establecimiento": list(
                 historial_por_establecimiento.values()
@@ -9256,123 +9261,8 @@ async def obtener_historial_precios(papa_id: int):
         import traceback
 
         traceback.print_exc()
-        if conn:
-            conn.close()
-        return {"success": False, "error": str(e)}
-
-
-@app.get("/api/admin/productos/{papa_id}/historial")
-async def obtener_historial_precios(papa_id: int):
-    """
-    Retorna TODO el historial de precios de un producto papa
-    Incluye el papa + todos los hijos con sus precios históricos
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        # 1. Verificar que es un producto papa
-        cursor.execute(
-            """
-            SELECT nombre_consolidado, marca, codigo_lecfac
-            FROM productos_maestros_v2
-            WHERE id = %s AND es_producto_papa = TRUE
-        """,
-            (papa_id,),
-        )
-
-        papa_info = cursor.fetchone()
-
-        if not papa_info:
-            return {"success": False, "error": "Producto papa no encontrado"}
-
-        nombre, marca, codigo_lecfac = papa_info
-
-        # 2. Obtener TODOS los precios (papa + hijos)
-        cursor.execute(
-            """
-            SELECT
-                pm.id as producto_id,
-                pm.es_producto_papa,
-                e.id as establecimiento_id,
-                e.nombre_normalizado as establecimiento,
-                ppe.codigo_plu,
-                ppe.precio_unitario,
-                ppe.fecha_actualizacion,
-                ppe.fecha_creacion,
-                EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ppe.fecha_actualizacion))/86400 as dias_desde_actualizacion
-            FROM productos_maestros_v2 pm
-            INNER JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
-            INNER JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            WHERE pm.id = %s OR pm.producto_papa_id = %s
-            ORDER BY e.nombre_normalizado, ppe.fecha_actualizacion DESC
-        """,
-            (papa_id, papa_id),
-        )
-
-        resultados = cursor.fetchall()
-
-        # 3. Agrupar por establecimiento
-        historial_por_establecimiento = {}
-
-        for row in resultados:
-            (
-                prod_id,
-                es_papa,
-                est_id,
-                establecimiento,
-                plu,
-                precio,
-                fecha_act,
-                fecha_cre,
-                dias,
-            ) = row
-
-            if establecimiento not in historial_por_establecimiento:
-                historial_por_establecimiento[establecimiento] = {
-                    "establecimiento_id": est_id,
-                    "establecimiento": establecimiento,
-                    "precio_actual": None,
-                    "historial": [],
-                }
-
-            registro = {
-                "producto_id": prod_id,
-                "es_papa": es_papa,
-                "plu": plu,
-                "precio": int(precio),
-                "fecha_actualizacion": fecha_act.isoformat() if fecha_act else None,
-                "fecha_creacion": fecha_cre.isoformat() if fecha_cre else None,
-                "dias_desde_actualizacion": int(dias),
-                "vigente": dias <= 30,
-            }
-
-            # El primero de cada establecimiento es el precio actual (más reciente)
-            if historial_por_establecimiento[establecimiento]["precio_actual"] is None:
-                historial_por_establecimiento[establecimiento][
-                    "precio_actual"
-                ] = registro
-
-            historial_por_establecimiento[establecimiento]["historial"].append(registro)
-
-        cursor.close()
-        conn.close()
-
-        return {
-            "success": True,
-            "producto": {
-                "papa_id": papa_id,
-                "nombre": nombre,
-                "marca": marca,
-                "codigo_lecfac": codigo_lecfac,
-            },
-            "historial_por_establecimiento": list(
-                historial_por_establecimiento.values()
-            ),
-        }
-
-    except Exception as e:
-        print(f"❌ Error obteniendo historial: {e}")
+        if cursor:
+            cursor.close()
         if conn:
             conn.close()
         return {"success": False, "error": str(e)}
