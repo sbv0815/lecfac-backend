@@ -3,6 +3,9 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
 from database import get_db_connection
+import base64
+import httpx
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -975,3 +978,381 @@ async def enriquecer_producto(plu: str):
             return {"success": False, "error": "Producto no encontrado"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.get("/api/v2/productos/{producto_id}/factura")
+async def obtener_factura_producto(producto_id: int):
+    """
+    Obtiene la factura original donde apareció el producto.
+    Retorna la imagen en base64 y los datos del OCR original.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Buscar en qué factura(s) apareció este producto
+        cursor.execute(
+            """
+            SELECT
+                i.id as item_id,
+                i.factura_id,
+                i.codigo_leido,
+                i.nombre_leido,
+                i.precio_pagado,
+                i.cantidad,
+                f.numero_factura,
+                f.fecha_factura,
+                f.tiene_imagen,
+                f.imagen_data,
+                f.imagen_mime,
+                e.nombre_normalizado as establecimiento
+            FROM items_factura i
+            JOIN facturas f ON i.factura_id = f.id
+            LEFT JOIN establecimientos e ON f.establecimiento_id = e.id
+            WHERE i.producto_maestro_id = %s
+            ORDER BY f.fecha_factura DESC
+            LIMIT 5
+        """,
+            (producto_id,),
+        )
+
+        items = cursor.fetchall()
+
+        if not items:
+            cursor.close()
+            conn.close()
+            return {
+                "success": False,
+                "error": "No se encontraron facturas para este producto",
+                "facturas": [],
+            }
+
+        facturas_resultado = []
+
+        for item in items:
+            (
+                item_id,
+                factura_id,
+                codigo_leido,
+                nombre_leido,
+                precio_pagado,
+                cantidad,
+                numero_factura,
+                fecha_factura,
+                tiene_imagen,
+                imagen_data,
+                imagen_mime,
+                establecimiento,
+            ) = item
+
+            factura_info = {
+                "factura_id": factura_id,
+                "numero_factura": numero_factura,
+                "fecha": fecha_factura.isoformat() if fecha_factura else None,
+                "establecimiento": establecimiento,
+                "item": {
+                    "codigo_leido": codigo_leido,
+                    "nombre_leido": nombre_leido,
+                    "precio_pagado": precio_pagado,
+                    "cantidad": cantidad,
+                },
+                "tiene_imagen": tiene_imagen or False,
+                "imagen_base64": None,
+                "imagen_mime": imagen_mime,
+            }
+
+            # Convertir imagen a base64 si existe
+            if tiene_imagen and imagen_data:
+                try:
+                    imagen_b64 = base64.b64encode(imagen_data).decode("utf-8")
+                    factura_info["imagen_base64"] = imagen_b64
+                except Exception as e:
+                    print(f"Error convirtiendo imagen: {e}")
+
+            facturas_resultado.append(factura_info)
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "producto_id": producto_id,
+            "total_facturas": len(facturas_resultado),
+            "facturas": facturas_resultado,
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo factura: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# 🔍 BUSCAR PLU EN SUPERMERCADO (VTEX)
+# ============================================================
+
+# Configuración de supermercados VTEX
+VTEX_CONFIG = {
+    "OLIMPICA": {
+        "domain": "www.olimpica.com",
+        "search_url": "https://www.olimpica.com/api/catalog_system/pub/products/search",
+    },
+    "EXITO": {
+        "domain": "www.exito.com",
+        "search_url": "https://www.exito.com/api/catalog_system/pub/products/search",
+    },
+    "CARULLA": {
+        "domain": "www.carulla.com",
+        "search_url": "https://www.carulla.com/api/catalog_system/pub/products/search",
+    },
+    "JUMBO": {
+        "domain": "www.jumbocolombia.com",
+        "search_url": "https://www.jumbocolombia.com/api/catalog_system/pub/products/search",
+    },
+}
+
+
+@router.get("/api/v2/buscar-plu/{establecimiento}/{codigo_plu}")
+async def buscar_plu_en_supermercado(establecimiento: str, codigo_plu: str):
+    """
+    Busca un código PLU/EAN en el catálogo web del supermercado.
+    Usa la API VTEX para obtener el nombre real del producto.
+    """
+    establecimiento_upper = establecimiento.upper().strip()
+
+    # Normalizar nombre del establecimiento
+    establecimiento_map = {
+        "OLIMPICA": "OLIMPICA",
+        "OLÍMPICA": "OLIMPICA",
+        "EXITO": "EXITO",
+        "ÉXITO": "EXITO",
+        "CARULLA": "CARULLA",
+        "JUMBO": "JUMBO",
+        "CENCOSUD": "JUMBO",
+        "METRO": "JUMBO",  # Metro usa plataforma Jumbo
+    }
+
+    establecimiento_norm = establecimiento_map.get(establecimiento_upper)
+
+    if not establecimiento_norm or establecimiento_norm not in VTEX_CONFIG:
+        return {
+            "success": False,
+            "error": f"Supermercado '{establecimiento}' no soporta búsqueda web",
+            "supermercados_disponibles": list(VTEX_CONFIG.keys()),
+        }
+
+    config = VTEX_CONFIG[establecimiento_norm]
+
+    try:
+        # Intentar buscar por el código
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Primero intentar búsqueda directa por código
+            search_url = f"{config['search_url']}?fq=alternateIds_RefId:{codigo_plu}"
+
+            headers = {
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }
+
+            response = await client.get(search_url, headers=headers)
+
+            productos = []
+
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    productos = data
+
+            # Si no encontró, intentar búsqueda por EAN
+            if not productos:
+                search_url = f"{config['search_url']}?fq=alternateIds_Ean:{codigo_plu}"
+                response = await client.get(search_url, headers=headers)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and len(data) > 0:
+                        productos = data
+
+            # Si aún no encontró, buscar como texto
+            if not productos:
+                search_url = f"{config['search_url']}?ft={codigo_plu}"
+                response = await client.get(search_url, headers=headers)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and len(data) > 0:
+                        productos = data[:3]  # Limitar a 3 resultados
+
+            if not productos:
+                return {
+                    "success": False,
+                    "error": f"No se encontró el código '{codigo_plu}' en {establecimiento_norm}",
+                    "codigo_buscado": codigo_plu,
+                    "establecimiento": establecimiento_norm,
+                }
+
+            # Procesar resultados
+            resultados = []
+            for prod in productos[:5]:  # Máximo 5 resultados
+                # Extraer EAN
+                ean = None
+                if "items" in prod and prod["items"]:
+                    item = prod["items"][0]
+                    ean = item.get("ean") or item.get("referenceId", [{}])[0].get(
+                        "Value"
+                    )
+
+                # Extraer precio
+                precio = None
+                if "items" in prod and prod["items"]:
+                    item = prod["items"][0]
+                    if "sellers" in item and item["sellers"]:
+                        precio = (
+                            item["sellers"][0].get("commertialOffer", {}).get("Price")
+                        )
+
+                resultado = {
+                    "nombre": prod.get("productName", "Sin nombre"),
+                    "marca": prod.get("brand", ""),
+                    "ean": ean,
+                    "precio": precio,
+                    "categoria": (
+                        prod.get("categories", [""])[0]
+                        if prod.get("categories")
+                        else ""
+                    ),
+                    "imagen": prod.get("items", [{}])[0]
+                    .get("images", [{}])[0]
+                    .get("imageUrl", ""),
+                }
+                resultados.append(resultado)
+
+            return {
+                "success": True,
+                "codigo_buscado": codigo_plu,
+                "establecimiento": establecimiento_norm,
+                "resultados": resultados,
+                "total": len(resultados),
+            }
+
+    except httpx.TimeoutException:
+        return {
+            "success": False,
+            "error": f"Timeout buscando en {establecimiento_norm}. El servidor tardó demasiado.",
+            "codigo_buscado": codigo_plu,
+        }
+    except Exception as e:
+        print(f"❌ Error buscando PLU: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "codigo_buscado": codigo_plu}
+
+
+# ============================================================
+# 📋 OBTENER HISTORIAL DE UN PLU
+# ============================================================
+
+
+@router.get("/api/v2/historial-plu/{establecimiento}/{codigo_plu}")
+async def obtener_historial_plu(establecimiento: str, codigo_plu: str):
+    """
+    Obtiene todas las veces que un PLU apareció en facturas.
+    Útil para ver variaciones del nombre leído por OCR.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Buscar el establecimiento
+        cursor.execute(
+            """
+            SELECT id, nombre_normalizado
+            FROM establecimientos
+            WHERE UPPER(nombre_normalizado) LIKE %s
+            LIMIT 1
+        """,
+            (f"%{establecimiento.upper()}%",),
+        )
+
+        est = cursor.fetchone()
+        if not est:
+            return {
+                "success": False,
+                "error": f"Establecimiento '{establecimiento}' no encontrado",
+            }
+
+        establecimiento_id = est[0]
+        establecimiento_nombre = est[1]
+
+        # Buscar todas las apariciones de este PLU
+        cursor.execute(
+            """
+            SELECT
+                i.nombre_leido,
+                i.precio_pagado,
+                f.fecha_factura,
+                f.numero_factura,
+                COUNT(*) as veces
+            FROM items_factura i
+            JOIN facturas f ON i.factura_id = f.id
+            WHERE i.codigo_leido = %s
+              AND f.establecimiento_id = %s
+            GROUP BY i.nombre_leido, i.precio_pagado, f.fecha_factura, f.numero_factura
+            ORDER BY f.fecha_factura DESC
+            LIMIT 20
+        """,
+            (codigo_plu, establecimiento_id),
+        )
+
+        historial = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        if not historial:
+            return {
+                "success": False,
+                "error": f"No se encontró historial para PLU '{codigo_plu}' en {establecimiento_nombre}",
+            }
+
+        # Encontrar el nombre más común
+        nombres_count = {}
+        for h in historial:
+            nombre = h[0]
+            if nombre:
+                nombres_count[nombre] = nombres_count.get(nombre, 0) + 1
+
+        nombre_mas_comun = (
+            max(nombres_count, key=nombres_count.get) if nombres_count else None
+        )
+
+        return {
+            "success": True,
+            "codigo_plu": codigo_plu,
+            "establecimiento": establecimiento_nombre,
+            "nombre_sugerido": nombre_mas_comun,
+            "total_apariciones": len(historial),
+            "historial": [
+                {
+                    "nombre_leido": h[0],
+                    "precio": h[1],
+                    "fecha": h[2].isoformat() if h[2] else None,
+                    "factura": h[3],
+                    "veces": h[4],
+                }
+                for h in historial
+            ],
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo historial PLU: {e}")
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))

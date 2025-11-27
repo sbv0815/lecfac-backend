@@ -808,6 +808,27 @@
                     </div>
                 </div>
             </div>
+            <!-- 🔍 Buscador Web -->
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <h4 style="margin-bottom: 15px;">🔍 Buscar en catálogo web</h4>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                    <input type="text" id="buscar-plu-codigo" placeholder="Código PLU"
+                        style="flex: 1; min-width: 150px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                    <select id="buscar-plu-establecimiento"
+                        style="padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                        <option value="OLIMPICA">Olímpica</option>
+                        <option value="EXITO">Éxito</option>
+                        <option value="CARULLA">Carulla</option>
+                        <option value="JUMBO">Jumbo</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="buscarPLUEnWeb(
+            document.getElementById('buscar-plu-codigo').value,
+            document.getElementById('buscar-plu-establecimiento').value
+        )">🔍 Buscar</button>
+                </div>
+                <div id="resultado-busqueda-web"></div>
+            </div>
+
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modal-editar')">Cancelar</button>
                 <button class="btn btn-primary" onclick="guardarEdicion()">💾 Guardar Cambios</button>

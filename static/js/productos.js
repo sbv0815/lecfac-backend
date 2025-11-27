@@ -1255,3 +1255,386 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     console.log("✅ Sistema v4.0 inicializado");
 });
+async function verFacturaOriginal(productoId, nombreProducto) {
+    console.log(`🧾 Buscando factura del producto ${productoId}`);
+
+    const apiBase = getApiBase();
+
+    // Mostrar loading
+    mostrarModalFactura(null, nombreProducto, true);
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/factura`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success || !data.facturas || data.facturas.length === 0) {
+            mostrarModalFactura({
+                error: true,
+                mensaje: "No se encontraron facturas para este producto"
+            }, nombreProducto);
+            return;
+        }
+
+        mostrarModalFactura(data, nombreProducto);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        mostrarModalFactura({
+            error: true,
+            mensaje: `Error: ${error.message}`
+        }, nombreProducto);
+    }
+}
+
+// =============================================================
+// 🖼️ MOSTRAR MODAL DE FACTURA
+// =============================================================
+function mostrarModalFactura(data, nombreProducto, loading = false) {
+    // Crear modal si no existe
+    let modal = document.getElementById('modal-factura');
+
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-factura';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 900px;">
+                <div class="modal-header">
+                    <h2>🧾 Factura Original</h2>
+                    <button class="modal-close" onclick="cerrarModal('modal-factura')">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-factura-body">
+                    <!-- Contenido dinámico -->
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    const body = document.getElementById('modal-factura-body');
+
+    if (loading) {
+        body.innerHTML = `
+            <div style="text-align: center; padding: 40px;">
+                <div class="loading" style="width: 40px; height: 40px; margin: 0 auto 20px;"></div>
+                <p>Buscando facturas donde apareció "${nombreProducto}"...</p>
+            </div>
+        `;
+        modal.classList.add('active');
+        return;
+    }
+
+    if (data.error) {
+        body.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #dc2626;">
+                <p style="font-size: 48px;">📭</p>
+                <p style="font-size: 18px; margin-top: 10px;">${data.mensaje}</p>
+                <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
+                    Este producto puede haber sido creado manualmente o la factura fue eliminada.
+                </p>
+            </div>
+        `;
+        modal.classList.add('active');
+        return;
+    }
+
+    // Mostrar facturas encontradas
+    let html = `
+        <div style="margin-bottom: 20px;">
+            <h3 style="margin-bottom: 10px;">📦 Producto: ${nombreProducto}</h3>
+            <p style="color: #6b7280;">Encontrado en ${data.total_facturas} factura(s)</p>
+        </div>
+    `;
+
+    data.facturas.forEach((factura, index) => {
+        const item = factura.item;
+
+        html += `
+            <div style="border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 20px; overflow: hidden;">
+                <div style="background: #f9fafb; padding: 12px 15px; border-bottom: 1px solid #e5e7eb;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <strong>📋 Factura #${factura.numero_factura || factura.factura_id}</strong>
+                            <span style="margin-left: 15px; color: #6b7280;">
+                                📅 ${factura.fecha || 'Sin fecha'}
+                            </span>
+                            <span style="margin-left: 15px; background: #d1fae5; color: #059669; padding: 2px 8px; border-radius: 4px; font-size: 12px;">
+                                ${factura.establecimiento || 'Sin establecimiento'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 15px;">
+                    <!-- Datos del OCR original -->
+                    <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
+                        <h4 style="color: #92400e; margin-bottom: 8px;">📝 Datos leídos por OCR:</h4>
+                        <table style="width: 100%; font-size: 14px;">
+                            <tr>
+                                <td style="padding: 4px 0; color: #6b7280; width: 120px;">Código PLU:</td>
+                                <td><code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${item.codigo_leido || '-'}</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 4px 0; color: #6b7280;">Nombre leído:</td>
+                                <td><strong>${item.nombre_leido || '-'}</strong></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 4px 0; color: #6b7280;">Precio:</td>
+                                <td>$${(item.precio_pagado || 0).toLocaleString('es-CO')}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 4px 0; color: #6b7280;">Cantidad:</td>
+                                <td>${item.cantidad || 1}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- Imagen de la factura -->
+                    ${factura.tiene_imagen && factura.imagen_base64 ? `
+                        <div style="margin-top: 15px;">
+                            <h4 style="margin-bottom: 10px;">🖼️ Imagen de la factura:</h4>
+                            <div style="max-height: 400px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+                                <img src="data:${factura.imagen_mime || 'image/jpeg'};base64,${factura.imagen_base64}"
+                                     style="max-width: 100%; display: block;"
+                                     onclick="ampliarImagen(this.src)"
+                                     title="Click para ampliar">
+                            </div>
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 5px;">
+                                💡 Click en la imagen para ampliar
+                            </p>
+                        </div>
+                    ` : `
+                        <div style="text-align: center; padding: 30px; background: #f3f4f6; border-radius: 8px; color: #6b7280;">
+                            <p style="font-size: 36px;">🖼️</p>
+                            <p>Imagen no disponible para esta factura</p>
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+    });
+
+    body.innerHTML = html;
+    modal.classList.add('active');
+}
+
+// =============================================================
+// 🔍 AMPLIAR IMAGEN
+// =============================================================
+function ampliarImagen(src) {
+    let modal = document.getElementById('modal-imagen-ampliada');
+
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-imagen-ampliada';
+        modal.style.cssText = `
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 2000;
+            cursor: zoom-out;
+            overflow: auto;
+            padding: 20px;
+        `;
+        modal.onclick = () => modal.style.display = 'none';
+        modal.innerHTML = `
+            <img id="imagen-ampliada-src" style="max-width: 100%; margin: auto; display: block;">
+            <button style="position: fixed; top: 20px; right: 20px; background: white; border: none;
+                           padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;">
+                ✕ Cerrar
+            </button>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    document.getElementById('imagen-ampliada-src').src = src;
+    modal.style.display = 'flex';
+}
+
+
+// =============================================================
+// 🔍 BUSCAR PLU EN SUPERMERCADO (VTEX)
+// =============================================================
+async function buscarPLUEnWeb(codigoPlu, establecimiento) {
+    console.log(`🔍 Buscando PLU ${codigoPlu} en ${establecimiento}`);
+
+    const apiBase = getApiBase();
+    const resultadoContainer = document.getElementById('resultado-busqueda-web');
+
+    if (!resultadoContainer) {
+        console.error('No se encontró el contenedor de resultados');
+        return;
+    }
+
+    resultadoContainer.innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+            <div class="loading"></div>
+            <p style="margin-top: 10px;">Buscando "${codigoPlu}" en ${establecimiento}...</p>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/buscar-plu/${encodeURIComponent(establecimiento)}/${encodeURIComponent(codigoPlu)}`);
+        const data = await response.json();
+
+        if (!data.success) {
+            resultadoContainer.innerHTML = `
+                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px;">
+                    <p style="color: #dc2626;">❌ ${data.error}</p>
+                    ${data.supermercados_disponibles ? `
+                        <p style="font-size: 13px; color: #6b7280; margin-top: 10px;">
+                            Supermercados con búsqueda disponible: ${data.supermercados_disponibles.join(', ')}
+                        </p>
+                    ` : ''}
+                </div>
+            `;
+            return;
+        }
+
+        if (data.resultados.length === 0) {
+            resultadoContainer.innerHTML = `
+                <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 15px; border-radius: 4px;">
+                    <p style="color: #92400e;">⚠️ No se encontraron productos con el código "${codigoPlu}"</p>
+                    <p style="font-size: 13px; color: #6b7280; margin-top: 5px;">
+                        Intenta buscar con otro código o verifica que el PLU sea correcto.
+                    </p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 10px 15px; border-radius: 4px; margin-bottom: 15px;">
+                <p style="color: #059669;">✅ ${data.total} resultado(s) encontrado(s) en ${data.establecimiento}</p>
+            </div>
+        `;
+
+        data.resultados.forEach((prod, index) => {
+            html += `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 10px;
+                            display: flex; gap: 15px; align-items: flex-start;">
+                    ${prod.imagen ? `
+                        <img src="${prod.imagen}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 4px; background: #f9fafb;">
+                    ` : `
+                        <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 4px;
+                                    display: flex; align-items: center; justify-content: center; color: #9ca3af;">
+                            📦
+                        </div>
+                    `}
+                    <div style="flex: 1;">
+                        <h4 style="margin-bottom: 5px;">${prod.nombre}</h4>
+                        <p style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">
+                            ${prod.marca ? `Marca: ${prod.marca}` : ''}
+                            ${prod.ean ? ` | EAN: <code>${prod.ean}</code>` : ''}
+                        </p>
+                        ${prod.precio ? `
+                            <p style="font-size: 16px; font-weight: 600; color: #059669;">
+                                $${prod.precio.toLocaleString('es-CO')}
+                            </p>
+                        ` : ''}
+                        <button class="btn btn-small btn-primary" style="margin-top: 10px;"
+                                onclick="usarDatosWeb('${prod.nombre.replace(/'/g, "\\'")}', '${prod.marca || ''}', '${prod.ean || ''}')">
+                            📥 Usar estos datos
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        resultadoContainer.innerHTML = html;
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        resultadoContainer.innerHTML = `
+            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px;">
+                <p style="color: #dc2626;">❌ Error de conexión: ${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// =============================================================
+// 📥 USAR DATOS DE LA WEB
+// =============================================================
+function usarDatosWeb(nombre, marca, ean) {
+    console.log('📥 Usando datos de la web:', { nombre, marca, ean });
+
+    // Actualizar campos del formulario
+    document.getElementById('edit-nombre-norm').value = nombre;
+
+    if (marca) {
+        document.getElementById('edit-marca').value = marca;
+    }
+
+    if (ean) {
+        document.getElementById('edit-ean').value = ean;
+    }
+
+    // Cerrar/limpiar el resultado de búsqueda
+    const resultadoContainer = document.getElementById('resultado-busqueda-web');
+    if (resultadoContainer) {
+        resultadoContainer.innerHTML = `
+            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 15px; border-radius: 4px;">
+                <p style="color: #059669;">✅ Datos aplicados. No olvides guardar los cambios.</p>
+            </div>
+        `;
+    }
+
+    mostrarAlerta('✅ Datos aplicados al formulario', 'success');
+}
+
+// =============================================================
+// 📋 VER HISTORIAL DEL PLU
+// =============================================================
+async function verHistorialPLU(codigoPlu, establecimiento) {
+    console.log(`📋 Obteniendo historial de PLU ${codigoPlu} en ${establecimiento}`);
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/historial-plu/${encodeURIComponent(establecimiento)}/${encodeURIComponent(codigoPlu)}`);
+        const data = await response.json();
+
+        if (!data.success) {
+            mostrarAlerta(`❌ ${data.error}`, 'error');
+            return;
+        }
+
+        // Mostrar en un modal o alert
+        let mensaje = `📋 Historial del PLU ${codigoPlu} en ${data.establecimiento}\n\n`;
+        mensaje += `Nombre sugerido: ${data.nombre_sugerido || 'N/A'}\n`;
+        mensaje += `Total apariciones: ${data.total_apariciones}\n\n`;
+        mensaje += `Variaciones:\n`;
+
+        data.historial.forEach(h => {
+            mensaje += `- "${h.nombre_leido}" ($${h.precio}) - ${h.fecha}\n`;
+        });
+
+        alert(mensaje);
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        mostrarAlerta(`❌ Error: ${error.message}`, 'error');
+    }
+}
+
+// =============================================================
+// EXPORTAR FUNCIONES
+// =============================================================
+window.verFacturaOriginal = verFacturaOriginal;
+window.mostrarModalFactura = mostrarModalFactura;
+window.ampliarImagen = ampliarImagen;
+window.buscarPLUEnWeb = buscarPLUEnWeb;
+window.usarDatosWeb = usarDatosWeb;
+window.verHistorialPLU = verHistorialPLU;
+
+console.log('✅ Funciones de Factura y VTEX cargadas');
