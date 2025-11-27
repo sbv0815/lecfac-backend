@@ -1230,6 +1230,7 @@ window.determinarFuenteDato = determinarFuenteDato;
 
 console.log('✅ Productos.js v4.0 SISTEMA DE APRENDIZAJE PAPA cargado');
 
+
 // =============================================================
 // Inicialización
 // =============================================================
@@ -1259,12 +1260,32 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     console.log("✅ Sistema v4.0 inicializado");
 });
+// =============================================================
+// 🧾 V5.1: VER FACTURA ORIGINAL - CON CONTROLES DE IMAGEN
+// =============================================================
+// Reemplaza las funciones existentes en productos.js
+// Solo copia estas 3 funciones y reemplaza las originales
+// =============================================================
+
+// Variables para controles de imagen
+let imagenControles = {
+    zoom: 1,
+    brillo: 100,
+    contraste: 100,
+    rotacion: 0
+};
+
+// =============================================================
+// 🧾 VER FACTURA ORIGINAL
+// =============================================================
 async function verFacturaOriginal(productoId, nombreProducto) {
     console.log(`🧾 Buscando factura del producto ${productoId}`);
 
+    // Reset controles
+    imagenControles = { zoom: 1, brillo: 100, contraste: 100, rotacion: 0 };
+
     const apiBase = getApiBase();
 
-    // Mostrar loading
     mostrarModalFactura(null, nombreProducto, true);
 
     try {
@@ -1296,10 +1317,9 @@ async function verFacturaOriginal(productoId, nombreProducto) {
 }
 
 // =============================================================
-// 🖼️ MOSTRAR MODAL DE FACTURA
+// 🖼️ MOSTRAR MODAL DE FACTURA - CON CONTROLES
 // =============================================================
 function mostrarModalFactura(data, nombreProducto, loading = false) {
-    // Crear modal si no existe
     let modal = document.getElementById('modal-factura');
 
     if (!modal) {
@@ -1307,13 +1327,12 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
         modal.id = 'modal-factura';
         modal.className = 'modal';
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-content" style="max-width: 1000px; max-height: 95vh; overflow: auto;">
                 <div class="modal-header">
                     <h2>🧾 Factura Original</h2>
                     <button class="modal-close" onclick="cerrarModal('modal-factura')">&times;</button>
                 </div>
                 <div class="modal-body" id="modal-factura-body">
-                    <!-- Contenido dinámico -->
                 </div>
             </div>
         `;
@@ -1347,7 +1366,6 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
         return;
     }
 
-    // Mostrar facturas encontradas
     let html = `
         <div style="margin-bottom: 20px;">
             <h3 style="margin-bottom: 10px;">📦 Producto: ${nombreProducto}</h3>
@@ -1375,7 +1393,6 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
                 </div>
 
                 <div style="padding: 15px;">
-                    <!-- Datos del OCR original -->
                     <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
                         <h4 style="color: #92400e; margin-bottom: 8px;">📝 Datos leídos por OCR:</h4>
                         <table style="width: 100%; font-size: 14px;">
@@ -1398,18 +1415,69 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
                         </table>
                     </div>
 
-                    <!-- Imagen de la factura -->
                     ${factura.tiene_imagen && factura.imagen_base64 ? `
                         <div style="margin-top: 15px;">
                             <h4 style="margin-bottom: 10px;">🖼️ Imagen de la factura:</h4>
-                            <div style="max-height: 400px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-                                <img src="data:${factura.imagen_mime || 'image/jpeg'};base64,${factura.imagen_base64}"
-                                     style="max-width: 100%; display: block;"
-                                     onclick="ampliarImagen(this.src)"
+
+                            <!-- 🆕 CONTROLES DE IMAGEN -->
+                            <div id="controles-imagen-${index}" style="background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
+                                <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+
+                                    <!-- Zoom -->
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 13px; color: #374151;">🔍 Zoom:</span>
+                                        <button onclick="ajustarImagen(${index}, 'zoom', -0.25)"
+                                                style="padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 4px; background: white; cursor: pointer;">−</button>
+                                        <span id="zoom-valor-${index}" style="min-width: 50px; text-align: center; font-size: 13px;">100%</span>
+                                        <button onclick="ajustarImagen(${index}, 'zoom', 0.25)"
+                                                style="padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 4px; background: white; cursor: pointer;">+</button>
+                                    </div>
+
+                                    <!-- Brillo -->
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 13px; color: #374151;">☀️ Brillo:</span>
+                                        <input type="range" id="brillo-${index}" min="50" max="200" value="100"
+                                               onchange="ajustarImagen(${index}, 'brillo', this.value)"
+                                               style="width: 80px; cursor: pointer;">
+                                        <span id="brillo-valor-${index}" style="font-size: 12px; min-width: 35px;">100%</span>
+                                    </div>
+
+                                    <!-- Contraste -->
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 13px; color: #374151;">🎨 Contraste:</span>
+                                        <input type="range" id="contraste-${index}" min="50" max="200" value="100"
+                                               onchange="ajustarImagen(${index}, 'contraste', this.value)"
+                                               style="width: 80px; cursor: pointer;">
+                                        <span id="contraste-valor-${index}" style="font-size: 12px; min-width: 35px;">100%</span>
+                                    </div>
+
+                                    <!-- Rotación -->
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 13px; color: #374151;">🔄</span>
+                                        <button onclick="ajustarImagen(${index}, 'rotacion', -90)"
+                                                style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; background: white; cursor: pointer;">↺</button>
+                                        <button onclick="ajustarImagen(${index}, 'rotacion', 90)"
+                                                style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; background: white; cursor: pointer;">↻</button>
+                                    </div>
+
+                                    <!-- Reset -->
+                                    <button onclick="resetearImagen(${index})"
+                                            style="padding: 4px 12px; border: 1px solid #dc2626; border-radius: 4px; background: #fef2f2; color: #dc2626; cursor: pointer; font-size: 12px;">
+                                        🔄 Reset
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Contenedor de imagen -->
+                            <div style="max-height: 500px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #1f2937;">
+                                <img id="factura-img-${index}"
+                                     src="data:${factura.imagen_mime || 'image/jpeg'};base64,${factura.imagen_base64}"
+                                     style="max-width: 100%; display: block; margin: auto; transition: all 0.2s ease;"
+                                     onclick="ampliarImagenConControles(this.src)"
                                      title="Click para ampliar">
                             </div>
-                            <p style="font-size: 12px; color: #6b7280; margin-top: 5px;">
-                                💡 Click en la imagen para ampliar
+                            <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">
+                                💡 Usa los controles para mejorar la visibilidad. Click en la imagen para pantalla completa.
                             </p>
                         </div>
                     ` : `
@@ -1428,9 +1496,60 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
 }
 
 // =============================================================
-// 🔍 AMPLIAR IMAGEN
+// 🎛️ AJUSTAR IMAGEN (zoom, brillo, contraste, rotación)
 // =============================================================
-function ampliarImagen(src) {
+function ajustarImagen(index, tipo, valor) {
+    const img = document.getElementById(`factura-img-${index}`);
+    if (!img) return;
+
+    // Actualizar valor
+    if (tipo === 'zoom') {
+        imagenControles.zoom = Math.max(0.5, Math.min(3, imagenControles.zoom + valor));
+        document.getElementById(`zoom-valor-${index}`).textContent = Math.round(imagenControles.zoom * 100) + '%';
+    } else if (tipo === 'brillo') {
+        imagenControles.brillo = parseInt(valor);
+        document.getElementById(`brillo-valor-${index}`).textContent = valor + '%';
+    } else if (tipo === 'contraste') {
+        imagenControles.contraste = parseInt(valor);
+        document.getElementById(`contraste-valor-${index}`).textContent = valor + '%';
+    } else if (tipo === 'rotacion') {
+        imagenControles.rotacion = (imagenControles.rotacion + valor) % 360;
+    }
+
+    // Aplicar filtros CSS
+    img.style.transform = `scale(${imagenControles.zoom}) rotate(${imagenControles.rotacion}deg)`;
+    img.style.filter = `brightness(${imagenControles.brillo}%) contrast(${imagenControles.contraste}%)`;
+    img.style.transformOrigin = 'center center';
+}
+
+// =============================================================
+// 🔄 RESETEAR IMAGEN
+// =============================================================
+function resetearImagen(index) {
+    imagenControles = { zoom: 1, brillo: 100, contraste: 100, rotacion: 0 };
+
+    const img = document.getElementById(`factura-img-${index}`);
+    if (img) {
+        img.style.transform = 'scale(1) rotate(0deg)';
+        img.style.filter = 'brightness(100%) contrast(100%)';
+    }
+
+    // Reset sliders
+    const brilloSlider = document.getElementById(`brillo-${index}`);
+    const contrasteSlider = document.getElementById(`contraste-${index}`);
+
+    if (brilloSlider) brilloSlider.value = 100;
+    if (contrasteSlider) contrasteSlider.value = 100;
+
+    document.getElementById(`zoom-valor-${index}`).textContent = '100%';
+    document.getElementById(`brillo-valor-${index}`).textContent = '100%';
+    document.getElementById(`contraste-valor-${index}`).textContent = '100%';
+}
+
+// =============================================================
+// 🔍 AMPLIAR IMAGEN CON CONTROLES
+// =============================================================
+function ampliarImagenConControles(src) {
     let modal = document.getElementById('modal-imagen-ampliada');
 
     if (!modal) {
@@ -1443,202 +1562,126 @@ function ampliarImagen(src) {
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.95);
             z-index: 2000;
-            cursor: zoom-out;
             overflow: auto;
             padding: 20px;
-        `;
-        modal.onclick = () => modal.style.display = 'none';
-        modal.innerHTML = `
-            <img id="imagen-ampliada-src" style="max-width: 100%; margin: auto; display: block;">
-            <button style="position: fixed; top: 20px; right: 20px; background: white; border: none;
-                           padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 16px;">
-                ✕ Cerrar
-            </button>
+            flex-direction: column;
         `;
         document.body.appendChild(modal);
     }
 
-    document.getElementById('imagen-ampliada-src').src = src;
-    modal.style.display = 'flex';
-}
+    modal.innerHTML = `
+        <!-- Barra de controles superior -->
+        <div style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.8); padding: 15px;
+                    display: flex; justify-content: center; gap: 20px; align-items: center; flex-wrap: wrap; z-index: 2001;">
 
+            <!-- Zoom -->
+            <div style="display: flex; align-items: center; gap: 8px; color: white;">
+                <span>🔍</span>
+                <button onclick="ajustarImagenAmpliada('zoom', -0.25)"
+                        style="padding: 8px 15px; border: none; border-radius: 4px; background: #374151; color: white; cursor: pointer; font-size: 16px;">−</button>
+                <span id="zoom-ampliado" style="min-width: 60px; text-align: center;">100%</span>
+                <button onclick="ajustarImagenAmpliada('zoom', 0.25)"
+                        style="padding: 8px 15px; border: none; border-radius: 4px; background: #374151; color: white; cursor: pointer; font-size: 16px;">+</button>
+            </div>
 
-// =============================================================
-// 🔍 BUSCAR PLU EN SUPERMERCADO (VTEX)
-// =============================================================
-async function buscarPLUEnWeb(codigoPlu, establecimiento) {
-    console.log(`🔍 Buscando PLU ${codigoPlu} en ${establecimiento}`);
+            <!-- Brillo -->
+            <div style="display: flex; align-items: center; gap: 8px; color: white;">
+                <span>☀️</span>
+                <input type="range" id="brillo-ampliado-slider" min="50" max="200" value="${imagenControles.brillo}"
+                       onchange="ajustarImagenAmpliada('brillo', this.value)"
+                       style="width: 100px; cursor: pointer;">
+            </div>
 
-    const apiBase = getApiBase();
-    const resultadoContainer = document.getElementById('resultado-busqueda-web');
+            <!-- Contraste -->
+            <div style="display: flex; align-items: center; gap: 8px; color: white;">
+                <span>🎨</span>
+                <input type="range" id="contraste-ampliado-slider" min="50" max="200" value="${imagenControles.contraste}"
+                       onchange="ajustarImagenAmpliada('contraste', this.value)"
+                       style="width: 100px; cursor: pointer;">
+            </div>
 
-    if (!resultadoContainer) {
-        console.error('No se encontró el contenedor de resultados');
-        return;
-    }
+            <!-- Rotación -->
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button onclick="ajustarImagenAmpliada('rotacion', -90)"
+                        style="padding: 8px 12px; border: none; border-radius: 4px; background: #374151; color: white; cursor: pointer;">↺</button>
+                <button onclick="ajustarImagenAmpliada('rotacion', 90)"
+                        style="padding: 8px 12px; border: none; border-radius: 4px; background: #374151; color: white; cursor: pointer;">↻</button>
+            </div>
 
-    resultadoContainer.innerHTML = `
-        <div style="text-align: center; padding: 20px;">
-            <div class="loading"></div>
-            <p style="margin-top: 10px;">Buscando "${codigoPlu}" en ${establecimiento}...</p>
+            <!-- Reset y Cerrar -->
+            <button onclick="resetearImagenAmpliada()"
+                    style="padding: 8px 15px; border: none; border-radius: 4px; background: #dc2626; color: white; cursor: pointer;">
+                🔄 Reset
+            </button>
+            <button onclick="document.getElementById('modal-imagen-ampliada').style.display='none'"
+                    style="padding: 8px 20px; border: none; border-radius: 4px; background: #059669; color: white; cursor: pointer; font-weight: 600;">
+                ✕ Cerrar
+            </button>
+        </div>
+
+        <!-- Imagen -->
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 70px; padding: 20px;">
+            <img id="imagen-ampliada-src" src="${src}"
+                 style="max-width: 95%; max-height: calc(100vh - 120px); transition: all 0.2s ease;
+                        transform: scale(${imagenControles.zoom}) rotate(${imagenControles.rotacion}deg);
+                        filter: brightness(${imagenControles.brillo}%) contrast(${imagenControles.contraste}%);">
+        </div>
+
+        <!-- Instrucciones -->
+        <div style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+                    background: rgba(0,0,0,0.7); color: #9ca3af; padding: 8px 20px; border-radius: 20px; font-size: 13px;">
+            Usa los controles arriba para ajustar la imagen • ESC para cerrar
         </div>
     `;
 
-    try {
-        const response = await fetch(`${apiBase}/api/v2/buscar-plu/${encodeURIComponent(establecimiento)}/${encodeURIComponent(codigoPlu)}`);
-        const data = await response.json();
+    modal.style.display = 'flex';
 
-        if (!data.success) {
-            resultadoContainer.innerHTML = `
-                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px;">
-                    <p style="color: #dc2626;">❌ ${data.error}</p>
-                    ${data.supermercados_disponibles ? `
-                        <p style="font-size: 13px; color: #6b7280; margin-top: 10px;">
-                            Supermercados con búsqueda disponible: ${data.supermercados_disponibles.join(', ')}
-                        </p>
-                    ` : ''}
-                </div>
-            `;
-            return;
-        }
-
-        if (data.resultados.length === 0) {
-            resultadoContainer.innerHTML = `
-                <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 15px; border-radius: 4px;">
-                    <p style="color: #92400e;">⚠️ No se encontraron productos con el código "${codigoPlu}"</p>
-                    <p style="font-size: 13px; color: #6b7280; margin-top: 5px;">
-                        Intenta buscar con otro código o verifica que el PLU sea correcto.
-                    </p>
-                </div>
-            `;
-            return;
-        }
-
-        let html = `
-            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 10px 15px; border-radius: 4px; margin-bottom: 15px;">
-                <p style="color: #059669;">✅ ${data.total} resultado(s) encontrado(s) en ${data.establecimiento}</p>
-            </div>
-        `;
-
-        data.resultados.forEach((prod, index) => {
-            html += `
-                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 10px;
-                            display: flex; gap: 15px; align-items: flex-start;">
-                    ${prod.imagen ? `
-                        <img src="${prod.imagen}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 4px; background: #f9fafb;">
-                    ` : `
-                        <div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 4px;
-                                    display: flex; align-items: center; justify-content: center; color: #9ca3af;">
-                            📦
-                        </div>
-                    `}
-                    <div style="flex: 1;">
-                        <h4 style="margin-bottom: 5px;">${prod.nombre}</h4>
-                        <p style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">
-                            ${prod.marca ? `Marca: ${prod.marca}` : ''}
-                            ${prod.ean ? ` | EAN: <code>${prod.ean}</code>` : ''}
-                        </p>
-                        ${prod.precio ? `
-                            <p style="font-size: 16px; font-weight: 600; color: #059669;">
-                                $${prod.precio.toLocaleString('es-CO')}
-                            </p>
-                        ` : ''}
-                        <button class="btn btn-small btn-primary" style="margin-top: 10px;"
-                                onclick="usarDatosWeb('${prod.nombre.replace(/'/g, "\\'")}', '${prod.marca || ''}', '${prod.ean || ''}')">
-                            📥 Usar estos datos
-                        </button>
-                    </div>
-                </div>
-            `;
-        });
-
-        resultadoContainer.innerHTML = html;
-
-    } catch (error) {
-        console.error('❌ Error:', error);
-        resultadoContainer.innerHTML = `
-            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px;">
-                <p style="color: #dc2626;">❌ Error de conexión: ${error.message}</p>
-            </div>
-        `;
-    }
+    // Actualizar texto de zoom
+    document.getElementById('zoom-ampliado').textContent = Math.round(imagenControles.zoom * 100) + '%';
 }
 
 // =============================================================
-// 📥 USAR DATOS DE LA WEB
+// 🎛️ AJUSTAR IMAGEN AMPLIADA
 // =============================================================
-function usarDatosWeb(nombre, marca, ean) {
-    console.log('📥 Usando datos de la web:', { nombre, marca, ean });
+function ajustarImagenAmpliada(tipo, valor) {
+    const img = document.getElementById('imagen-ampliada-src');
+    if (!img) return;
 
-    // Actualizar campos del formulario
-    document.getElementById('edit-nombre-norm').value = nombre;
-
-    if (marca) {
-        document.getElementById('edit-marca').value = marca;
+    if (tipo === 'zoom') {
+        imagenControles.zoom = Math.max(0.25, Math.min(4, imagenControles.zoom + valor));
+        document.getElementById('zoom-ampliado').textContent = Math.round(imagenControles.zoom * 100) + '%';
+    } else if (tipo === 'brillo') {
+        imagenControles.brillo = parseInt(valor);
+    } else if (tipo === 'contraste') {
+        imagenControles.contraste = parseInt(valor);
+    } else if (tipo === 'rotacion') {
+        imagenControles.rotacion = (imagenControles.rotacion + valor) % 360;
     }
 
-    if (ean) {
-        document.getElementById('edit-ean').value = ean;
-    }
-
-    // Cerrar/limpiar el resultado de búsqueda
-    const resultadoContainer = document.getElementById('resultado-busqueda-web');
-    if (resultadoContainer) {
-        resultadoContainer.innerHTML = `
-            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 15px; border-radius: 4px;">
-                <p style="color: #059669;">✅ Datos aplicados. No olvides guardar los cambios.</p>
-            </div>
-        `;
-    }
-
-    mostrarAlerta('✅ Datos aplicados al formulario', 'success');
+    img.style.transform = `scale(${imagenControles.zoom}) rotate(${imagenControles.rotacion}deg)`;
+    img.style.filter = `brightness(${imagenControles.brillo}%) contrast(${imagenControles.contraste}%)`;
 }
 
 // =============================================================
-// 📋 VER HISTORIAL DEL PLU
+// 🔄 RESETEAR IMAGEN AMPLIADA
 // =============================================================
-async function verHistorialPLU(codigoPlu, establecimiento) {
-    console.log(`📋 Obteniendo historial de PLU ${codigoPlu} en ${establecimiento}`);
+function resetearImagenAmpliada() {
+    imagenControles = { zoom: 1, brillo: 100, contraste: 100, rotacion: 0 };
 
-    const apiBase = getApiBase();
-
-    try {
-        const response = await fetch(`${apiBase}/api/v2/historial-plu/${encodeURIComponent(establecimiento)}/${encodeURIComponent(codigoPlu)}`);
-        const data = await response.json();
-
-        if (!data.success) {
-            mostrarAlerta(`❌ ${data.error}`, 'error');
-            return;
-        }
-
-        // Mostrar en un modal o alert
-        let mensaje = `📋 Historial del PLU ${codigoPlu} en ${data.establecimiento}\n\n`;
-        mensaje += `Nombre sugerido: ${data.nombre_sugerido || 'N/A'}\n`;
-        mensaje += `Total apariciones: ${data.total_apariciones}\n\n`;
-        mensaje += `Variaciones:\n`;
-
-        data.historial.forEach(h => {
-            mensaje += `- "${h.nombre_leido}" ($${h.precio}) - ${h.fecha}\n`;
-        });
-
-        alert(mensaje);
-
-    } catch (error) {
-        console.error('❌ Error:', error);
-        mostrarAlerta(`❌ Error: ${error.message}`, 'error');
+    const img = document.getElementById('imagen-ampliada-src');
+    if (img) {
+        img.style.transform = 'scale(1) rotate(0deg)';
+        img.style.filter = 'brightness(100%) contrast(100%)';
     }
+
+    document.getElementById('zoom-ampliado').textContent = '100%';
+    document.getElementById('brillo-ampliado-slider').value = 100;
+    document.getElementById('contraste-ampliado-slider').value = 100;
 }
 
-// =============================================================
-// EXPORTAR FUNCIONES
-// =============================================================
-window.verFacturaOriginal = verFacturaOriginal;
-window.mostrarModalFactura = mostrarModalFactura;
-window.ampliarImagen = ampliarImagen;
-window.buscarPLUEnWeb = buscarPLUEnWeb;
-window.usarDatosWeb = usarDatosWeb;
-window.verHistorialPLU = verHistorialPLU;
-
-console.log('✅ Funciones de Factura y VTEX cargadas');
+// Mantener compatibilidad con función anterior
+function ampliarImagen(src) {
+    ampliarImagenConControles(src);
+}
