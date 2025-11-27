@@ -45,7 +45,6 @@ async def listar_productos_v2(
                 pm.marca,
                 pm.codigo_lecfac,
                 pm.es_producto_papa,
-                pm.fecha_actualizacion,
                 COALESCE(c.nombre, 'Sin categoría') as categoria,
                 COUNT(DISTINCT pe.establecimiento_id) as num_establecimientos,
                 pm.confianza_datos,
@@ -106,7 +105,7 @@ async def listar_productos_v2(
 
         query += """
             GROUP BY pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca, pm.codigo_lecfac,
-                    pm.es_producto_papa, pm.fecha_actualizacion, c.nombre,
+                    pm.es_producto_papa, c.nombre,
                     pm.confianza_datos, pm.fuente_datos
             ORDER BY pm.id DESC
             LIMIT %s OFFSET %s
@@ -159,13 +158,10 @@ async def listar_productos_v2(
                     "marca": producto[3],
                     "codigo_lecfac": producto[4],
                     "es_producto_papa": producto[5] or False,
-                    "fecha_actualizacion": (
-                        producto[6].isoformat() if producto[6] else None
-                    ),
-                    "categoria": producto[7],
-                    "num_establecimientos": producto[8],
-                    "confianza_datos": float(producto[9]) if producto[9] else 0.5,
-                    "fuente_datos": producto[10] or "OCR",
+                    "categoria": producto[6],
+                    "num_establecimientos": producto[7],
+                    "confianza_datos": float(producto[8]) if producto[8] else 0.5,
+                    "fuente_datos": producto[9] or "OCR",
                     "plus": plus_info,
                 }
             )
@@ -583,8 +579,6 @@ async def actualizar_producto(producto_id: int, request: dict):
             conn.close()
             return {"success": False, "error": "No hay campos para actualizar"}
 
-        # Agregar fecha de actualización
-        updates.append("fecha_actualizacion = CURRENT_TIMESTAMP")
         params.append(producto_id)
 
         query = f"""
