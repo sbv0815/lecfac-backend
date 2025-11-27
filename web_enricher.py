@@ -61,38 +61,69 @@ from dataclasses import dataclass
 # Días antes de refrescar el cache
 DIAS_CACHE_PRECIO = 7
 
-# Supermercados VTEX soportados
 SUPERMERCADOS_VTEX = {
+    # Grupo Éxito
     "CARULLA": "carulla",
     "EXITO": "exito",
     "ÉXITO": "exito",
+    # Grupo Cencosud
     "JUMBO": "jumbo",
+    "METRO": "jumbo",  # Metro usa plataforma de Jumbo
+    # Olímpica
     "OLIMPICA": "olimpica",
     "OLÍMPICA": "olimpica",
-    # 🆕 V1.3: Nuevos supermercados
+    # Mayoristas
     "ALKOSTO": "alkosto",
     "MAKRO": "makro",
+    # 🆕 V1.4: Colsubsidio
+    "COLSUBSIDIO": "mercadocolsubsidio",
+    "MERCADO COLSUBSIDIO": "mercadocolsubsidio",
+    "SUPERMERCADO COLSUBSIDIO": "mercadocolsubsidio",
+}
+
+# 🆕 V1.4: CONFIGURACIÓN VTEX ACTUALIZADA
+VTEX_CONFIG = {
+    "carulla": "https://www.carulla.com",
+    "exito": "https://www.exito.com",
+    "jumbo": "https://www.tiendasjumbo.co",
+    "olimpica": "https://www.olimpica.com",
+    "alkosto": "https://www.alkosto.com",
+    "makro": "https://www.makro.com.co",
+    # 🆕 V1.4: Colsubsidio
+    "mercadocolsubsidio": "https://www.mercadocolsubsidio.com",
 }
 
 
 # Mapeo de nombres de establecimiento a clave VTEX
-def normalizar_supermercado(establecimiento: str) -> Optional[str]:
-    """Normaliza el nombre del establecimiento a clave VTEX"""
-    if not establecimiento:
+def normalizar_supermercado(nombre: str) -> str:
+    """
+    Normaliza el nombre del establecimiento para buscar en VTEX.
+    Retorna la key de VTEX_CONFIG o None si no es soportado.
+    """
+    if not nombre:
         return None
 
-    establecimiento_upper = establecimiento.upper().strip()
+    nombre_upper = nombre.upper().strip()
 
+    # Buscar coincidencia exacta o parcial
     for key, value in SUPERMERCADOS_VTEX.items():
-        if key in establecimiento_upper:
+        if key in nombre_upper or nombre_upper in key:
             return value
 
     return None
 
 
-def es_supermercado_vtex(establecimiento: str) -> bool:
-    """Verifica si el establecimiento es soportado por VTEX"""
+def es_tienda_vtex(establecimiento: str) -> bool:
+    """Verifica si el establecimiento tiene API VTEX disponible"""
     return normalizar_supermercado(establecimiento) is not None
+
+
+def obtener_url_vtex(establecimiento: str) -> str:
+    """Obtiene la URL base de VTEX para el establecimiento"""
+    key = normalizar_supermercado(establecimiento)
+    if key:
+        return VTEX_CONFIG.get(key)
+    return None
 
 
 # ============================================================================
@@ -769,6 +800,7 @@ class WebEnricher:
         # Abreviaciones comunes colombianas
         abreviaciones = {
             "QSO": "queso",
+            "OSO": "queso",
             "LCH": "leche",
             "DESLAC": "deslactosada",
             "DESCREM": "descremada",

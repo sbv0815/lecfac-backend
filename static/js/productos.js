@@ -587,6 +587,12 @@ async function editarProducto(id) {
         document.getElementById("edit-nombre-norm").value = producto.nombre_consolidado || producto.nombre || "";
         document.getElementById("edit-nombre-com").value = producto.nombre_comercial || "";
         document.getElementById("edit-marca").value = producto.marca || "";
+
+        // Código LecFac (solo lectura)
+        const lecfacInput = document.getElementById("edit-lecfac");
+        if (lecfacInput) {
+            lecfacInput.value = producto.codigo_lecfac || "-";
+        }
         document.getElementById("edit-categoria").value = producto.categoria || "";
         document.getElementById("edit-subcategoria").value = producto.subcategoria || "";
         document.getElementById("edit-presentacion").value = producto.presentacion || "";

@@ -4,8 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Productos v2 - LecFac</title>
+    <title>Gestión de Productos - LecFac Admin</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
     <style>
+        /* ============================================
+           ESTILOS SISTEMA PAPA V4.0
+           ============================================ */
+
         * {
             margin: 0;
             padding: 0;
@@ -13,299 +18,211 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f3f4f6;
+            color: #111827;
+            line-height: 1.5;
         }
 
         .container {
             max-width: 1600px;
             margin: 0 auto;
-        }
-
-        .header {
-            background: white;
             padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
-        .header h1 {
-            font-size: 24px;
-            color: #333;
-            margin-bottom: 10px;
-        }
-
-        .tabs {
+        /* Header */
+        .page-header {
             display: flex;
-            gap: 10px;
-            margin-top: 20px;
-            border-bottom: 2px solid #e0e0e0;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
 
-        .tab {
-            padding: 12px 24px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 15px;
-            color: #666;
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s;
-        }
-
-        .tab.active {
-            color: #2563eb;
-            border-bottom-color: #2563eb;
-        }
-
-        .tab:hover {
-            color: #2563eb;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
+        .page-header h1 {
+            font-size: 24px;
+            color: #111827;
         }
 
         /* Stats Cards */
-        .stats {
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 15px;
             margin-bottom: 20px;
         }
 
         .stat-card {
             background: white;
+            border-radius: 12px;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .stat-card.papa {
+            background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+            border-left: 4px solid #059669;
+        }
+
+        .stat-card.web {
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+            border-left: 4px solid #2563eb;
+        }
+
+        .stat-card.ocr {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border-left: 4px solid #d97706;
         }
 
         .stat-value {
             font-size: 32px;
             font-weight: 700;
+            color: #111827;
+        }
+
+        .stat-card.papa .stat-value {
+            color: #059669;
+        }
+
+        .stat-card.web .stat-value {
             color: #2563eb;
-            margin-bottom: 5px;
         }
 
-        .stat-label {
-            color: #64748b;
-            font-size: 14px;
-        }
-
-        .stat-card.warning .stat-value {
+        .stat-card.ocr .stat-value {
             color: #d97706;
         }
 
-        .stat-card.danger .stat-value {
-            color: #dc2626;
+        .stat-label {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 5px;
         }
 
-        /* Filters */
-        .filters {
+        /* Filtros y Búsqueda */
+        .filters-bar {
             background: white;
-            padding: 20px;
-            border-radius: 8px;
+            border-radius: 12px;
+            padding: 15px 20px;
             margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        .filter-row {
             display: flex;
             gap: 15px;
-            flex-wrap: wrap;
             align-items: center;
+            flex-wrap: wrap;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
-        input[type="text"],
-        input[type="number"],
-        select {
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
+        .search-box {
             flex: 1;
-            min-width: 200px;
+            min-width: 250px;
+            position: relative;
         }
 
-        button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
+        .search-box input {
+            width: 100%;
+            padding: 10px 15px 10px 40px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
             font-size: 14px;
+        }
+
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .filter-select {
+            padding: 10px 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
             cursor: pointer;
-            transition: all 0.3s;
         }
 
-        .btn-primary {
-            background: #2563eb;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #1d4ed8;
-        }
-
-        .btn-secondary {
-            background: #64748b;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #475569;
-        }
-
-        .btn-success {
-            background: #10b981;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #059669;
-        }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .btn-warning {
-            background: #f59e0b;
-            color: white;
-        }
-
-        .btn-warning:hover {
-            background: #d97706;
-        }
-
-        .btn-small {
-            padding: 6px 12px;
+        #search-indicator {
+            display: none;
+            color: #6b7280;
             font-size: 13px;
         }
 
-        .btn-icon {
-            padding: 8px;
-            width: 36px;
-            height: 36px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
+        /* Tabla */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
-        /* Actions Bar */
-        .actions-bar {
-            background: white;
+        .table-header {
             padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-bottom: 1px solid #e5e7eb;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .actions-left {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .selected-count {
-            padding: 8px 16px;
-            background: #e0e7ff;
-            color: #4338ca;
-            border-radius: 6px;
-            font-weight: 600;
-        }
-
-        /* Table */
-        .productos-table {
-            background: white;
-            border-radius: 8px;
-            overflow-x: auto;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
         table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 1200px;
         }
 
         th {
-            background: #f8f9fa;
-            padding: 12px;
+            background: #f9fafb;
+            padding: 12px 15px;
             text-align: left;
             font-weight: 600;
-            color: #333;
-            border-bottom: 2px solid #e0e0e0;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
-        th.sortable {
-            cursor: pointer;
-            user-select: none;
-        }
-
-        th.sortable:hover {
-            background: #e9ecef;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #6b7280;
+            border-bottom: 1px solid #e5e7eb;
         }
 
         td {
-            padding: 12px;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        tr:hover {
-            background: #f8f9fa;
-        }
-
-        tr.selected {
-            background: #eff6ff;
-        }
-
-        td.editable {
-            cursor: pointer;
-            position: relative;
-        }
-
-        td.editable:hover {
-            background: #fef3c7;
-        }
-
-        td.editing input {
-            width: 100%;
-            padding: 6px;
-            border: 2px solid #2563eb;
-            border-radius: 4px;
+            padding: 12px 15px;
+            border-bottom: 1px solid #f3f4f6;
             font-size: 14px;
         }
 
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        /* Fila OCR (amarilla) */
+        tr.row-ocr {
+            background: #fffbeb;
+        }
+
+        tr.row-ocr:hover {
+            background: #fef3c7;
+        }
+
+        /* Badges */
         .badge {
             display: inline-block;
-            padding: 4px 8px;
+            padding: 3px 8px;
             border-radius: 4px;
             font-size: 11px;
             font-weight: 600;
-            text-transform: uppercase;
-            margin: 2px;
         }
 
-        .badge-error {
-            background: #fee2e2;
-            color: #dc2626;
+        .badge-papa {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .badge-web {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .badge-ocr {
+            background: #fef3c7;
+            color: #d97706;
         }
 
         .badge-warning {
@@ -319,43 +236,82 @@
         }
 
         .badge-info {
-            background: #dbeafe;
-            color: #1e40af;
+            background: #e0f2fe;
+            color: #0369a1;
         }
 
+        /* Botones */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #d1d5db;
+        }
+
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .btn-papa {
+            background: #f3f4f6;
+            color: #6b7280;
+            border: 1px solid #d1d5db;
+        }
+
+        .btn-papa.active {
+            background: #d1fae5;
+            color: #059669;
+            border-color: #059669;
+        }
+
+        /* Checkbox cell */
         .checkbox-cell {
             width: 40px;
             text-align: center;
-        }
-
-        input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-
-        /* Pagination */
-        .pagination {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .pagination button {
-            padding: 8px 16px;
         }
 
         /* Modal */
         .modal {
             display: none;
             position: fixed;
-            z-index: 1000;
-            left: 0;
             top: 0;
-            width: 100%;
-            height: 100%;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
             align-items: center;
             justify-content: center;
         }
@@ -366,150 +322,240 @@
 
         .modal-content {
             background: white;
-            padding: 30px;
             border-radius: 12px;
-            max-width: 800px;
             width: 90%;
+            max-width: 800px;
             max-height: 90vh;
             overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
         }
 
         .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
         }
 
         .modal-header h2 {
-            font-size: 20px;
-            color: #333;
+            font-size: 18px;
         }
 
-        .close {
-            font-size: 28px;
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
             cursor: pointer;
-            color: #999;
+            color: #6b7280;
         }
 
-        .close:hover {
-            color: #333;
+        .modal-body {
+            padding: 20px;
         }
 
-        .form-group {
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        /* Form */
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
             margin-bottom: 15px;
         }
 
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
         .form-group label {
-            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
             margin-bottom: 5px;
-            font-weight: 600;
-            color: #333;
         }
 
         .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
+        .form-group select {
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
             border-radius: 6px;
             font-size: 14px;
         }
 
-        .form-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
-        /* Sección PLUs en el modal */
-        .section-header {
-            background-color: #f0f0f0;
-            padding: 10px;
-            margin: 20px -10px 15px -10px;
-            font-weight: bold;
+        .form-group input[readonly] {
+            background: #f9fafb;
+            color: #6b7280;
+        }
+
+        /* Fuente Info Box */
+        .fuente-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .fuente-info.papa {
+            background: #d1fae5;
+            border-left: 4px solid #059669;
+            color: #059669;
+        }
+
+        .fuente-info.web {
+            background: #dbeafe;
             border-left: 4px solid #2563eb;
+            color: #2563eb;
+        }
+
+        .fuente-info.ocr {
+            background: #fef3c7;
+            border-left: 4px solid #d97706;
+            color: #92400e;
+        }
+
+        .fuente-icon {
+            font-size: 28px;
+        }
+
+        .fuente-text h4 {
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+
+        .fuente-text p {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        /* Checkbox PAPA */
+        .papa-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 2px dashed #d1d5db;
+        }
+
+        .papa-checkbox.checked {
+            background: #d1fae5;
+            border-color: #059669;
+        }
+
+        .papa-checkbox input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .papa-checkbox label {
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        /* PLUs Section */
+        .plus-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .plus-section h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .plu-item {
-            border: 1px solid #dee2e6;
-            border-radius: 5px;
-            padding: 15px;
             margin-bottom: 10px;
-            background-color: #f8f9fa;
         }
 
         .plu-row {
             display: grid;
-            grid-template-columns: 2fr 1.5fr 1.5fr auto;
+            grid-template-columns: 1fr 1fr 1fr auto;
             gap: 10px;
             align-items: end;
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: white;
         }
 
-        .plu-item .form-group {
-            margin-bottom: 5px;
+        .plu-row.new {
+            background: #f0fdf4;
+            border-color: #10b981;
         }
 
-        .btn-remove-plu {
-            background: #ef4444;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            height: 38px;
-            margin-top: 23px;
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 20px;
         }
 
-        .btn-remove-plu:hover {
-            background: #dc2626;
+        /* Actions Bar */
+        .actions-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
 
-        .btn-add-plu {
-            background: #10b981;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 10px;
+        #selected-count {
+            font-size: 13px;
+            color: #6b7280;
         }
 
-        .btn-add-plu:hover {
-            background: #059669;
-        }
-
-        /* Alerts */
-        .alert {
-            padding: 15px;
-            border-radius: 6px;
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 5px;
             margin-bottom: 20px;
         }
 
-        .alert-success {
-            background: #d1fae5;
-            color: #059669;
-            border-left: 4px solid #059669;
+        .tab {
+            padding: 10px 20px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-weight: 500;
         }
 
-        .alert-error {
-            background: #fee2e2;
-            color: #dc2626;
-            border-left: 4px solid #dc2626;
+        .tab.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
         }
 
-        .alert-warning {
-            background: #fef3c7;
-            color: #d97706;
-            border-left: 4px solid #d97706;
+        .tab-content {
+            display: none;
         }
 
-        .alert-info {
-            background: #e0e7ff;
-            color: #4338ca;
-            border-left: 4px solid #4338ca;
+        .tab-content.active {
+            display: block;
         }
 
         /* Loading */
@@ -517,169 +563,107 @@
             display: inline-block;
             width: 20px;
             height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #2563eb;
+            border: 2px solid #e5e7eb;
+            border-top-color: #2563eb;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
 
         @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-
-            100% {
+            to {
                 transform: rotate(360deg);
             }
         }
 
-        /* Duplicados Section */
-        .duplicado-item {
-            background: white;
-            border: 2px solid #fecaca;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
+        /* Responsive */
+        @media (max-width: 768px) {
+            .filters-bar {
+                flex-direction: column;
+            }
 
-        .duplicado-item.plu {
-            border-color: #fed7aa;
-        }
+            .search-box {
+                width: 100%;
+            }
 
-        .duplicado-item.nombre {
-            border-color: #fef08a;
-        }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
 
-        .duplicado-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
+            table {
+                font-size: 12px;
+            }
 
-        .productos-duplicados {
-            display: grid;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .producto-dup-card {
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 6px;
-            border-left: 3px solid #64748b;
-        }
-
-        .producto-dup-card.principal {
-            background: #dbeafe;
-            border-left-color: #2563eb;
-        }
-
-        /* Agregar al final del <style> en productos.html */
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
+            th,
+            td {
+                padding: 8px;
+            }
         }
     </style>
-
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/productos.css">
 </head>
 
 <body>
     <div class="container">
-        <div class="header">
-            <h1>📦 Gestión de Productos v2.0 - Estandarización</h1>
-            <p>Detecta duplicados, fusiona productos y mantén tu catálogo limpio</p>
-
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab('lista')">📋 Lista Completa</button>
-                <button class="tab" onclick="switchTab('duplicados')">⚠️ Duplicados</button>
-                <button class="tab" onclick="switchTab('calidad')">📊 Calidad de Datos</button>
+        <!-- Header -->
+        <div class="page-header">
+            <h1>🛒 Gestión de Productos</h1>
+            <div class="actions-bar">
+                <span id="selected-count">0 seleccionados</span>
+                <button class="btn btn-secondary" id="btn-deseleccionar" disabled onclick="deseleccionarTodos()">
+                    Deseleccionar
+                </button>
+                <button class="btn btn-primary" id="btn-fusionar" disabled onclick="fusionarProductos()">
+                    🔗 Fusionar
+                </button>
             </div>
         </div>
 
-        <!-- TAB 1: LISTA DE PRODUCTOS -->
-        <div id="tab-lista" class="tab-content active">
-            <!-- Stats -->
-            <div class="stats" id="stats">
-                <div class="stat-card">
-                    <div class="stat-value">-</div>
-                    <div class="stat-label">Total Productos</div>
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">0</div>
+                <div class="stat-label">Total Productos</div>
+            </div>
+            <div class="stat-card papa">
+                <div class="stat-value">0</div>
+                <div class="stat-label">👑 Validados (PAPA)</div>
+            </div>
+            <div class="stat-card web">
+                <div class="stat-value">0</div>
+                <div class="stat-label">🌐 Con EAN (Web)</div>
+            </div>
+            <div class="stat-card ocr">
+                <div class="stat-value">0</div>
+                <div class="stat-label">📝 Solo OCR (revisar)</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('productos')">📦 Productos</button>
+            <button class="tab" onclick="switchTab('calidad')">📊 Calidad de Datos</button>
+        </div>
+
+        <!-- Tab: Productos -->
+        <div id="tab-productos" class="tab-content active">
+            <!-- Filtros -->
+            <div class="filters-bar">
+                <div class="search-box">
+                    <input type="text" id="busqueda" placeholder="Buscar por nombre, EAN, marca o código LecFac...">
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value">-</div>
-                    <div class="stat-label">Con EAN completo</div>
-                </div>
-                <div class="stat-card warning">
-                    <div class="stat-value">-</div>
-                    <div class="stat-label">Sin Marca</div>
-                </div>
-                <div class="stat-card danger">
-                    <div class="stat-value">-</div>
-                    <div class="stat-label">Duplicados Detectados</div>
-                </div>
+                <select id="filtro" class="filter-select">
+                    <option value="todos">📋 Todos los productos</option>
+                    <option value="papa">👑 Solo PAPA (validados)</option>
+                    <option value="web">🌐 Solo WEB (con EAN)</option>
+                    <option value="ocr">📝 Solo OCR (revisar)</option>
+                    <option value="sin_ean">⚠️ Sin EAN</option>
+                    <option value="sin_marca">⚠️ Sin Marca</option>
+                </select>
+                <span id="search-indicator">🔍 Buscando...</span>
+                <button class="btn btn-secondary" onclick="limpiarFiltros()">🔄 Limpiar</button>
             </div>
 
-            <!-- Filters -->
-            <div class="filters">
-                <div class="filter-row">
-                    <input type="text" id="busqueda"
-                        placeholder="🔍 Buscar en tiempo real... (nombre, EAN, PLU, marca)">
-
-                    <select id="filtro" onchange="cargarProductos(1)">
-                        <option value="todos">Todos los productos</option>
-                        <option value="sin_ean">Sin código EAN</option>
-                        <option value="sin_marca">Sin marca</option>
-                        <option value="sin_categoria">Sin categoría</option>
-                    </select>
-
-                    <button class="btn-secondary" onclick="limpiarFiltros()">
-                        🔄 Limpiar
-                    </button>
-
-                    <button class="btn-primary" onclick="cargarProductos(1)">
-                        ♻️ Recargar
-                    </button>
-                </div>
-
-                <!-- Indicador de búsqueda -->
-                <div id="search-indicator" style="margin-top: 10px; display: none; color: #2563eb; font-size: 13px;">
-                    <span class="loading" style="width: 14px; height: 14px; border-width: 2px;"></span>
-                    Buscando...
-                </div>
-            </div>
-
-
-            <!-- Actions Bar -->
-            <div class="actions-bar">
-                <div class="actions-left">
-                    <span class="selected-count" id="selected-count">0 seleccionados</span>
-                    <button class="btn-success" onclick="fusionarSeleccionados()" id="btn-fusionar" disabled>
-                        🔗 Fusionar Seleccionados
-                    </button>
-                    <button class="btn-warning" onclick="aplicarCorreccionMasiva()" id="btn-correccion-masiva" disabled>
-                        🔧 Corrección Masiva
-                    </button>
-                    <button class="btn-danger" onclick="deseleccionarTodos()" id="btn-deseleccionar" disabled>
-                        ✖️ Deseleccionar
-                    </button>
-                </div>
-                <div>
-                    <button class="btn-warning" onclick="detectarDuplicados()">
-                        🔍 Detectar Duplicados
-                    </button>
-                </div>
-            </div>
-
-            <!-- Table -->
-            <div class="productos-table">
+            <!-- Tabla -->
+            <div class="table-container">
                 <table>
                     <thead>
                         <tr>
@@ -687,220 +671,170 @@
                                 <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
                             </th>
                             <th>ID</th>
+                            <th>Fuente</th>
                             <th>EAN</th>
                             <th>PLU</th>
                             <th>Establecimiento</th>
                             <th>Nombre</th>
                             <th>Marca</th>
-                            <th>Categoría</th>
-                            <th>Código LecFac</th>
                             <th>Precio</th>
-                            <th>Compras</th>
                             <th>Estado</th>
-                            <th style="width: 150px;">Acciones</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
-
                     <tbody id="productos-body">
                         <tr>
-                            <td colspan="12" style="text-align: center; padding: 40px;">
-                                <div class="loading"></div>
-                                <p style="margin-top: 10px;">Cargando productos...</p>
+                            <td colspan="11" style="text-align: center; padding: 40px;">
+                                <div class="loading"></div> Cargando productos...
                             </td>
                         </tr>
                     </tbody>
                 </table>
-            </div>
 
-            <!-- Pagination -->
-            <div class="pagination" id="pagination"></div>
-        </div>
-
-        <!-- TAB 2: DUPLICADOS -->
-        <div id="tab-duplicados" class="tab-content">
-
-            <!-- TAB 3: CALIDAD DE DATOS -->
-            <div id="tab-calidad" class="tab-content">
-                <div class="alert alert-info">
-                    <strong>📊 Dashboard de Calidad de Datos</strong><br>
-                    Métricas de completitud y salud del catálogo de productos
-                </div>
-
-                <div id="calidad-stats" class="stats">
-                    <!-- Stats de calidad -->
-                </div>
-
-                <div style="background: white; padding: 30px; border-radius: 8px; margin-top: 20px;">
-                    <h2>📈 Recomendaciones</h2>
-                    <div id="recomendaciones" style="margin-top: 20px;">
-                        <!-- Recomendaciones dinámicas -->
-                    </div>
+                <div id="pagination" class="pagination">
+                    <!-- Paginación se genera dinámicamente -->
                 </div>
             </div>
         </div>
 
-        <!-- MODAL DE EDICIÓN MEJORADO CON PLUs -->
-        <div id="modal-editar" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>✏️ Editar Producto</h2>
-                    <span class="close" onclick="cerrarModal('modal-editar')">&times;</span>
+        <!-- Tab: Calidad -->
+        <div id="tab-calidad" class="tab-content">
+            <div id="calidad-stats" class="stats-grid">
+                <!-- Se llena dinámicamente -->
+            </div>
+            <div id="duplicados-container" style="margin-top: 20px;">
+                <button class="btn btn-primary" onclick="detectarDuplicados()">
+                    🔍 Detectar Duplicados
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar -->
+    <div id="modal-editar" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Editar Producto</h2>
+                <button class="modal-close" onclick="cerrarModal('modal-editar')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+
+                <!-- Indicador de Fuente -->
+                <div id="edit-fuente-container">
+                    <!-- Se llena dinámicamente con la fuente del producto -->
                 </div>
-                <form id="form-editar" onsubmit="event.preventDefault(); guardarEdicion();">
-                    <input type="hidden" id="edit-id">
 
-                    <!-- Sección 1: Identificación Global -->
-                    <div class="section-header">
-                        📦 Identificación Global
-                    </div>
-
+                <!-- Datos del Producto -->
+                <div class="form-row">
                     <div class="form-group">
                         <label>Código EAN</label>
-                        <input type="text" id="edit-ean" placeholder="7702001234567" maxlength="13">
+                        <input type="text" id="edit-ean" placeholder="7702001...">
                     </div>
-
                     <div class="form-group">
-                        <label>Nombre Normalizado *</label>
-                        <input type="text" id="edit-nombre-norm" required>
+                        <label>Código LecFac</label>
+                        <input type="text" id="edit-lecfac" readonly>
                     </div>
+                </div>
 
+                <div class="form-row">
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label>Nombre del Producto</label>
+                        <input type="text" id="edit-nombre-norm" placeholder="Nombre consolidado">
+                    </div>
+                </div>
+
+                <div class="form-row">
                     <div class="form-group">
                         <label>Nombre Comercial</label>
-                        <input type="text" id="edit-nombre-com">
+                        <input type="text" id="edit-nombre-com" placeholder="Nombre comercial (opcional)">
                     </div>
-
                     <div class="form-group">
                         <label>Marca</label>
                         <input type="text" id="edit-marca" placeholder="Ej: Alpina">
                     </div>
+                </div>
 
+                <div class="form-row">
                     <div class="form-group">
                         <label>Categoría</label>
-                        <input type="text" id="edit-categoria" placeholder="Ej: Lácteos">
+                        <input type="text" id="edit-categoria" placeholder="Categoría">
                     </div>
-
                     <div class="form-group">
                         <label>Subcategoría</label>
-                        <input type="text" id="edit-subcategoria" placeholder="Ej: Leches">
+                        <input type="text" id="edit-subcategoria" placeholder="Subcategoría">
                     </div>
-
                     <div class="form-group">
                         <label>Presentación</label>
-                        <input type="text" id="edit-presentacion" placeholder="Ej: 1L">
+                        <input type="text" id="edit-presentacion" placeholder="Ej: 1L, 500g">
                     </div>
-
-                    <!-- Sección 2: PLUs por Establecimiento -->
-                    <div class="section-header">
-                        🏪 PLUs por Establecimiento
-                    </div>
-
-                    <!-- ✅ CONTENEDOR DE PLUs - ESTO FALTABA -->
-                    <div id="contenedorPLUs" style="margin: 15px 0; min-height: 50px;">
-                        <!-- Los PLUs se cargan aquí dinámicamente -->
-                        <p style="color: #999; text-align: center; padding: 20px;">Cargando PLUs...</p>
-                    </div>
-
-                    <div style="margin-top: 10px;">
-                        <button type="button" class="btn-secondary" onclick="agregarPLUEditable()" style="width: 100%;">
-                            ➕ Agregar PLU
-                        </button>
-                    </div>
-
-                    <!-- Sección 3: Estadísticas (solo lectura) -->
-                    <div class="section-header">
-                        📊 Estadísticas
-                    </div>
-                    <div style="margin-bottom: 15px; padding: 10px; background: #f9fafb; border-radius: 6px;">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="toggle-solo-papas" onchange="toggleSoloPapas()"
-                                style="margin-right: 8px;">
-                            <span style="font-weight: 500;">Ocultar productos hijo (mostrar solo PAPAS)</span>
-                            <span style="margin-left: 10px; font-size: 12px; color: #666;">
-                                Los productos hijo son el historial de precios
-                            </span>
-                        </label>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                        <div class="form-group">
-                            <label>Veces Comprado</label>
-                            <input type="text" id="edit-veces-comprado" readonly style="background: #f0f0f0;">
-                        </div>
-                        <div class="form-group">
-                            <label>Precio Promedio</label>
-                            <input type="text" id="edit-precio-promedio" readonly style="background: #f0f0f0;">
-                        </div>
-                        <div class="form-group">
-                            <label>Establecimientos</label>
-                            <input type="text" id="edit-num-establecimientos" readonly style="background: #f0f0f0;">
-                        </div>
-                    </div>
-
-                    <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="cerrarModal('modal-editar')">
-                            Cancelar
-                        </button>
-                        <button type="submit" class="btn-success">
-                            💾 Guardar Cambios
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- MODAL DE FUSIÓN -->
-        <div id="modal-fusionar" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>🔗 Fusionar Productos</h2>
-                    <span class="close" onclick="cerrarModal('modal-fusionar')">&times;</span>
                 </div>
 
-                <div class="alert alert-warning">
-                    <strong>⚠️ Acción Permanente</strong><br>
-                    Esta acción fusionará todos los productos seleccionados en uno solo. Los datos se consolidarán
-                    automáticamente.
+                <!-- Estadísticas (solo lectura) -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Veces Comprado</label>
+                        <input type="text" id="edit-veces-comprado" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Precio Promedio</label>
+                        <input type="text" id="edit-precio-promedio" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label># Establecimientos</label>
+                        <input type="text" id="edit-num-establecimientos" readonly>
+                    </div>
                 </div>
 
-                <div id="fusion-preview">
-                    <!-- Preview de productos a fusionar -->
+                <!-- Checkbox PAPA -->
+                <div class="papa-checkbox" id="papa-checkbox-container">
+                    <input type="checkbox" id="edit-es-papa" onchange="togglePapaCheckbox()">
+                    <label for="edit-es-papa">
+                        <strong>👑 Marcar como producto VALIDADO (PAPA)</strong><br>
+                        <span style="font-size: 12px; color: #6b7280;">
+                            Confirma que el PLU, EAN y nombre son correctos. Este producto servirá de referencia.
+                        </span>
+                    </label>
                 </div>
 
-                <div class="form-group">
-                    <label>Estrategia de Fusión</label>
-                    <select id="estrategia-fusion">
-                        <option value="mas_completo">Mantener datos más completos</option>
-                        <option value="principal">Mantener datos del producto principal</option>
-                    </select>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary"
-                        onclick="cerrarModal('modal-fusionar')">Cancelar</button>
-                    <button type="button" class="btn-success" onclick="confirmarFusion()">✅ Confirmar
-                        Fusión</button>
+                <!-- PLUs -->
+                <div class="plus-section">
+                    <h3>
+                        📍 PLUs por Establecimiento
+                        <button class="btn btn-small btn-primary" onclick="agregarPLUEditable()">+ Agregar PLU</button>
+                    </h3>
+                    <div id="contenedorPLUs">
+                        <!-- PLUs se cargan dinámicamente -->
+                    </div>
                 </div>
             </div>
-        </div>
-
-        <!-- MODAL DE HISTORIAL -->
-        <div id="modal-historial" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>📜 Historial de Compras</h2>
-                    <span class="close" onclick="cerrarModal('modal-historial')">&times;</span>
-                </div>
-
-                <div id="historial-container">
-                    <!-- Historial se carga aquí  despues de cambios -->
-                </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modal-editar')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarEdicion()">💾 Guardar Cambios</button>
             </div>
         </div>
+    </div>
 
-        <script src="/static/js/productos.js?v=20251119e"></script>
+    <!-- Scripts -->
+    <script src="/static/js/productos.js"></script>
+    <script>
+        // Función para toggle visual del checkbox PAPA
+        function togglePapaCheckbox() {
+            const checkbox = document.getElementById('edit-es-papa');
+            const container = document.getElementById('papa-checkbox-container');
 
+            if (checkbox.checked) {
+                container.classList.add('checked');
+            } else {
+                container.classList.remove('checked');
+            }
+        }
 
-        <!-- Bootstrap JS -->
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        // Función placeholder para fusionar (implementar después)
+        function fusionarProductos() {
+            alert('Función de fusión próximamente...');
+        }
+    </script>
 </body>
 
 </html>
