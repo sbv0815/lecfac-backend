@@ -768,94 +768,63 @@ async def eliminar_producto(producto_id: int):
         print(f"   🗑️  Eliminando producto: {nombre}")
 
         # ========== LIMPIEZA DE TODAS LAS TABLAS RELACIONADAS ==========
+        # Función auxiliar para eliminar de tablas que pueden o no existir
+        def safe_delete(table_name, column_name="producto_maestro_id"):
+            try:
+                cursor.execute(
+                    f"DELETE FROM {table_name} WHERE {column_name} = %s",
+                    (producto_id,),
+                )
+                return cursor.rowcount
+            except Exception as e:
+                if "does not exist" in str(e):
+                    conn.rollback()  # Limpiar el error
+                    return 0
+                raise
+
+        def safe_update(table_name, column_name="producto_maestro_id"):
+            try:
+                cursor.execute(
+                    f"UPDATE {table_name} SET {column_name} = NULL WHERE {column_name} = %s",
+                    (producto_id,),
+                )
+                return cursor.rowcount
+            except Exception as e:
+                if "does not exist" in str(e):
+                    conn.rollback()
+                    return 0
+                raise
 
         # 1. Eliminar precios históricos
-        cursor.execute(
-            "DELETE FROM precios_productos WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        precios_eliminados = cursor.rowcount
+        precios_eliminados = safe_delete("precios_productos")
         logger.info(f"   💰 {precios_eliminados} precios eliminados")
 
         # 2. Eliminar PLUs por establecimiento
-        cursor.execute(
-            "DELETE FROM productos_por_establecimiento WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        plus_eliminados = cursor.rowcount
+        plus_eliminados = safe_delete("productos_por_establecimiento")
         logger.info(f"   🗑️ {plus_eliminados} PLUs eliminados")
 
         # 3. Desvincular items de factura (UPDATE a NULL)
-        cursor.execute(
-            "UPDATE items_factura SET producto_maestro_id = NULL WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        items_desvinculados = cursor.rowcount
+        items_desvinculados = safe_update("items_factura")
         logger.info(f"   🔗 {items_desvinculados} items desvinculados")
 
         # 4. Eliminar inventario de usuario
-        cursor.execute(
-            "DELETE FROM inventario_usuario WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        inventario_eliminado = cursor.rowcount
+        inventario_eliminado = safe_delete("inventario_usuario")
         logger.info(f"   📦 {inventario_eliminado} registros de inventario eliminados")
 
         # 5. Eliminar historial de compras
-        cursor.execute(
-            "DELETE FROM historial_compras_usuario WHERE producto_id = %s",
-            (producto_id,),
-        )
-        historial_eliminado = cursor.rowcount
+        historial_eliminado = safe_delete("historial_compras_usuario", "producto_id")
         logger.info(f"   📊 {historial_eliminado} registros de historial eliminados")
 
         # 6. Eliminar patrones de compra
-        cursor.execute(
-            "DELETE FROM patrones_compra WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        patrones_eliminados = cursor.rowcount
+        patrones_eliminados = safe_delete("patrones_compra")
         logger.info(f"   📈 {patrones_eliminados} patrones de compra eliminados")
 
-        # 7. Eliminar productos en grupo
-        cursor.execute(
-            "DELETE FROM productos_en_grupo WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        grupos_eliminados = cursor.rowcount
-        logger.info(f"   👥 {grupos_eliminados} relaciones de grupo eliminadas")
-
-        # 8. Eliminar códigos alternativos
-        cursor.execute(
-            "DELETE FROM codigos_alternativos WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        codigos_eliminados = cursor.rowcount
-        logger.info(f"   🔖 {codigos_eliminados} códigos alternativos eliminados")
-
-        # 9. Eliminar variantes de nombres
-        cursor.execute(
-            "DELETE FROM variantes_nombres WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        variantes_eliminadas = cursor.rowcount
-        logger.info(f"   📝 {variantes_eliminadas} variantes de nombres eliminadas")
-
-        # 10. Eliminar precios históricos v2
-        cursor.execute(
-            "DELETE FROM precios_historicos_v2 WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        precios_v2_eliminados = cursor.rowcount
-        logger.info(f"   💵 {precios_v2_eliminados} precios históricos v2 eliminados")
-
-        # 11. Eliminar log de mejoras de nombres
-        cursor.execute(
-            "DELETE FROM log_mejoras_nombres WHERE producto_maestro_id = %s",
-            (producto_id,),
-        )
-        log_eliminado = cursor.rowcount
-        logger.info(f"   📋 {log_eliminado} registros de log eliminados")
+        # 7-11. Eliminar de tablas opcionales (pueden no existir)
+        grupos_eliminados = safe_delete("productos_en_grupo")
+        codigos_eliminados = safe_delete("codigos_alternativos")
+        variantes_eliminadas = safe_delete("variantes_nombres")
+        precios_v2_eliminados = safe_delete("precios_historicos_v2")
+        log_eliminado = safe_delete("log_mejoras_nombres")
 
         # 12. FINALMENTE - Eliminar el producto maestro
         cursor.execute(
@@ -878,12 +847,6 @@ async def eliminar_producto(producto_id: int):
                 "inventario_eliminado": inventario_eliminado,
                 "historial_eliminado": historial_eliminado,
                 "patrones_eliminados": patrones_eliminados,
-                "grupos_eliminados": grupos_eliminados,
-                "codigos_eliminados": codigos_eliminados,
-                "variantes_eliminadas": variantes_eliminadas,
-                "precios_v2_eliminados": precios_v2_eliminados,
-                "log_eliminado": log_eliminado,
-                "hijos_desvinculados": hijos_desvinculados,
             },
         }
     except HTTPException:
