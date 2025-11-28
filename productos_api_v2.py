@@ -1370,7 +1370,15 @@ async def obtener_historial_plu(establecimiento: str, codigo_plu: str):
 # =============================================================
 
 
-@app.get("/api/v2/productos/{producto_id}/factura")
+# =============================================================
+# ENDPOINT: GET /api/v2/productos/{producto_id}/factura
+# VERSIÓN 2.0: CON POSICIÓN VERTICAL DEL PRODUCTO
+# =============================================================
+# Agregar a productos_api_v2.py (usa router, NO app)
+# =============================================================
+
+
+@router.get("/productos/{producto_id}/factura")
 async def obtener_factura_producto(producto_id: int):
     """
     Obtiene la(s) factura(s) donde apareció un producto.
