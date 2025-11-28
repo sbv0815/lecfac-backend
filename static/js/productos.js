@@ -2501,3 +2501,370 @@ window.agregarPLUDeVTEX = agregarPLUDeVTEX;
 window.cargarPLUsProducto = cargarPLUsProducto;
 window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
 window.agregarPLUEditable = agregarPLUEditable;
+
+// ============================================================
+// FUNCIONES PARA CACHE VTEX CON IMÁGENES
+// Agregar a productos.js
+// ============================================================
+
+/**
+ * Guarda un producto VTEX en el cache local (con imagen)
+ * Se llama cuando el usuario hace click en "Guardar en catálogo"
+ */
+async function guardarProductoEnCacheVTEX(producto) {
+    try {
+        // Mostrar loading
+        const btnGuardar = document.getElementById('btn-guardar-cache-vtex');
+        if (btnGuardar) {
+            btnGuardar.disabled = true;
+            btnGuardar.innerHTML = '⏳ Guardando...';
+        }
+
+        const response = await fetch('/api/v2/vtex-cache/guardar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                establecimiento: producto.establecimiento,
+                plu: producto.plu || '',
+                ean: producto.ean || '',
+                nombre: producto.nombre,
+                marca: producto.marca || '',
+                precio: producto.precio || 0,
+                categoria: producto.categoria || '',
+                presentacion: producto.presentacion || '',
+                url_producto: producto.url || '',
+                imagen_url: producto.imagen || ''
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Mostrar éxito
+            if (btnGuardar) {
+                btnGuardar.innerHTML = '✅ Guardado';
+                btnGuardar.style.background = '#10b981';
+
+                setTimeout(() => {
+                    btnGuardar.innerHTML = '💾 Guardar en catálogo';
+                    btnGuardar.style.background = '';
+                    btnGuardar.disabled = false;
+                }, 2000);
+            }
+
+            // Notificación
+            mostrarNotificacion(
+                data.accion === 'creado'
+                    ? `✅ Producto guardado: ${producto.nombre.substring(0, 30)}...`
+                    : `🔄 Producto actualizado: ${producto.nombre.substring(0, 30)}...`,
+                'success'
+            );
+
+            console.log(`✅ Cache VTEX: ${data.accion} - ${producto.nombre}`);
+
+            return data;
+        } else {
+            throw new Error(data.error || 'Error desconocido');
+        }
+
+    } catch (error) {
+        console.error('❌ Error guardando en cache VTEX:', error);
+
+        if (btnGuardar) {
+            btnGuardar.innerHTML = '❌ Error';
+            btnGuardar.style.background = '#ef4444';
+            btnGuardar.disabled = false;
+
+            setTimeout(() => {
+                btnGuardar.innerHTML = '💾 Guardar en catálogo';
+                btnGuardar.style.background = '';
+            }, 2000);
+        }
+
+        mostrarNotificacion(`Error: ${error.message}`, 'error');
+        return { success: false, error: error.message };
+    }
+}
+
+
+/**
+ * Renderiza un resultado de búsqueda VTEX con botón de guardar
+ * Modifica la función existente renderizarResultadoVTEX
+ */
+function renderizarResultadoVTEX(producto, index) {
+    const precioFormateado = producto.precio
+        ? `$${producto.precio.toLocaleString('es-CO')}`
+        : 'Sin precio';
+
+    return `
+        <div class="vtex-resultado-item" style="
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: white;
+            align-items: flex-start;
+        ">
+            <!-- Imagen -->
+            <div style="flex-shrink: 0;">
+                ${producto.imagen
+            ? `<img src="${producto.imagen}"
+                           alt="${producto.nombre}"
+                           style="width: 80px; height: 80px; object-fit: contain; border-radius: 6px; border: 1px solid #e5e7eb;"
+                           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22><rect fill=%22%23f3f4f6%22 width=%2280%22 height=%2280%22/><text x=%2240%22 y=%2245%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2212%22>Sin imagen</text></svg>'">`
+            : `<div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px;">Sin imagen</div>`
+        }
+            </div>
+
+            <!-- Info -->
+            <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 600; color: #111827; margin-bottom: 4px; line-height: 1.3;">
+                    ${producto.nombre}
+                </div>
+                <div style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">
+                    ${producto.marca ? `<span style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; margin-right: 8px;">${producto.marca}</span>` : ''}
+                    ${producto.plu ? `<span>PLU: <strong>${producto.plu}</strong></span>` : ''}
+                    ${producto.ean ? `<span style="margin-left: 8px;">EAN: ${producto.ean}</span>` : ''}
+                </div>
+                <div style="font-size: 15px; font-weight: 600; color: #059669;">
+                    ${precioFormateado}
+                </div>
+            </div>
+
+            <!-- Botones -->
+            <div style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+                <button onclick="seleccionarProductoVTEX(${index})"
+                        style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 13px;">
+                    ✓ Usar este
+                </button>
+                <button onclick="guardarEnCacheDesdeResultado(${index})"
+                        id="btn-cache-${index}"
+                        style="padding: 8px 16px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-size: 12px;"
+                        title="Guarda este producto en tu catálogo local con imagen">
+                    💾 Guardar
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+
+/**
+ * Guarda un producto desde los resultados de búsqueda
+ */
+async function guardarEnCacheDesdeResultado(index) {
+    if (!window.resultadosVTEXActuales || !window.resultadosVTEXActuales[index]) {
+        mostrarNotificacion('Error: Producto no encontrado', 'error');
+        return;
+    }
+
+    const producto = window.resultadosVTEXActuales[index];
+    const btn = document.getElementById(`btn-cache-${index}`);
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳...';
+    }
+
+    const resultado = await guardarProductoEnCacheVTEX(producto);
+
+    if (btn) {
+        if (resultado.success) {
+            btn.innerHTML = '✅';
+            btn.style.background = '#d1fae5';
+            btn.style.borderColor = '#10b981';
+        } else {
+            btn.innerHTML = '❌';
+            btn.disabled = false;
+        }
+    }
+}
+
+
+/**
+ * Busca productos VTEX y muestra resultados
+ * Actualizada para guardar resultados en variable global
+ */
+async function buscarProductosVTEX() {
+    const termino = document.getElementById('vtex-busqueda').value.trim();
+    const establecimiento = document.getElementById('vtex-establecimiento').value;
+    const contenedor = document.getElementById('vtex-resultados');
+
+    if (!termino || termino.length < 2) {
+        contenedor.innerHTML = `
+            <div style="padding: 20px; background: #fef3c7; border-radius: 8px; text-align: center; color: #92400e;">
+                ⚠️ Ingresa al menos 2 caracteres para buscar
+            </div>
+        `;
+        return;
+    }
+
+    // Mostrar loading
+    contenedor.innerHTML = `
+        <div style="padding: 30px; text-align: center;">
+            <div class="loading" style="margin: 0 auto 10px;"></div>
+            <p style="color: #6b7280;">Buscando "${termino}" en ${establecimiento}...</p>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`/api/v2/buscar-productos/${establecimiento}?q=${encodeURIComponent(termino)}&limite=15`);
+        const data = await response.json();
+
+        if (!data.success) {
+            contenedor.innerHTML = `
+                <div style="padding: 20px; background: #fee2e2; border-radius: 8px; text-align: center; color: #991b1b;">
+                    ❌ ${data.error || 'Error en la búsqueda'}
+                </div>
+            `;
+            return;
+        }
+
+        if (!data.resultados || data.resultados.length === 0) {
+            contenedor.innerHTML = `
+                <div style="padding: 20px; background: #f3f4f6; border-radius: 8px; text-align: center; color: #6b7280;">
+                    🔍 No se encontraron productos para "${termino}"
+                    <br><br>
+                    <small>Intenta con otros términos o verifica el código</small>
+                </div>
+            `;
+            return;
+        }
+
+        // Guardar resultados en variable global para usar después
+        window.resultadosVTEXActuales = data.resultados;
+
+        // Renderizar resultados
+        let html = `
+            <div style="margin-bottom: 10px; font-size: 13px; color: #6b7280;">
+                📦 ${data.total} producto(s) encontrado(s) para "${termino}"
+            </div>
+        `;
+
+        data.resultados.forEach((producto, index) => {
+            html += renderizarResultadoVTEX(producto, index);
+        });
+
+        contenedor.innerHTML = html;
+
+    } catch (error) {
+        console.error('Error buscando en VTEX:', error);
+        contenedor.innerHTML = `
+            <div style="padding: 20px; background: #fee2e2; border-radius: 8px; text-align: center; color: #991b1b;">
+                ❌ Error de conexión: ${error.message}
+            </div>
+        `;
+    }
+}
+
+
+/**
+ * Selecciona un producto VTEX y lo aplica al formulario de edición
+ * También lo guarda automáticamente en el cache
+ */
+function seleccionarProductoVTEX(index) {
+    if (!window.resultadosVTEXActuales || !window.resultadosVTEXActuales[index]) {
+        mostrarNotificacion('Error: Producto no encontrado', 'error');
+        return;
+    }
+
+    const producto = window.resultadosVTEXActuales[index];
+
+    // Aplicar datos al formulario
+    if (producto.nombre) {
+        document.getElementById('edit-nombre-norm').value = producto.nombre;
+    }
+    if (producto.marca) {
+        document.getElementById('edit-marca').value = producto.marca;
+    }
+    if (producto.ean) {
+        document.getElementById('edit-ean').value = producto.ean;
+    }
+    if (producto.categoria) {
+        document.getElementById('edit-categoria').value = producto.categoria;
+    }
+    if (producto.presentacion) {
+        document.getElementById('edit-presentacion').value = producto.presentacion;
+    }
+
+    // Agregar PLU si es diferente al existente
+    if (producto.plu) {
+        agregarPLUDeVTEX(producto.plu, producto.establecimiento, producto.precio || 0);
+    }
+
+    // Guardar automáticamente en cache (en background)
+    guardarProductoEnCacheVTEX(producto).then(result => {
+        if (result.success) {
+            console.log('✅ Producto guardado en cache automáticamente');
+        }
+    });
+
+    // Notificación
+    mostrarNotificacion(`✅ Datos aplicados: ${producto.nombre.substring(0, 40)}...`, 'success');
+
+    // Scroll al formulario
+    document.getElementById('edit-nombre-norm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+
+/**
+ * Función auxiliar para mostrar notificaciones
+ */
+function mostrarNotificacion(mensaje, tipo = 'info') {
+    // Crear elemento de notificación
+    const notif = document.createElement('div');
+    notif.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+        max-width: 400px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+
+    switch (tipo) {
+        case 'success':
+            notif.style.background = '#10b981';
+            break;
+        case 'error':
+            notif.style.background = '#ef4444';
+            break;
+        case 'warning':
+            notif.style.background = '#f59e0b';
+            break;
+        default:
+            notif.style.background = '#3b82f6';
+    }
+
+    notif.textContent = mensaje;
+    document.body.appendChild(notif);
+
+    // Remover después de 3 segundos
+    setTimeout(() => {
+        notif.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notif.remove(), 300);
+    }, 3000);
+}
+
+// Agregar estilos de animación
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+    }
+`;
+document.head.appendChild(style);

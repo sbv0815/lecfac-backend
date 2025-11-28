@@ -1965,3 +1965,432 @@ def _ya_existe(prod: dict, lista: list) -> bool:
         if p.get("nombre") == prod.get("nombre") and p.get("plu") == prod.get("plu"):
             return True
     return False
+
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import httpx
+import base64
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# Modelo para recibir datos del producto VTEX
+class ProductoVTEXCache(BaseModel):
+    establecimiento: str
+    plu: Optional[str] = None
+    ean: Optional[str] = None
+    nombre: str
+    marca: Optional[str] = None
+    precio: Optional[int] = None
+    categoria: Optional[str] = None
+    presentacion: Optional[str] = None
+    url_producto: Optional[str] = None
+    imagen_url: Optional[str] = None
+
+
+@router.post("/api/v2/vtex-cache/guardar")
+async def guardar_producto_vtex_cache(producto: ProductoVTEXCache):
+    """
+    Guarda un producto del catálogo VTEX en cache local.
+    Descarga la imagen y la convierte a base64.
+
+    Uso desde frontend:
+        fetch('/api/v2/vtex-cache/guardar', {
+            method: 'POST',
+            body: JSON.stringify({
+                establecimiento: 'OLIMPICA',
+                plu: '632967',
+                ean: '7702001234567',
+                nombre: 'Leche Alquería Deslactosada 1L',
+                marca: 'Alquería',
+                precio: 5900,
+                imagen_url: 'https://olimpica.vteximg.com.br/...'
+            })
+        })
+    """
+    conn = None
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Validar que tenga al menos PLU o EAN
+        if not producto.plu and not producto.ean:
+            return {
+                "success": False,
+                "error": "Se requiere PLU o EAN para guardar el producto",
+            }
+
+        # Descargar imagen si hay URL
+        imagen_base64 = None
+        imagen_mime = "image/jpeg"
+
+        if producto.imagen_url:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # Limpiar URL de imagen (quitar parámetros de tamaño si existen)
+                    imagen_url_limpia = producto.imagen_url.split("?")[0]
+
+                    # Agregar tamaño óptimo para VTEX
+                    if "vteximg" in imagen_url_limpia:
+                        imagen_url_limpia += "-500-500"  # 500x500 px
+
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    }
+
+                    response = await client.get(imagen_url_limpia, headers=headers)
+
+                    if response.status_code == 200:
+                        # Detectar tipo de imagen
+                        content_type = response.headers.get(
+                            "content-type", "image/jpeg"
+                        )
+                        if "png" in content_type:
+                            imagen_mime = "image/png"
+                        elif "webp" in content_type:
+                            imagen_mime = "image/webp"
+                        elif "gif" in content_type:
+                            imagen_mime = "image/gif"
+                        else:
+                            imagen_mime = "image/jpeg"
+
+                        # Convertir a base64
+                        imagen_base64 = base64.b64encode(response.content).decode(
+                            "utf-8"
+                        )
+
+                        print(f"✅ Imagen descargada: {len(response.content)} bytes")
+                    else:
+                        print(
+                            f"⚠️ No se pudo descargar imagen: HTTP {response.status_code}"
+                        )
+
+            except Exception as e:
+                print(f"⚠️ Error descargando imagen: {e}")
+                # Continuar sin imagen
+
+        # Verificar si ya existe (por PLU o EAN)
+        existe = False
+        producto_existente_id = None
+
+        if producto.plu:
+            cursor.execute(
+                """SELECT id FROM productos_vtex_cache
+                   WHERE establecimiento = %s AND plu = %s""",
+                (producto.establecimiento.upper(), producto.plu),
+            )
+            row = cursor.fetchone()
+            if row:
+                existe = True
+                producto_existente_id = row[0]
+
+        if not existe and producto.ean:
+            cursor.execute(
+                """SELECT id FROM productos_vtex_cache
+                   WHERE establecimiento = %s AND ean = %s""",
+                (producto.establecimiento.upper(), producto.ean),
+            )
+            row = cursor.fetchone()
+            if row:
+                existe = True
+                producto_existente_id = row[0]
+
+        if existe:
+            # Actualizar existente
+            cursor.execute(
+                """
+                UPDATE productos_vtex_cache SET
+                    nombre = %s,
+                    marca = %s,
+                    precio = %s,
+                    categoria = %s,
+                    presentacion = %s,
+                    url_producto = %s,
+                    imagen_url = %s,
+                    imagen_base64 = COALESCE(%s, imagen_base64),
+                    imagen_mime = %s,
+                    fecha_actualizacion = CURRENT_TIMESTAMP,
+                    veces_usado = veces_usado + 1
+                WHERE id = %s
+                RETURNING id
+            """,
+                (
+                    producto.nombre,
+                    producto.marca,
+                    producto.precio,
+                    producto.categoria,
+                    producto.presentacion,
+                    producto.url_producto,
+                    producto.imagen_url,
+                    imagen_base64,
+                    imagen_mime,
+                    producto_existente_id,
+                ),
+            )
+
+            conn.commit()
+
+            return {
+                "success": True,
+                "accion": "actualizado",
+                "id": producto_existente_id,
+                "mensaje": f"Producto actualizado en cache: {producto.nombre}",
+                "tiene_imagen": imagen_base64 is not None,
+            }
+
+        else:
+            # Insertar nuevo
+            cursor.execute(
+                """
+                INSERT INTO productos_vtex_cache (
+                    establecimiento, plu, ean, nombre, marca, precio,
+                    categoria, presentacion, url_producto, imagen_url,
+                    imagen_base64, imagen_mime
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """,
+                (
+                    producto.establecimiento.upper(),
+                    producto.plu,
+                    producto.ean,
+                    producto.nombre,
+                    producto.marca,
+                    producto.precio,
+                    producto.categoria,
+                    producto.presentacion,
+                    producto.url_producto,
+                    producto.imagen_url,
+                    imagen_base64,
+                    imagen_mime,
+                ),
+            )
+
+            nuevo_id = cursor.fetchone()[0]
+            conn.commit()
+
+            print(
+                f"✅ Producto guardado en cache VTEX: {producto.nombre} (ID: {nuevo_id})"
+            )
+
+            return {
+                "success": True,
+                "accion": "creado",
+                "id": nuevo_id,
+                "mensaje": f"Producto guardado en cache: {producto.nombre}",
+                "tiene_imagen": imagen_base64 is not None,
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Error guardando en cache VTEX: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/api/v2/vtex-cache/buscar")
+async def buscar_en_cache_vtex(
+    q: str = None, establecimiento: str = None, limite: int = 20
+):
+    """
+    Busca productos en el cache local de VTEX.
+    Búsqueda rápida sin llamar a APIs externas.
+
+    Ejemplos:
+        GET /api/v2/vtex-cache/buscar?q=leche
+        GET /api/v2/vtex-cache/buscar?q=632967&establecimiento=OLIMPICA
+    """
+    conn = None
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                id, establecimiento, plu, ean, nombre, marca, precio,
+                categoria, presentacion, url_producto, imagen_url,
+                imagen_base64 IS NOT NULL as tiene_imagen,
+                fecha_actualizacion, veces_usado
+            FROM productos_vtex_cache
+            WHERE 1=1
+        """
+        params = []
+
+        if q:
+            query += """ AND (
+                LOWER(nombre) LIKE LOWER(%s)
+                OR plu LIKE %s
+                OR ean LIKE %s
+                OR LOWER(marca) LIKE LOWER(%s)
+            )"""
+            search_term = f"%{q}%"
+            params.extend([search_term, search_term, search_term, search_term])
+
+        if establecimiento:
+            query += " AND establecimiento = %s"
+            params.append(establecimiento.upper())
+
+        query += " ORDER BY veces_usado DESC, fecha_actualizacion DESC LIMIT %s"
+        params.append(limite)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        resultados = []
+        for row in rows:
+            resultados.append(
+                {
+                    "id": row[0],
+                    "establecimiento": row[1],
+                    "plu": row[2],
+                    "ean": row[3],
+                    "nombre": row[4],
+                    "marca": row[5],
+                    "precio": row[6],
+                    "categoria": row[7],
+                    "presentacion": row[8],
+                    "url_producto": row[9],
+                    "imagen_url": row[10],
+                    "tiene_imagen_local": row[11],
+                    "fecha_actualizacion": row[12].isoformat() if row[12] else None,
+                    "veces_usado": row[13],
+                }
+            )
+
+        return {
+            "success": True,
+            "termino": q,
+            "establecimiento": establecimiento,
+            "total": len(resultados),
+            "resultados": resultados,
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error buscando en cache VTEX: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/api/v2/vtex-cache/{cache_id}/imagen")
+async def obtener_imagen_cache(cache_id: int):
+    """
+    Obtiene la imagen en base64 de un producto del cache.
+
+    Uso en frontend:
+        <img src="data:image/jpeg;base64,{imagen_base64}">
+    """
+    conn = None
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """SELECT nombre, imagen_base64, imagen_mime
+               FROM productos_vtex_cache WHERE id = %s""",
+            (cache_id,),
+        )
+
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=404, detail="Producto no encontrado en cache"
+            )
+
+        if not row[1]:
+            return {
+                "success": False,
+                "error": "Este producto no tiene imagen guardada",
+                "nombre": row[0],
+            }
+
+        return {
+            "success": True,
+            "nombre": row[0],
+            "imagen_base64": row[1],
+            "imagen_mime": row[2] or "image/jpeg",
+            "data_url": f"data:{row[2] or 'image/jpeg'};base64,{row[1]}",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo imagen: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/api/v2/vtex-cache/estadisticas")
+async def estadisticas_cache_vtex():
+    """
+    Estadísticas del cache de productos VTEX.
+    """
+    conn = None
+    try:
+        from database import get_db_connection
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(CASE WHEN imagen_base64 IS NOT NULL THEN 1 END) as con_imagen,
+                COUNT(DISTINCT establecimiento) as establecimientos
+            FROM productos_vtex_cache
+        """
+        )
+
+        totales = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT establecimiento, COUNT(*) as cantidad
+            FROM productos_vtex_cache
+            GROUP BY establecimiento
+            ORDER BY cantidad DESC
+        """
+        )
+
+        por_establecimiento = cursor.fetchall()
+
+        return {
+            "success": True,
+            "estadisticas": {
+                "total_productos": totales[0] or 0,
+                "con_imagen": totales[1] or 0,
+                "sin_imagen": (totales[0] or 0) - (totales[1] or 0),
+                "establecimientos": totales[2] or 0,
+            },
+            "por_establecimiento": [
+                {"establecimiento": row[0], "cantidad": row[1]}
+                for row in por_establecimiento
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo estadísticas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
