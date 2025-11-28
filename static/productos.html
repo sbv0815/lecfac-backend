@@ -296,6 +296,26 @@
             border-color: #059669;
         }
 
+        /* Botón Guardar Grande */
+        .btn-guardar-grande {
+            background: linear-gradient(135deg, #059669, #10b981);
+            color: white;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(5, 150, 105, 0.3);
+            transition: all 0.2s;
+        }
+
+        .btn-guardar-grande:hover {
+            background: linear-gradient(135deg, #047857, #059669);
+            box-shadow: 0 6px 8px rgba(5, 150, 105, 0.4);
+            transform: translateY(-1px);
+        }
+
         /* Checkbox cell */
         .checkbox-cell {
             width: 40px;
@@ -505,6 +525,44 @@
         .plu-row.new {
             background: #f0fdf4;
             border-color: #10b981;
+        }
+
+        /* Buscador VTEX Section */
+        .vtex-section {
+            margin-top: 25px;
+            padding: 20px;
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            border-radius: 12px;
+            border: 2px solid #2563eb;
+        }
+
+        .vtex-section h3 {
+            margin: 0 0 10px 0;
+            color: #1e40af;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .vtex-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .vtex-tips {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: white;
+            border-radius: 6px;
+            border-left: 3px solid #2563eb;
+        }
+
+        .vtex-tips p {
+            font-size: 12px;
+            color: #1e40af;
+            margin: 0;
         }
 
         /* Pagination */
@@ -807,26 +865,80 @@
                         <!-- PLUs se cargan dinámicamente -->
                     </div>
                 </div>
-            </div>
-            <!-- 🔍 Buscador Web -->
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                <h4 style="margin-bottom: 15px;">🔍 Buscar en catálogo web</h4>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
-                    <input type="text" id="buscar-plu-codigo" placeholder="Código PLU"
-                        style="flex: 1; min-width: 150px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
-                    <select id="buscar-plu-establecimiento"
-                        style="padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
-                        <option value="OLIMPICA">Olímpica</option>
-                        <option value="EXITO">Éxito</option>
-                        <option value="CARULLA">Carulla</option>
-                        <option value="JUMBO">Jumbo</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="buscarPLUEnWeb(
-            document.getElementById('buscar-plu-codigo').value,
-            document.getElementById('buscar-plu-establecimiento').value
-        )">🔍 Buscar</button>
+
+                <!-- ========================================
+                     🔍 BUSCADOR VTEX - DENTRO DEL MODAL
+                     ======================================== -->
+                <div class="vtex-section">
+                    <div class="vtex-header">
+                        <h3>🔍 Buscar en Catálogo Web (VTEX)</h3>
+                        <button class="btn-guardar-grande" onclick="guardarEdicion()">
+                            💾 Guardar Cambios
+                        </button>
+                    </div>
+
+                    <p style="font-size: 13px; color: #1e40af; margin-bottom: 15px;">
+                        Busca el producto en el catálogo web para obtener EAN, nombre oficial y más datos.
+                    </p>
+
+                    <!-- Formulario de búsqueda -->
+                    <div style="display: grid; grid-template-columns: 1fr 150px auto; gap: 10px; align-items: end;">
+                        <!-- Campo de búsqueda -->
+                        <div class="form-group" style="margin: 0;">
+                            <label
+                                style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px; color: #1e40af;">
+                                PLU o nombre del producto
+                            </label>
+                            <input type="text" id="vtex-busqueda" placeholder="Ej: 23264 o leche alqueria"
+                                onkeypress="if(event.key==='Enter'){event.preventDefault();buscarProductosVTEX();}"
+                                style="width: 100%; padding: 10px 12px; border: 1px solid #93c5fd; border-radius: 6px; font-size: 14px; background: white;">
+                        </div>
+
+                        <!-- Supermercado -->
+                        <div class="form-group" style="margin: 0;">
+                            <label
+                                style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px; color: #1e40af;">
+                                Supermercado
+                            </label>
+                            <select id="vtex-establecimiento"
+                                style="width: 100%; padding: 10px; border: 1px solid #93c5fd; border-radius: 6px; font-size: 14px; background: white;">
+                                <option value="OLIMPICA">Olímpica</option>
+                                <option value="EXITO">Éxito</option>
+                                <option value="CARULLA">Carulla</option>
+                                <option value="JUMBO">Jumbo</option>
+                                <option value="ALKOSTO">Alkosto</option>
+                                <option value="MAKRO">Makro</option>
+                                <option value="COLSUBSIDIO">Colsubsidio</option>
+                            </select>
+                        </div>
+
+                        <!-- Botón buscar -->
+                        <button type="button" onclick="buscarProductosVTEX()"
+                            style="padding: 10px 20px; background: #1e40af; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap; height: 42px;">
+                            🔍 Buscar
+                        </button>
+                    </div>
+
+                    <!-- Área de resultados -->
+                    <div id="vtex-resultados" style="margin-top: 15px;">
+                        <div
+                            style="padding: 20px; background: white; border-radius: 8px; text-align: center; color: #6b7280;">
+                            <p style="margin: 0;">💡 Escribe el código PLU o nombre y presiona buscar</p>
+                        </div>
+                    </div>
+
+                    <!-- Tips -->
+                    <div class="vtex-tips">
+                        <p>
+                            <strong>💡 Tips:</strong>
+                            Si el PLU completo no funciona, prueba solo los primeros 4-5 dígitos.
+                            <br>
+                            Ejemplo: En vez de "2326440", prueba "23264" para ver todas las variantes.
+                        </p>
+                    </div>
                 </div>
-                <div id="resultado-busqueda-web"></div>
+                <!-- FIN BUSCADOR VTEX -->
+
             </div>
 
             <div class="modal-footer">
@@ -836,78 +948,6 @@
         </div>
     </div>
 
-    <!-- =============================================================
-     🔍 BUSCADOR VTEX - Agregar DENTRO del modal de edición
-     =============================================================
-     Ubicación: Después de la sección de PLUs en el modal-editar
-     ============================================================= -->
-
-    <!-- INICIO BUSCADOR VTEX V2 -->
-    <div id="seccion-buscador-vtex" style="margin-top: 25px; padding-top: 20px; border-top: 2px solid #e5e7eb;">
-        <h3 style="margin: 0 0 10px 0; color: #1f2937; display: flex; align-items: center; gap: 8px;">
-            🔍 Buscar en Catálogo Web
-        </h3>
-
-        <p style="font-size: 13px; color: #6b7280; margin-bottom: 15px;">
-            Escribe parte del PLU o nombre del producto. Verás todas las opciones similares para elegir la correcta.
-        </p>
-
-        <!-- Formulario de búsqueda -->
-        <div style="display: grid; grid-template-columns: 1fr 150px auto; gap: 10px; align-items: end;">
-            <!-- Campo de búsqueda -->
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">
-                    PLU (parcial) o nombre del producto
-                </label>
-                <input type="text" id="vtex-busqueda" placeholder="Ej: 23264 o leche alqueria"
-                    onkeypress="if(event.key==='Enter'){event.preventDefault();buscarProductosVTEX();}"
-                    style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
-            </div>
-
-            <!-- Supermercado -->
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">
-                    Supermercado
-                </label>
-                <select id="vtex-establecimiento"
-                    style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: white;">
-                    <option value="OLIMPICA">Olímpica</option>
-                    <option value="EXITO">Éxito</option>
-                    <option value="CARULLA">Carulla</option>
-                    <option value="JUMBO">Jumbo</option>
-                    <option value="ALKOSTO">Alkosto</option>
-                    <option value="MAKRO">Makro</option>
-                    <option value="COLSUBSIDIO">Colsubsidio</option>
-                </select>
-            </div>
-
-            <!-- Botón buscar -->
-            <button type="button" onclick="buscarProductosVTEX()"
-                style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap; height: 42px;">
-                🔍 Buscar
-            </button>
-        </div>
-
-        <!-- Área de resultados -->
-        <div id="vtex-resultados" style="margin-top: 15px;">
-            <!-- Los resultados aparecerán aquí -->
-            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; text-align: center; color: #6b7280;">
-                <p style="margin: 0;">💡 Escribe parte del código o nombre y presiona buscar</p>
-            </div>
-        </div>
-
-        <!-- Tips -->
-        <div
-            style="margin-top: 12px; padding: 10px 12px; background: #eff6ff; border-radius: 6px; border-left: 3px solid #2563eb;">
-            <p style="font-size: 12px; color: #1e40af; margin: 0;">
-                <strong>💡 Tips:</strong>
-                Si el PLU completo no funciona, prueba solo los primeros 4-5 dígitos.
-                <br>
-                Ejemplo: En vez de "2326440", prueba "23264" para ver todas las variantes.
-            </p>
-        </div>
-    </div>
-    <!-- FIN BUSCADOR VTEX V2 -->
     <script src="/static/js/productos.js"></script>
 </body>
 
