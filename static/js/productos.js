@@ -631,7 +631,8 @@ async function editarProducto(id) {
         alert("Error al cargar producto: " + error.message);
     }
 }
-
+// Auto-llenar buscador VTEX con el PLU actual
+setTimeout(autoLlenarBuscadorVTEX, 500);
 // =============================================================
 // 🆕 V4.0: MOSTRAR FUENTE EN MODAL
 // =============================================================
@@ -1813,4 +1814,226 @@ function resetearImagenAmpliada() {
 // Mantener compatibilidad
 function ampliarImagen(src) {
     ampliarImagenConControles(src, 50);
+}
+
+// =============================================================
+// 🔍 BUSCADOR VTEX - Para agregar al modal de edición
+// =============================================================
+// Agregar estas funciones a productos.js
+// =============================================================
+
+// =============================================================
+// 🔍 BUSCAR PLU EN VTEX
+// =============================================================
+async function buscarEnVTEX() {
+    const codigo = document.getElementById('vtex-codigo').value.trim();
+    const establecimiento = document.getElementById('vtex-establecimiento').value;
+    const resultadoDiv = document.getElementById('vtex-resultado');
+
+    if (!codigo) {
+        resultadoDiv.innerHTML = `
+            <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px;">
+                <p style="color: #92400e;">⚠️ Ingresa un código PLU o EAN para buscar</p>
+            </div>
+        `;
+        return;
+    }
+
+    if (!establecimiento) {
+        resultadoDiv.innerHTML = `
+            <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px;">
+                <p style="color: #92400e;">⚠️ Selecciona un supermercado</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Mostrar loading
+    resultadoDiv.innerHTML = `
+        <div style="text-align: center; padding: 20px;">
+            <div class="loading" style="width: 30px; height: 30px; margin: 0 auto 10px;"></div>
+            <p style="color: #6b7280;">Buscando "${codigo}" en ${establecimiento}...</p>
+        </div>
+    `;
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/buscar-vtex/${encodeURIComponent(establecimiento)}/${encodeURIComponent(codigo)}`);
+        const data = await response.json();
+
+        if (data.success && data.resultado) {
+            const prod = data.resultado;
+
+            resultadoDiv.innerHTML = `
+                <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
+                    <p style="color: #059669; font-weight: 600;">✅ Producto encontrado (${data.fuente})</p>
+                </div>
+
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #f9fafb;">
+                    <h4 style="margin: 0 0 12px 0; color: #111;">${prod.nombre}</h4>
+
+                    <table style="width: 100%; font-size: 14px;">
+                        <tr>
+                            <td style="padding: 6px 0; color: #6b7280; width: 100px;">Marca:</td>
+                            <td><strong>${prod.marca || '-'}</strong></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 6px 0; color: #6b7280;">EAN:</td>
+                            <td><code style="background: #e0f2fe; padding: 2px 6px; border-radius: 3px;">${prod.ean || '-'}</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 6px 0; color: #6b7280;">PLU:</td>
+                            <td><code style="background: #fef3c7; padding: 2px 6px; border-radius: 3px;">${prod.plu || '-'}</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 6px 0; color: #6b7280;">Precio web:</td>
+                            <td style="color: #059669; font-weight: 600;">$${(prod.precio || 0).toLocaleString('es-CO')}</td>
+                        </tr>
+                        ${prod.presentacion ? `
+                        <tr>
+                            <td style="padding: 6px 0; color: #6b7280;">Presentación:</td>
+                            <td>${prod.presentacion}</td>
+                        </tr>
+                        ` : ''}
+                        ${prod.categoria ? `
+                        <tr>
+                            <td style="padding: 6px 0; color: #6b7280;">Categoría:</td>
+                            <td>${prod.categoria}</td>
+                        </tr>
+                        ` : ''}
+                    </table>
+
+                    ${prod.url ? `
+                    <div style="margin-top: 10px;">
+                        <a href="${prod.url}" target="_blank" style="color: #2563eb; font-size: 13px;">
+                            🔗 Ver en ${establecimiento}
+                        </a>
+                    </div>
+                    ` : ''}
+
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                        <button onclick="aplicarDatosVTEX('${prod.nombre.replace(/'/g, "\\'")}', '${prod.marca || ''}', '${prod.ean || ''}')"
+                                style="width: 100%; padding: 10px; background: #059669; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">
+                            📥 Aplicar estos datos al producto
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // No encontrado
+            resultadoDiv.innerHTML = `
+                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; border-radius: 4px;">
+                    <p style="color: #dc2626; font-weight: 600;">❌ ${data.error || 'Producto no encontrado'}</p>
+                    ${data.sugerencias ? `
+                    <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #6b7280; font-size: 13px;">
+                        ${data.sugerencias.map(s => `<li>${s}</li>`).join('')}
+                    </ul>
+                    ` : ''}
+                    ${data.supermercados_disponibles ? `
+                    <p style="margin-top: 10px; font-size: 13px; color: #6b7280;">
+                        Supermercados disponibles: ${data.supermercados_disponibles.join(', ')}
+                    </p>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        resultadoDiv.innerHTML = `
+            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; border-radius: 4px;">
+                <p style="color: #dc2626;">❌ Error de conexión: ${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// =============================================================
+// 📥 APLICAR DATOS DE VTEX AL FORMULARIO
+// =============================================================
+function aplicarDatosVTEX(nombre, marca, ean) {
+    console.log('📥 Aplicando datos VTEX:', { nombre, marca, ean });
+
+    // Aplicar al formulario de edición
+    const nombreInput = document.getElementById('edit-nombre-norm');
+    const marcaInput = document.getElementById('edit-marca');
+    const eanInput = document.getElementById('edit-ean');
+
+    if (nombreInput && nombre) {
+        nombreInput.value = nombre;
+        nombreInput.style.background = '#d1fae5';
+        setTimeout(() => nombreInput.style.background = '', 1000);
+    }
+
+    if (marcaInput && marca) {
+        marcaInput.value = marca;
+        marcaInput.style.background = '#d1fae5';
+        setTimeout(() => marcaInput.style.background = '', 1000);
+    }
+
+    if (eanInput && ean) {
+        eanInput.value = ean;
+        eanInput.style.background = '#d1fae5';
+        setTimeout(() => eanInput.style.background = '', 1000);
+    }
+
+    // Mostrar confirmación
+    const resultadoDiv = document.getElementById('vtex-resultado');
+    if (resultadoDiv) {
+        const contenidoActual = resultadoDiv.innerHTML;
+        resultadoDiv.innerHTML = `
+            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 15px; border-radius: 4px; text-align: center;">
+                <p style="color: #059669; font-weight: 600; font-size: 16px;">✅ Datos aplicados correctamente</p>
+                <p style="color: #065f46; margin-top: 5px;">No olvides guardar los cambios</p>
+            </div>
+        `;
+    }
+
+    mostrarAlerta('✅ Datos aplicados al formulario', 'success');
+}
+
+// =============================================================
+// 🔄 AUTO-LLENAR BUSCADOR CON PLU DEL PRODUCTO
+// =============================================================
+function autoLlenarBuscadorVTEX() {
+    // Buscar el primer PLU del producto
+    const primerPlu = document.querySelector('.plu-codigo');
+    const primerEst = document.querySelector('.plu-establecimiento');
+
+    if (primerPlu && primerPlu.value) {
+        const inputCodigo = document.getElementById('vtex-codigo');
+        if (inputCodigo) {
+            inputCodigo.value = primerPlu.value;
+        }
+    }
+
+    if (primerEst && primerEst.value) {
+        // Obtener el nombre del establecimiento
+        const selectVtex = document.getElementById('vtex-establecimiento');
+        if (selectVtex) {
+            const nombreEst = primerEst.options[primerEst.selectedIndex]?.text || '';
+
+            // Mapear a las opciones de VTEX
+            const mapeo = {
+                'OLIMPICA': 'OLIMPICA',
+                'OLÍMPICA': 'OLIMPICA',
+                'EXITO': 'EXITO',
+                'ÉXITO': 'EXITO',
+                'CARULLA': 'CARULLA',
+                'JUMBO': 'JUMBO',
+                'ALKOSTO': 'ALKOSTO',
+                'MAKRO': 'MAKRO',
+                'COLSUBSIDIO': 'COLSUBSIDIO'
+            };
+
+            for (let opt of selectVtex.options) {
+                if (nombreEst.toUpperCase().includes(opt.value) ||
+                    mapeo[nombreEst.toUpperCase()] === opt.value) {
+                    selectVtex.value = opt.value;
+                    break;
+                }
+            }
+        }
+    }
 }

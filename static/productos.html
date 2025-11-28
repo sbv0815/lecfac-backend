@@ -836,6 +836,75 @@
         </div>
     </div>
 
+    <!-- =============================================================
+     🔍 BUSCADOR VTEX - Agregar DENTRO del modal de edición
+     =============================================================
+     Ubicación: Después de la sección de PLUs en el modal-editar
+     ============================================================= -->
+
+    <!-- INICIO BUSCADOR VTEX -->
+    <div style="margin-top: 25px; padding-top: 20px; border-top: 2px solid #e5e7eb;">
+        <h3 style="margin: 0 0 15px 0; color: #1f2937; display: flex; align-items: center; gap: 8px;">
+            🔍 Buscar en Catálogo Web
+            <span style="font-size: 12px; font-weight: normal; color: #6b7280;">(VTEX)</span>
+        </h3>
+
+        <p style="font-size: 13px; color: #6b7280; margin-bottom: 15px;">
+            Busca el código PLU en el catálogo del supermercado para obtener el nombre correcto y EAN.
+        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+            <!-- Código PLU/EAN -->
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">
+                    Código PLU o EAN
+                </label>
+                <input type="text" id="vtex-codigo" placeholder="Ej: 632967"
+                    style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+            </div>
+
+            <!-- Supermercado -->
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">
+                    Supermercado
+                </label>
+                <select id="vtex-establecimiento"
+                    style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: white;">
+                    <option value="">Seleccionar...</option>
+                    <option value="OLIMPICA">🟢 Olímpica</option>
+                    <option value="EXITO">🟡 Éxito</option>
+                    <option value="CARULLA">🔴 Carulla</option>
+                    <option value="JUMBO">🟠 Jumbo</option>
+                    <option value="ALKOSTO">🔵 Alkosto</option>
+                    <option value="MAKRO">⚪ Makro</option>
+                    <option value="COLSUBSIDIO">🟣 Colsubsidio</option>
+                </select>
+            </div>
+
+            <!-- Botón buscar -->
+            <button type="button" onclick="buscarEnVTEX()"
+                style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap;">
+                🔍 Buscar
+            </button>
+        </div>
+
+        <!-- Resultado de la búsqueda -->
+        <div id="vtex-resultado" style="margin-top: 15px;">
+            <!-- Los resultados aparecerán aquí -->
+        </div>
+
+        <!-- Info adicional -->
+        <div style="margin-top: 15px; padding: 10px; background: #f3f4f6; border-radius: 6px;">
+            <p style="font-size: 12px; color: #6b7280; margin: 0;">
+                💡 <strong>Tip:</strong> Si el PLU no funciona, intenta buscar con el EAN (código de barras de 13
+                dígitos).
+                <br>
+                ⚠️ D1, Ara y Farmatodo no tienen catálogo web disponible.
+            </p>
+        </div>
+    </div>
+    <!-- FIN BUSCADOR VTEX -->
+
     <!-- Scripts -->
     <script src="/static/js/productos.js"></script>
     <script>

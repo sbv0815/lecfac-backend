@@ -1474,3 +1474,130 @@ async def obtener_factura_producto(producto_id: int):
     finally:
         cursor.close()
         conn.close()
+
+
+# =============================================================
+# ENDPOINT: BUSCAR PLU EN VTEX
+# =============================================================
+# Agregar a productos_api_v2.py
+# Usa el WebEnricher existente
+# =============================================================
+
+from web_enricher import WebEnricher, es_tienda_vtex, SUPERMERCADOS_VTEX
+
+
+@router.get("/buscar-vtex/{establecimiento}/{codigo}")
+async def buscar_en_vtex(establecimiento: str, codigo: str):
+    """
+    Busca un código PLU/EAN en la API VTEX del supermercado.
+
+    Ejemplos:
+        GET /api/v2/buscar-vtex/OLIMPICA/632967
+        GET /api/v2/buscar-vtex/CARULLA/7702004001234
+    """
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    try:
+        cursor = conn.cursor()
+
+        # Normalizar establecimiento
+        establecimiento_upper = establecimiento.upper().strip()
+
+        # Verificar si es supermercado VTEX
+        if not es_tienda_vtex(establecimiento_upper):
+            supermercados_disponibles = list(set(SUPERMERCADOS_VTEX.values()))
+            return {
+                "success": False,
+                "error": f"'{establecimiento}' no tiene API VTEX disponible",
+                "supermercados_disponibles": [
+                    "OLIMPICA",
+                    "EXITO",
+                    "CARULLA",
+                    "JUMBO",
+                    "ALKOSTO",
+                    "MAKRO",
+                    "COLSUBSIDIO",
+                ],
+                "codigo_buscado": codigo,
+            }
+
+        # Crear enricher y buscar
+        enricher = WebEnricher(cursor, conn)
+
+        resultado = enricher.enriquecer(
+            codigo=codigo.strip(),
+            nombre_ocr="",  # No tenemos nombre OCR en búsqueda manual
+            establecimiento=establecimiento_upper,
+            precio_ocr=0,  # Sin precio de referencia
+        )
+
+        if resultado.encontrado:
+            return {
+                "success": True,
+                "codigo_buscado": codigo,
+                "establecimiento": establecimiento_upper,
+                "fuente": resultado.fuente,
+                "resultado": {
+                    "nombre": resultado.nombre_web,
+                    "marca": resultado.marca,
+                    "ean": resultado.codigo_ean,
+                    "plu": resultado.codigo_plu,
+                    "precio": resultado.precio_web,
+                    "presentacion": resultado.presentacion,
+                    "categoria": resultado.categoria,
+                    "url": resultado.url_producto,
+                },
+            }
+        else:
+            return {
+                "success": False,
+                "codigo_buscado": codigo,
+                "establecimiento": establecimiento_upper,
+                "error": "Producto no encontrado en el catálogo web",
+                "sugerencias": [
+                    "Verifica que el código PLU sea correcto",
+                    "Intenta con otro supermercado",
+                    "El producto puede no estar en el catálogo online",
+                ],
+            }
+
+    except Exception as e:
+        print(f"❌ Error buscando en VTEX: {e}")
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/supermercados-vtex")
+async def listar_supermercados_vtex():
+    """
+    Lista los supermercados con API VTEX disponible.
+    """
+    return {
+        "success": True,
+        "supermercados": [
+            {"codigo": "OLIMPICA", "nombre": "Olímpica", "disponible": True},
+            {"codigo": "EXITO", "nombre": "Éxito", "disponible": True},
+            {"codigo": "CARULLA", "nombre": "Carulla", "disponible": True},
+            {"codigo": "JUMBO", "nombre": "Jumbo", "disponible": True},
+            {"codigo": "ALKOSTO", "nombre": "Alkosto", "disponible": True},
+            {"codigo": "MAKRO", "nombre": "Makro", "disponible": True},
+            {"codigo": "COLSUBSIDIO", "nombre": "Colsubsidio", "disponible": True},
+        ],
+        "sin_soporte": [
+            {"codigo": "D1", "nombre": "D1", "razon": "No tiene API pública"},
+            {"codigo": "ARA", "nombre": "Ara", "razon": "No tiene API pública"},
+            {
+                "codigo": "FARMATODO",
+                "nombre": "Farmatodo",
+                "razon": "No tiene API pública",
+            },
+        ],
+    }
