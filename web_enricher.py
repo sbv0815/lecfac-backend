@@ -2,54 +2,33 @@
 ============================================================================
 WEB ENRICHER - SISTEMA DE ENRIQUECIMIENTO DE PRODUCTOS VÍA WEB
 ============================================================================
-Versión: 1.3
-Fecha: 2025-11-27
+Versión: 1.5
+Fecha: 2025-11-28
 
-🔧 CAMBIOS V1.3:
-- Fix: VALIDAR NOMBRE OCR vs NOMBRE WEB en búsqueda por PLU
-- Si OCR dice "CHOCOLATE" pero web dice "RON", rechaza el match
-- Detecta cuando el OCR lee mal el PLU (ej: 3622453 vs 3622153)
-- Agregar Alkosto y Makro a VTEX
+🔧 CAMBIOS V1.5:
+- 🆕 BÚSQUEDA INTELIGENTE POR PALABRAS CLAVE + VALIDACIÓN DE PLU
+- Cuando no encuentra por PLU exacto, extrae palabras clave del nombre OCR
+- Busca por palabras clave (marca, categoría) y valida que el PLU coincida
+- Ejemplo: OCR="VERDURA CONGELADA MC CAIN" → busca "MC CAIN" → filtra por PLU
+- Resuelve casos donde el nombre web es muy diferente al OCR
 
-🔧 CAMBIOS V1.2:
-- Fix: VALIDACIÓN DE PRECIO - rechaza si precio web es >5x o <0.2x del OCR
-- Esto evita matches incorrectos (celulares, aires acondicionados, llantas)
+🔧 CAMBIOS V1.3 (heredados):
+- VALIDAR NOMBRE OCR vs NOMBRE WEB en búsqueda por PLU
+- Detecta cuando el OCR lee mal el PLU
 
-🔧 CAMBIOS V1.1:
-- Fix: Subir umbral de similitud de 0.3 a 0.6 (evita matches incorrectos)
-- Fix: NO buscar por nombre si tiene menos de 6 caracteres
-
-PROPÓSITO:
-- Enriquecer datos de productos usando APIs web VTEX
-- Cache de 3 niveles para minimizar consultas externas
-- Obtener nombres correctos, EAN, marcas desde webs de supermercados
-
-FLUJO:
-1. Buscar en plu_supermercado_mapping (cache rápido)
-2. Buscar en productos_web_enriched (cache completo)
-3. Consultar API VTEX (si es supermercado soportado)
-4. VALIDAR NOMBRE: Si OCR y Web no coinciden → rechazar
-5. VALIDAR PRECIO: Si precio web difiere mucho → rechazar
-6. Guardar resultado en cache
+🔧 CAMBIOS V1.2 (heredados):
+- VALIDACIÓN DE PRECIO - rechaza si precio web es >5x o <0.2x del OCR
 
 SUPERMERCADOS SOPORTADOS (VTEX):
-- Carulla
-- Éxito
-- Jumbo
-- Olímpica
-- Alkosto
-- Makro
-
-TIENDAS SIN SOPORTE WEB (usan datos OCR):
-- D1, Ara, Farmatodo, Cruz Verde
-- Se mejoran con correcciones manuales y validación cruzada
+- Carulla, Éxito, Jumbo, Olímpica, Alkosto, Makro, Colsubsidio
 ============================================================================
 """
 
 import os
+import re
 import time
 import traceback
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 
@@ -58,30 +37,23 @@ from dataclasses import dataclass
 # CONFIGURACIÓN
 # ============================================================================
 
-# Días antes de refrescar el cache
 DIAS_CACHE_PRECIO = 7
 
 SUPERMERCADOS_VTEX = {
-    # Grupo Éxito
     "CARULLA": "carulla",
     "EXITO": "exito",
     "ÉXITO": "exito",
-    # Grupo Cencosud
     "JUMBO": "jumbo",
-    "METRO": "jumbo",  # Metro usa plataforma de Jumbo
-    # Olímpica
+    "METRO": "jumbo",
     "OLIMPICA": "olimpica",
     "OLÍMPICA": "olimpica",
-    # Mayoristas
     "ALKOSTO": "alkosto",
     "MAKRO": "makro",
-    # 🆕 V1.4: Colsubsidio
     "COLSUBSIDIO": "mercadocolsubsidio",
     "MERCADO COLSUBSIDIO": "mercadocolsubsidio",
     "SUPERMERCADO COLSUBSIDIO": "mercadocolsubsidio",
 }
 
-# 🆕 V1.4: CONFIGURACIÓN VTEX ACTUALIZADA
 VTEX_CONFIG = {
     "carulla": "https://www.carulla.com",
     "exito": "https://www.exito.com",
@@ -89,37 +61,122 @@ VTEX_CONFIG = {
     "olimpica": "https://www.olimpica.com",
     "alkosto": "https://www.alkosto.com",
     "makro": "https://www.makro.com.co",
-    # 🆕 V1.4: Colsubsidio
     "mercadocolsubsidio": "https://www.mercadocolsubsidio.com",
 }
 
+# 🆕 V1.5: Marcas conocidas para extracción de palabras clave
+MARCAS_CONOCIDAS = {
+    "MC CAIN",
+    "MCCAIN",
+    "ALPINA",
+    "COLANTA",
+    "ALQUERIA",
+    "NESTLE",
+    "KELLOGGS",
+    "FAMILIA",
+    "COLOMBINA",
+    "CORONA",
+    "DIANA",
+    "ROA",
+    "ARROZ ROA",
+    "MARGARITA",
+    "FRITO LAY",
+    "POSTOBON",
+    "COCA COLA",
+    "PEPSI",
+    "BIMBO",
+    "RAMO",
+    "NOEL",
+    "ZENÚ",
+    "RICA",
+    "PIETRÁN",
+    "KOKORIKO",
+    "TOSH",
+    "DORIA",
+    "LA FINA",
+    "NIVEA",
+    "DOVE",
+    "COLGATE",
+    "PALMOLIVE",
+    "PROTEX",
+    "HEAD SHOULDERS",
+    "PANTENE",
+    "SEDAL",
+    "EGGO",
+    "AUNT JEMIMA",
+    "QUAKER",
+    "KELLOGG",
+    "GREAT VALUE",
+    "HACENDADO",
+    "KIRKLAND",
+    "OLIMPICA",
+    "EXITO",
+    "CARULLA",
+    "DEL MONTE",
+    "HEINZ",
+    "MAGGI",
+    "KNORR",
+    "FRUCO",
+    "SAN JORGE",
+}
 
-# Mapeo de nombres de establecimiento a clave VTEX
+# Palabras a ignorar en búsquedas
+PALABRAS_IGNORAR = {
+    "DE",
+    "LA",
+    "EL",
+    "EN",
+    "CON",
+    "SIN",
+    "POR",
+    "PARA",
+    "UND",
+    "UN",
+    "UNA",
+    "GR",
+    "ML",
+    "KG",
+    "LT",
+    "X",
+    "Y",
+    "O",
+    "A",
+    "AL",
+    "DEL",
+    "LOS",
+    "LAS",
+    "MAS",
+    "MENOS",
+    "PACK",
+    "PAQUETE",
+    "BOLSA",
+    "CAJA",
+    "BOTELLA",
+    "LATA",
+}
+
+
 def normalizar_supermercado(nombre: str) -> str:
-    """
-    Normaliza el nombre del establecimiento para buscar en VTEX.
-    Retorna la key de VTEX_CONFIG o None si no es soportado.
-    """
     if not nombre:
         return None
-
     nombre_upper = nombre.upper().strip()
-
-    # Buscar coincidencia exacta o parcial
     for key, value in SUPERMERCADOS_VTEX.items():
         if key in nombre_upper or nombre_upper in key:
             return value
-
     return None
 
 
-def es_tienda_vtex(establecimiento: str) -> bool:
+def es_supermercado_vtex(establecimiento: str) -> bool:
     """Verifica si el establecimiento tiene API VTEX disponible"""
     return normalizar_supermercado(establecimiento) is not None
 
 
+def es_tienda_vtex(establecimiento: str) -> bool:
+    """Alias para compatibilidad"""
+    return es_supermercado_vtex(establecimiento)
+
+
 def obtener_url_vtex(establecimiento: str) -> str:
-    """Obtiene la URL base de VTEX para el establecimiento"""
     key = normalizar_supermercado(establecimiento)
     if key:
         return VTEX_CONFIG.get(key)
@@ -135,25 +192,16 @@ def obtener_url_vtex(establecimiento: str) -> str:
 class ProductoEnriquecido:
     """Datos enriquecidos de un producto"""
 
-    # Identificadores
     codigo_plu: str = ""
     codigo_ean: str = ""
-
-    # Datos del producto
     nombre_web: str = ""
     marca: str = ""
     presentacion: str = ""
     categoria: str = ""
-
-    # Precio (solo referencia)
     precio_web: int = 0
-
-    # Metadata
     supermercado: str = ""
     url_producto: str = ""
-    fuente: str = ""  # 'cache_plu', 'cache_web', 'api_vtex'
-
-    # Estado
+    fuente: str = ""
     encontrado: bool = False
     verificado: bool = False
 
@@ -182,18 +230,7 @@ class ProductoEnriquecido:
 class WebEnricher:
     """
     Sistema de enriquecimiento de productos vía web scraping.
-
-    Uso:
-        enricher = WebEnricher(cursor, conn)
-        resultado = enricher.enriquecer(
-            codigo="632967",
-            nombre_ocr="ZNAHRIA X K",
-            establecimiento="OLIMPICA"
-        )
-
-        if resultado.encontrado:
-            nombre_correcto = resultado.nombre_web
-            ean = resultado.codigo_ean
+    V1.5: Incluye búsqueda inteligente por palabras clave.
     """
 
     def __init__(self, cursor, conn):
@@ -213,36 +250,25 @@ class WebEnricher:
     ) -> ProductoEnriquecido:
         """
         Enriquece un producto buscando en cache y/o web.
-
-        Args:
-            codigo: PLU o EAN del producto
-            nombre_ocr: Nombre detectado por OCR (puede tener errores)
-            establecimiento: Nombre del supermercado
-            precio_ocr: Precio de la factura (solo para referencia)
-
-        Returns:
-            ProductoEnriquecido con los datos encontrados
+        V1.5: Incluye búsqueda por palabras clave cuando falla PLU directo.
         """
         resultado = ProductoEnriquecido()
         resultado.supermercado = establecimiento
 
-        # Verificar si es supermercado VTEX
         supermercado_key = normalizar_supermercado(establecimiento)
         if not supermercado_key:
-            # Para tiendas sin VTEX (D1, Ara, etc.), usar datos del OCR
-            # Se irán mejorando con correcciones manuales y validación cruzada
             print(f"   ℹ️ {establecimiento} no tiene API web - usando datos OCR")
             return resultado
 
-        # Clasificar código
         tipo_codigo = self._clasificar_codigo(codigo)
 
-        print(f"\n   🌐 ENRIQUECIMIENTO WEB:")
+        print(f"\n   🌐 ENRIQUECIMIENTO WEB V1.5:")
         print(f"      Código: {codigo} ({tipo_codigo})")
+        print(f"      Nombre OCR: {nombre_ocr[:40] if nombre_ocr else 'N/A'}")
         print(f"      Supermercado: {supermercado_key}")
 
         # ====================================================================
-        # PASO 1: Buscar en cache PLU (más rápido)
+        # PASO 1: Buscar en cache PLU
         # ====================================================================
         cache_plu = self._buscar_en_cache_plu(codigo, supermercado_key)
 
@@ -268,7 +294,6 @@ class WebEnricher:
         cache_web = self._buscar_en_cache_web(codigo, supermercado_key, tipo_codigo)
 
         if cache_web:
-            # Verificar si el cache está fresco
             fecha_cache = cache_web.get("fecha_actualizacion")
             if fecha_cache and self._cache_es_valido(fecha_cache):
                 print(f"      ✅ ENCONTRADO EN CACHE WEB")
@@ -284,13 +309,11 @@ class WebEnricher:
                 resultado.precio_web = cache_web.get("precio_web", 0)
                 resultado.url_producto = cache_web.get("url_producto", "")
 
-                # Guardar también en cache PLU para acceso más rápido
                 self._guardar_en_cache_plu(resultado)
-
                 return resultado
 
         # ====================================================================
-        # PASO 3: Consultar API VTEX
+        # PASO 3: Consultar API VTEX (búsqueda directa por PLU/EAN)
         # ====================================================================
         print(f"      🔍 Consultando API VTEX...")
 
@@ -299,75 +322,37 @@ class WebEnricher:
             nombre_ocr=nombre_ocr,
             supermercado_key=supermercado_key,
             tipo_codigo=tipo_codigo,
+            precio_ocr=precio_ocr,
         )
 
         if datos_vtex:
-            precio_web = datos_vtex.get("precio", 0)
-            nombre_web = datos_vtex.get("nombre", "")
-
-            # 🔧 V1.1: VALIDACIÓN DE PRECIO
-            # Si el precio web es muy diferente al OCR, rechazar el match
-            # Esto evita matches incorrectos como "CELULAR" cuando el precio es $22,000
-            if precio_ocr > 0 and precio_web > 0:
-                ratio = precio_web / precio_ocr
-
-                # Si el precio web es más de 5x o menos de 0.2x del OCR → rechazar
-                if ratio > 5.0:
-                    print(
-                        f"      ⚠️ RECHAZADO: Precio web (${precio_web:,}) es {ratio:.1f}x mayor que OCR (${precio_ocr:,})"
-                    )
-                    print(f"         Producto web: {nombre_web[:50]}")
-
-                    # Registrar como no encontrado
-                    self._registrar_consulta(
-                        tipo="plu" if tipo_codigo == "PLU" else "ean",
-                        termino=codigo,
-                        supermercado=supermercado_key,
-                        encontrado=False,
-                    )
-                    return resultado
-
-                if ratio < 0.2:
-                    print(
-                        f"      ⚠️ RECHAZADO: Precio web (${precio_web:,}) es {ratio:.1f}x menor que OCR (${precio_ocr:,})"
-                    )
-                    print(f"         Producto web: {nombre_web[:50]}")
-
-                    self._registrar_consulta(
-                        tipo="plu" if tipo_codigo == "PLU" else "ean",
-                        termino=codigo,
-                        supermercado=supermercado_key,
-                        encontrado=False,
-                    )
-                    return resultado
-
-            print(f"      ✅ ENCONTRADO EN VTEX")
-            print(f"         Nombre: {nombre_web[:50]}")
-
-            resultado.encontrado = True
-            resultado.fuente = "api_vtex"
-            resultado.codigo_plu = datos_vtex.get("plu", codigo)
-            resultado.codigo_ean = datos_vtex.get("ean", "")
-            resultado.nombre_web = nombre_web
-            resultado.marca = datos_vtex.get("marca", "")
-            resultado.presentacion = datos_vtex.get("presentacion", "")
-            resultado.categoria = datos_vtex.get("categoria", "")
-            resultado.precio_web = precio_web
-            resultado.url_producto = datos_vtex.get("url", "")
-
-            # Guardar en ambos caches
-            self._guardar_en_cache_web(resultado)
-            self._guardar_en_cache_plu(resultado)
-
-            # Registrar en log
-            self._registrar_consulta(
-                tipo="plu" if tipo_codigo == "PLU" else "ean",
-                termino=codigo,
-                supermercado=supermercado_key,
-                encontrado=True,
+            return self._procesar_resultado_vtex(
+                datos_vtex, codigo, nombre_ocr, precio_ocr, supermercado_key, resultado
             )
 
-            return resultado
+        # ====================================================================
+        # 🆕 PASO 3.5: BÚSQUEDA INTELIGENTE POR PALABRAS CLAVE + VALIDACIÓN PLU
+        # ====================================================================
+        if tipo_codigo == "PLU" and nombre_ocr and len(nombre_ocr) >= 5:
+            print(f"\n      🔍 PASO 3.5: Búsqueda inteligente por palabras clave...")
+
+            datos_vtex_inteligente = self._busqueda_inteligente_por_palabras_clave(
+                plu_buscado=codigo,
+                nombre_ocr=nombre_ocr,
+                supermercado_key=supermercado_key,
+                precio_ocr=precio_ocr,
+            )
+
+            if datos_vtex_inteligente:
+                print(f"      ✅ ENCONTRADO por búsqueda inteligente!")
+                return self._procesar_resultado_vtex(
+                    datos_vtex_inteligente,
+                    codigo,
+                    nombre_ocr,
+                    precio_ocr,
+                    supermercado_key,
+                    resultado,
+                )
 
         # No encontrado
         print(f"      ❌ NO ENCONTRADO EN VTEX")
@@ -377,6 +362,248 @@ class WebEnricher:
             termino=codigo,
             supermercado=supermercado_key,
             encontrado=False,
+        )
+
+        return resultado
+
+    # ========================================================================
+    # 🆕 V1.5: BÚSQUEDA INTELIGENTE POR PALABRAS CLAVE
+    # ========================================================================
+
+    def _busqueda_inteligente_por_palabras_clave(
+        self,
+        plu_buscado: str,
+        nombre_ocr: str,
+        supermercado_key: str,
+        precio_ocr: int = 0,
+    ) -> Optional[Dict]:
+        """
+        🆕 V1.5: Búsqueda inteligente cuando el PLU directo no funciona.
+
+        Flujo:
+        1. Extrae palabras clave del nombre OCR (marcas, categorías)
+        2. Busca en VTEX por cada palabra clave
+        3. Filtra resultados que tengan el MISMO PLU
+        4. Valida precio si está disponible
+
+        Ejemplo:
+        - OCR: "VERDURA CONGELADA MC CAIN" con PLU 632456
+        - Extrae: ["MC CAIN", "CONGELAD", "VERDURA"]
+        - Busca "MC CAIN" en VTEX → obtiene lista de productos MC CAIN
+        - Filtra: ¿cuál tiene PLU 632456? → "VEGETALES MIXTOS MC CAIN 500"
+        """
+        import requests
+        import urllib.parse
+
+        base_url = VTEX_CONFIG.get(supermercado_key)
+        if not base_url:
+            return None
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "es-CO,es;q=0.9",
+        }
+
+        # 1. Extraer palabras clave del nombre OCR
+        palabras_clave = self._extraer_palabras_clave(nombre_ocr)
+
+        if not palabras_clave:
+            print(
+                f"         ℹ️ No se pudieron extraer palabras clave de: '{nombre_ocr}'"
+            )
+            return None
+
+        print(f"         📝 Palabras clave extraídas: {palabras_clave}")
+
+        # 2. Buscar por cada palabra clave
+        for palabra in palabras_clave:
+            print(f"         🔍 Buscando: '{palabra}'...")
+
+            try:
+                url = f"{base_url}/api/catalog_system/pub/products/search/{urllib.parse.quote(palabra)}"
+                resp = requests.get(url, headers=headers, timeout=10)
+
+                if resp.status_code not in [200, 206]:
+                    continue
+
+                data = resp.json()
+
+                if not data or len(data) == 0:
+                    continue
+
+                print(f"         📦 {len(data)} resultados para '{palabra}'")
+
+                # 3. Filtrar por PLU
+                for item in data[:20]:  # Revisar hasta 20 resultados
+                    producto = self._parsear_producto_vtex(item, base_url)
+
+                    if not producto:
+                        continue
+
+                    plu_producto = producto.get("plu", "")
+
+                    # Comparar PLUs (pueden tener diferencias menores)
+                    if self._plus_coinciden(plu_buscado, plu_producto):
+                        nombre_web = producto.get("nombre", "")
+                        precio_web = producto.get("precio", 0)
+
+                        print(f"         ✅ ¡MATCH por PLU!")
+                        print(f"            PLU buscado: {plu_buscado}")
+                        print(f"            PLU encontrado: {plu_producto}")
+                        print(f"            Nombre web: {nombre_web[:50]}")
+
+                        # 4. Validar precio si está disponible
+                        if precio_ocr > 0 and precio_web > 0:
+                            ratio = precio_web / precio_ocr
+                            if ratio > 5.0 or ratio < 0.2:
+                                print(
+                                    f"         ⚠️ Precio muy diferente: OCR=${precio_ocr:,} vs Web=${precio_web:,}"
+                                )
+                                continue
+
+                        return producto
+
+            except Exception as e:
+                print(f"         ⚠️ Error buscando '{palabra}': {str(e)[:50]}")
+                continue
+
+        print(
+            f"         ❌ No se encontró producto con PLU {plu_buscado} en ninguna búsqueda"
+        )
+        return None
+
+    def _extraer_palabras_clave(self, nombre_ocr: str) -> List[str]:
+        """
+        🆕 V1.5: Extrae palabras clave relevantes del nombre OCR.
+
+        Prioridad:
+        1. Marcas conocidas (MC CAIN, ALPINA, etc.)
+        2. Palabras largas significativas (>= 5 caracteres)
+        3. Categorías de producto
+        """
+        if not nombre_ocr:
+            return []
+
+        nombre_upper = nombre_ocr.upper().strip()
+        palabras_clave = []
+
+        # 1. Buscar marcas conocidas (tienen prioridad)
+        for marca in MARCAS_CONOCIDAS:
+            if marca in nombre_upper:
+                palabras_clave.append(marca)
+                # Quitar la marca del nombre para no duplicar
+                nombre_upper = nombre_upper.replace(marca, " ")
+
+        # 2. Extraer palabras significativas
+        palabras = re.findall(r"\b[A-Z]{4,}\b", nombre_upper)
+
+        for palabra in palabras:
+            if palabra not in PALABRAS_IGNORAR and len(palabra) >= 4:
+                # Evitar duplicados
+                if palabra not in palabras_clave and not any(
+                    palabra in pc for pc in palabras_clave
+                ):
+                    palabras_clave.append(palabra)
+
+        # 3. Si hay muy pocas palabras, usar el nombre limpio completo
+        if len(palabras_clave) < 2 and len(nombre_ocr) >= 8:
+            nombre_limpio = self._limpiar_nombre_busqueda(nombre_ocr)
+            if nombre_limpio and len(nombre_limpio) >= 6:
+                palabras_clave.append(nombre_limpio)
+
+        # Limitar a las 4 mejores palabras clave
+        return palabras_clave[:4]
+
+    def _plus_coinciden(self, plu1: str, plu2: str) -> bool:
+        """
+        🆕 V1.5: Verifica si dos PLUs coinciden (exacto o con diferencia mínima).
+        """
+        if not plu1 or not plu2:
+            return False
+
+        # Limpiar PLUs (solo dígitos)
+        plu1_limpio = "".join(filter(str.isdigit, str(plu1)))
+        plu2_limpio = "".join(filter(str.isdigit, str(plu2)))
+
+        # Coincidencia exacta
+        if plu1_limpio == plu2_limpio:
+            return True
+
+        # Permitir diferencia de 1 dígito (errores de OCR)
+        if len(plu1_limpio) == len(plu2_limpio):
+            diferencias = sum(1 for a, b in zip(plu1_limpio, plu2_limpio) if a != b)
+            if diferencias <= 1:
+                return True
+
+        # Un PLU puede ser subcadena del otro (variantes)
+        if plu1_limpio in plu2_limpio or plu2_limpio in plu1_limpio:
+            if abs(len(plu1_limpio) - len(plu2_limpio)) <= 2:
+                return True
+
+        return False
+
+    def _procesar_resultado_vtex(
+        self,
+        datos_vtex: Dict,
+        codigo: str,
+        nombre_ocr: str,
+        precio_ocr: int,
+        supermercado_key: str,
+        resultado: ProductoEnriquecido,
+    ) -> ProductoEnriquecido:
+        """Procesa y valida resultado de VTEX"""
+        precio_web = datos_vtex.get("precio", 0)
+        nombre_web = datos_vtex.get("nombre", "")
+
+        # Validación de precio
+        if precio_ocr > 0 and precio_web > 0:
+            ratio = precio_web / precio_ocr
+
+            if ratio > 5.0:
+                print(
+                    f"      ⚠️ RECHAZADO: Precio web (${precio_web:,}) es {ratio:.1f}x mayor que OCR (${precio_ocr:,})"
+                )
+                self._registrar_consulta(
+                    tipo="plu",
+                    termino=codigo,
+                    supermercado=supermercado_key,
+                    encontrado=False,
+                )
+                return resultado
+
+            if ratio < 0.2:
+                print(
+                    f"      ⚠️ RECHAZADO: Precio web (${precio_web:,}) es {ratio:.1f}x menor que OCR (${precio_ocr:,})"
+                )
+                self._registrar_consulta(
+                    tipo="plu",
+                    termino=codigo,
+                    supermercado=supermercado_key,
+                    encontrado=False,
+                )
+                return resultado
+
+        print(f"      ✅ ENCONTRADO EN VTEX")
+        print(f"         Nombre: {nombre_web[:50]}")
+
+        resultado.encontrado = True
+        resultado.fuente = "api_vtex"
+        resultado.codigo_plu = datos_vtex.get("plu", codigo)
+        resultado.codigo_ean = datos_vtex.get("ean", "")
+        resultado.nombre_web = nombre_web
+        resultado.marca = datos_vtex.get("marca", "")
+        resultado.presentacion = datos_vtex.get("presentacion", "")
+        resultado.categoria = datos_vtex.get("categoria", "")
+        resultado.precio_web = precio_web
+        resultado.url_producto = datos_vtex.get("url", "")
+
+        # Guardar en caches
+        self._guardar_en_cache_web(resultado)
+        self._guardar_en_cache_plu(resultado)
+
+        self._registrar_consulta(
+            tipo="plu", termino=codigo, supermercado=supermercado_key, encontrado=True
         )
 
         return resultado
@@ -585,24 +812,11 @@ class WebEnricher:
         nombre_ocr: str,
         supermercado_key: str,
         tipo_codigo: str,
+        precio_ocr: int = 0,
     ) -> Optional[Dict]:
-        """
-        Consulta la API VTEX para obtener datos del producto.
-        Versión SÍNCRONA usando requests (compatible con FastAPI).
-        """
+        """Consulta la API VTEX para obtener datos del producto."""
         import requests
         import urllib.parse
-
-        # Configuración por supermercado
-        VTEX_CONFIG = {
-            "carulla": "https://www.carulla.com",
-            "exito": "https://www.exito.com",
-            "jumbo": "https://www.tiendasjumbo.co",
-            "olimpica": "https://www.olimpica.com",
-            # 🆕 V1.3: Nuevos supermercados
-            "alkosto": "https://www.alkosto.com",
-            "makro": "https://www.makro.com.co",
-        }
 
         base_url = VTEX_CONFIG.get(supermercado_key)
         if not base_url:
@@ -618,10 +832,10 @@ class WebEnricher:
         producto = None
 
         try:
-            # 1. Buscar por PLU primero
+            # 1. Buscar por PLU
             if tipo_codigo == "PLU" and codigo and len(codigo) >= 3:
                 url_plu = f"{base_url}/api/catalog_system/pub/products/search?fq=alternateIds_RefId:{codigo}"
-                print(f"      🏷️ Buscando PLU: {url_plu[:80]}...")
+                print(f"      🏷️ Buscando PLU directo...")
 
                 try:
                     resp = requests.get(url_plu, headers=headers, timeout=10)
@@ -632,8 +846,6 @@ class WebEnricher:
                                 data[0], base_url
                             )
                             if producto_candidato:
-                                # 🔧 V1.3: VALIDAR que el nombre web tenga relación con el OCR
-                                # Esto detecta cuando el OCR leyó mal el PLU
                                 nombre_web = producto_candidato.get(
                                     "nombre", ""
                                 ).upper()
@@ -649,30 +861,27 @@ class WebEnricher:
                                 )
 
                                 print(
-                                    f"      🔍 Validando nombre: OCR='{nombre_ocr_upper[:30]}' vs Web='{nombre_web[:30]}'"
+                                    f"      🔍 Validando: OCR='{nombre_ocr_upper[:25]}' vs Web='{nombre_web[:25]}'"
                                 )
                                 print(
                                     f"         Similitud: {similitud_nombre:.2f}, Palabras comunes: {palabras_comunes}"
                                 )
 
-                                # Si no hay NINGUNA palabra en común y similitud < 0.1, rechazar
-                                # Esto detecta casos como "CHOCOLATE" vs "RON VIEJO DE CALDAS"
                                 if palabras_comunes == 0 and similitud_nombre < 0.15:
                                     print(
                                         f"      ⚠️ RECHAZADO: Nombre OCR no coincide con producto web"
                                     )
-                                    print(f"         Posible error de OCR en el PLU")
-                                    producto = None  # No aceptar este match
+                                    producto = None
                                 else:
                                     producto = producto_candidato
-                                    print(f"      ✅ Encontrado por PLU!")
+                                    print(f"      ✅ Encontrado por PLU directo!")
                 except Exception as e:
                     print(f"      ⚠️ Error buscando PLU: {str(e)[:50]}")
 
             # 2. Buscar por EAN
             if not producto and tipo_codigo == "EAN" and codigo and len(codigo) >= 8:
                 url_ean = f"{base_url}/api/catalog_system/pub/products/search?fq=alternateIds_Ean:{codigo}"
-                print(f"      📊 Buscando EAN: {codigo}")
+                print(f"      📊 Buscando EAN...")
 
                 try:
                     resp = requests.get(url_ean, headers=headers, timeout=10)
@@ -685,12 +894,10 @@ class WebEnricher:
                 except Exception as e:
                     print(f"      ⚠️ Error buscando EAN: {str(e)[:50]}")
 
-            # 3. Buscar por NOMBRE (fallback) - SOLO si el nombre tiene suficiente información
-            # 🔧 V1.1: Evitar matches incorrectos con nombres muy cortos
+            # 3. Buscar por NOMBRE (solo si tiene suficiente info)
             if not producto and nombre_ocr:
                 nombre_limpio = self._limpiar_nombre_busqueda(nombre_ocr)
 
-                # NO buscar por nombre si es muy corto (menos de 6 caracteres)
                 if len(nombre_limpio) < 6:
                     print(f"      ℹ️ Nombre muy corto para buscar: '{nombre_limpio}'")
                 else:
@@ -702,14 +909,12 @@ class WebEnricher:
                         if resp.status_code in [200, 206]:
                             data = resp.json()
                             if data and len(data) > 0:
-                                # Buscar el mejor match
                                 mejor_match = None
                                 mejor_score = 0
 
                                 for item in data[:5]:
                                     prod = self._parsear_producto_vtex(item, base_url)
                                     if prod:
-                                        # Calcular similitud simple
                                         score = self._calcular_similitud_simple(
                                             nombre_limpio.upper(),
                                             prod["nombre"].upper(),
@@ -718,7 +923,6 @@ class WebEnricher:
                                             mejor_score = score
                                             mejor_match = prod
 
-                                # 🔧 V1.1: Umbral más alto (0.6 en vez de 0.3) para evitar matches incorrectos
                                 if mejor_match and mejor_score >= 0.6:
                                     producto = mejor_match
                                     print(
@@ -731,11 +935,7 @@ class WebEnricher:
                     except Exception as e:
                         print(f"      ⚠️ Error buscando nombre: {str(e)[:50]}")
 
-            if producto:
-                return producto
-
-            print(f"      ❌ No encontrado en VTEX")
-            return None
+            return producto
 
         except Exception as e:
             print(f"      ⚠️ Error consultando VTEX: {e}")
@@ -758,7 +958,6 @@ class WebEnricher:
                 sku = item["items"][0]
                 ean = sku.get("ean", "")
 
-                # Obtener PLU de referenceId
                 ref_ids = sku.get("referenceId", [])
                 if ref_ids and isinstance(ref_ids, list):
                     for ref in ref_ids:
@@ -769,13 +968,11 @@ class WebEnricher:
                 if not plu:
                     plu = item.get("productReference", "") or item.get("productId", "")
 
-                # Precio
                 sellers = sku.get("sellers", [])
                 if sellers:
                     oferta = sellers[0].get("commertialOffer", {})
                     precio = int(oferta.get("Price", 0)) or None
 
-            # URL completa
             if link and not link.startswith("http"):
                 link = f"{base_url}{link}"
 
@@ -795,9 +992,6 @@ class WebEnricher:
 
     def _limpiar_nombre_busqueda(self, nombre: str) -> str:
         """Limpia el nombre OCR para búsqueda"""
-        import re
-
-        # Abreviaciones comunes colombianas
         abreviaciones = {
             "QSO": "queso",
             "OSO": "queso",
@@ -824,7 +1018,7 @@ class WebEnricher:
             limpia = re.sub(r"[^A-Z0-9]", "", palabra)
             if limpia in abreviaciones:
                 resultado.append(abreviaciones[limpia])
-            elif len(limpia) >= 2:  # Ignorar caracteres sueltos
+            elif len(limpia) >= 2:
                 resultado.append(limpia.lower())
 
         return " ".join(resultado)
@@ -843,44 +1037,18 @@ class WebEnricher:
         return interseccion / union if union > 0 else 0.0
 
     def _contar_palabras_comunes(self, s1: str, s2: str) -> int:
-        """
-        🆕 V1.3: Cuenta palabras significativas en común entre dos strings.
-        Ignora palabras muy cortas (< 3 chars) y palabras comunes.
-        """
-        import re
-
-        # Palabras a ignorar (muy comunes en productos)
-        IGNORAR = {
-            "DE",
-            "LA",
-            "EL",
-            "EN",
-            "CON",
-            "SIN",
-            "POR",
-            "PARA",
-            "UND",
-            "UN",
-            "UNA",
-            "GR",
-            "ML",
-            "KG",
-            "LT",
-            "X",
-        }
-
-        # Extraer palabras significativas (>= 3 caracteres)
+        """Cuenta palabras significativas en común"""
         palabras1 = set(
-            p for p in re.findall(r"\b[A-Z]{3,}\b", s1.upper()) if p not in IGNORAR
+            p
+            for p in re.findall(r"\b[A-Z]{3,}\b", s1.upper())
+            if p not in PALABRAS_IGNORAR
         )
         palabras2 = set(
-            p for p in re.findall(r"\b[A-Z]{3,}\b", s2.upper()) if p not in IGNORAR
+            p
+            for p in re.findall(r"\b[A-Z]{3,}\b", s2.upper())
+            if p not in PALABRAS_IGNORAR
         )
-
-        # Contar intersección
-        comunes = palabras1 & palabras2
-
-        return len(comunes)
+        return len(palabras1 & palabras2)
 
     # ========================================================================
     # UTILIDADES
@@ -930,8 +1098,7 @@ class WebEnricher:
                 (tipo, termino, supermercado, encontrado, tiempo_ms, error),
             )
             self.conn.commit()
-        except Exception as e:
-            # No fallar si el log falla
+        except Exception:
             pass
 
 
@@ -948,22 +1115,7 @@ def enriquecer_producto(
     cursor,
     conn,
 ) -> ProductoEnriquecido:
-    """
-    Función de conveniencia para enriquecer un producto.
-
-    Uso:
-        resultado = enriquecer_producto(
-            codigo="632967",
-            nombre_ocr="ZNAHRIA X K",
-            establecimiento="OLIMPICA",
-            precio_ocr=3500,
-            cursor=cursor,
-            conn=conn,
-        )
-
-        if resultado.encontrado:
-            nombre_correcto = resultado.nombre_web
-    """
+    """Función de conveniencia para enriquecer un producto."""
     enricher = WebEnricher(cursor, conn)
     return enricher.enriquecer(
         codigo=codigo,
@@ -978,9 +1130,13 @@ def enriquecer_producto(
 # ============================================================================
 
 print("=" * 80)
-print("🌐 WEB ENRICHER V1.0 - SISTEMA DE ENRIQUECIMIENTO VÍA WEB")
+print("🌐 WEB ENRICHER V1.5 - BÚSQUEDA INTELIGENTE POR PALABRAS CLAVE")
+print("=" * 80)
+print("🆕 NUEVO: Búsqueda por palabras clave cuando PLU directo falla")
+print("   → Extrae marcas (MC CAIN, ALPINA, etc.) del nombre OCR")
+print("   → Busca por marca y filtra resultados por PLU")
+print("   → Resuelve casos donde nombre web ≠ nombre OCR")
 print("=" * 80)
 print("✅ Cache de 3 niveles: plu_mapping → web_enriched → API VTEX")
-print("✅ Supermercados: Carulla, Éxito, Jumbo, Olímpica")
-print("✅ Datos: EAN, PLU, nombre correcto, marca, presentación")
+print("✅ Supermercados: Carulla, Éxito, Jumbo, Olímpica, Alkosto, Makro")
 print("=" * 80)
