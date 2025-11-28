@@ -1991,25 +1991,17 @@ class ProductoVTEXCache(BaseModel):
     imagen_url: Optional[str] = None
 
 
+# ============================================================
+# ENDPOINT CORREGIDO: GUARDAR CACHE VTEX CON IMAGEN
+# Reemplazar en productos_api_v2.py
+# ============================================================
+
+
 @router.post("/api/v2/vtex-cache/guardar")
 async def guardar_producto_vtex_cache(producto: ProductoVTEXCache):
     """
     Guarda un producto del catálogo VTEX en cache local.
     Descarga la imagen y la convierte a base64.
-
-    Uso desde frontend:
-        fetch('/api/v2/vtex-cache/guardar', {
-            method: 'POST',
-            body: JSON.stringify({
-                establecimiento: 'OLIMPICA',
-                plu: '632967',
-                ean: '7702001234567',
-                nombre: 'Leche Alquería Deslactosada 1L',
-                marca: 'Alquería',
-                precio: 5900,
-                imagen_url: 'https://olimpica.vteximg.com.br/...'
-            })
-        })
     """
     conn = None
     try:
@@ -2031,50 +2023,85 @@ async def guardar_producto_vtex_cache(producto: ProductoVTEXCache):
 
         if producto.imagen_url:
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    # Limpiar URL de imagen (quitar parámetros de tamaño si existen)
-                    imagen_url_limpia = producto.imagen_url.split("?")[0]
+                async with httpx.AsyncClient(
+                    timeout=15.0, follow_redirects=True
+                ) as client:
+                    # Usar la URL tal cual viene (NO modificarla)
+                    imagen_url = producto.imagen_url.strip()
 
-                    # Agregar tamaño óptimo para VTEX
-                    if "vteximg" in imagen_url_limpia:
-                        imagen_url_limpia += "-500-500"  # 500x500 px
+                    # Solo limpiar parámetros de query si existen y causan problemas
+                    # Pero mantener la URL base intacta
+
+                    print(f"📷 Descargando imagen: {imagen_url[:80]}...")
 
                     headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                        "Accept-Language": "es-CO,es;q=0.9,en;q=0.8",
+                        "Referer": "https://www.olimpica.com/",
                     }
 
-                    response = await client.get(imagen_url_limpia, headers=headers)
+                    response = await client.get(imagen_url, headers=headers)
 
                     if response.status_code == 200:
-                        # Detectar tipo de imagen
-                        content_type = response.headers.get(
-                            "content-type", "image/jpeg"
-                        )
-                        if "png" in content_type:
-                            imagen_mime = "image/png"
-                        elif "webp" in content_type:
-                            imagen_mime = "image/webp"
-                        elif "gif" in content_type:
-                            imagen_mime = "image/gif"
+                        content_length = len(response.content)
+
+                        # Verificar que sea una imagen real (más de 1KB)
+                        if content_length > 1000:
+                            # Detectar tipo de imagen por content-type o por contenido
+                            content_type = response.headers.get(
+                                "content-type", ""
+                            ).lower()
+
+                            # También detectar por magic bytes
+                            content_start = response.content[:10]
+
+                            if b"\x89PNG" in content_start:
+                                imagen_mime = "image/png"
+                            elif (
+                                b"JFIF" in content_start
+                                or b"\xff\xd8\xff" in content_start
+                            ):
+                                imagen_mime = "image/jpeg"
+                            elif b"WEBP" in content_start or b"RIFF" in content_start:
+                                imagen_mime = "image/webp"
+                            elif b"GIF8" in content_start:
+                                imagen_mime = "image/gif"
+                            elif "png" in content_type:
+                                imagen_mime = "image/png"
+                            elif "webp" in content_type:
+                                imagen_mime = "image/webp"
+                            elif "gif" in content_type:
+                                imagen_mime = "image/gif"
+                            else:
+                                imagen_mime = "image/jpeg"
+
+                            # Convertir a base64
+                            imagen_base64 = base64.b64encode(response.content).decode(
+                                "utf-8"
+                            )
+
+                            print(
+                                f"✅ Imagen descargada: {content_length} bytes, tipo: {imagen_mime}"
+                            )
                         else:
-                            imagen_mime = "image/jpeg"
-
-                        # Convertir a base64
-                        imagen_base64 = base64.b64encode(response.content).decode(
-                            "utf-8"
-                        )
-
-                        print(f"✅ Imagen descargada: {len(response.content)} bytes")
+                            print(
+                                f"⚠️ Imagen muy pequeña ({content_length} bytes), ignorando"
+                            )
                     else:
                         print(
                             f"⚠️ No se pudo descargar imagen: HTTP {response.status_code}"
                         )
 
+            except httpx.TimeoutException:
+                print(f"⚠️ Timeout descargando imagen")
             except Exception as e:
                 print(f"⚠️ Error descargando imagen: {e}")
-                # Continuar sin imagen
+                import traceback
 
-        # Verificar si ya existe (por PLU o EAN)
+                traceback.print_exc()
+
+        # Verificar si ya existe (por PLU o EAN en el mismo establecimiento)
         existe = False
         producto_existente_id = None
 
@@ -2134,6 +2161,11 @@ async def guardar_producto_vtex_cache(producto: ProductoVTEXCache):
             )
 
             conn.commit()
+            cursor.close()
+
+            print(
+                f"🔄 Cache VTEX actualizado: {producto.nombre} (ID: {producto_existente_id})"
+            )
 
             return {
                 "success": True,
@@ -2150,8 +2182,8 @@ async def guardar_producto_vtex_cache(producto: ProductoVTEXCache):
                 INSERT INTO productos_vtex_cache (
                     establecimiento, plu, ean, nombre, marca, precio,
                     categoria, presentacion, url_producto, imagen_url,
-                    imagen_base64, imagen_mime
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    imagen_base64, imagen_mime, veces_usado
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
                 RETURNING id
             """,
                 (
@@ -2172,10 +2204,9 @@ async def guardar_producto_vtex_cache(producto: ProductoVTEXCache):
 
             nuevo_id = cursor.fetchone()[0]
             conn.commit()
+            cursor.close()
 
-            print(
-                f"✅ Producto guardado en cache VTEX: {producto.nombre} (ID: {nuevo_id})"
-            )
+            print(f"✅ Cache VTEX creado: {producto.nombre} (ID: {nuevo_id})")
 
             return {
                 "success": True,
