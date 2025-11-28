@@ -2425,3 +2425,174 @@ async def estadisticas_cache_vtex():
     finally:
         if conn:
             conn.close()
+
+
+# ============================================
+# ENDPOINTS PARA IMÁGENES VTEX CACHE
+# Agregar a productos_api_v2.py
+# ============================================
+
+
+@router.get("/vtex-cache/{cache_id}/imagen")
+async def obtener_imagen_vtex_cache(cache_id: int):
+    """
+    Obtiene la imagen almacenada en el cache VTEX
+    Retorna la imagen en formato base64 con data URL listo para usar en <img src="">
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT nombre, establecimiento, ean, imagen_base64, imagen_mime
+            FROM productos_vtex_cache
+            WHERE id = %s AND imagen_base64 IS NOT NULL
+        """,
+            (cache_id,),
+        )
+
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Imagen no encontrada")
+
+        nombre, establecimiento, ean, imagen_base64, imagen_mime = row
+
+        # Construir data URL
+        mime_type = imagen_mime or "image/jpeg"
+        data_url = f"data:{mime_type};base64,{imagen_base64}"
+
+        return {
+            "id": cache_id,
+            "nombre": nombre,
+            "establecimiento": establecimiento,
+            "ean": ean,
+            "mime_type": mime_type,
+            "data_url": data_url,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo imagen cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/vtex-cache/buscar")
+async def buscar_en_vtex_cache(q: str, establecimiento: str = None, limite: int = 20):
+    """
+    Busca productos en el cache local VTEX (sin llamar a VTEX)
+    Útil para verificar si ya tenemos imagen de un producto
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Construir query
+        query = """
+            SELECT id, establecimiento, plu, ean, nombre, marca, precio,
+                CASE WHEN imagen_base64 IS NOT NULL THEN TRUE ELSE FALSE END as tiene_imagen_local,
+                veces_usado
+            FROM productos_vtex_cache
+            WHERE (
+                nombre ILIKE %s
+                OR ean ILIKE %s
+                OR plu ILIKE %s
+            )
+        """
+        params = [f"%{q}%", f"%{q}%", f"%{q}%"]
+
+        if establecimiento:
+            query += " AND establecimiento = %s"
+            params.append(establecimiento.upper())
+
+        query += " ORDER BY veces_usado DESC, fecha_actualizacion DESC LIMIT %s"
+        params.append(limite)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        productos = []
+        for row in rows:
+            productos.append(
+                {
+                    "id": row[0],
+                    "establecimiento": row[1],
+                    "plu": row[2],
+                    "ean": row[3],
+                    "nombre": row[4],
+                    "marca": row[5],
+                    "precio": row[6],
+                    "tiene_imagen_local": row[7],
+                    "veces_usado": row[8],
+                }
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "query": q,
+            "establecimiento": establecimiento,
+            "total": len(productos),
+            "productos": productos,
+        }
+
+    except Exception as e:
+        print(f"❌ Error buscando en cache VTEX: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/vtex-cache/estadisticas")
+async def estadisticas_vtex_cache():
+    """
+    Retorna estadísticas del cache VTEX
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(CASE WHEN imagen_base64 IS NOT NULL THEN 1 END) as con_imagen,
+                COUNT(CASE WHEN imagen_base64 IS NULL THEN 1 END) as sin_imagen
+            FROM productos_vtex_cache
+        """
+        )
+        row = cursor.fetchone()
+        total, con_imagen, sin_imagen = row
+
+        # Por establecimiento
+        cursor.execute(
+            """
+            SELECT establecimiento, COUNT(*) as cantidad,
+            COUNT(CASE WHEN imagen_base64 IS NOT NULL THEN 1 END) as con_imagen
+            FROM productos_vtex_cache
+            GROUP BY establecimiento
+            ORDER BY cantidad DESC
+        """
+        )
+        por_establecimiento = []
+        for row in cursor.fetchall():
+            por_establecimiento.append(
+                {"establecimiento": row[0], "cantidad": row[1], "con_imagen": row[2]}
+            )
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "total_productos": total,
+            "con_imagen": con_imagen,
+            "sin_imagen": sin_imagen,
+            "por_establecimiento": por_establecimiento,
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo estadísticas cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

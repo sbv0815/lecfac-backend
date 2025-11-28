@@ -2458,7 +2458,6 @@ async function cargarPLUsProducto(productoId) {
         contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
     }
 }
-
 // =============================================================
 // RECOPILAR PLUs PARA GUARDAR
 // =============================================================
@@ -2576,3 +2575,183 @@ window.cargarPLUsProducto = cargarPLUsProducto;
 window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
 window.agregarPLUEditable = agregarPLUEditable;
 window.configurarBuscadorVTEX = configurarBuscadorVTEX;
+// =============================================================
+// 🖼️ SISTEMA DE IMÁGENES VTEX CACHE - V4.1
+// =============================================================
+
+// Cache local de imágenes para evitar llamadas repetidas
+let imagenesCache = {};
+
+// Buscar imagen en cache VTEX
+async function buscarImagenCache(ean, establecimiento = null) {
+    if (!ean) return null;
+
+    const cacheKey = `${ean}-${establecimiento || 'any'}`;
+    if (imagenesCache[cacheKey] !== undefined) {
+        return imagenesCache[cacheKey];
+    }
+
+    const apiBase = getApiBase();
+
+    try {
+        let url = `${apiBase}/api/v2/vtex-cache/buscar?q=${encodeURIComponent(ean)}&limite=1`;
+        if (establecimiento) {
+            url += `&establecimiento=${encodeURIComponent(establecimiento)}`;
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) return null;
+
+        const data = await response.json();
+
+        if (data.productos && data.productos.length > 0 && data.productos[0].tiene_imagen_local) {
+            const resultado = {
+                id: data.productos[0].id,
+                nombre: data.productos[0].nombre,
+                establecimiento: data.productos[0].establecimiento,
+                ean: data.productos[0].ean
+            };
+            imagenesCache[cacheKey] = resultado;
+            return resultado;
+        }
+
+        imagenesCache[cacheKey] = null;
+        return null;
+
+    } catch (error) {
+        console.log('⚠️ Error buscando imagen:', error.message);
+        return null;
+    }
+}
+
+// Obtener URL de imagen del cache
+function getImagenCacheUrl(cacheId) {
+    const apiBase = getApiBase();
+    return `${apiBase}/api/v2/vtex-cache/${cacheId}/imagen`;
+}
+
+// Ver imagen de producto (desde tabla)
+async function verImagenProducto(productoId, ean, nombre) {
+    if (!ean) {
+        mostrarAlerta('❌ Este producto no tiene EAN', 'warning');
+        return;
+    }
+
+    // Crear modal si no existe
+    let modal = document.getElementById('modal-imagen-producto');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-imagen-producto';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h2>🖼️ Imagen del Producto</h2>
+                    <button class="modal-close" onclick="cerrarModal('modal-imagen-producto')">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-imagen-body" style="text-align: center; padding: 20px;">
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    const body = document.getElementById('modal-imagen-body');
+    body.innerHTML = `
+        <div style="padding: 30px;">
+            <div class="loading" style="margin: 0 auto 15px;"></div>
+            <p>Buscando imagen...</p>
+        </div>
+    `;
+    modal.classList.add('active');
+
+    // Buscar imagen
+    const imagenInfo = await buscarImagenCache(ean);
+
+    if (imagenInfo) {
+        try {
+            const response = await fetch(getImagenCacheUrl(imagenInfo.id));
+            const data = await response.json();
+
+            if (data.data_url) {
+                body.innerHTML = `
+                    <img src="${data.data_url}"
+                        style="max-width: 100%; max-height: 400px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="text-align: left; background: #f3f4f6; padding: 12px; border-radius: 6px;">
+                        <p style="margin: 0 0 5px;"><strong>${nombre || data.nombre}</strong></p>
+                        <p style="margin: 0; font-size: 13px; color: #6b7280;">
+                            ${data.establecimiento} · EAN: ${ean}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+        } catch (e) {
+            console.log('Error cargando imagen:', e);
+        }
+    }
+
+    body.innerHTML = `
+        <div style="padding: 30px; color: #6b7280;">
+            <p style="font-size: 48px;">📷</p>
+            <p>Sin imagen disponible</p>
+            <p style="font-size: 13px;">EAN: ${ean}</p>
+        </div>
+    `;
+}
+
+// Cargar imagen en modal de edición
+async function cargarImagenEnModal(ean) {
+    const seccion = document.getElementById('producto-imagen-section');
+    if (!seccion) return;
+
+    if (!ean) {
+        seccion.style.display = 'none';
+        return;
+    }
+
+    const imagenInfo = await buscarImagenCache(ean);
+
+    if (!imagenInfo) {
+        seccion.style.display = 'none';
+        return;
+    }
+
+    try {
+        const response = await fetch(getImagenCacheUrl(imagenInfo.id));
+        const data = await response.json();
+
+        if (data.data_url) {
+            const imgElement = document.getElementById('producto-imagen-modal');
+            if (imgElement) {
+                imgElement.src = data.data_url;
+            }
+
+            const infoElement = document.getElementById('producto-imagen-info');
+            if (infoElement) {
+                infoElement.innerHTML = `
+                    <span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 11px;">
+                        🌐 VTEX Cache
+                    </span>
+                    <span style="font-size: 12px; color: #6b7280; margin-left: 8px;">
+                        ${imagenInfo.establecimiento}
+                    </span>
+                `;
+            }
+
+            seccion.style.display = 'flex';
+            return;
+        }
+    } catch (e) {
+        console.log('Error:', e);
+    }
+
+    seccion.style.display = 'none';
+}
+
+// Exportar nuevas funciones
+window.verImagenProducto = verImagenProducto;
+window.cargarImagenEnModal = cargarImagenEnModal;
+window.buscarImagenCache = buscarImagenCache;
+
+console.log('✅ Sistema de imágenes VTEX Cache cargado');
