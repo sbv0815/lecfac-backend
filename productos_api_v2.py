@@ -325,7 +325,8 @@ async def obtener_producto_individual(producto_id: int):
 @router.get("/api/v2/productos/{producto_id}/plus")
 async def obtener_plus_producto(producto_id: int):
     """
-    Obtiene los PLUs de un producto en diferentes establecimientos
+    Obtiene los PLUs de un producto en diferentes establecimientos.
+    Incluye el origen del PLU (FACTURA, VTEX, MANUAL).
     """
     print(f"📍 [Router] GET PLUs del producto ID: {producto_id}")
 
@@ -343,25 +344,59 @@ async def obtener_plus_producto(producto_id: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
+        # Verificar si la columna origen_codigo existe
         cursor.execute(
             """
-            SELECT
-                ppe.id,
-                ppe.codigo_plu,
-                ppe.establecimiento_id,
-                e.nombre_normalizado as establecimiento,
-                ppe.precio_unitario,
-                ppe.precio_minimo,
-                ppe.precio_maximo,
-                ppe.total_reportes,
-                ppe.fecha_actualizacion
-            FROM productos_por_establecimiento ppe
-            JOIN establecimientos e ON ppe.establecimiento_id = e.id
-            WHERE ppe.producto_maestro_id = %s
-            ORDER BY ppe.fecha_actualizacion DESC
-        """,
-            (producto_id,),
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'productos_por_establecimiento'
+            AND column_name = 'origen_codigo'
+        """
         )
+        tiene_origen = cursor.fetchone() is not None
+
+        if tiene_origen:
+            cursor.execute(
+                """
+                SELECT
+                    ppe.id,
+                    ppe.codigo_plu,
+                    ppe.establecimiento_id,
+                    e.nombre_normalizado as establecimiento,
+                    ppe.precio_unitario,
+                    ppe.precio_minimo,
+                    ppe.precio_maximo,
+                    ppe.total_reportes,
+                    ppe.fecha_actualizacion,
+                    ppe.origen_codigo
+                FROM productos_por_establecimiento ppe
+                JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                WHERE ppe.producto_maestro_id = %s
+                ORDER BY ppe.fecha_actualizacion DESC
+            """,
+                (producto_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    ppe.id,
+                    ppe.codigo_plu,
+                    ppe.establecimiento_id,
+                    e.nombre_normalizado as establecimiento,
+                    ppe.precio_unitario,
+                    ppe.precio_minimo,
+                    ppe.precio_maximo,
+                    ppe.total_reportes,
+                    ppe.fecha_actualizacion,
+                    'FACTURA' as origen_codigo
+                FROM productos_por_establecimiento ppe
+                JOIN establecimientos e ON ppe.establecimiento_id = e.id
+                WHERE ppe.producto_maestro_id = %s
+                ORDER BY ppe.fecha_actualizacion DESC
+            """,
+                (producto_id,),
+            )
 
         plus = []
         for row in cursor.fetchall():
@@ -376,6 +411,7 @@ async def obtener_plus_producto(producto_id: int):
                     "precio_maximo": float(row[6]) if row[6] else 0.0,
                     "total_reportes": row[7] or 0,
                     "fecha_actualizacion": row[8],
+                    "origen_codigo": row[9] or "FACTURA",  # 🆕 Origen del PLU
                 }
             )
 
@@ -640,7 +676,10 @@ async def actualizar_producto(producto_id: int, request: dict):
 
 @router.put("/api/v2/productos/{producto_id}/plus")
 async def actualizar_plus_producto(producto_id: int, request: dict):
-    """Actualiza los PLUs de un producto"""
+    """
+    Actualiza los PLUs de un producto.
+    Soporta origen_codigo (FACTURA, VTEX, MANUAL).
+    """
     print(f"🔧 [Router] PUT PLUs del producto ID: {producto_id}")
     print(f"   Datos: {request}")
 
@@ -654,6 +693,17 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
         )
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        # Verificar si la columna origen_codigo existe
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'productos_por_establecimiento'
+            AND column_name = 'origen_codigo'
+        """
+        )
+        tiene_origen = cursor.fetchone() is not None
 
         plus_eliminados = 0
         if "plus_a_eliminar" in request and request["plus_a_eliminar"]:
@@ -674,48 +724,106 @@ async def actualizar_plus_producto(producto_id: int, request: dict):
                 codigo = plu.get("codigo_plu", "").strip()
                 est_id = plu.get("establecimiento_id")
                 precio = plu.get("precio_unitario", 0)
+                origen = plu.get("origen_codigo", "MANUAL")  # 🆕 Origen
 
                 if not codigo or not est_id:
                     print(f"   ⚠️ PLU incompleto: {plu}")
                     continue
 
                 if plu_id:
-                    cursor.execute(
-                        """
-                        UPDATE productos_por_establecimiento
-                        SET codigo_plu = %s, precio_unitario = %s, fecha_actualizacion = CURRENT_TIMESTAMP
-                        WHERE id = %s AND producto_maestro_id = %s
-                    """,
-                        (codigo, precio, plu_id, producto_id),
-                    )
+                    # Actualizar existente
+                    if tiene_origen:
+                        cursor.execute(
+                            """
+                            UPDATE productos_por_establecimiento
+                            SET codigo_plu = %s,
+                                precio_unitario = %s,
+                                origen_codigo = %s,
+                                fecha_actualizacion = CURRENT_TIMESTAMP
+                            WHERE id = %s AND producto_maestro_id = %s
+                        """,
+                            (codigo, precio, origen, plu_id, producto_id),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            UPDATE productos_por_establecimiento
+                            SET codigo_plu = %s,
+                                precio_unitario = %s,
+                                fecha_actualizacion = CURRENT_TIMESTAMP
+                            WHERE id = %s AND producto_maestro_id = %s
+                        """,
+                            (codigo, precio, plu_id, producto_id),
+                        )
+
                     if cursor.rowcount > 0:
                         plus_actualizados += 1
-                        print(f"   ✅ PLU {plu_id} actualizado: {codigo}")
+                        print(f"   ✅ PLU {plu_id} actualizado: {codigo} ({origen})")
                 else:
+                    # Verificar que no exista ya este PLU para este producto y establecimiento
                     cursor.execute(
                         """
                         SELECT id FROM productos_por_establecimiento
-                        WHERE producto_maestro_id = %s AND establecimiento_id = %s AND codigo_plu = %s
+                        WHERE producto_maestro_id = %s
+                        AND establecimiento_id = %s
+                        AND codigo_plu = %s
                     """,
                         (producto_id, est_id, codigo),
                     )
 
                     if cursor.fetchone():
-                        print(f"   ⚠️ PLU {codigo} ya existe")
+                        print(
+                            f"   ⚠️ PLU {codigo} ya existe para este producto en este establecimiento"
+                        )
                         continue
 
-                    cursor.execute(
-                        """
-                        INSERT INTO productos_por_establecimiento (
-                            producto_maestro_id, establecimiento_id, codigo_plu,
-                            precio_unitario, precio_actual, precio_minimo, precio_maximo,
-                            total_reportes, fecha_creacion, ultima_actualizacion, fecha_actualizacion
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """,
-                        (producto_id, est_id, codigo, precio, precio, precio, precio),
-                    )
+                    # Crear nuevo
+                    if tiene_origen:
+                        cursor.execute(
+                            """
+                            INSERT INTO productos_por_establecimiento (
+                                producto_maestro_id, establecimiento_id, codigo_plu,
+                                precio_unitario, precio_actual, precio_minimo, precio_maximo,
+                                total_reportes, origen_codigo,
+                                fecha_creacion, ultima_actualizacion, fecha_actualizacion
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s,
+                                      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """,
+                            (
+                                producto_id,
+                                est_id,
+                                codigo,
+                                precio,
+                                precio,
+                                precio,
+                                precio,
+                                origen,
+                            ),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO productos_por_establecimiento (
+                                producto_maestro_id, establecimiento_id, codigo_plu,
+                                precio_unitario, precio_actual, precio_minimo, precio_maximo,
+                                total_reportes,
+                                fecha_creacion, ultima_actualizacion, fecha_actualizacion
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1,
+                                      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """,
+                            (
+                                producto_id,
+                                est_id,
+                                codigo,
+                                precio,
+                                precio,
+                                precio,
+                                precio,
+                            ),
+                        )
+
                     plus_creados += 1
-                    print(f"   ✅ PLU creado: {codigo}")
+                    print(f"   ✅ PLU creado: {codigo} ({origen})")
 
         conn.commit()
 

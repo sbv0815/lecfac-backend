@@ -2270,3 +2270,370 @@ function configurarBuscadorVTEX() {
 document.addEventListener('DOMContentLoaded', function () {
     // Se configurará cuando se abra el modal
 });
+// =============================================================
+// 🔄 SISTEMA DE PLUs MÚLTIPLES (Factura + VTEX)
+// =============================================================
+// Reemplazar estas funciones en productos.js
+// =============================================================
+
+// =============================================================
+// ✅ SELECCIONAR PRODUCTO DE VTEX - VERSIÓN CORREGIDA
+// =============================================================
+// IMPORTANTE: Agrega el PLU de VTEX como ADICIONAL, no reemplaza
+// =============================================================
+function seleccionarProductoVTEX(producto) {
+    console.log('✅ Producto VTEX seleccionado:', producto);
+
+    // 1️⃣ ACTUALIZAR DATOS DEL PRODUCTO (nombre, marca, EAN)
+    // Estos datos de VTEX son más confiables que los de OCR
+    const nombreInput = document.getElementById('edit-nombre-norm');
+    const marcaInput = document.getElementById('edit-marca');
+    const eanInput = document.getElementById('edit-ean');
+
+    // Animación de aplicado
+    const aplicarCampo = (input, valor) => {
+        if (input && valor) {
+            input.value = valor;
+            input.style.background = '#d1fae5';
+            input.style.transition = 'background 0.3s';
+            setTimeout(() => {
+                input.style.background = '';
+            }, 1500);
+        }
+    };
+
+    aplicarCampo(nombreInput, producto.nombre);
+    aplicarCampo(marcaInput, producto.marca);
+    aplicarCampo(eanInput, producto.ean);
+
+    // 2️⃣ AGREGAR PLU DE VTEX COMO ADICIONAL (si tiene PLU y no existe ya)
+    if (producto.plu) {
+        agregarPLUDeVTEX(producto.plu, producto.establecimiento, producto.precio);
+    }
+
+    // 3️⃣ MOSTRAR CONFIRMACIÓN
+    const resultadoDiv = document.getElementById('vtex-resultados');
+    if (resultadoDiv) {
+        resultadoDiv.innerHTML = `
+            <div style="background: #d1fae5; border: 2px solid #059669; padding: 20px; border-radius: 8px; text-align: center;">
+                <p style="font-size: 24px; margin-bottom: 10px;">✅</p>
+                <p style="color: #059669; font-weight: 600; font-size: 16px; margin-bottom: 5px;">
+                    Datos aplicados correctamente
+                </p>
+                <p style="color: #065f46; font-size: 14px; margin-bottom: 10px;">
+                    ${producto.nombre}
+                </p>
+                <div style="background: #ecfdf5; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                    <p style="font-size: 13px; color: #047857; margin: 0;">
+                        ✓ Nombre, marca y EAN actualizados<br>
+                        ${producto.plu ? `✓ PLU web <code>${producto.plu}</code> agregado como adicional` : ''}
+                    </p>
+                </div>
+                <p style="color: #047857; font-size: 13px; margin-top: 15px;">
+                    No olvides hacer clic en <strong>💾 Guardar</strong>
+                </p>
+            </div>
+        `;
+    }
+
+    mostrarAlerta('✅ Datos de VTEX aplicados. PLU web agregado como adicional.', 'success');
+}
+
+// =============================================================
+// 🆕 AGREGAR PLU DE VTEX COMO ADICIONAL
+// =============================================================
+async function agregarPLUDeVTEX(pluVtex, establecimientoNombre, precio) {
+    console.log(`🌐 Agregando PLU VTEX: ${pluVtex} de ${establecimientoNombre}`);
+
+    await cargarEstablecimientosCache();
+
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) return;
+
+    // Verificar si este PLU ya existe
+    const plusExistentes = contenedor.querySelectorAll('.plu-codigo');
+    for (let input of plusExistentes) {
+        if (input.value.trim() === pluVtex) {
+            console.log('⚠️ PLU ya existe, no se agrega duplicado');
+            mostrarAlerta(`ℹ️ El PLU ${pluVtex} ya existe en la lista`, 'info');
+            return;
+        }
+    }
+
+    // Buscar el ID del establecimiento
+    const establecimientoMap = {
+        'OLIMPICA': 'OLIMPICA', 'OLÍMPICA': 'OLIMPICA',
+        'EXITO': 'EXITO', 'ÉXITO': 'EXITO',
+        'CARULLA': 'CARULLA',
+        'JUMBO': 'JUMBO',
+        'ALKOSTO': 'ALKOSTO',
+        'MAKRO': 'MAKRO',
+        'COLSUBSIDIO': 'COLSUBSIDIO'
+    };
+
+    const estNormalizado = establecimientoMap[establecimientoNombre.toUpperCase()] || establecimientoNombre.toUpperCase();
+
+    let establecimientoId = null;
+    for (let est of establecimientosCache) {
+        if (est.nombre_normalizado.toUpperCase().includes(estNormalizado)) {
+            establecimientoId = est.id;
+            break;
+        }
+    }
+
+    // Crear el nuevo PLU
+    const pluDiv = document.createElement('div');
+    pluDiv.className = 'plu-item';
+    pluDiv.dataset.pluId = '';  // Nuevo, no tiene ID aún
+    pluDiv.dataset.origen = 'VTEX';  // Marcar como VTEX
+
+    pluDiv.innerHTML = `
+        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid #2563eb; border-radius: 8px; margin-bottom: 10px; background: #eff6ff;">
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">
+                    🌐 Establecimiento (VTEX)
+                </label>
+                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px; background: white;">
+                    <option value="">Seleccionar...</option>
+                    ${establecimientosCache.map(e =>
+        `<option value="${e.id}" ${e.id == establecimientoId ? 'selected' : ''}>
+                            ${e.nombre_normalizado}
+                        </option>`
+    ).join('')}
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">
+                    Código PLU (Web)
+                </label>
+                <input type="text" class="plu-codigo" value="${pluVtex}"
+                       style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px; background: #dbeafe;">
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">
+                    Precio Web
+                </label>
+                <input type="number" class="plu-precio" value="${precio || 0}"
+                       min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px;">
+            </div>
+            <div style="display: flex; align-items: center; padding-bottom: 3px;">
+                <span style="background: #2563eb; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                    🌐 VTEX
+                </span>
+            </div>
+            <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
+                    style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                🗑️
+            </button>
+        </div>
+    `;
+
+    // Agregar al contenedor
+    contenedor.appendChild(pluDiv);
+
+    // Scroll al nuevo PLU
+    pluDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    console.log('✅ PLU VTEX agregado a la lista');
+}
+
+// =============================================================
+// ✅ CARGAR PLUs DEL PRODUCTO - CON INDICADOR DE ORIGEN
+// =============================================================
+async function cargarPLUsProducto(productoId) {
+    console.log(`📋 Cargando PLUs del producto ${productoId}`);
+
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) {
+        console.warn('⚠️ No se encontró contenedorPLUs');
+        return;
+    }
+
+    await cargarEstablecimientosCache();
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`);
+        if (!response.ok) throw new Error('Error cargando PLUs');
+
+        const data = await response.json();
+        console.log('✅ PLUs recibidos:', data);
+
+        contenedor.innerHTML = '';
+
+        if (!data.plus || data.plus.length === 0) {
+            contenedor.innerHTML = `
+                <p style="color: #6b7280; padding: 15px; text-align: center; background: #f9fafb; border-radius: 8px;">
+                    No hay PLUs registrados. Usa el buscador VTEX para agregar.
+                </p>
+            `;
+            return;
+        }
+
+        data.plus.forEach((plu, index) => {
+            const pluId = plu.id || '';
+            const origen = plu.origen_codigo || 'FACTURA';
+
+            // Estilos según origen
+            const esVTEX = origen === 'VTEX';
+            const borderColor = esVTEX ? '#2563eb' : '#10b981';
+            const bgColor = esVTEX ? '#eff6ff' : '#f0fdf4';
+            const badgeColor = esVTEX ? '#2563eb' : '#059669';
+            const badgeBg = esVTEX ? '#dbeafe' : '#d1fae5';
+            const badgeText = esVTEX ? '🌐 VTEX' : '📄 Factura';
+
+            const pluDiv = document.createElement('div');
+            pluDiv.className = 'plu-item';
+            pluDiv.dataset.pluId = pluId;
+            pluDiv.dataset.origen = origen;
+
+            pluDiv.innerHTML = `
+                <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid ${borderColor}; border-radius: 8px; margin-bottom: 10px; background: ${bgColor};">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Establecimiento</label>
+                        <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                            <option value="">Seleccionar...</option>
+                            ${establecimientosCache.map(e =>
+                `<option value="${e.id}" ${e.id == plu.establecimiento_id ? 'selected' : ''}>
+                                    ${e.nombre_normalizado}
+                                </option>`
+            ).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
+                        <input type="text" class="plu-codigo" value="${plu.codigo_plu || ''}"
+                               placeholder="Ej: 1234" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
+                        <input type="number" class="plu-precio" value="${plu.precio_unitario || 0}"
+                               placeholder="0" min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    </div>
+                    <div style="display: flex; align-items: center; padding-bottom: 3px;">
+                        <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                            ${badgeText}
+                        </span>
+                    </div>
+                    <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
+                            style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        🗑️
+                    </button>
+                </div>
+            `;
+
+            contenedor.appendChild(pluDiv);
+        });
+
+    } catch (error) {
+        console.error('❌ Error cargando PLUs:', error);
+        contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
+    }
+}
+
+// =============================================================
+// ✅ RECOPILAR PLUs PARA GUARDAR - CON ORIGEN
+// =============================================================
+function recopilarPLUsParaGuardar() {
+    const plusItems = document.querySelectorAll('.plu-item');
+    const plus = [];
+
+    plusItems.forEach((item, index) => {
+        const pluId = item.dataset.pluId;
+        const origen = item.dataset.origen || 'MANUAL';
+        const establecimientoSelect = item.querySelector('.plu-establecimiento');
+        const codigoInput = item.querySelector('.plu-codigo');
+        const precioInput = item.querySelector('.plu-precio');
+
+        if (!establecimientoSelect || !codigoInput) return;
+
+        const establecimientoId = parseInt(establecimientoSelect.value);
+        const codigo = codigoInput.value.trim();
+        const precio = precioInput ? parseFloat(precioInput.value) || 0 : 0;
+
+        if (!codigo || !establecimientoId) return;
+
+        const pluData = {
+            codigo_plu: codigo,
+            establecimiento_id: establecimientoId,
+            precio_unitario: precio,
+            origen_codigo: origen  // 🆕 Incluir origen
+        };
+
+        if (pluId && pluId !== '' && pluId !== 'undefined' && pluId !== 'null') {
+            pluData.id = parseInt(pluId);
+        }
+
+        plus.push(pluData);
+    });
+
+    console.log('📦 PLUs a guardar:', plus);
+    return { plus, plus_a_eliminar: [] };
+}
+
+// =============================================================
+// ✅ AGREGAR PLU MANUAL - CON ORIGEN
+// =============================================================
+async function agregarPLUEditable() {
+    await cargarEstablecimientosCache();
+
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) return;
+
+    // Quitar mensaje de "no hay PLUs"
+    const mensaje = contenedor.querySelector('p');
+    if (mensaje) mensaje.remove();
+
+    const pluDiv = document.createElement('div');
+    pluDiv.className = 'plu-item';
+    pluDiv.dataset.pluId = '';
+    pluDiv.dataset.origen = 'MANUAL';
+
+    pluDiv.innerHTML = `
+        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid #f59e0b; border-radius: 8px; margin-bottom: 10px; background: #fffbeb;">
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Establecimiento</label>
+                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px; background: white;">
+                    <option value="">Seleccionar...</option>
+                    ${establecimientosCache.map(e =>
+        `<option value="${e.id}">${e.nombre_normalizado}</option>`
+    ).join('')}
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
+                <input type="text" class="plu-codigo" placeholder="Ej: 1234"
+                       style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px;">
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
+                <input type="number" class="plu-precio" placeholder="0" min="0" step="1"
+                       style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px;">
+            </div>
+            <div style="display: flex; align-items: center; padding-bottom: 3px;">
+                <span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                    ✏️ Manual
+                </span>
+            </div>
+            <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
+                    style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                🗑️
+            </button>
+        </div>
+    `;
+
+    contenedor.appendChild(pluDiv);
+
+    // Scroll al nuevo PLU
+    pluDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// =============================================================
+// EXPORTAR FUNCIONES NUEVAS
+// =============================================================
+window.seleccionarProductoVTEX = seleccionarProductoVTEX;
+window.agregarPLUDeVTEX = agregarPLUDeVTEX;
+window.cargarPLUsProducto = cargarPLUsProducto;
+window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
+window.agregarPLUEditable = agregarPLUEditable;
