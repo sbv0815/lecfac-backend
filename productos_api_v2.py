@@ -1711,18 +1711,6 @@ async def listar_supermercados_vtex():
     }
 
 
-# =============================================================
-# ENDPOINT: BUSCAR PRODUCTOS EN VTEX - BÚSQUEDA PARCIAL
-# =============================================================
-# Busca con los primeros dígitos y muestra TODAS las opciones
-# El usuario elige cuál es el correcto
-# =============================================================
-
-import requests
-import urllib.parse
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# Configuración VTEX
 VTEX_URLS = {
     "OLIMPICA": "https://www.olimpica.com",
     "EXITO": "https://www.exito.com",
@@ -1754,20 +1742,44 @@ def _buscar_plu_variante(args):
     return []
 
 
+# ============================================================
+# PARCHE PARA productos_api_v2.py
+# VERSION 2.0 - Búsqueda por palabras individuales
+# ============================================================
+#
+# INSTRUCCIONES:
+# Reemplaza la función buscar_productos_vtex en tu productos_api_v2.py
+# con esta versión mejorada.
+#
+# CAMBIOS:
+# - Estrategia 1: fullText directo (como antes)
+# - Estrategia 2: Búsqueda por primera palabra + filtrado por otras
+# - Estrategia 2.5: Invertir orden de palabras si no hay resultados
+# - Estrategia 3: Variantes PLU (como antes)
+# ============================================================
+
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
 @router.get("/api/v2/buscar-productos/{establecimiento}")
 async def buscar_productos_vtex(
     establecimiento: str,
-    q: str = None,  # Término de búsqueda (PLU parcial o nombre)
+    q: str = None,
     limite: int = 15,
 ):
     """
-    Busca productos en VTEX con coincidencia parcial.
-    Devuelve múltiples opciones para que el usuario elija.
+    Busca productos en VTEX con múltiples estrategias.
+    VERSION 2.0 - Con búsqueda por palabras individuales
+
+    Estrategias:
+    1. Búsqueda fullText directa
+    2. Búsqueda por primera palabra + filtrado
+    3. Búsqueda por variantes PLU (si es número)
 
     Ejemplos:
-        GET /api/v2/buscar-productos/OLIMPICA?q=23264
-        GET /api/v2/buscar-productos/CARULLA?q=leche
-        GET /api/v2/buscar-productos/EXITO?q=queso&limite=20
+        GET /api/v2/buscar-productos/CARULLA?q=queso%20tajadas
+        GET /api/v2/buscar-productos/OLIMPICA?q=leche%20deslactosada
     """
 
     establecimiento_upper = establecimiento.upper().strip()
@@ -1792,60 +1804,132 @@ async def buscar_productos_vtex(
     }
 
     resultados = []
+    estrategia_usada = ""
 
     try:
-        # Estrategia 1: Buscar como texto libre
+        # ========================================
+        # ESTRATEGIA 1: Búsqueda fullText directa
+        # ========================================
         url = f"{base_url}/api/catalog_system/pub/products/search?ft={urllib.parse.quote(termino)}&_from=0&_to={limite + 10}"
 
-        print(f"🔍 Buscando en VTEX: {termino}")
+        print(f"🔍 [VTEX] Buscando: '{termino}' en {establecimiento_upper}")
+        print(f"   Estrategia 1: fullText directo")
 
         resp = requests.get(url, headers=headers, timeout=15)
 
-        if resp.status_code == 200:
+        if resp.status_code in [200, 206]:
             data = resp.json()
-            print(f"   Búsqueda texto: {len(data)} productos")
+            print(f"   → {len(data)} resultados")
 
             for item in data:
                 prod = _parsear_producto(item, base_url, establecimiento_upper)
                 if prod and not _ya_existe(prod, resultados):
                     resultados.append(prod)
 
-        # Estrategia 2: Si es un número, buscar variantes en PARALELO
-        if termino.isdigit() and len(termino) >= 4 and len(resultados) < limite:
-            # Generar variantes inteligentes
-            variantes = set()
+            if resultados:
+                estrategia_usada = "fulltext_directo"
 
-            # Original
+        # ========================================
+        # ESTRATEGIA 2: Búsqueda por palabras (para "queso tajadas")
+        # ========================================
+        palabras = [p for p in termino.upper().split() if len(p) >= 3]
+
+        if len(resultados) < 3 and len(palabras) >= 2:
+            print(f"   Estrategia 2: Búsqueda por palabras {palabras}")
+
+            # Buscar por la primera palabra (más específica)
+            palabra_principal = palabras[0]
+            otras_palabras = [p.lower() for p in palabras[1:]]
+
+            url = f"{base_url}/api/catalog_system/pub/products/search?ft={urllib.parse.quote(palabra_principal)}&_from=0&_to=50"
+
+            try:
+                resp = requests.get(url, headers=headers, timeout=15)
+
+                if resp.status_code in [200, 206]:
+                    data = resp.json()
+                    print(
+                        f"   → Búsqueda '{palabra_principal}': {len(data)} resultados"
+                    )
+
+                    # Filtrar los que contengan TODAS las otras palabras
+                    for item in data:
+                        nombre = item.get("productName", "").lower()
+
+                        # Verificar que el nombre contenga todas las palabras
+                        if all(palabra in nombre for palabra in otras_palabras):
+                            prod = _parsear_producto(
+                                item, base_url, establecimiento_upper
+                            )
+                            if prod and not _ya_existe(prod, resultados):
+                                resultados.append(prod)
+                                print(f"   ✅ Match: {prod['nombre'][:50]}")
+
+                    if resultados:
+                        estrategia_usada = "palabras_filtradas"
+
+            except Exception as e:
+                print(f"   ⚠️ Error en búsqueda por palabras: {e}")
+
+        # ========================================
+        # ESTRATEGIA 2.5: Buscar por segunda palabra si la primera no dio resultados
+        # ========================================
+        if len(resultados) < 3 and len(palabras) >= 2:
+            print(f"   Estrategia 2.5: Invertir palabras")
+
+            # Intentar con la segunda palabra como principal
+            for idx, palabra in enumerate(palabras[1:], 1):
+                otras = [p.lower() for i, p in enumerate(palabras) if i != idx]
+
+                url = f"{base_url}/api/catalog_system/pub/products/search?ft={urllib.parse.quote(palabra)}&_from=0&_to=50"
+
+                try:
+                    resp = requests.get(url, headers=headers, timeout=10)
+
+                    if resp.status_code in [200, 206]:
+                        data = resp.json()
+
+                        for item in data:
+                            nombre = item.get("productName", "").lower()
+
+                            if all(p in nombre for p in otras):
+                                prod = _parsear_producto(
+                                    item, base_url, establecimiento_upper
+                                )
+                                if prod and not _ya_existe(prod, resultados):
+                                    resultados.append(prod)
+
+                        if len(resultados) >= limite:
+                            break
+
+                except:
+                    continue
+
+        # ========================================
+        # ESTRATEGIA 3: Variantes PLU (si es número)
+        # ========================================
+        if termino.isdigit() and len(termino) >= 4 and len(resultados) < limite:
+            print(f"   Estrategia 3: Variantes PLU")
+
+            variantes = set()
             variantes.add(termino)
 
-            # Variantes primer dígito (más común en OCR)
             for i in range(10):
                 variantes.add(f"{i}{termino[1:]}")
-
-            # Variantes segundo dígito
-            for i in range(10):
                 variantes.add(f"{termino[0]}{i}{termino[2:]}")
+                variantes.add(f"{termino[:-1]}{i}")
+                if len(termino) >= 2:
+                    variantes.add(f"{termino[:-2]}{i}{termino[-1]}")
 
-            # Variantes dos primeros dígitos
             for i in range(10):
                 for j in range(10):
                     variantes.add(f"{i}{j}{termino[2:]}")
 
-            # Variantes último dígito
-            for i in range(10):
-                variantes.add(f"{termino[:-1]}{i}")
+            variantes.discard(termino)
+            variantes_lista = list(variantes)[:30]
 
-            # Variantes penúltimo dígito
-            if len(termino) >= 2:
-                for i in range(10):
-                    variantes.add(f"{termino[:-2]}{i}{termino[-1]}")
+            print(f"   Probando {len(variantes_lista)} variantes...")
 
-            variantes.discard(termino)  # Quitar original (ya buscado)
-            variantes_lista = list(variantes)[:30]  # Máximo 30 variantes
-
-            print(f"   Probando {len(variantes_lista)} variantes en paralelo...")
-
-            # Búsqueda paralela (5 threads)
             args_list = [
                 (v, base_url, headers, establecimiento_upper) for v in variantes_lista
             ]
@@ -1862,9 +1946,6 @@ async def buscar_productos_vtex(
                         for prod in prods:
                             if not _ya_existe(prod, resultados):
                                 resultados.append(prod)
-                                print(
-                                    f"   ✅ Variante {prod.get('plu_buscado')}: {prod['nombre'][:40]}"
-                                )
 
                             if len(resultados) >= limite:
                                 break
@@ -1874,19 +1955,48 @@ async def buscar_productos_vtex(
                     if len(resultados) >= limite:
                         break
 
+            if resultados and not estrategia_usada:
+                estrategia_usada = "variantes_plu"
+
+        # ========================================
         # Ordenar por relevancia
-        resultados.sort(
-            key=lambda x: (
-                0 if termino.lower() in x["nombre"].lower() else 1,
-                0 if termino in str(x.get("plu", "")) else 1,
-                x["nombre"],
-            )
-        )
+        # ========================================
+        def calcular_relevancia(prod):
+            nombre_lower = prod["nombre"].lower()
+            termino_lower = termino.lower()
+
+            if termino_lower in nombre_lower:
+                return 0
+
+            palabras_lower = termino_lower.split()
+            if all(p in nombre_lower for p in palabras_lower):
+                return 1
+
+            matches = sum(1 for p in palabras_lower if p in nombre_lower)
+            return 10 - matches
+
+        resultados.sort(key=lambda x: (calcular_relevancia(x), x["nombre"]))
+
+        # Respuesta
+        if not resultados:
+            return {
+                "success": True,
+                "termino": termino,
+                "establecimiento": establecimiento_upper,
+                "total": 0,
+                "resultados": [],
+                "sugerencias": [
+                    "Intenta con menos palabras (ej: solo 'queso')",
+                    "Busca por marca (ej: 'alpina')",
+                    "Verifica la ortografía",
+                ],
+            }
 
         return {
             "success": True,
             "termino": termino,
             "establecimiento": establecimiento_upper,
+            "estrategia": estrategia_usada,
             "total": len(resultados),
             "resultados": resultados[:limite],
         }
