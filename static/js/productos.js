@@ -805,83 +805,6 @@ async function guardarEdicion() {
         mostrarAlerta(`❌ Error: ${error.message}`, 'error');
     }
 }
-
-// =============================================================
-// ✅ CARGAR PLUs DEL PRODUCTO
-// =============================================================
-async function cargarPLUsProducto(productoId) {
-    console.log(`📋 Cargando PLUs del producto ${productoId}`);
-
-    const contenedor = document.getElementById('contenedorPLUs');
-    if (!contenedor) {
-        console.warn('⚠️ No se encontró contenedorPLUs');
-        return;
-    }
-
-    await cargarEstablecimientosCache();
-
-    const apiBase = getApiBase();
-
-    try {
-        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`);
-        if (!response.ok) throw new Error('Error cargando PLUs');
-
-        const data = await response.json();
-        console.log('✅ PLUs recibidos:', data);
-
-        contenedor.innerHTML = '';
-
-        if (!data.plus || data.plus.length === 0) {
-            agregarPLUEditable();
-            return;
-        }
-
-        data.plus.forEach((plu, index) => {
-            const pluId = plu.id || '';
-
-            const pluDiv = document.createElement('div');
-            pluDiv.className = 'plu-item';
-            pluDiv.dataset.pluId = pluId;
-
-            pluDiv.innerHTML = `
-                <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 10px;">
-                    <div class="form-group">
-                        <label style="display: block; margin-bottom: 5px;">Establecimiento</label>
-                        <select class="plu-establecimiento" style="width: 100%; padding: 8px;">
-                            <option value="">Seleccionar...</option>
-                            ${establecimientosCache.map(e =>
-                `<option value="${e.id}" ${e.id == plu.establecimiento_id ? 'selected' : ''}>
-                                    ${e.nombre_normalizado}
-                                </option>`
-            ).join('')}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label style="display: block; margin-bottom: 5px;">Código PLU</label>
-                        <input type="text" class="plu-codigo" value="${plu.codigo_plu || ''}"
-                               placeholder="Ej: 1234" style="width: 100%; padding: 8px;">
-                    </div>
-                    <div class="form-group">
-                        <label style="display: block; margin-bottom: 5px;">Precio</label>
-                        <input type="number" class="plu-precio" value="${plu.precio_unitario || 0}"
-                               placeholder="0" min="0" step="1" style="width: 100%; padding: 8px;">
-                    </div>
-                    <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
-                            style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        🗑️
-                    </button>
-                </div>
-            `;
-
-            contenedor.appendChild(pluDiv);
-        });
-
-    } catch (error) {
-        console.error('❌ Error cargando PLUs:', error);
-        contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
-    }
-}
-
 // =============================================================
 // ✅ AGREGAR PLU EDITABLE
 // =============================================================
@@ -1216,7 +1139,6 @@ window.toggleProductSelection = toggleProductSelection;
 window.deseleccionarTodos = deseleccionarTodos;
 window.eliminarProducto = eliminarProducto;
 window.mostrarAlerta = mostrarAlerta;
-window.cargarPLUsProducto = cargarPLUsProducto;
 window.cargarAnomalias = cargarAnomalias;
 window.detectarDuplicados = detectarDuplicados;
 window.mostrarIndicadorBusqueda = mostrarIndicadorBusqueda;
@@ -2203,55 +2125,6 @@ async function buscarProductosVTEX() {
 }
 
 // =============================================================
-// ✅ SELECCIONAR PRODUCTO DE LA LISTA
-// =============================================================
-function seleccionarProductoVTEX(producto) {
-    console.log('✅ Producto seleccionado:', producto);
-
-    // Aplicar al formulario de edición
-    const nombreInput = document.getElementById('edit-nombre-norm');
-    const marcaInput = document.getElementById('edit-marca');
-    const eanInput = document.getElementById('edit-ean');
-
-    // Animación de aplicado
-    const aplicarCampo = (input, valor) => {
-        if (input && valor) {
-            input.value = valor;
-            input.style.background = '#d1fae5';
-            input.style.transition = 'background 0.3s';
-            setTimeout(() => {
-                input.style.background = '';
-            }, 1500);
-        }
-    };
-
-    aplicarCampo(nombreInput, producto.nombre);
-    aplicarCampo(marcaInput, producto.marca);
-    aplicarCampo(eanInput, producto.ean);
-
-    // Mostrar confirmación en el área de resultados
-    const resultadoDiv = document.getElementById('vtex-resultados');
-    if (resultadoDiv) {
-        resultadoDiv.innerHTML = `
-            <div style="background: #d1fae5; border: 2px solid #059669; padding: 20px; border-radius: 8px; text-align: center;">
-                <p style="font-size: 24px; margin-bottom: 10px;">✅</p>
-                <p style="color: #059669; font-weight: 600; font-size: 16px; margin-bottom: 5px;">
-                    Datos aplicados
-                </p>
-                <p style="color: #065f46; font-size: 14px; margin-bottom: 15px;">
-                    ${producto.nombre}
-                </p>
-                <p style="color: #047857; font-size: 13px;">
-                    No olvides hacer clic en <strong>💾 Guardar</strong>
-                </p>
-            </div>
-        `;
-    }
-
-    mostrarAlerta('✅ Datos aplicados al formulario', 'success');
-}
-
-// =============================================================
 // ⌨️ BUSCAR AL PRESIONAR ENTER
 // =============================================================
 function configurarBuscadorVTEX() {
@@ -2270,17 +2143,8 @@ function configurarBuscadorVTEX() {
 document.addEventListener('DOMContentLoaded', function () {
     // Se configurará cuando se abra el modal
 });
-// =============================================================
-// 🔄 SISTEMA DE PLUs MÚLTIPLES (Factura + VTEX)
-// =============================================================
-// Reemplazar estas funciones en productos.js
-// =============================================================
 
-// =============================================================
-// ✅ SELECCIONAR PRODUCTO DE VTEX - VERSIÓN CORREGIDA
-// =============================================================
-// IMPORTANTE: Agrega el PLU de VTEX como ADICIONAL, no reemplaza
-// =============================================================
+
 function seleccionarProductoVTEX(producto) {
     console.log('✅ Producto VTEX seleccionado:', producto);
 
