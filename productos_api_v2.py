@@ -5,6 +5,9 @@ import logging
 from database import get_db_connection
 import base64
 import httpx
+from web_enricher import WebEnricher, es_tienda_vtex, SUPERMERCADOS_VTEX
+import requests
+import urllib.parse
 
 
 logger = logging.getLogger(__name__)
@@ -1590,9 +1593,6 @@ async def obtener_factura_producto(producto_id: int):
 # Agregar a productos_api_v2.py
 # Usa el WebEnricher existente
 # =============================================================
-
-from web_enricher import WebEnricher, es_tienda_vtex, SUPERMERCADOS_VTEX
-import urllib.parse
 
 
 @router.get("/api/v2/buscar-vtex/{establecimiento}/{codigo}")
