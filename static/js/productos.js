@@ -631,8 +631,7 @@ async function editarProducto(id) {
         alert("Error al cargar producto: " + error.message);
     }
 }
-// Auto-llenar buscador VTEX con el PLU actual
-setTimeout(autoLlenarBuscadorVTEX, 500);
+
 // =============================================================
 // 🆕 V4.0: MOSTRAR FUENTE EN MODAL
 // =============================================================
@@ -2037,12 +2036,6 @@ function autoLlenarBuscadorVTEX() {
         }
     }
 }
-// =============================================================
-// 🔍 BUSCADOR VTEX V2 - Búsqueda parcial con opciones
-// =============================================================
-// Busca con los primeros dígitos y muestra TODAS las opciones
-// El usuario elige cuál es el producto correcto
-// =============================================================
 
 // =============================================================
 // 🔍 BUSCAR PRODUCTOS EN VTEX
