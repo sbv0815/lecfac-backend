@@ -1135,6 +1135,10 @@ async def buscar_plu_en_supermercado(establecimiento: str, codigo_plu: str):
         "JUMBO": "JUMBO",
         "CENCOSUD": "JUMBO",
         "METRO": "JUMBO",  # Metro usa plataforma Jumbo
+        "D1": "D1",
+        "ARA": "ARA",
+        "FARMATODO": "FARMATODO",
+        "CRUZ BLANCA": "CRUZ BLANCA",
     }
 
     establecimiento_norm = establecimiento_map.get(establecimiento_upper)
@@ -1356,3 +1360,109 @@ async def obtener_historial_plu(establecimiento: str, codigo_plu: str):
         if conn:
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================
+# ENDPOINT: GET /api/v2/productos/{producto_id}/factura
+# VERSIÓN 2.0: CON POSICIÓN VERTICAL DEL PRODUCTO
+# =============================================================
+# Agregar a productos_api_v2.py
+# =============================================================
+
+
+@app.get("/api/v2/productos/{producto_id}/factura")
+async def obtener_factura_producto(producto_id: int):
+    """
+    Obtiene la(s) factura(s) donde apareció un producto.
+    Incluye la imagen y la posición vertical del producto.
+    """
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    try:
+        cursor = conn.cursor()
+
+        # Query con posicion_vertical
+        cursor.execute(
+            """
+            SELECT
+                i.id as item_id,
+                i.codigo_leido,
+                i.nombre_leido,
+                i.precio_pagado,
+                i.cantidad,
+                i.posicion_vertical,
+                f.id as factura_id,
+                f.numero_factura,
+                f.fecha_factura,
+                f.imagen_data,
+                f.imagen_mime,
+                f.tiene_imagen,
+                e.nombre_normalizado as establecimiento
+            FROM items_factura i
+            JOIN facturas f ON i.factura_id = f.id
+            LEFT JOIN establecimientos e ON f.establecimiento_id = e.id
+            WHERE i.producto_maestro_id = %s
+            ORDER BY f.fecha_factura DESC
+            LIMIT 5
+        """,
+            (producto_id,),
+        )
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            return {
+                "success": False,
+                "mensaje": "No se encontraron facturas para este producto",
+                "producto_id": producto_id,
+                "total_facturas": 0,
+                "facturas": [],
+            }
+
+        facturas = []
+        for row in rows:
+            # Convertir imagen a base64 si existe
+            imagen_base64 = None
+            if row[9]:  # imagen_data
+                import base64
+
+                imagen_base64 = base64.b64encode(row[9]).decode("utf-8")
+
+            facturas.append(
+                {
+                    "factura_id": row[6],
+                    "numero_factura": row[7],
+                    "fecha": str(row[8]) if row[8] else None,
+                    "establecimiento": row[12],
+                    "item": {
+                        "item_id": row[0],
+                        "codigo_leido": row[1],
+                        "nombre_leido": row[2],
+                        "precio_pagado": row[3],
+                        "cantidad": float(row[4]) if row[4] else 1,
+                        "posicion_vertical": (
+                            row[5] if row[5] is not None else 50
+                        ),  # Default: mitad
+                    },
+                    "tiene_imagen": row[11] or False,
+                    "imagen_base64": imagen_base64,
+                    "imagen_mime": row[10] or "image/jpeg",
+                }
+            )
+
+        return {
+            "success": True,
+            "producto_id": producto_id,
+            "total_facturas": len(facturas),
+            "facturas": facturas,
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo factura: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        cursor.close()
+        conn.close()

@@ -1230,7 +1230,6 @@ window.determinarFuenteDato = determinarFuenteDato;
 
 console.log('✅ Productos.js v4.0 SISTEMA DE APRENDIZAJE PAPA cargado');
 
-
 // =============================================================
 // Inicialización
 // =============================================================
@@ -1261,10 +1260,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     console.log("✅ Sistema v4.0 inicializado");
 });
 // =============================================================
-// 🧾 V5.1: VER FACTURA ORIGINAL - CON CONTROLES DE IMAGEN
+// 🧾 V5.2: VER FACTURA ORIGINAL - CON SCROLL AUTOMÁTICO
 // =============================================================
 // Reemplaza las funciones existentes en productos.js
-// Solo copia estas 3 funciones y reemplaza las originales
+// NUEVO: Hace scroll automático a la posición del producto
 // =============================================================
 
 // Variables para controles de imagen
@@ -1276,7 +1275,7 @@ let imagenControles = {
 };
 
 // =============================================================
-// 🧾 VER FACTURA ORIGINAL
+// 🧾 VER FACTURA ORIGINAL - CON SCROLL AUTOMÁTICO
 // =============================================================
 async function verFacturaOriginal(productoId, nombreProducto) {
     console.log(`🧾 Buscando factura del producto ${productoId}`);
@@ -1317,7 +1316,7 @@ async function verFacturaOriginal(productoId, nombreProducto) {
 }
 
 // =============================================================
-// 🖼️ MOSTRAR MODAL DE FACTURA - CON CONTROLES
+// 🖼️ MOSTRAR MODAL DE FACTURA - CON SCROLL AUTOMÁTICO
 // =============================================================
 function mostrarModalFactura(data, nombreProducto, loading = false) {
     let modal = document.getElementById('modal-factura');
@@ -1375,6 +1374,7 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
 
     data.facturas.forEach((factura, index) => {
         const item = factura.item;
+        const posicionVertical = item.posicion_vertical || 50; // Default: mitad
 
         html += `
             <div style="border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 20px; overflow: hidden;">
@@ -1412,12 +1412,26 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
                                 <td style="padding: 4px 0; color: #6b7280;">Cantidad:</td>
                                 <td>${item.cantidad || 1}</td>
                             </tr>
+                            <tr>
+                                <td style="padding: 4px 0; color: #6b7280;">📍 Posición:</td>
+                                <td>
+                                    <span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 12px;">
+                                        ${posicionVertical}% desde arriba
+                                    </span>
+                                </td>
+                            </tr>
                         </table>
                     </div>
 
                     ${factura.tiene_imagen && factura.imagen_base64 ? `
                         <div style="margin-top: 15px;">
-                            <h4 style="margin-bottom: 10px;">🖼️ Imagen de la factura:</h4>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <h4>🖼️ Imagen de la factura:</h4>
+                                <button onclick="scrollAProducto(${index}, ${posicionVertical})"
+                                        style="padding: 6px 12px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                                    🎯 Ir al producto (${posicionVertical}%)
+                                </button>
+                            </div>
 
                             <!-- 🆕 CONTROLES DE IMAGEN -->
                             <div id="controles-imagen-${index}" style="background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
@@ -1468,16 +1482,30 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
                                 </div>
                             </div>
 
-                            <!-- Contenedor de imagen -->
-                            <div style="max-height: 500px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #1f2937;">
+                            <!-- Contenedor de imagen con scroll -->
+                            <div id="imagen-container-${index}" style="max-height: 500px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #1f2937; position: relative;">
+                                <!-- Indicador de posición del producto -->
+                                <div id="indicador-posicion-${index}" style="
+                                    position: absolute;
+                                    left: 0;
+                                    right: 0;
+                                    height: 3px;
+                                    background: #ef4444;
+                                    box-shadow: 0 0 10px #ef4444;
+                                    z-index: 10;
+                                    top: ${posicionVertical}%;
+                                    display: none;
+                                "></div>
+
                                 <img id="factura-img-${index}"
                                      src="data:${factura.imagen_mime || 'image/jpeg'};base64,${factura.imagen_base64}"
                                      style="max-width: 100%; display: block; margin: auto; transition: all 0.2s ease;"
-                                     onclick="ampliarImagenConControles(this.src)"
+                                     onload="scrollAProducto(${index}, ${posicionVertical})"
+                                     onclick="ampliarImagenConControles(this.src, ${posicionVertical})"
                                      title="Click para ampliar">
                             </div>
                             <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">
-                                💡 Usa los controles para mejorar la visibilidad. Click en la imagen para pantalla completa.
+                                💡 La imagen se posiciona automáticamente donde está el producto. Click 🎯 para recentrar.
                             </p>
                         </div>
                     ` : `
@@ -1496,13 +1524,60 @@ function mostrarModalFactura(data, nombreProducto, loading = false) {
 }
 
 // =============================================================
+// 🎯 SCROLL AUTOMÁTICO A LA POSICIÓN DEL PRODUCTO
+// =============================================================
+function scrollAProducto(index, posicionVertical) {
+    const container = document.getElementById(`imagen-container-${index}`);
+    const img = document.getElementById(`factura-img-${index}`);
+    const indicador = document.getElementById(`indicador-posicion-${index}`);
+
+    if (!container || !img) return;
+
+    // Esperar a que la imagen cargue
+    if (!img.complete) {
+        img.onload = () => scrollAProducto(index, posicionVertical);
+        return;
+    }
+
+    // Calcular posición de scroll
+    const imgHeight = img.offsetHeight;
+    const containerHeight = container.offsetHeight;
+    const scrollPosition = (imgHeight * posicionVertical / 100) - (containerHeight / 2);
+
+    console.log(`🎯 Scroll a posición ${posicionVertical}%: ${scrollPosition}px de ${imgHeight}px`);
+
+    // Hacer scroll suave
+    container.scrollTo({
+        top: Math.max(0, scrollPosition),
+        behavior: 'smooth'
+    });
+
+    // Mostrar indicador temporalmente
+    if (indicador) {
+        indicador.style.display = 'block';
+        indicador.style.top = `${posicionVertical}%`;
+
+        // Hacer parpadear el indicador
+        let parpadeos = 0;
+        const intervalo = setInterval(() => {
+            indicador.style.opacity = indicador.style.opacity === '0' ? '1' : '0';
+            parpadeos++;
+            if (parpadeos >= 6) {
+                clearInterval(intervalo);
+                indicador.style.display = 'none';
+                indicador.style.opacity = '1';
+            }
+        }, 300);
+    }
+}
+
+// =============================================================
 // 🎛️ AJUSTAR IMAGEN (zoom, brillo, contraste, rotación)
 // =============================================================
 function ajustarImagen(index, tipo, valor) {
     const img = document.getElementById(`factura-img-${index}`);
     if (!img) return;
 
-    // Actualizar valor
     if (tipo === 'zoom') {
         imagenControles.zoom = Math.max(0.5, Math.min(3, imagenControles.zoom + valor));
         document.getElementById(`zoom-valor-${index}`).textContent = Math.round(imagenControles.zoom * 100) + '%';
@@ -1516,7 +1591,6 @@ function ajustarImagen(index, tipo, valor) {
         imagenControles.rotacion = (imagenControles.rotacion + valor) % 360;
     }
 
-    // Aplicar filtros CSS
     img.style.transform = `scale(${imagenControles.zoom}) rotate(${imagenControles.rotacion}deg)`;
     img.style.filter = `brightness(${imagenControles.brillo}%) contrast(${imagenControles.contraste}%)`;
     img.style.transformOrigin = 'center center';
@@ -1534,7 +1608,6 @@ function resetearImagen(index) {
         img.style.filter = 'brightness(100%) contrast(100%)';
     }
 
-    // Reset sliders
     const brilloSlider = document.getElementById(`brillo-${index}`);
     const contrasteSlider = document.getElementById(`contraste-${index}`);
 
@@ -1547,9 +1620,9 @@ function resetearImagen(index) {
 }
 
 // =============================================================
-// 🔍 AMPLIAR IMAGEN CON CONTROLES
+// 🔍 AMPLIAR IMAGEN CON CONTROLES Y POSICIÓN
 // =============================================================
-function ampliarImagenConControles(src) {
+function ampliarImagenConControles(src, posicionVertical = 50) {
     let modal = document.getElementById('modal-imagen-ampliada');
 
     if (!modal) {
@@ -1575,6 +1648,12 @@ function ampliarImagenConControles(src) {
         <!-- Barra de controles superior -->
         <div style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.8); padding: 15px;
                     display: flex; justify-content: center; gap: 20px; align-items: center; flex-wrap: wrap; z-index: 2001;">
+
+            <!-- Ir al producto -->
+            <button onclick="scrollImagenAmpliada(${posicionVertical})"
+                    style="padding: 8px 15px; border: none; border-radius: 4px; background: #2563eb; color: white; cursor: pointer; font-weight: 600;">
+                🎯 Ir al producto (${posicionVertical}%)
+            </button>
 
             <!-- Zoom -->
             <div style="display: flex; align-items: center; gap: 8px; color: white;">
@@ -1621,25 +1700,75 @@ function ampliarImagenConControles(src) {
             </button>
         </div>
 
-        <!-- Imagen -->
-        <div style="flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 70px; padding: 20px;">
+        <!-- Contenedor con scroll -->
+        <div id="imagen-ampliada-container" style="flex: 1; margin-top: 70px; padding: 20px; overflow: auto;">
+            <!-- Indicador de posición -->
+            <div id="indicador-ampliado" style="
+                position: absolute;
+                left: 20px;
+                right: 20px;
+                height: 4px;
+                background: #ef4444;
+                box-shadow: 0 0 15px #ef4444;
+                z-index: 10;
+                display: none;
+            "></div>
+
             <img id="imagen-ampliada-src" src="${src}"
-                 style="max-width: 95%; max-height: calc(100vh - 120px); transition: all 0.2s ease;
+                 style="max-width: 100%; margin: auto; display: block; transition: all 0.2s ease;
                         transform: scale(${imagenControles.zoom}) rotate(${imagenControles.rotacion}deg);
-                        filter: brightness(${imagenControles.brillo}%) contrast(${imagenControles.contraste}%);">
+                        filter: brightness(${imagenControles.brillo}%) contrast(${imagenControles.contraste}%);"
+                 onload="scrollImagenAmpliada(${posicionVertical})">
         </div>
 
         <!-- Instrucciones -->
         <div style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
                     background: rgba(0,0,0,0.7); color: #9ca3af; padding: 8px 20px; border-radius: 20px; font-size: 13px;">
-            Usa los controles arriba para ajustar la imagen • ESC para cerrar
+            🎯 Click en "Ir al producto" para ver dónde está • ESC para cerrar
         </div>
     `;
 
     modal.style.display = 'flex';
 
-    // Actualizar texto de zoom
     document.getElementById('zoom-ampliado').textContent = Math.round(imagenControles.zoom * 100) + '%';
+}
+
+// =============================================================
+// 🎯 SCROLL EN IMAGEN AMPLIADA
+// =============================================================
+function scrollImagenAmpliada(posicionVertical) {
+    const container = document.getElementById('imagen-ampliada-container');
+    const img = document.getElementById('imagen-ampliada-src');
+    const indicador = document.getElementById('indicador-ampliado');
+
+    if (!container || !img) return;
+
+    const imgHeight = img.offsetHeight;
+    const containerHeight = container.offsetHeight;
+    const scrollPosition = (imgHeight * posicionVertical / 100) - (containerHeight / 2);
+
+    container.scrollTo({
+        top: Math.max(0, scrollPosition),
+        behavior: 'smooth'
+    });
+
+    // Mostrar indicador
+    if (indicador) {
+        const indicadorTop = (imgHeight * posicionVertical / 100) + 70; // +70 por el header
+        indicador.style.top = `${indicadorTop}px`;
+        indicador.style.display = 'block';
+
+        let parpadeos = 0;
+        const intervalo = setInterval(() => {
+            indicador.style.opacity = indicador.style.opacity === '0' ? '1' : '0';
+            parpadeos++;
+            if (parpadeos >= 6) {
+                clearInterval(intervalo);
+                indicador.style.display = 'none';
+                indicador.style.opacity = '1';
+            }
+        }, 300);
+    }
 }
 
 // =============================================================
@@ -1681,7 +1810,7 @@ function resetearImagenAmpliada() {
     document.getElementById('contraste-ampliado-slider').value = 100;
 }
 
-// Mantener compatibilidad con función anterior
+// Mantener compatibilidad
 function ampliarImagen(src) {
-    ampliarImagenConControles(src);
+    ampliarImagenConControles(src, 50);
 }

@@ -1,12 +1,11 @@
 """
-claude_invoice.py - VERSIÓN 6.1 - FILTRADO MEJORADO DE MEDIOS DE PAGO
+claude_invoice.py - VERSIÓN 6.2 - CON POSICIÓN VERTICAL DE PRODUCTOS
 ========================================================================
 
-🎯 VERSIÓN 6.1 - MEJORAS:
-- ✅ Filtrado robusto de medios de pago (REDEBAN, MASTERCARD, VISA, etc.)
-- ✅ Detecta información bancaria y transacciones
-- ✅ Lista actualizada para Colombia (PSE, Nequi, Daviplata, etc.)
-- ✅ Mantiene todas las funcionalidades de V6.0
+🎯 VERSIÓN 6.2 - MEJORAS:
+- ✅ Devuelve posición vertical (0-100%) de cada producto en la imagen
+- ✅ Permite ubicar rápidamente un producto en la factura original
+- ✅ Mantiene todas las funcionalidades de V6.1
 """
 
 import anthropic
@@ -239,7 +238,7 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
 
 
 # ==============================================================================
-# PROCESAMIENTO CON CLAUDE VISION - V6.1 FILTRADO MEJORADO
+# PROCESAMIENTO CON CLAUDE VISION - V6.2 CON POSICIÓN VERTICAL
 # ==============================================================================
 
 
@@ -249,13 +248,13 @@ def parse_invoice_with_claude(
     aplicar_aprendizaje: bool = True,
 ) -> Dict:
     """
-    Procesa factura con Claude Vision API - V6.1
+    Procesa factura con Claude Vision API - V6.2
     Lee EXACTAMENTE como un humano leería la factura
-    Con filtrado mejorado de medios de pago
+    NUEVO: Devuelve posición vertical de cada producto
     """
     try:
         print("=" * 80)
-        print("🤖 CLAUDE INVOICE V6.1 - FILTRADO MEJORADO DE PAGOS")
+        print("🤖 CLAUDE INVOICE V6.2 - CON POSICIÓN VERTICAL DE PRODUCTOS")
         if establecimiento_preseleccionado:
             print(f"🏪 ESTABLECIMIENTO: {establecimiento_preseleccionado.upper()}")
         print("=" * 80)
@@ -279,7 +278,7 @@ def parse_invoice_with_claude(
             else '"NOMBRE_DEL_ESTABLECIMIENTO"'
         )
 
-        # ========== PROMPT V6.1 - CON INSTRUCCIONES DE FILTRADO ==========
+        # ========== PROMPT V6.2 - CON POSICIÓN VERTICAL ==========
         prompt = f"""Eres un experto en leer facturas colombianas. Tu trabajo es leer EXACTAMENTE lo que está escrito, sin inventar ni modificar nada.
 
 # 🔍 PASO 1: IDENTIFICA EL FORMATO DE LA FACTURA
@@ -336,10 +335,6 @@ Cada producto tiene DOS líneas:
 - "11.450" = PRECIO FINAL
 
 **⚠️ REGLA CRÍTICA:** El PRIMER número de la línea 1 es el NÚMERO DE LÍNEA, NO la cantidad.
-- "1 1/u" = Línea 1, Cantidad 1
-- "2 1/u" = Línea 2, Cantidad 1
-- "3 1/u" = Línea 3, Cantidad 1
-- "4 0.500/KGM" = Línea 4, Cantidad 0.5 kg
 
 ## FORMATO B - OLÍMPICA
 
@@ -377,36 +372,34 @@ PROTECTOR CAREFREE SIN FRAGANCIA LARGOS X40UN
 
 1. **CADA LÍNEA DE PRODUCTO = UN ÍTEM SEPARADO**
    Si el mismo PLU aparece 2 veces en la factura, son 2 ítems separados.
-   ```
-   3266709 Bizcochos De Sol    11.050A
-   3266709 Bizcochos De Sol    11.050A
-   ```
-   = 2 ítems, cada uno con cantidad 1, mismo PLU
 
 2. **PLUs DIFERENTES = PRODUCTOS DIFERENTES**
-   ```
-   3313023 Crema Leche Semi    10.750
-   3313024 Crema Leche Semi     5.240
-   ```
-   = 2 productos DIFERENTES (aunque nombre similar)
 
 3. **LEER EXACTAMENTE LO QUE DICE**
-   - Si dice "Huevo Rojo AA 15" → escribir "HUEVO ROJO AA 15"
-   - Si dice "Bizcochos De Sol" → escribir "BIZCOCHOS DE SOL"
-   - NO inventar presentaciones ni marcas
 
 4. **VALIDAR CON EL TOTAL**
-   - Suma de todos los precios ≈ SUBTOTAL de la factura
-   - Si "Total Item: 5" → debe haber 5 productos en la lista
 
 5. **🚫 IGNORAR COMPLETAMENTE ESTAS LÍNEAS (NO SON PRODUCTOS):**
-   - Métodos de pago: "TARJETA", "CREDITO", "DEBITO", "REDEBAN", "MASTERCARD", "VISA", "CREDIBANCO", "MULTICOLOR"
-   - Transacciones: "APROBADO", "AUTORIZADO", "VOUCHER", "CODIGO APROBACION"
+   - Métodos de pago: "TARJETA", "CREDITO", "DEBITO", "REDEBAN", "MASTERCARD", "VISA"
+   - Transacciones: "APROBADO", "AUTORIZADO", "VOUCHER"
    - Apps de pago: "PSE", "NEQUI", "DAVIPLATA", "BANCOLOMBIA"
    - Totales: "SUBTOTAL", "TOTAL", "IVA", "PROPINA", "CAMBIO"
-   - Descuentos: "DESCUENTO", "AHORRO" (líneas informativas)
-   - Resúmenes: "Total Item: X"
-   - Servicios: "DOMICILIO", "BOLSA", "EMPACAR"
+
+# 🆕 POSICIÓN VERTICAL DE CADA PRODUCTO
+
+**MUY IMPORTANTE:** Para cada producto, debes indicar su posición vertical en la imagen como un porcentaje (0-100):
+- 0% = parte superior de la imagen
+- 50% = mitad de la imagen
+- 100% = parte inferior de la imagen
+
+Esto permite ubicar rápidamente el producto en la factura original.
+
+**Cómo calcular:**
+- Si el producto está en el primer tercio de la factura → 10-33%
+- Si está en el segundo tercio → 34-66%
+- Si está en el tercio inferior → 67-90%
+- El encabezado suele estar en 0-15%
+- Los totales suelen estar en 85-100%
 
 # 📝 FORMATO DE RESPUESTA
 
@@ -422,64 +415,47 @@ IMPORTANTE: Responde SOLO con JSON válido, sin markdown ni explicaciones.
       "nombre": "NOMBRE_EXACTO_DEL_PRODUCTO",
       "precio": PRECIO_UNITARIO_ENTERO,
       "cantidad": CANTIDAD_DECIMAL,
-      "unidad": "un"
+      "unidad": "un",
+      "posicion_vertical": PORCENTAJE_0_A_100
     {"}"}
   ]
 {"}"}
 
 # 🎯 EJEMPLO COMPLETO DE EXTRACCIÓN
 
-**FACTURA ÉXITO:**
+**FACTURA ÉXITO (imagen de 1000px de alto):**
 ```
-PLU    DETALLE    PRECIO
-1 1/u x 11.450 V.Ahorro 0
-1413568 Huevo Rojo AA 15     11.450
-2 1/u x 11.050 V.Ahorro 0
-3266709 Bizcochos De Sol     11.050A
-3 1/u x 11.050 V.Ahorro 0
-3266709 Bizcochos De Sol     11.050A
-4 1/u x 10.750 V.Ahorro 0
-3313023 Crema Leche Semi     10.750
-5 1/u x 5.240 V.Ahorro 0
-3313024 Crema Leche Semi      5.240
-Total Item: 5
-SUBTOTAL: 49.540
-
-PAGO:
-MASTERCARD ************1234
-REDEBAN MULTICOLOR
-APROBADO
+[0-100px: Logo y encabezado]
+[100-150px: PLU    DETALLE    PRECIO]
+[150-200px: 1413568 Huevo Rojo AA 15     11.450]
+[200-250px: 3266709 Bizcochos De Sol     11.050]
+[250-300px: 3313023 Crema Leche Semi     10.750]
+[700-800px: SUBTOTAL: 33.250]
+[800-900px: MASTERCARD / REDEBAN]
 ```
 
 **EXTRACCIÓN CORRECTA:**
 {"{"}
   "establecimiento": "EXITO",
   "fecha": "2025-10-03",
-  "total": 49540,
+  "total": 33250,
   "productos": [
-    {{"codigo": "1413568", "nombre": "HUEVO ROJO AA 15", "precio": 11450, "cantidad": 1, "unidad": "un"}},
-    {{"codigo": "3266709", "nombre": "BIZCOCHOS DE SOL", "precio": 11050, "cantidad": 1, "unidad": "un"}},
-    {{"codigo": "3266709", "nombre": "BIZCOCHOS DE SOL", "precio": 11050, "cantidad": 1, "unidad": "un"}},
-    {{"codigo": "3313023", "nombre": "CREMA LECHE SEMI", "precio": 10750, "cantidad": 1, "unidad": "un"}},
-    {{"codigo": "3313024", "nombre": "CREMA LECHE SEMI", "precio": 5240, "cantidad": 1, "unidad": "un"}}
+    {{"codigo": "1413568", "nombre": "HUEVO ROJO AA 15", "precio": 11450, "cantidad": 1, "unidad": "un", "posicion_vertical": 18}},
+    {{"codigo": "3266709", "nombre": "BIZCOCHOS DE SOL", "precio": 11050, "cantidad": 1, "unidad": "un", "posicion_vertical": 23}},
+    {{"codigo": "3313023", "nombre": "CREMA LECHE SEMI", "precio": 10750, "cantidad": 1, "unidad": "un", "posicion_vertical": 28}}
   ]
 {"}"}
 
-**VALIDACIÓN:**
-- 5 productos = Total Item: 5 ✓
-- 11450 + 11050 + 11050 + 10750 + 5240 = 49540 ✓
-- MASTERCARD y REDEBAN NO están en la lista ✓
-- Cada PLU leído correctamente ✓
+**Nota:** Los productos están entre 15-30% porque están en la parte superior de la factura, después del encabezado.
 
 # ✅ VERIFICACIÓN FINAL
 
 Antes de responder:
 1. ¿Identifiqué correctamente el formato? ✓
 2. ¿Leí cada PLU exactamente como aparece? ✓
-3. ¿La cantidad es 1 por defecto (no el número de línea)? ✓
+3. ¿Asigné una posición vertical aproximada a cada producto? ✓
 4. ¿Eliminé TODA información de medios de pago? ✓
 5. ¿La suma de precios ≈ total de la factura? ✓
-6. ¿No inventé ningún producto? ✓
 
 **ANALIZA LA IMAGEN Y RESPONDE SOLO CON JSON VÁLIDO:**"""
 
@@ -545,8 +521,7 @@ Antes de responder:
             except:
                 pass
 
-        # ========== POST-PROCESAMIENTO MÍNIMO ==========
-        # NO agrupar por PLU - cada línea es un ítem separado
+        # ========== POST-PROCESAMIENTO ==========
         productos_finales = []
         suma_total = 0
 
@@ -558,14 +533,22 @@ Antes de responder:
             precio = prod.get("precio", 0)
             cantidad = float(prod.get("cantidad", 1))
             unidad = prod.get("unidad", "un")
+            posicion_vertical = prod.get("posicion_vertical", 50)  # Default: mitad
 
-            # Filtrar basura (incluyendo medios de pago)
+            # Validar posición vertical
+            try:
+                posicion_vertical = int(posicion_vertical)
+                posicion_vertical = max(0, min(100, posicion_vertical))
+            except:
+                posicion_vertical = 50
+
+            # Filtrar basura
             es_basura, razon = es_texto_basura(nombre)
             if es_basura:
                 print(f"   🗑️  Ignorado: '{nombre[:40]}' - {razon}")
                 continue
 
-            # Corregir errores OCR obvios
+            # Corregir errores OCR
             nombre_corregido = corregir_nombre_producto(nombre)
             nombre_final = normalizar_nombre_producto(nombre_corregido)
 
@@ -588,7 +571,7 @@ Antes de responder:
             subtotal = int(precio_limpio * cantidad)
             suma_total += subtotal
 
-            # Agregar producto (SIN agrupar por PLU)
+            # Agregar producto CON posición vertical
             productos_finales.append(
                 {
                     "codigo": codigo,
@@ -597,6 +580,7 @@ Antes de responder:
                     "cantidad": cantidad,
                     "unidad": unidad,
                     "nombre_ocr_original": nombre,
+                    "posicion_vertical": posicion_vertical,  # 🆕 V6.2
                 }
             )
 
@@ -622,29 +606,27 @@ Antes de responder:
         # ========== ESTADÍSTICAS ==========
         con_codigo = sum(1 for p in productos_finales if p.get("codigo"))
         sin_codigo = sum(1 for p in productos_finales if not p.get("codigo"))
-
-        # Contar PLUs únicos
         plus_unicos = set(p.get("codigo") for p in productos_finales if p.get("codigo"))
 
         print(f"\n" + "=" * 80)
-        print(f"📊 RESULTADOS OCR V6.1 - FILTRADO MEJORADO:")
+        print(f"📊 RESULTADOS OCR V6.2 - CON POSICIÓN VERTICAL:")
         print(f"   🏪 Establecimiento: {data.get('establecimiento', 'N/A')}")
         print(f"   📅 Fecha: {data.get('fecha', 'N/A')}")
         print(f"   💰 Total factura: ${total_declarado:,}")
         print(f"   📦 Ítems totales: {len(productos_finales)}")
         print(f"   🏷️  PLUs únicos: {len(plus_unicos)}")
-        print(f"   ❓ Sin código: {sin_codigo}")
 
-        print(f"\n📋 PRODUCTOS EXTRAÍDOS (sin medios de pago):")
+        print(f"\n📋 PRODUCTOS EXTRAÍDOS (con posición):")
         for i, prod in enumerate(productos_finales, 1):
             codigo_str = prod["codigo"] if prod["codigo"] else "SIN-COD"
+            pos = prod.get("posicion_vertical", "?")
             print(
-                f"   {i:2}. PLU:{codigo_str:10} | {prod['nombre'][:35]:35} | ${prod['precio']:,} x {prod['cantidad']}"
+                f"   {i:2}. [{pos:3}%] PLU:{codigo_str:10} | {prod['nombre'][:30]:30} | ${prod['precio']:,}"
             )
 
         print("=" * 80)
 
-        # Capturar tokens para tracking
+        # Capturar tokens
         tokens_input = message.usage.input_tokens
         tokens_output = message.usage.output_tokens
 
@@ -653,7 +635,7 @@ Antes de responder:
             "data": {
                 **data,
                 "metadatos": {
-                    "metodo": "claude-vision-v6.1-filtrado-mejorado",
+                    "metodo": "claude-vision-v6.2-con-posicion",
                     "modelo": "claude-sonnet-4-20250514",
                     "establecimiento_confirmado": bool(establecimiento_preseleccionado),
                     "items_totales": len(productos_finales),
@@ -726,12 +708,11 @@ Antes de responder:
 
 
 print("=" * 80)
-print("✅ claude_invoice.py V6.1 - FILTRADO MEJORADO DE MEDIOS DE PAGO")
+print("✅ claude_invoice.py V6.2 - CON POSICIÓN VERTICAL DE PRODUCTOS")
 print("=" * 80)
 print("🎯 CARACTERÍSTICAS:")
 print("   ✅ Detecta formato automáticamente")
-print("   ✅ Filtra REDEBAN, MASTERCARD, VISA, PSE, etc.")
-print("   ✅ NO agrupa por PLU (cada línea = un ítem)")
-print("   ✅ Respeta PLUs diferentes = productos diferentes")
-print("   ✅ Valida suma vs total de factura")
+print("   ✅ Filtra medios de pago (REDEBAN, VISA, etc.)")
+print("   ✅ 🆕 Devuelve posición vertical (0-100%) de cada producto")
+print("   ✅ Permite ubicar rápidamente un ítem en la factura")
 print("=" * 80)
