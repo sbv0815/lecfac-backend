@@ -1592,6 +1592,7 @@ async def obtener_factura_producto(producto_id: int):
 # =============================================================
 
 from web_enricher import WebEnricher, es_tienda_vtex, SUPERMERCADOS_VTEX
+import urllib.parse
 
 
 @router.get("/api/v2/buscar-vtex/{establecimiento}/{codigo}")
