@@ -396,11 +396,17 @@ function mostrarProductos(productos) {
         const rowStyle = fuenteInfo.fuente === 'OCR' ? 'background: #fffbeb;' : '';
 
         const row = `
-            <tr style="${rowStyle}">
+            <tr style="${rowStyle}" data-id="${p.id}" data-ean="${p.codigo_ean || ''}" data-nombre="${(p.nombre || '').replace(/"/g, '&quot;')}">
                 <td class="checkbox-cell">
                     <input type="checkbox" value="${p.id}" onchange="toggleProductSelection(${p.id})">
                 </td>
                 <td style="font-size: 12px;">${p.id}</td>
+                <td>
+                    ${p.codigo_ean
+                ? `<button class="btn-imagen" onclick="verImagenProducto(${p.id}, '${p.codigo_ean}', '${(p.nombre || '').replace(/'/g, "\\'")}')">📷</button>`
+                : `<button class="btn-imagen sin-imagen" disabled title="Sin EAN">📷</button>`
+            }
+                </td>
                 <td>${fuenteHTML}</td>
                 <td>${eanHTML}</td>
                 <td>${plusHTML}</td>
@@ -420,12 +426,13 @@ function mostrarProductos(productos) {
                 🧾
                 </button>
                 <button class="btn-small btn-primary" onclick="verHistorial(${p.id})" title="Ver historial">
-                     📊
+                    📊
                     </button>
                     <button class="btn-small btn-danger" onclick="eliminarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}');" title="Eliminar">
-                 🗑️
+                🗑️
                     </button>
                 </td>
+            </tr>
                     `;
         tbody.insertAdjacentHTML("beforeend", row);
     });
