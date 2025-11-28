@@ -1134,8 +1134,8 @@
                 if (!response.ok) return null;
 
                 const data = await response.json();
-                if (data.productos && data.productos.length > 0) {
-                    const producto = data.productos[0];
+                if (data.resultados && data.resultados.length > 0) {
+                    const producto = data.resultados[0];
                     if (producto.tiene_imagen_local && producto.id) {
                         return {
                             id: producto.id,
