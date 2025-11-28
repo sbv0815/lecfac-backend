@@ -2037,3 +2037,243 @@ function autoLlenarBuscadorVTEX() {
         }
     }
 }
+// =============================================================
+// 🔍 BUSCADOR VTEX V2 - Búsqueda parcial con opciones
+// =============================================================
+// Busca con los primeros dígitos y muestra TODAS las opciones
+// El usuario elige cuál es el producto correcto
+// =============================================================
+
+// =============================================================
+// 🔍 BUSCAR PRODUCTOS EN VTEX
+// =============================================================
+async function buscarProductosVTEX() {
+    const termino = document.getElementById('vtex-busqueda').value.trim();
+    const establecimiento = document.getElementById('vtex-establecimiento').value;
+    const resultadoDiv = document.getElementById('vtex-resultados');
+
+    if (!termino || termino.length < 2) {
+        resultadoDiv.innerHTML = `
+            <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px;">
+                <p style="color: #92400e;">⚠️ Ingresa al menos 2 caracteres (PLU parcial o nombre)</p>
+            </div>
+        `;
+        return;
+    }
+
+    if (!establecimiento) {
+        resultadoDiv.innerHTML = `
+            <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px;">
+                <p style="color: #92400e;">⚠️ Selecciona un supermercado</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Mostrar loading
+    resultadoDiv.innerHTML = `
+        <div style="text-align: center; padding: 30px;">
+            <div class="loading" style="width: 35px; height: 35px; margin: 0 auto 15px;"></div>
+            <p style="color: #6b7280;">Buscando "${termino}" en ${establecimiento}...</p>
+            <p style="color: #9ca3af; font-size: 12px; margin-top: 5px;">Esto puede tomar unos segundos</p>
+        </div>
+    `;
+
+    const apiBase = getApiBase();
+
+    try {
+        const response = await fetch(
+            `${apiBase}/api/v2/buscar-productos/${encodeURIComponent(establecimiento)}?q=${encodeURIComponent(termino)}&limite=15`
+        );
+        const data = await response.json();
+
+        if (!data.success) {
+            resultadoDiv.innerHTML = `
+                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; border-radius: 4px;">
+                    <p style="color: #dc2626;">❌ ${data.error}</p>
+                    ${data.disponibles ? `
+                    <p style="font-size: 13px; color: #6b7280; margin-top: 8px;">
+                        Supermercados disponibles: ${data.disponibles.join(', ')}
+                    </p>
+                    ` : ''}
+                </div>
+            `;
+            return;
+        }
+
+        if (data.total === 0) {
+            resultadoDiv.innerHTML = `
+                <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 15px; border-radius: 4px;">
+                    <p style="color: #92400e; font-weight: 600;">🔍 No se encontraron productos</p>
+                    <p style="color: #78350f; font-size: 13px; margin-top: 8px;">Sugerencias:</p>
+                    <ul style="margin: 8px 0 0 20px; color: #78350f; font-size: 13px;">
+                        <li>Intenta con menos dígitos (ej: "2326" en vez de "2326440")</li>
+                        <li>Busca por nombre del producto (ej: "leche", "queso")</li>
+                        <li>Verifica que el supermercado sea correcto</li>
+                    </ul>
+                </div>
+            `;
+            return;
+        }
+
+        // Mostrar resultados
+        let html = `
+            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 10px 15px; border-radius: 4px; margin-bottom: 15px;">
+                <p style="color: #059669; font-weight: 600;">✅ ${data.total} producto(s) encontrado(s)</p>
+                <p style="color: #065f46; font-size: 13px;">Haz clic en el producto correcto para aplicar los datos</p>
+            </div>
+
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+        `;
+
+        data.resultados.forEach((prod, index) => {
+            const bgColor = index % 2 === 0 ? '#ffffff' : '#f9fafb';
+
+            html += `
+                <div style="padding: 12px 15px; background: ${bgColor}; border-bottom: 1px solid #e5e7eb; cursor: pointer; transition: background 0.2s;"
+                     onmouseover="this.style.background='#ecfdf5'"
+                     onmouseout="this.style.background='${bgColor}'"
+                     onclick="seleccionarProductoVTEX(${JSON.stringify(prod).replace(/"/g, '&quot;')})">
+
+                    <div style="display: flex; gap: 12px; align-items: flex-start;">
+                        <!-- Imagen -->
+                        ${prod.imagen ? `
+                            <img src="${prod.imagen}"
+                                 style="width: 60px; height: 60px; object-fit: contain; border-radius: 4px; background: #f3f4f6; flex-shrink: 0;"
+                                 onerror="this.style.display='none'">
+                        ` : `
+                            <div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #9ca3af; flex-shrink: 0;">
+                                📦
+                            </div>
+                        `}
+
+                        <!-- Info -->
+                        <div style="flex: 1; min-width: 0;">
+                            <h4 style="margin: 0 0 6px 0; font-size: 14px; color: #111; line-height: 1.3;">
+                                ${prod.nombre}
+                            </h4>
+
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px;">
+                                ${prod.plu ? `
+                                    <span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 3px;">
+                                        PLU: ${prod.plu}
+                                    </span>
+                                    ${prod.plu_buscado && prod.plu_buscado !== prod.plu ? `
+                                        <span style="background: #fce7f3; color: #be185d; padding: 2px 6px; border-radius: 3px;"
+                                              title="El OCR pudo haber leído mal">
+                                            💡 Variante encontrada
+                                        </span>
+                                    ` : ''}
+                                ` : ''}
+                                ${prod.ean ? `
+                                    <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 3px;">
+                                        EAN: ${prod.ean}
+                                    </span>
+                                ` : ''}
+                                ${prod.marca ? `
+                                    <span style="color: #6b7280;">
+                                        ${prod.marca}
+                                    </span>
+                                ` : ''}
+                            </div>
+
+                            ${prod.precio > 0 ? `
+                                <p style="margin: 6px 0 0 0; color: #059669; font-weight: 600; font-size: 14px;">
+                                    $${prod.precio.toLocaleString('es-CO')}
+                                </p>
+                            ` : ''}
+                        </div>
+
+                        <!-- Botón seleccionar -->
+                        <div style="flex-shrink: 0;">
+                            <span style="display: inline-block; padding: 6px 12px; background: #2563eb; color: white; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                                ✓ Usar
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `</div>`;
+
+        resultadoDiv.innerHTML = html;
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        resultadoDiv.innerHTML = `
+            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; border-radius: 4px;">
+                <p style="color: #dc2626;">❌ Error de conexión: ${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// =============================================================
+// ✅ SELECCIONAR PRODUCTO DE LA LISTA
+// =============================================================
+function seleccionarProductoVTEX(producto) {
+    console.log('✅ Producto seleccionado:', producto);
+
+    // Aplicar al formulario de edición
+    const nombreInput = document.getElementById('edit-nombre-norm');
+    const marcaInput = document.getElementById('edit-marca');
+    const eanInput = document.getElementById('edit-ean');
+
+    // Animación de aplicado
+    const aplicarCampo = (input, valor) => {
+        if (input && valor) {
+            input.value = valor;
+            input.style.background = '#d1fae5';
+            input.style.transition = 'background 0.3s';
+            setTimeout(() => {
+                input.style.background = '';
+            }, 1500);
+        }
+    };
+
+    aplicarCampo(nombreInput, producto.nombre);
+    aplicarCampo(marcaInput, producto.marca);
+    aplicarCampo(eanInput, producto.ean);
+
+    // Mostrar confirmación en el área de resultados
+    const resultadoDiv = document.getElementById('vtex-resultados');
+    if (resultadoDiv) {
+        resultadoDiv.innerHTML = `
+            <div style="background: #d1fae5; border: 2px solid #059669; padding: 20px; border-radius: 8px; text-align: center;">
+                <p style="font-size: 24px; margin-bottom: 10px;">✅</p>
+                <p style="color: #059669; font-weight: 600; font-size: 16px; margin-bottom: 5px;">
+                    Datos aplicados
+                </p>
+                <p style="color: #065f46; font-size: 14px; margin-bottom: 15px;">
+                    ${producto.nombre}
+                </p>
+                <p style="color: #047857; font-size: 13px;">
+                    No olvides hacer clic en <strong>💾 Guardar</strong>
+                </p>
+            </div>
+        `;
+    }
+
+    mostrarAlerta('✅ Datos aplicados al formulario', 'success');
+}
+
+// =============================================================
+// ⌨️ BUSCAR AL PRESIONAR ENTER
+// =============================================================
+function configurarBuscadorVTEX() {
+    const input = document.getElementById('vtex-busqueda');
+    if (input) {
+        input.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                buscarProductosVTEX();
+            }
+        });
+    }
+}
+
+// Configurar al cargar el modal
+document.addEventListener('DOMContentLoaded', function () {
+    // Se configurará cuando se abra el modal
+});

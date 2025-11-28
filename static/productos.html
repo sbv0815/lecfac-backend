@@ -842,25 +842,26 @@
      Ubicación: Después de la sección de PLUs en el modal-editar
      ============================================================= -->
 
-    <!-- INICIO BUSCADOR VTEX -->
-    <div style="margin-top: 25px; padding-top: 20px; border-top: 2px solid #e5e7eb;">
-        <h3 style="margin: 0 0 15px 0; color: #1f2937; display: flex; align-items: center; gap: 8px;">
+    <!-- INICIO BUSCADOR VTEX V2 -->
+    <div id="seccion-buscador-vtex" style="margin-top: 25px; padding-top: 20px; border-top: 2px solid #e5e7eb;">
+        <h3 style="margin: 0 0 10px 0; color: #1f2937; display: flex; align-items: center; gap: 8px;">
             🔍 Buscar en Catálogo Web
-            <span style="font-size: 12px; font-weight: normal; color: #6b7280;">(VTEX)</span>
         </h3>
 
         <p style="font-size: 13px; color: #6b7280; margin-bottom: 15px;">
-            Busca el código PLU en el catálogo del supermercado para obtener el nombre correcto y EAN.
+            Escribe parte del PLU o nombre del producto. Verás todas las opciones similares para elegir la correcta.
         </p>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
-            <!-- Código PLU/EAN -->
+        <!-- Formulario de búsqueda -->
+        <div style="display: grid; grid-template-columns: 1fr 150px auto; gap: 10px; align-items: end;">
+            <!-- Campo de búsqueda -->
             <div class="form-group" style="margin: 0;">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">
-                    Código PLU o EAN
+                    PLU (parcial) o nombre del producto
                 </label>
-                <input type="text" id="vtex-codigo" placeholder="Ej: 632967"
-                    style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                <input type="text" id="vtex-busqueda" placeholder="Ej: 23264 o leche alqueria"
+                    onkeypress="if(event.key==='Enter'){event.preventDefault();buscarProductosVTEX();}"
+                    style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
             </div>
 
             <!-- Supermercado -->
@@ -870,61 +871,40 @@
                 </label>
                 <select id="vtex-establecimiento"
                     style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: white;">
-                    <option value="">Seleccionar...</option>
-                    <option value="OLIMPICA">🟢 Olímpica</option>
-                    <option value="EXITO">🟡 Éxito</option>
-                    <option value="CARULLA">🔴 Carulla</option>
-                    <option value="JUMBO">🟠 Jumbo</option>
-                    <option value="ALKOSTO">🔵 Alkosto</option>
-                    <option value="MAKRO">⚪ Makro</option>
-                    <option value="COLSUBSIDIO">🟣 Colsubsidio</option>
+                    <option value="OLIMPICA">Olímpica</option>
+                    <option value="EXITO">Éxito</option>
+                    <option value="CARULLA">Carulla</option>
+                    <option value="JUMBO">Jumbo</option>
+                    <option value="ALKOSTO">Alkosto</option>
+                    <option value="MAKRO">Makro</option>
+                    <option value="COLSUBSIDIO">Colsubsidio</option>
                 </select>
             </div>
 
             <!-- Botón buscar -->
-            <button type="button" onclick="buscarEnVTEX()"
-                style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap;">
+            <button type="button" onclick="buscarProductosVTEX()"
+                style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap; height: 42px;">
                 🔍 Buscar
             </button>
         </div>
 
-        <!-- Resultado de la búsqueda -->
-        <div id="vtex-resultado" style="margin-top: 15px;">
+        <!-- Área de resultados -->
+        <div id="vtex-resultados" style="margin-top: 15px;">
             <!-- Los resultados aparecerán aquí -->
+            <div style="padding: 20px; background: #f9fafb; border-radius: 8px; text-align: center; color: #6b7280;">
+                <p style="margin: 0;">💡 Escribe parte del código o nombre y presiona buscar</p>
+            </div>
         </div>
 
-        <!-- Info adicional -->
-        <div style="margin-top: 15px; padding: 10px; background: #f3f4f6; border-radius: 6px;">
-            <p style="font-size: 12px; color: #6b7280; margin: 0;">
-                💡 <strong>Tip:</strong> Si el PLU no funciona, intenta buscar con el EAN (código de barras de 13
-                dígitos).
+        <!-- Tips -->
+        <div
+            style="margin-top: 12px; padding: 10px 12px; background: #eff6ff; border-radius: 6px; border-left: 3px solid #2563eb;">
+            <p style="font-size: 12px; color: #1e40af; margin: 0;">
+                <strong>💡 Tips:</strong>
+                Si el PLU completo no funciona, prueba solo los primeros 4-5 dígitos.
                 <br>
-                ⚠️ D1, Ara y Farmatodo no tienen catálogo web disponible.
+                Ejemplo: En vez de "2326440", prueba "23264" para ver todas las variantes.
             </p>
         </div>
     </div>
-    <!-- FIN BUSCADOR VTEX -->
-
-    <!-- Scripts -->
-    <script src="/static/js/productos.js"></script>
-    <script>
-        // Función para toggle visual del checkbox PAPA
-        function togglePapaCheckbox() {
-            const checkbox = document.getElementById('edit-es-papa');
-            const container = document.getElementById('papa-checkbox-container');
-
-            if (checkbox.checked) {
-                container.classList.add('checked');
-            } else {
-                container.classList.remove('checked');
-            }
-        }
-
-        // Función placeholder para fusionar (implementar después)
-        function fusionarProductos() {
-            alert('Función de fusión próximamente...');
-        }
-    </script>
-</body>
-
-</html>
+    <!-- FIN BUSCADOR VTEX V2 -->

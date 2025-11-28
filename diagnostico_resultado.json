@@ -1,0 +1,56 @@
+{
+  "timestamp": "2025-10-29T15:36:46.978118",
+  "database_type": "postgresql",
+  "diagnosticos": {
+    "usuario_1": {
+      "email": "santiago@tscamp.co",
+      "num_facturas": 2,
+      "total_declarado": 796572.0,
+      "primera_factura": "2025-10-29 14:29:46.760189",
+      "ultima_factura": "2025-10-29 14:41:20.254007",
+      "items": {
+        "num_items": 94,
+        "suma_precios": 796521.0,
+        "ratio": 1.0
+      }
+    },
+    "usuario_2": {
+      "email": "vickysanchez_t@gmail.com",
+      "num_facturas": 3,
+      "total_declarado": 713867.0,
+      "primera_factura": "2025-10-29 14:49:02.740747",
+      "ultima_factura": "2025-10-29 19:22:02.307406",
+      "items": {
+        "num_items": 92,
+        "suma_precios": 1219856.0,
+        "ratio": 1.71
+      }
+    },
+    "facturas_usuario_2": [
+      {
+        "factura_id": 3,
+        "establecimiento": "FARMATODO",
+        "total_declarado": 75450.0,
+        "suma_items": 75442.0,
+        "ratio": 1.0,
+        "fecha": "2025-10-29 14:49:02.740747"
+      },
+      {
+        "factura_id": 4,
+        "establecimiento": "DROGUERÍA EL DORADO",
+        "total_declarado": 21800.0,
+        "suma_items": 21800.0,
+        "ratio": 1.0,
+        "fecha": "2025-10-29 18:29:49.268952"
+      },
+      {
+        "factura_id": 5,
+        "establecimiento": "CARULLA",
+        "total_declarado": 616617.0,
+        "suma_items": 1122614.0,
+        "ratio": 1.82,
+        "fecha": "2025-10-29 19:22:02.307406"
+      }
+    ]
+  }
+}

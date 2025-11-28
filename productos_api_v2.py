@@ -1601,3 +1601,259 @@ async def listar_supermercados_vtex():
             },
         ],
     }
+
+
+# =============================================================
+# ENDPOINT: BUSCAR PRODUCTOS EN VTEX - BÚSQUEDA PARCIAL
+# =============================================================
+# Busca con los primeros dígitos y muestra TODAS las opciones
+# El usuario elige cuál es el correcto
+# =============================================================
+
+import requests
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Configuración VTEX
+VTEX_URLS = {
+    "OLIMPICA": "https://www.olimpica.com",
+    "EXITO": "https://www.exito.com",
+    "CARULLA": "https://www.carulla.com",
+    "JUMBO": "https://www.tiendasjumbo.co",
+    "ALKOSTO": "https://www.alkosto.com",
+    "MAKRO": "https://www.makro.com.co",
+    "COLSUBSIDIO": "https://www.mercadocolsubsidio.com",
+}
+
+
+def _buscar_plu_variante(args):
+    """Función helper para búsqueda paralela"""
+    codigo, base_url, headers, establecimiento = args
+    try:
+        url = f"{base_url}/api/catalog_system/pub/products/search?fq=alternateIds_RefId:{codigo}"
+        resp = requests.get(url, headers=headers, timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            resultados = []
+            for item in data:
+                prod = _parsear_producto(item, base_url, establecimiento)
+                if prod:
+                    prod["plu_buscado"] = codigo
+                    resultados.append(prod)
+            return resultados
+    except:
+        pass
+    return []
+
+
+@router.get("/buscar-productos/{establecimiento}")
+async def buscar_productos_vtex(
+    establecimiento: str,
+    q: str = None,  # Término de búsqueda (PLU parcial o nombre)
+    limite: int = 15,
+):
+    """
+    Busca productos en VTEX con coincidencia parcial.
+    Devuelve múltiples opciones para que el usuario elija.
+
+    Ejemplos:
+        GET /api/v2/buscar-productos/OLIMPICA?q=23264
+        GET /api/v2/buscar-productos/CARULLA?q=leche
+        GET /api/v2/buscar-productos/EXITO?q=queso&limite=20
+    """
+
+    establecimiento_upper = establecimiento.upper().strip()
+
+    if establecimiento_upper not in VTEX_URLS:
+        return {
+            "success": False,
+            "error": f"'{establecimiento}' no tiene catálogo web disponible",
+            "disponibles": list(VTEX_URLS.keys()),
+        }
+
+    if not q or len(q.strip()) < 2:
+        return {"success": False, "error": "Ingresa al menos 2 caracteres para buscar"}
+
+    termino = q.strip()
+    base_url = VTEX_URLS[establecimiento_upper]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "es-CO,es;q=0.9",
+    }
+
+    resultados = []
+
+    try:
+        # Estrategia 1: Buscar como texto libre
+        url = f"{base_url}/api/catalog_system/pub/products/search?ft={urllib.parse.quote(termino)}&_from=0&_to={limite + 10}"
+
+        print(f"🔍 Buscando en VTEX: {termino}")
+
+        resp = requests.get(url, headers=headers, timeout=15)
+
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"   Búsqueda texto: {len(data)} productos")
+
+            for item in data:
+                prod = _parsear_producto(item, base_url, establecimiento_upper)
+                if prod and not _ya_existe(prod, resultados):
+                    resultados.append(prod)
+
+        # Estrategia 2: Si es un número, buscar variantes en PARALELO
+        if termino.isdigit() and len(termino) >= 4 and len(resultados) < limite:
+            # Generar variantes inteligentes
+            variantes = set()
+
+            # Original
+            variantes.add(termino)
+
+            # Variantes primer dígito (más común en OCR)
+            for i in range(10):
+                variantes.add(f"{i}{termino[1:]}")
+
+            # Variantes segundo dígito
+            for i in range(10):
+                variantes.add(f"{termino[0]}{i}{termino[2:]}")
+
+            # Variantes dos primeros dígitos
+            for i in range(10):
+                for j in range(10):
+                    variantes.add(f"{i}{j}{termino[2:]}")
+
+            # Variantes último dígito
+            for i in range(10):
+                variantes.add(f"{termino[:-1]}{i}")
+
+            # Variantes penúltimo dígito
+            if len(termino) >= 2:
+                for i in range(10):
+                    variantes.add(f"{termino[:-2]}{i}{termino[-1]}")
+
+            variantes.discard(termino)  # Quitar original (ya buscado)
+            variantes_lista = list(variantes)[:30]  # Máximo 30 variantes
+
+            print(f"   Probando {len(variantes_lista)} variantes en paralelo...")
+
+            # Búsqueda paralela (5 threads)
+            args_list = [
+                (v, base_url, headers, establecimiento_upper) for v in variantes_lista
+            ]
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {
+                    executor.submit(_buscar_plu_variante, args): args[0]
+                    for args in args_list
+                }
+
+                for future in as_completed(futures, timeout=10):
+                    try:
+                        prods = future.result()
+                        for prod in prods:
+                            if not _ya_existe(prod, resultados):
+                                resultados.append(prod)
+                                print(
+                                    f"   ✅ Variante {prod.get('plu_buscado')}: {prod['nombre'][:40]}"
+                                )
+
+                            if len(resultados) >= limite:
+                                break
+                    except:
+                        pass
+
+                    if len(resultados) >= limite:
+                        break
+
+        # Ordenar por relevancia
+        resultados.sort(
+            key=lambda x: (
+                0 if termino.lower() in x["nombre"].lower() else 1,
+                0 if termino in str(x.get("plu", "")) else 1,
+                x["nombre"],
+            )
+        )
+
+        return {
+            "success": True,
+            "termino": termino,
+            "establecimiento": establecimiento_upper,
+            "total": len(resultados),
+            "resultados": resultados[:limite],
+        }
+
+    except Exception as e:
+        print(f"❌ Error buscando en VTEX: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": f"Error de conexión: {str(e)}"}
+
+
+def _parsear_producto(item: dict, base_url: str, establecimiento: str) -> dict:
+    """Parsea un producto del JSON de VTEX"""
+    try:
+        nombre = item.get("productName", "")
+        if not nombre:
+            return None
+
+        link = item.get("link", "")
+        plu = ""
+        ean = ""
+        precio = 0
+        imagen = ""
+        marca = item.get("brand", "")
+
+        if item.get("items") and len(item["items"]) > 0:
+            sku = item["items"][0]
+            ean = sku.get("ean", "") or ""
+
+            # Imagen
+            imagenes = sku.get("images", [])
+            if imagenes and len(imagenes) > 0:
+                imagen = imagenes[0].get("imageUrl", "")
+
+            # PLU de referenceId
+            ref_ids = sku.get("referenceId", [])
+            if ref_ids and isinstance(ref_ids, list):
+                for ref in ref_ids:
+                    if isinstance(ref, dict) and ref.get("Value"):
+                        plu = ref["Value"]
+                        break
+
+            if not plu:
+                plu = item.get("productReference", "") or item.get("productId", "")
+
+            # Precio
+            sellers = sku.get("sellers", [])
+            if sellers:
+                oferta = sellers[0].get("commertialOffer", {})
+                precio = int(oferta.get("Price", 0) or 0)
+
+        # URL completa
+        if link and not link.startswith("http"):
+            link = f"{base_url}{link}"
+
+        return {
+            "nombre": nombre,
+            "marca": marca,
+            "plu": str(plu) if plu else "",
+            "ean": str(ean) if ean else "",
+            "precio": precio,
+            "imagen": imagen,
+            "url": link,
+            "establecimiento": establecimiento,
+        }
+
+    except Exception as e:
+        print(f"Error parseando producto: {e}")
+        return None
+
+
+def _ya_existe(prod: dict, lista: list) -> bool:
+    """Verifica si el producto ya está en la lista (evita duplicados)"""
+    for p in lista:
+        if p.get("nombre") == prod.get("nombre") and p.get("plu") == prod.get("plu"):
+            return True
+    return False
