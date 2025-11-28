@@ -1960,735 +1960,15 @@ function autoLlenarBuscadorVTEX() {
 }
 
 // =============================================================
-// 🔍 BUSCAR PRODUCTOS EN VTEX
+// 🔍 FUNCIONES VTEX - VERSIÓN LIMPIA Y UNIFICADA
 // =============================================================
-async function buscarProductosVTEX() {
-    const termino = document.getElementById('vtex-busqueda').value.trim();
-    const establecimiento = document.getElementById('vtex-establecimiento').value;
-    const resultadoDiv = document.getElementById('vtex-resultados');
 
-    if (!termino || termino.length < 2) {
-        resultadoDiv.innerHTML = `
-            <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px;">
-                <p style="color: #92400e;">⚠️ Ingresa al menos 2 caracteres (PLU parcial o nombre)</p>
-            </div>
-        `;
-        return;
-    }
-
-    if (!establecimiento) {
-        resultadoDiv.innerHTML = `
-            <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 12px; border-radius: 4px;">
-                <p style="color: #92400e;">⚠️ Selecciona un supermercado</p>
-            </div>
-        `;
-        return;
-    }
-
-    // Mostrar loading
-    resultadoDiv.innerHTML = `
-        <div style="text-align: center; padding: 30px;">
-            <div class="loading" style="width: 35px; height: 35px; margin: 0 auto 15px;"></div>
-            <p style="color: #6b7280;">Buscando "${termino}" en ${establecimiento}...</p>
-            <p style="color: #9ca3af; font-size: 12px; margin-top: 5px;">Esto puede tomar unos segundos</p>
-        </div>
-    `;
-
-    const apiBase = getApiBase();
-
-    try {
-        const response = await fetch(
-            `${apiBase}/api/v2/buscar-productos/${encodeURIComponent(establecimiento)}?q=${encodeURIComponent(termino)}&limite=15`
-        );
-        const data = await response.json();
-
-        if (!data.success) {
-            resultadoDiv.innerHTML = `
-                <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; border-radius: 4px;">
-                    <p style="color: #dc2626;">❌ ${data.error}</p>
-                    ${data.disponibles ? `
-                    <p style="font-size: 13px; color: #6b7280; margin-top: 8px;">
-                        Supermercados disponibles: ${data.disponibles.join(', ')}
-                    </p>
-                    ` : ''}
-                </div>
-            `;
-            return;
-        }
-
-        if (data.total === 0) {
-            resultadoDiv.innerHTML = `
-                <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 15px; border-radius: 4px;">
-                    <p style="color: #92400e; font-weight: 600;">🔍 No se encontraron productos</p>
-                    <p style="color: #78350f; font-size: 13px; margin-top: 8px;">Sugerencias:</p>
-                    <ul style="margin: 8px 0 0 20px; color: #78350f; font-size: 13px;">
-                        <li>Intenta con menos dígitos (ej: "2326" en vez de "2326440")</li>
-                        <li>Busca por nombre del producto (ej: "leche", "queso")</li>
-                        <li>Verifica que el supermercado sea correcto</li>
-                    </ul>
-                </div>
-            `;
-            return;
-        }
-
-        // Mostrar resultados
-        let html = `
-            <div style="background: #d1fae5; border-left: 4px solid #059669; padding: 10px 15px; border-radius: 4px; margin-bottom: 15px;">
-                <p style="color: #059669; font-weight: 600;">✅ ${data.total} producto(s) encontrado(s)</p>
-                <p style="color: #065f46; font-size: 13px;">Haz clic en el producto correcto para aplicar los datos</p>
-            </div>
-
-            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-        `;
-
-        data.resultados.forEach((prod, index) => {
-            const bgColor = index % 2 === 0 ? '#ffffff' : '#f9fafb';
-
-            html += `
-                <div style="padding: 12px 15px; background: ${bgColor}; border-bottom: 1px solid #e5e7eb; cursor: pointer; transition: background 0.2s;"
-                     onmouseover="this.style.background='#ecfdf5'"
-                     onmouseout="this.style.background='${bgColor}'"
-                     onclick="seleccionarProductoVTEX(${JSON.stringify(prod).replace(/"/g, '&quot;')})">
-
-                    <div style="display: flex; gap: 12px; align-items: flex-start;">
-                        <!-- Imagen -->
-                        ${prod.imagen ? `
-                            <img src="${prod.imagen}"
-                                 style="width: 60px; height: 60px; object-fit: contain; border-radius: 4px; background: #f3f4f6; flex-shrink: 0;"
-                                 onerror="this.style.display='none'">
-                        ` : `
-                            <div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #9ca3af; flex-shrink: 0;">
-                                📦
-                            </div>
-                        `}
-
-                        <!-- Info -->
-                        <div style="flex: 1; min-width: 0;">
-                            <h4 style="margin: 0 0 6px 0; font-size: 14px; color: #111; line-height: 1.3;">
-                                ${prod.nombre}
-                            </h4>
-
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px;">
-                                ${prod.plu ? `
-                                    <span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 3px;">
-                                        PLU: ${prod.plu}
-                                    </span>
-                                    ${prod.plu_buscado && prod.plu_buscado !== prod.plu ? `
-                                        <span style="background: #fce7f3; color: #be185d; padding: 2px 6px; border-radius: 3px;"
-                                              title="El OCR pudo haber leído mal">
-                                            💡 Variante encontrada
-                                        </span>
-                                    ` : ''}
-                                ` : ''}
-                                ${prod.ean ? `
-                                    <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 3px;">
-                                        EAN: ${prod.ean}
-                                    </span>
-                                ` : ''}
-                                ${prod.marca ? `
-                                    <span style="color: #6b7280;">
-                                        ${prod.marca}
-                                    </span>
-                                ` : ''}
-                            </div>
-
-                            ${prod.precio > 0 ? `
-                                <p style="margin: 6px 0 0 0; color: #059669; font-weight: 600; font-size: 14px;">
-                                    $${prod.precio.toLocaleString('es-CO')}
-                                </p>
-                            ` : ''}
-                        </div>
-
-                        <!-- Botón seleccionar -->
-                        <div style="flex-shrink: 0;">
-                            <span style="display: inline-block; padding: 6px 12px; background: #2563eb; color: white; border-radius: 4px; font-size: 12px; font-weight: 500;">
-                                ✓ Usar
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-
-        html += `</div>`;
-
-        resultadoDiv.innerHTML = html;
-
-    } catch (error) {
-        console.error('❌ Error:', error);
-        resultadoDiv.innerHTML = `
-            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px; border-radius: 4px;">
-                <p style="color: #dc2626;">❌ Error de conexión: ${error.message}</p>
-            </div>
-        `;
-    }
-}
+// Variable global para resultados VTEX
+window.resultadosVTEXActuales = [];
 
 // =============================================================
-// ⌨️ BUSCAR AL PRESIONAR ENTER
+// BUSCAR PRODUCTOS EN VTEX
 // =============================================================
-function configurarBuscadorVTEX() {
-    const input = document.getElementById('vtex-busqueda');
-    if (input) {
-        input.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                buscarProductosVTEX();
-            }
-        });
-    }
-}
-
-// Configurar al cargar el modal
-document.addEventListener('DOMContentLoaded', function () {
-    // Se configurará cuando se abra el modal
-});
-
-
-function seleccionarProductoVTEX(producto) {
-    console.log('✅ Producto VTEX seleccionado:', producto);
-
-    // 1️⃣ ACTUALIZAR DATOS DEL PRODUCTO (nombre, marca, EAN)
-    // Estos datos de VTEX son más confiables que los de OCR
-    const nombreInput = document.getElementById('edit-nombre-norm');
-    const marcaInput = document.getElementById('edit-marca');
-    const eanInput = document.getElementById('edit-ean');
-
-    // Animación de aplicado
-    const aplicarCampo = (input, valor) => {
-        if (input && valor) {
-            input.value = valor;
-            input.style.background = '#d1fae5';
-            input.style.transition = 'background 0.3s';
-            setTimeout(() => {
-                input.style.background = '';
-            }, 1500);
-        }
-    };
-
-    aplicarCampo(nombreInput, producto.nombre);
-    aplicarCampo(marcaInput, producto.marca);
-    aplicarCampo(eanInput, producto.ean);
-
-    // 2️⃣ AGREGAR PLU DE VTEX COMO ADICIONAL (si tiene PLU y no existe ya)
-    if (producto.plu) {
-        agregarPLUDeVTEX(producto.plu, producto.establecimiento, producto.precio);
-    }
-
-    // 3️⃣ MOSTRAR CONFIRMACIÓN
-    const resultadoDiv = document.getElementById('vtex-resultados');
-    if (resultadoDiv) {
-        resultadoDiv.innerHTML = `
-            <div style="background: #d1fae5; border: 2px solid #059669; padding: 20px; border-radius: 8px; text-align: center;">
-                <p style="font-size: 24px; margin-bottom: 10px;">✅</p>
-                <p style="color: #059669; font-weight: 600; font-size: 16px; margin-bottom: 5px;">
-                    Datos aplicados correctamente
-                </p>
-                <p style="color: #065f46; font-size: 14px; margin-bottom: 10px;">
-                    ${producto.nombre}
-                </p>
-                <div style="background: #ecfdf5; padding: 10px; border-radius: 6px; margin-top: 10px;">
-                    <p style="font-size: 13px; color: #047857; margin: 0;">
-                        ✓ Nombre, marca y EAN actualizados<br>
-                        ${producto.plu ? `✓ PLU web <code>${producto.plu}</code> agregado como adicional` : ''}
-                    </p>
-                </div>
-                <p style="color: #047857; font-size: 13px; margin-top: 15px;">
-                    No olvides hacer clic en <strong>💾 Guardar</strong>
-                </p>
-            </div>
-        `;
-    }
-
-    mostrarAlerta('✅ Datos de VTEX aplicados. PLU web agregado como adicional.', 'success');
-}
-
-// =============================================================
-// 🆕 AGREGAR PLU DE VTEX COMO ADICIONAL
-// =============================================================
-async function agregarPLUDeVTEX(pluVtex, establecimientoNombre, precio) {
-    console.log(`🌐 Agregando PLU VTEX: ${pluVtex} de ${establecimientoNombre}`);
-
-    await cargarEstablecimientosCache();
-
-    const contenedor = document.getElementById('contenedorPLUs');
-    if (!contenedor) return;
-
-    // Verificar si este PLU ya existe
-    const plusExistentes = contenedor.querySelectorAll('.plu-codigo');
-    for (let input of plusExistentes) {
-        if (input.value.trim() === pluVtex) {
-            console.log('⚠️ PLU ya existe, no se agrega duplicado');
-            mostrarAlerta(`ℹ️ El PLU ${pluVtex} ya existe en la lista`, 'info');
-            return;
-        }
-    }
-
-    // Buscar el ID del establecimiento
-    const establecimientoMap = {
-        'OLIMPICA': 'OLIMPICA', 'OLÍMPICA': 'OLIMPICA',
-        'EXITO': 'EXITO', 'ÉXITO': 'EXITO',
-        'CARULLA': 'CARULLA',
-        'JUMBO': 'JUMBO',
-        'ALKOSTO': 'ALKOSTO',
-        'MAKRO': 'MAKRO',
-        'COLSUBSIDIO': 'COLSUBSIDIO'
-    };
-
-    const estNormalizado = establecimientoMap[establecimientoNombre.toUpperCase()] || establecimientoNombre.toUpperCase();
-
-    let establecimientoId = null;
-    for (let est of establecimientosCache) {
-        if (est.nombre_normalizado.toUpperCase().includes(estNormalizado)) {
-            establecimientoId = est.id;
-            break;
-        }
-    }
-
-    // Crear el nuevo PLU
-    const pluDiv = document.createElement('div');
-    pluDiv.className = 'plu-item';
-    pluDiv.dataset.pluId = '';  // Nuevo, no tiene ID aún
-    pluDiv.dataset.origen = 'VTEX';  // Marcar como VTEX
-
-    pluDiv.innerHTML = `
-        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid #2563eb; border-radius: 8px; margin-bottom: 10px; background: #eff6ff;">
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">
-                    🌐 Establecimiento (VTEX)
-                </label>
-                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px; background: white;">
-                    <option value="">Seleccionar...</option>
-                    ${establecimientosCache.map(e =>
-        `<option value="${e.id}" ${e.id == establecimientoId ? 'selected' : ''}>
-                            ${e.nombre_normalizado}
-                        </option>`
-    ).join('')}
-                </select>
-            </div>
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">
-                    Código PLU (Web)
-                </label>
-                <input type="text" class="plu-codigo" value="${pluVtex}"
-                       style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px; background: #dbeafe;">
-            </div>
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">
-                    Precio Web
-                </label>
-                <input type="number" class="plu-precio" value="${precio || 0}"
-                       min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px;">
-            </div>
-            <div style="display: flex; align-items: center; padding-bottom: 3px;">
-                <span style="background: #2563eb; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-                    🌐 VTEX
-                </span>
-            </div>
-            <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
-                    style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                🗑️
-            </button>
-        </div>
-    `;
-
-    // Agregar al contenedor
-    contenedor.appendChild(pluDiv);
-
-    // Scroll al nuevo PLU
-    pluDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    console.log('✅ PLU VTEX agregado a la lista');
-}
-
-// =============================================================
-// ✅ CARGAR PLUs DEL PRODUCTO - CON INDICADOR DE ORIGEN
-// =============================================================
-async function cargarPLUsProducto(productoId) {
-    console.log(`📋 Cargando PLUs del producto ${productoId}`);
-
-    const contenedor = document.getElementById('contenedorPLUs');
-    if (!contenedor) {
-        console.warn('⚠️ No se encontró contenedorPLUs');
-        return;
-    }
-
-    await cargarEstablecimientosCache();
-
-    const apiBase = getApiBase();
-
-    try {
-        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`);
-        if (!response.ok) throw new Error('Error cargando PLUs');
-
-        const data = await response.json();
-        console.log('✅ PLUs recibidos:', data);
-
-        contenedor.innerHTML = '';
-
-        if (!data.plus || data.plus.length === 0) {
-            contenedor.innerHTML = `
-                <p style="color: #6b7280; padding: 15px; text-align: center; background: #f9fafb; border-radius: 8px;">
-                    No hay PLUs registrados. Usa el buscador VTEX para agregar.
-                </p>
-            `;
-            return;
-        }
-
-        data.plus.forEach((plu, index) => {
-            const pluId = plu.id || '';
-            const origen = plu.origen_codigo || 'FACTURA';
-
-            // Estilos según origen
-            const esVTEX = origen === 'VTEX';
-            const borderColor = esVTEX ? '#2563eb' : '#10b981';
-            const bgColor = esVTEX ? '#eff6ff' : '#f0fdf4';
-            const badgeColor = esVTEX ? '#2563eb' : '#059669';
-            const badgeBg = esVTEX ? '#dbeafe' : '#d1fae5';
-            const badgeText = esVTEX ? '🌐 VTEX' : '📄 Factura';
-
-            const pluDiv = document.createElement('div');
-            pluDiv.className = 'plu-item';
-            pluDiv.dataset.pluId = pluId;
-            pluDiv.dataset.origen = origen;
-
-            pluDiv.innerHTML = `
-                <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid ${borderColor}; border-radius: 8px; margin-bottom: 10px; background: ${bgColor};">
-                    <div class="form-group" style="margin: 0;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Establecimiento</label>
-                        <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                            <option value="">Seleccionar...</option>
-                            ${establecimientosCache.map(e =>
-                `<option value="${e.id}" ${e.id == plu.establecimiento_id ? 'selected' : ''}>
-                                    ${e.nombre_normalizado}
-                                </option>`
-            ).join('')}
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
-                        <input type="text" class="plu-codigo" value="${plu.codigo_plu || ''}"
-                               placeholder="Ej: 1234" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
-                        <input type="number" class="plu-precio" value="${plu.precio_unitario || 0}"
-                               placeholder="0" min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                    </div>
-                    <div style="display: flex; align-items: center; padding-bottom: 3px;">
-                        <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-                            ${badgeText}
-                        </span>
-                    </div>
-                    <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
-                            style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        🗑️
-                    </button>
-                </div>
-            `;
-
-            contenedor.appendChild(pluDiv);
-        });
-
-    } catch (error) {
-        console.error('❌ Error cargando PLUs:', error);
-        contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
-    }
-}
-
-// =============================================================
-// ✅ RECOPILAR PLUs PARA GUARDAR - CON ORIGEN
-// =============================================================
-function recopilarPLUsParaGuardar() {
-    const plusItems = document.querySelectorAll('.plu-item');
-    const plus = [];
-
-    plusItems.forEach((item, index) => {
-        const pluId = item.dataset.pluId;
-        const origen = item.dataset.origen || 'MANUAL';
-        const establecimientoSelect = item.querySelector('.plu-establecimiento');
-        const codigoInput = item.querySelector('.plu-codigo');
-        const precioInput = item.querySelector('.plu-precio');
-
-        if (!establecimientoSelect || !codigoInput) return;
-
-        const establecimientoId = parseInt(establecimientoSelect.value);
-        const codigo = codigoInput.value.trim();
-        const precio = precioInput ? parseFloat(precioInput.value) || 0 : 0;
-
-        if (!codigo || !establecimientoId) return;
-
-        const pluData = {
-            codigo_plu: codigo,
-            establecimiento_id: establecimientoId,
-            precio_unitario: precio,
-            origen_codigo: origen  // 🆕 Incluir origen
-        };
-
-        if (pluId && pluId !== '' && pluId !== 'undefined' && pluId !== 'null') {
-            pluData.id = parseInt(pluId);
-        }
-
-        plus.push(pluData);
-    });
-
-    console.log('📦 PLUs a guardar:', plus);
-    return { plus, plus_a_eliminar: [] };
-}
-
-// =============================================================
-// ✅ AGREGAR PLU MANUAL - CON ORIGEN
-// =============================================================
-async function agregarPLUEditable() {
-    await cargarEstablecimientosCache();
-
-    const contenedor = document.getElementById('contenedorPLUs');
-    if (!contenedor) return;
-
-    // Quitar mensaje de "no hay PLUs"
-    const mensaje = contenedor.querySelector('p');
-    if (mensaje) mensaje.remove();
-
-    const pluDiv = document.createElement('div');
-    pluDiv.className = 'plu-item';
-    pluDiv.dataset.pluId = '';
-    pluDiv.dataset.origen = 'MANUAL';
-
-    pluDiv.innerHTML = `
-        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid #f59e0b; border-radius: 8px; margin-bottom: 10px; background: #fffbeb;">
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Establecimiento</label>
-                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px; background: white;">
-                    <option value="">Seleccionar...</option>
-                    ${establecimientosCache.map(e =>
-        `<option value="${e.id}">${e.nombre_normalizado}</option>`
-    ).join('')}
-                </select>
-            </div>
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
-                <input type="text" class="plu-codigo" placeholder="Ej: 1234"
-                       style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px;">
-            </div>
-            <div class="form-group" style="margin: 0;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
-                <input type="number" class="plu-precio" placeholder="0" min="0" step="1"
-                       style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px;">
-            </div>
-            <div style="display: flex; align-items: center; padding-bottom: 3px;">
-                <span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-                    ✏️ Manual
-                </span>
-            </div>
-            <button type="button" class="btn-remove-plu" onclick="this.closest('.plu-item').remove();"
-                    style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                🗑️
-            </button>
-        </div>
-    `;
-
-    contenedor.appendChild(pluDiv);
-
-    // Scroll al nuevo PLU
-    pluDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// =============================================================
-// EXPORTAR FUNCIONES NUEVAS
-// =============================================================
-window.seleccionarProductoVTEX = seleccionarProductoVTEX;
-window.agregarPLUDeVTEX = agregarPLUDeVTEX;
-window.cargarPLUsProducto = cargarPLUsProducto;
-window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
-window.agregarPLUEditable = agregarPLUEditable;
-
-// ============================================================
-// FUNCIONES PARA CACHE VTEX CON IMÁGENES
-// Agregar a productos.js
-// ============================================================
-
-/**
- * Guarda un producto VTEX en el cache local (con imagen)
- * Se llama cuando el usuario hace click en "Guardar en catálogo"
- */
-async function guardarProductoEnCacheVTEX(producto) {
-    try {
-        // Mostrar loading
-        const btnGuardar = document.getElementById('btn-guardar-cache-vtex');
-        if (btnGuardar) {
-            btnGuardar.disabled = true;
-            btnGuardar.innerHTML = '⏳ Guardando...';
-        }
-
-        const response = await fetch('/api/v2/vtex-cache/guardar', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                establecimiento: producto.establecimiento,
-                plu: producto.plu || '',
-                ean: producto.ean || '',
-                nombre: producto.nombre,
-                marca: producto.marca || '',
-                precio: producto.precio || 0,
-                categoria: producto.categoria || '',
-                presentacion: producto.presentacion || '',
-                url_producto: producto.url || '',
-                imagen_url: producto.imagen || ''
-            })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            // Mostrar éxito
-            if (btnGuardar) {
-                btnGuardar.innerHTML = '✅ Guardado';
-                btnGuardar.style.background = '#10b981';
-
-                setTimeout(() => {
-                    btnGuardar.innerHTML = '💾 Guardar en catálogo';
-                    btnGuardar.style.background = '';
-                    btnGuardar.disabled = false;
-                }, 2000);
-            }
-
-            // Notificación
-            mostrarNotificacion(
-                data.accion === 'creado'
-                    ? `✅ Producto guardado: ${producto.nombre.substring(0, 30)}...`
-                    : `🔄 Producto actualizado: ${producto.nombre.substring(0, 30)}...`,
-                'success'
-            );
-
-            console.log(`✅ Cache VTEX: ${data.accion} - ${producto.nombre}`);
-
-            return data;
-        } else {
-            throw new Error(data.error || 'Error desconocido');
-        }
-
-    } catch (error) {
-        console.error('❌ Error guardando en cache VTEX:', error);
-
-        if (btnGuardar) {
-            btnGuardar.innerHTML = '❌ Error';
-            btnGuardar.style.background = '#ef4444';
-            btnGuardar.disabled = false;
-
-            setTimeout(() => {
-                btnGuardar.innerHTML = '💾 Guardar en catálogo';
-                btnGuardar.style.background = '';
-            }, 2000);
-        }
-
-        mostrarNotificacion(`Error: ${error.message}`, 'error');
-        return { success: false, error: error.message };
-    }
-}
-
-
-/**
- * Renderiza un resultado de búsqueda VTEX con botón de guardar
- * Modifica la función existente renderizarResultadoVTEX
- */
-function renderizarResultadoVTEX(producto, index) {
-    const precioFormateado = producto.precio
-        ? `$${producto.precio.toLocaleString('es-CO')}`
-        : 'Sin precio';
-
-    return `
-        <div class="vtex-resultado-item" style="
-            display: flex;
-            gap: 15px;
-            padding: 15px;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            background: white;
-            align-items: flex-start;
-        ">
-            <!-- Imagen -->
-            <div style="flex-shrink: 0;">
-                ${producto.imagen
-            ? `<img src="${producto.imagen}"
-                           alt="${producto.nombre}"
-                           style="width: 80px; height: 80px; object-fit: contain; border-radius: 6px; border: 1px solid #e5e7eb;"
-                           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22><rect fill=%22%23f3f4f6%22 width=%2280%22 height=%2280%22/><text x=%2240%22 y=%2245%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2212%22>Sin imagen</text></svg>'">`
-            : `<div style="width: 80px; height: 80px; background: #f3f4f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12px;">Sin imagen</div>`
-        }
-            </div>
-
-            <!-- Info -->
-            <div style="flex: 1; min-width: 0;">
-                <div style="font-weight: 600; color: #111827; margin-bottom: 4px; line-height: 1.3;">
-                    ${producto.nombre}
-                </div>
-                <div style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">
-                    ${producto.marca ? `<span style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; margin-right: 8px;">${producto.marca}</span>` : ''}
-                    ${producto.plu ? `<span>PLU: <strong>${producto.plu}</strong></span>` : ''}
-                    ${producto.ean ? `<span style="margin-left: 8px;">EAN: ${producto.ean}</span>` : ''}
-                </div>
-                <div style="font-size: 15px; font-weight: 600; color: #059669;">
-                    ${precioFormateado}
-                </div>
-            </div>
-
-            <!-- Botones -->
-            <div style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
-                <button onclick="seleccionarProductoVTEX(${index})"
-                        style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 13px;">
-                    ✓ Usar este
-                </button>
-                <button onclick="guardarEnCacheDesdeResultado(${index})"
-                        id="btn-cache-${index}"
-                        style="padding: 8px 16px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-size: 12px;"
-                        title="Guarda este producto en tu catálogo local con imagen">
-                    💾 Guardar
-                </button>
-            </div>
-        </div>
-    `;
-}
-
-
-/**
- * Guarda un producto desde los resultados de búsqueda
- */
-async function guardarEnCacheDesdeResultado(index) {
-    if (!window.resultadosVTEXActuales || !window.resultadosVTEXActuales[index]) {
-        mostrarNotificacion('Error: Producto no encontrado', 'error');
-        return;
-    }
-
-    const producto = window.resultadosVTEXActuales[index];
-    const btn = document.getElementById(`btn-cache-${index}`);
-
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '⏳...';
-    }
-
-    const resultado = await guardarProductoEnCacheVTEX(producto);
-
-    if (btn) {
-        if (resultado.success) {
-            btn.innerHTML = '✅';
-            btn.style.background = '#d1fae5';
-            btn.style.borderColor = '#10b981';
-        } else {
-            btn.innerHTML = '❌';
-            btn.disabled = false;
-        }
-    }
-}
-
-
-/**
- * Busca productos VTEX y muestra resultados
- * Actualizada para guardar resultados en variable global
- */
 async function buscarProductosVTEX() {
     const termino = document.getElementById('vtex-busqueda').value.trim();
     const establecimiento = document.getElementById('vtex-establecimiento').value;
@@ -2711,8 +1991,12 @@ async function buscarProductosVTEX() {
         </div>
     `;
 
+    const apiBase = typeof getApiBase === 'function' ? getApiBase() : '';
+
     try {
-        const response = await fetch(`/api/v2/buscar-productos/${establecimiento}?q=${encodeURIComponent(termino)}&limite=15`);
+        const response = await fetch(
+            `${apiBase}/api/v2/buscar-productos/${encodeURIComponent(establecimiento)}?q=${encodeURIComponent(termino)}&limite=15`
+        );
         const data = await response.json();
 
         if (!data.success) {
@@ -2729,26 +2013,86 @@ async function buscarProductosVTEX() {
                 <div style="padding: 20px; background: #f3f4f6; border-radius: 8px; text-align: center; color: #6b7280;">
                     🔍 No se encontraron productos para "${termino}"
                     <br><br>
-                    <small>Intenta con otros términos o verifica el código</small>
+                    <small>Intenta con menos dígitos o busca por nombre</small>
                 </div>
             `;
             return;
         }
 
-        // Guardar resultados en variable global para usar después
+        // Guardar resultados en variable global
         window.resultadosVTEXActuales = data.resultados;
 
         // Renderizar resultados
         let html = `
             <div style="margin-bottom: 10px; font-size: 13px; color: #6b7280;">
-                📦 ${data.total} producto(s) encontrado(s) para "${termino}"
+                📦 ${data.total} producto(s) encontrado(s)
             </div>
+            <div style="max-height: 400px; overflow-y: auto;">
         `;
 
         data.resultados.forEach((producto, index) => {
-            html += renderizarResultadoVTEX(producto, index);
+            const precioFormateado = producto.precio
+                ? `$${producto.precio.toLocaleString('es-CO')}`
+                : 'Sin precio';
+
+            html += `
+                <div class="vtex-resultado-item" style="
+                    display: flex;
+                    gap: 12px;
+                    padding: 12px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    margin-bottom: 8px;
+                    background: white;
+                    align-items: center;
+                    transition: all 0.2s;
+                    cursor: pointer;
+                " onmouseover="this.style.borderColor='#2563eb'; this.style.background='#f8fafc';"
+                   onmouseout="this.style.borderColor='#e5e7eb'; this.style.background='white';"
+                   onclick="seleccionarProductoVTEX(${index})">
+
+                    <!-- Imagen -->
+                    <div style="flex-shrink: 0;">
+                        ${producto.imagen
+                    ? `<img src="${producto.imagen}"
+                                   style="width: 60px; height: 60px; object-fit: contain; border-radius: 6px; border: 1px solid #e5e7eb;"
+                                   onerror="this.style.display='none'">`
+                    : `<div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af;">📦</div>`
+                }
+                    </div>
+
+                    <!-- Info -->
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; color: #111827; margin-bottom: 4px; font-size: 14px; line-height: 1.3;">
+                            ${producto.nombre}
+                        </div>
+                        <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">
+                            ${producto.marca ? `<span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; margin-right: 6px;">${producto.marca}</span>` : ''}
+                            ${producto.plu ? `PLU: <strong>${producto.plu}</strong>` : ''}
+                            ${producto.ean ? ` · EAN: ${producto.ean}` : ''}
+                        </div>
+                        <div style="font-size: 14px; font-weight: 600; color: #059669;">
+                            ${precioFormateado}
+                        </div>
+                    </div>
+
+                    <!-- Botón -->
+                    <div style="flex-shrink: 0;">
+                        <span id="btn-usar-${index}" style="
+                            display: inline-block;
+                            padding: 8px 16px;
+                            background: #2563eb;
+                            color: white;
+                            border-radius: 6px;
+                            font-weight: 600;
+                            font-size: 13px;
+                        ">✓ Usar</span>
+                    </div>
+                </div>
+            `;
         });
 
+        html += `</div>`;
         contenedor.innerHTML = html;
 
     } catch (error) {
@@ -2761,110 +2105,401 @@ async function buscarProductosVTEX() {
     }
 }
 
-
-/**
- * Selecciona un producto VTEX y lo aplica al formulario de edición
- * También lo guarda automáticamente en el cache
- */
-function seleccionarProductoVTEX(index) {
-    if (!window.resultadosVTEXActuales || !window.resultadosVTEXActuales[index]) {
-        mostrarNotificacion('Error: Producto no encontrado', 'error');
+// =============================================================
+// SELECCIONAR PRODUCTO VTEX - APLICA DATOS AL FORMULARIO
+// =============================================================
+async function seleccionarProductoVTEX(index) {
+    const producto = window.resultadosVTEXActuales[index];
+    if (!producto) {
+        alert('Error: Producto no encontrado');
         return;
     }
 
-    const producto = window.resultadosVTEXActuales[index];
+    console.log('✅ Producto VTEX seleccionado:', producto);
 
-    // Aplicar datos al formulario
-    if (producto.nombre) {
-        document.getElementById('edit-nombre-norm').value = producto.nombre;
-    }
-    if (producto.marca) {
-        document.getElementById('edit-marca').value = producto.marca;
-    }
-    if (producto.ean) {
-        document.getElementById('edit-ean').value = producto.ean;
-    }
-    if (producto.categoria) {
-        document.getElementById('edit-categoria').value = producto.categoria;
-    }
-    if (producto.presentacion) {
-        document.getElementById('edit-presentacion').value = producto.presentacion;
+    // Cambiar botón a "aplicando..."
+    const btn = document.getElementById(`btn-usar-${index}`);
+    if (btn) {
+        btn.innerHTML = '⏳...';
+        btn.style.background = '#6b7280';
     }
 
-    // Agregar PLU si es diferente al existente
-    if (producto.plu) {
-        agregarPLUDeVTEX(producto.plu, producto.establecimiento, producto.precio || 0);
-    }
-
-    // Guardar automáticamente en cache (en background)
-    guardarProductoEnCacheVTEX(producto).then(result => {
-        if (result.success) {
-            console.log('✅ Producto guardado en cache automáticamente');
+    // 1. Aplicar datos al formulario con animación
+    const aplicarCampo = (id, valor) => {
+        const input = document.getElementById(id);
+        if (input && valor) {
+            input.value = valor;
+            input.style.background = '#d1fae5';
+            input.style.transition = 'background 0.3s';
+            setTimeout(() => { input.style.background = ''; }, 1500);
         }
+    };
+
+    aplicarCampo('edit-nombre-norm', producto.nombre);
+    aplicarCampo('edit-marca', producto.marca);
+    aplicarCampo('edit-ean', producto.ean);
+    aplicarCampo('edit-categoria', producto.categoria);
+    aplicarCampo('edit-presentacion', producto.presentacion);
+
+    // 2. Agregar PLU de VTEX
+    if (producto.plu) {
+        await agregarPLUDeVTEX(producto.plu, producto.establecimiento, producto.precio || 0);
+    }
+
+    // 3. Guardar imagen en cache (background, silencioso)
+    guardarEnCacheVTEX(producto).catch(err => {
+        console.log('⚠️ Cache VTEX:', err.message);
     });
 
-    // Notificación
-    mostrarNotificacion(`✅ Datos aplicados: ${producto.nombre.substring(0, 40)}...`, 'success');
+    // 4. Cambiar botón a "aplicado"
+    if (btn) {
+        btn.innerHTML = '✅';
+        btn.style.background = '#10b981';
+    }
 
-    // Scroll al formulario
-    document.getElementById('edit-nombre-norm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // 5. Mostrar confirmación
+    const contenedor = document.getElementById('vtex-resultados');
+    if (contenedor) {
+        contenedor.innerHTML = `
+            <div style="background: #d1fae5; border: 2px solid #059669; padding: 20px; border-radius: 8px; text-align: center;">
+                <p style="font-size: 24px; margin-bottom: 10px;">✅</p>
+                <p style="color: #059669; font-weight: 600; font-size: 16px;">Datos aplicados</p>
+                <p style="color: #065f46; font-size: 14px; margin: 10px 0;">${producto.nombre}</p>
+                <p style="color: #047857; font-size: 13px; background: #ecfdf5; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                    ⬆️ Revisa los datos arriba y haz click en <strong>"💾 Guardar Cambios"</strong>
+                </p>
+            </div>
+        `;
+    }
+
+    // 6. Scroll al formulario
+    document.getElementById('edit-nombre-norm')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    if (typeof mostrarAlerta === 'function') {
+        mostrarAlerta('✅ Datos aplicados. No olvides guardar.', 'success');
+    }
 }
 
+// =============================================================
+// GUARDAR EN CACHE VTEX (CON IMAGEN) - BACKGROUND
+// =============================================================
+async function guardarEnCacheVTEX(producto) {
+    if (!producto.plu && !producto.ean) {
+        return { success: false, error: 'Sin PLU ni EAN' };
+    }
 
-/**
- * Función auxiliar para mostrar notificaciones
- */
-function mostrarNotificacion(mensaje, tipo = 'info') {
-    // Crear elemento de notificación
-    const notif = document.createElement('div');
-    notif.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        border-radius: 8px;
-        color: white;
-        font-weight: 500;
-        z-index: 10000;
-        animation: slideIn 0.3s ease;
-        max-width: 400px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    try {
+        const response = await fetch('/api/v2/vtex-cache/guardar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                establecimiento: producto.establecimiento || '',
+                plu: producto.plu || '',
+                ean: producto.ean || '',
+                nombre: producto.nombre || '',
+                marca: producto.marca || '',
+                precio: producto.precio || 0,
+                categoria: producto.categoria || '',
+                presentacion: producto.presentacion || '',
+                url_producto: producto.url || '',
+                imagen_url: producto.imagen || ''
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log(`✅ Cache VTEX: ${data.accion} - ${producto.nombre}`);
+        }
+
+        return data;
+
+    } catch (error) {
+        console.error('Error guardando en cache:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// =============================================================
+// AGREGAR PLU DE VTEX A LA LISTA
+// =============================================================
+async function agregarPLUDeVTEX(pluVtex, establecimientoNombre, precio) {
+    console.log(`🌐 Agregando PLU VTEX: ${pluVtex} de ${establecimientoNombre}`);
+
+    // Cargar establecimientos si no están en cache
+    if (typeof cargarEstablecimientosCache === 'function') {
+        await cargarEstablecimientosCache();
+    }
+
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) return;
+
+    // Verificar si ya existe este PLU
+    const plusExistentes = contenedor.querySelectorAll('.plu-codigo');
+    for (let input of plusExistentes) {
+        if (input.value.trim() === pluVtex) {
+            console.log('⚠️ PLU ya existe');
+            return;
+        }
+    }
+
+    // Buscar ID del establecimiento
+    const establecimientoMap = {
+        'OLIMPICA': 'OLIMPICA', 'OLÍMPICA': 'OLIMPICA',
+        'EXITO': 'EXITO', 'ÉXITO': 'EXITO',
+        'CARULLA': 'CARULLA', 'JUMBO': 'JUMBO',
+        'ALKOSTO': 'ALKOSTO', 'MAKRO': 'MAKRO',
+        'COLSUBSIDIO': 'COLSUBSIDIO'
+    };
+
+    const estNorm = establecimientoMap[establecimientoNombre?.toUpperCase()] || establecimientoNombre?.toUpperCase();
+
+    let establecimientoId = null;
+    if (typeof establecimientosCache !== 'undefined' && establecimientosCache) {
+        for (let est of establecimientosCache) {
+            if (est.nombre_normalizado?.toUpperCase().includes(estNorm)) {
+                establecimientoId = est.id;
+                break;
+            }
+        }
+    }
+
+    // Crear elemento PLU
+    const pluDiv = document.createElement('div');
+    pluDiv.className = 'plu-item';
+    pluDiv.dataset.pluId = '';
+    pluDiv.dataset.origen = 'VTEX';
+
+    const optionsHTML = typeof establecimientosCache !== 'undefined' && establecimientosCache
+        ? establecimientosCache.map(e =>
+            `<option value="${e.id}" ${e.id == establecimientoId ? 'selected' : ''}>${e.nombre_normalizado}</option>`
+        ).join('')
+        : '';
+
+    pluDiv.innerHTML = `
+        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid #2563eb; border-radius: 8px; margin-bottom: 10px; background: #eff6ff;">
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">🌐 Establecimiento</label>
+                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px; background: white;">
+                    <option value="">Seleccionar...</option>
+                    ${optionsHTML}
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
+                <input type="text" class="plu-codigo" value="${pluVtex}" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px; background: #dbeafe;">
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
+                <input type="number" class="plu-precio" value="${precio || 0}" min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #93c5fd; border-radius: 4px;">
+            </div>
+            <div style="display: flex; align-items: center; padding-bottom: 3px;">
+                <span style="background: #2563eb; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">🌐 VTEX</span>
+            </div>
+            <button type="button" onclick="this.closest('.plu-item').remove();" style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+        </div>
     `;
 
-    switch (tipo) {
-        case 'success':
-            notif.style.background = '#10b981';
-            break;
-        case 'error':
-            notif.style.background = '#ef4444';
-            break;
-        case 'warning':
-            notif.style.background = '#f59e0b';
-            break;
-        default:
-            notif.style.background = '#3b82f6';
-    }
-
-    notif.textContent = mensaje;
-    document.body.appendChild(notif);
-
-    // Remover después de 3 segundos
-    setTimeout(() => {
-        notif.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => notif.remove(), 300);
-    }, 3000);
+    contenedor.appendChild(pluDiv);
+    pluDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-// Agregar estilos de animación
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
+// =============================================================
+// CARGAR PLUs DEL PRODUCTO (CON ORIGEN)
+// =============================================================
+async function cargarPLUsProducto(productoId) {
+    console.log(`📋 Cargando PLUs del producto ${productoId}`);
+
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) return;
+
+    if (typeof cargarEstablecimientosCache === 'function') {
+        await cargarEstablecimientosCache();
     }
-    @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
+
+    const apiBase = typeof getApiBase === 'function' ? getApiBase() : '';
+
+    try {
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/plus`);
+        if (!response.ok) throw new Error('Error cargando PLUs');
+
+        const data = await response.json();
+        contenedor.innerHTML = '';
+
+        if (!data.plus || data.plus.length === 0) {
+            contenedor.innerHTML = `
+                <p style="color: #6b7280; padding: 15px; text-align: center; background: #f9fafb; border-radius: 8px;">
+                    No hay PLUs registrados. Usa el buscador VTEX para agregar.
+                </p>
+            `;
+            return;
+        }
+
+        const optionsHTML = typeof establecimientosCache !== 'undefined' && establecimientosCache
+            ? establecimientosCache.map(e => `<option value="${e.id}">${e.nombre_normalizado}</option>`).join('')
+            : '';
+
+        data.plus.forEach(plu => {
+            const origen = plu.origen_codigo || 'FACTURA';
+            const esVTEX = origen === 'VTEX';
+            const borderColor = esVTEX ? '#2563eb' : '#10b981';
+            const bgColor = esVTEX ? '#eff6ff' : '#f0fdf4';
+            const badgeColor = esVTEX ? '#2563eb' : '#059669';
+            const badgeBg = esVTEX ? '#dbeafe' : '#d1fae5';
+            const badgeText = esVTEX ? '🌐 VTEX' : '📄 Factura';
+
+            const pluDiv = document.createElement('div');
+            pluDiv.className = 'plu-item';
+            pluDiv.dataset.pluId = plu.id || '';
+            pluDiv.dataset.origen = origen;
+
+            pluDiv.innerHTML = `
+                <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid ${borderColor}; border-radius: 8px; margin-bottom: 10px; background: ${bgColor};">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Establecimiento</label>
+                        <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                            <option value="">Seleccionar...</option>
+                            ${optionsHTML.replace(`value="${plu.establecimiento_id}"`, `value="${plu.establecimiento_id}" selected`)}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
+                        <input type="text" class="plu-codigo" value="${plu.codigo_plu || ''}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
+                        <input type="number" class="plu-precio" value="${plu.precio_unitario || 0}" min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    </div>
+                    <div style="display: flex; align-items: center; padding-bottom: 3px;">
+                        <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">${badgeText}</span>
+                    </div>
+                    <button type="button" onclick="this.closest('.plu-item').remove();" style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+                </div>
+            `;
+
+            contenedor.appendChild(pluDiv);
+        });
+
+    } catch (error) {
+        console.error('❌ Error cargando PLUs:', error);
+        contenedor.innerHTML = '<p style="color: #dc2626; padding: 10px;">Error cargando PLUs</p>';
     }
-`;
-document.head.appendChild(style);
+}
+
+// =============================================================
+// RECOPILAR PLUs PARA GUARDAR
+// =============================================================
+function recopilarPLUsParaGuardar() {
+    const plusItems = document.querySelectorAll('.plu-item');
+    const plus = [];
+
+    plusItems.forEach(item => {
+        const pluId = item.dataset.pluId;
+        const origen = item.dataset.origen || 'MANUAL';
+        const establecimientoSelect = item.querySelector('.plu-establecimiento');
+        const codigoInput = item.querySelector('.plu-codigo');
+        const precioInput = item.querySelector('.plu-precio');
+
+        if (!establecimientoSelect || !codigoInput) return;
+
+        const establecimientoId = parseInt(establecimientoSelect.value);
+        const codigo = codigoInput.value.trim();
+        const precio = precioInput ? parseFloat(precioInput.value) || 0 : 0;
+
+        if (!codigo || !establecimientoId) return;
+
+        const pluData = {
+            codigo_plu: codigo,
+            establecimiento_id: establecimientoId,
+            precio_unitario: precio,
+            origen_codigo: origen
+        };
+
+        if (pluId && pluId !== '' && pluId !== 'undefined' && pluId !== 'null') {
+            pluData.id = parseInt(pluId);
+        }
+
+        plus.push(pluData);
+    });
+
+    console.log('📦 PLUs a guardar:', plus);
+    return { plus, plus_a_eliminar: [] };
+}
+
+// =============================================================
+// AGREGAR PLU MANUAL
+// =============================================================
+async function agregarPLUEditable() {
+    if (typeof cargarEstablecimientosCache === 'function') {
+        await cargarEstablecimientosCache();
+    }
+
+    const contenedor = document.getElementById('contenedorPLUs');
+    if (!contenedor) return;
+
+    // Quitar mensaje vacío
+    const mensaje = contenedor.querySelector('p');
+    if (mensaje) mensaje.remove();
+
+    const optionsHTML = typeof establecimientosCache !== 'undefined' && establecimientosCache
+        ? establecimientosCache.map(e => `<option value="${e.id}">${e.nombre_normalizado}</option>`).join('')
+        : '';
+
+    const pluDiv = document.createElement('div');
+    pluDiv.className = 'plu-item';
+    pluDiv.dataset.pluId = '';
+    pluDiv.dataset.origen = 'MANUAL';
+
+    pluDiv.innerHTML = `
+        <div class="plu-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; align-items: end; padding: 12px; border: 2px solid #f59e0b; border-radius: 8px; margin-bottom: 10px; background: #fffbeb;">
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Establecimiento</label>
+                <select class="plu-establecimiento" style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px; background: white;">
+                    <option value="">Seleccionar...</option>
+                    ${optionsHTML}
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Código PLU</label>
+                <input type="text" class="plu-codigo" placeholder="Ej: 1234" style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px;">
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 12px;">Precio</label>
+                <input type="number" class="plu-precio" placeholder="0" min="0" step="1" style="width: 100%; padding: 8px; border: 1px solid #fcd34d; border-radius: 4px;">
+            </div>
+            <div style="display: flex; align-items: center; padding-bottom: 3px;">
+                <span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">✏️ Manual</span>
+            </div>
+            <button type="button" onclick="this.closest('.plu-item').remove();" style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+        </div>
+    `;
+
+    contenedor.appendChild(pluDiv);
+    pluDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// =============================================================
+// CONFIGURAR BUSCADOR VTEX (ENTER)
+// =============================================================
+function configurarBuscadorVTEX() {
+    const input = document.getElementById('vtex-busqueda');
+    if (input) {
+        input.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                buscarProductosVTEX();
+            }
+        });
+    }
+}
+
+// =============================================================
+// EXPORTAR FUNCIONES
+// =============================================================
+window.buscarProductosVTEX = buscarProductosVTEX;
+window.seleccionarProductoVTEX = seleccionarProductoVTEX;
+window.agregarPLUDeVTEX = agregarPLUDeVTEX;
+window.cargarPLUsProducto = cargarPLUsProducto;
+window.recopilarPLUsParaGuardar = recopilarPLUsParaGuardar;
+window.agregarPLUEditable = agregarPLUEditable;
+window.configurarBuscadorVTEX = configurarBuscadorVTEX;
