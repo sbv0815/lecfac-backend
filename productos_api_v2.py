@@ -1378,7 +1378,7 @@ async def obtener_historial_plu(establecimiento: str, codigo_plu: str):
 # =============================================================
 
 
-@router.get("/productos/{producto_id}/factura")
+@router.get("/api/v2/productos/{producto_id}/factura")
 async def obtener_factura_producto(producto_id: int):
     """
     Obtiene la(s) factura(s) donde apareció un producto.
@@ -1486,7 +1486,7 @@ async def obtener_factura_producto(producto_id: int):
 from web_enricher import WebEnricher, es_tienda_vtex, SUPERMERCADOS_VTEX
 
 
-@router.get("/buscar-vtex/{establecimiento}/{codigo}")
+@router.get("/api/v2/buscar-vtex/{establecimiento}/{codigo}")
 async def buscar_en_vtex(establecimiento: str, codigo: str):
     """
     Busca un código PLU/EAN en la API VTEX del supermercado.
@@ -1575,7 +1575,7 @@ async def buscar_en_vtex(establecimiento: str, codigo: str):
         conn.close()
 
 
-@router.get("/supermercados-vtex")
+@router.get("/api/v2/supermercados-vtex")
 async def listar_supermercados_vtex():
     """
     Lista los supermercados con API VTEX disponible.
@@ -1646,7 +1646,7 @@ def _buscar_plu_variante(args):
     return []
 
 
-@router.get("/buscar-productos/{establecimiento}")
+@router.get("/api/v2/buscar-productos/{establecimiento}")
 async def buscar_productos_vtex(
     establecimiento: str,
     q: str = None,  # Término de búsqueda (PLU parcial o nombre)
