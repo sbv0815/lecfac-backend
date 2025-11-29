@@ -910,19 +910,87 @@
                 </div>
 
                 <!-- ========================================
-                     📷 IMAGEN DEL PRODUCTO (VTEX CACHE)
-                     ======================================== -->
-                <div id="producto-imagen-section" class="producto-imagen-section" style="display: none;">
-                    <div class="producto-imagen-container">
-                        <img id="producto-imagen-modal" src="" alt="Imagen del producto">
+     🖼️ SECCIÓN DE IMÁGENES DUAL - V2.0
+     Auditoría (foto real) + VTEX (catálogo)
+     ======================================== -->
+                <div id="producto-imagenes-section" class="producto-imagenes-dual"
+                    style="display: none; margin-bottom: 20px; padding: 15px; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                    <h4 style="margin: 0 0 15px 0; color: #374151; font-size: 14px;">
+                        🖼️ Imágenes del Producto
+                    </h4>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+
+                        <!-- 📸 IMAGEN DE AUDITORÍA -->
+                        <div id="imagen-auditoria-container"
+                            style="background: linear-gradient(135deg, #fdf4ff, #f5d0fe); border: 2px solid #a855f7; border-radius: 12px; padding: 15px; text-align: center;">
+                            <div
+                                style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px;">
+                                <span style="font-size: 20px;">📸</span>
+                                <span style="font-weight: 600; color: #7c3aed; font-size: 13px;">Foto de
+                                    Auditoría</span>
+                            </div>
+
+                            <div id="imagen-auditoria-wrapper"
+                                style="background: white; border-radius: 8px; padding: 10px; min-height: 150px; display: flex; align-items: center; justify-content: center;">
+                                <div id="imagen-auditoria-loading" style="color: #9ca3af;">
+                                    <div class="loading" style="width: 24px; height: 24px; margin: 0 auto 8px;"></div>
+                                    <span style="font-size: 12px;">Buscando...</span>
+                                </div>
+                                <img id="imagen-auditoria-img" src="" alt="Imagen auditoría"
+                                    style="max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 6px; display: none; cursor: pointer;"
+                                    onclick="ampliarImagenModal(this.src, 'Foto de Auditoría')">
+                                <div id="imagen-auditoria-empty"
+                                    style="display: none; color: #9ca3af; font-size: 13px;">
+                                    <span style="font-size: 32px; display: block; margin-bottom: 8px;">📷</span>
+                                    Sin foto de auditoría
+                                </div>
+                            </div>
+
+                            <div id="imagen-auditoria-info"
+                                style="margin-top: 10px; font-size: 11px; color: #6b7280; display: none;"></div>
+                        </div>
+
+                        <!-- 🌐 IMAGEN VTEX -->
+                        <div id="imagen-vtex-container"
+                            style="background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 2px solid #2563eb; border-radius: 12px; padding: 15px; text-align: center;">
+                            <div
+                                style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px;">
+                                <span style="font-size: 20px;">🌐</span>
+                                <span style="font-weight: 600; color: #1d4ed8; font-size: 13px;">Catálogo Web</span>
+                            </div>
+
+                            <div id="imagen-vtex-wrapper"
+                                style="background: white; border-radius: 8px; padding: 10px; min-height: 150px; display: flex; align-items: center; justify-content: center;">
+                                <div id="imagen-vtex-loading" style="color: #9ca3af;">
+                                    <div class="loading" style="width: 24px; height: 24px; margin: 0 auto 8px;"></div>
+                                    <span style="font-size: 12px;">Buscando...</span>
+                                </div>
+                                <img id="imagen-vtex-img" src="" alt="Imagen VTEX"
+                                    style="max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 6px; display: none; cursor: pointer;"
+                                    onclick="ampliarImagenModal(this.src, 'Imagen del Catálogo Web')">
+                                <div id="imagen-vtex-empty" style="display: none; color: #9ca3af; font-size: 13px;">
+                                    <span style="font-size: 32px; display: block; margin-bottom: 8px;">🌐</span>
+                                    Sin imagen en catálogo
+                                </div>
+                            </div>
+
+                            <div id="imagen-vtex-info"
+                                style="margin-top: 10px; font-size: 11px; color: #6b7280; display: none;"></div>
+                        </div>
                     </div>
-                    <div class="producto-imagen-info">
-                        <h4>📷 Imagen del Catálogo</h4>
-                        <p id="imagen-nombre-vtex">-</p>
-                        <p id="imagen-establecimiento-vtex">-</p>
-                        <span class="vtex-badge">🌐 VTEX Cache</span>
+
+                    <!-- Mensaje cuando no hay ninguna imagen -->
+                    <div id="imagenes-no-disponibles"
+                        style="display: none; text-align: center; padding: 20px; color: #6b7280;">
+                        <span style="font-size: 36px;">🖼️</span>
+                        <p style="margin: 10px 0 0;">No hay imágenes disponibles para este producto</p>
+                        <p style="font-size: 12px; margin-top: 5px;">Usa el buscador VTEX o escanea con la app de
+                            auditoría</p>
                     </div>
                 </div>
+                <!-- FIN SECCIÓN IMÁGENES DUAL -->
+
                 <!-- FIN IMAGEN -->
 
                 <!-- Datos del Producto -->

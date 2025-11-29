@@ -2762,3 +2762,340 @@ window.cargarImagenEnModal = cargarImagenEnModal;
 window.buscarImagenCache = buscarImagenCache;
 
 console.log('✅ Sistema de imágenes VTEX Cache cargado');
+// =============================================================
+// 🖼️ SISTEMA DE IMÁGENES DUAL - V2.0
+// =============================================================
+// Agregar al final de productos.js
+// Muestra lado a lado: Auditoría (foto real) + VTEX (catálogo)
+// =============================================================
+
+/**
+ * Cargar TODAS las imágenes del producto en el modal de edición
+ * Se llama desde editarProducto() después de cargar los datos
+ */
+async function cargarImagenesDuales(productoId, ean) {
+    console.log(`🖼️ Cargando imágenes duales - Producto: ${productoId}, EAN: ${ean}`);
+
+    const seccion = document.getElementById('producto-imagenes-section');
+    if (!seccion) {
+        console.log('⚠️ Sección de imágenes no encontrada en el DOM');
+        return;
+    }
+
+    // Resetear estados
+    resetearEstadosImagenes();
+
+    // Si no hay EAN, ocultar sección
+    if (!ean) {
+        seccion.style.display = 'none';
+        return;
+    }
+
+    // Mostrar sección con loading
+    seccion.style.display = 'block';
+
+    const apiBase = typeof getApiBase === 'function' ? getApiBase() : '';
+
+    try {
+        // Llamar al endpoint que trae AMBAS imágenes
+        const response = await fetch(`${apiBase}/api/v2/productos/${productoId}/imagenes`);
+        const data = await response.json();
+
+        if (!data.success) {
+            console.log('⚠️ Error obteniendo imágenes:', data.error);
+            mostrarSinImagenes();
+            return;
+        }
+
+        let tieneAlguna = false;
+
+        // 1. Procesar imagen de AUDITORÍA
+        if (data.imagenes.auditoria && data.imagenes.auditoria.data_url) {
+            mostrarImagenAuditoria(data.imagenes.auditoria);
+            tieneAlguna = true;
+        } else {
+            mostrarSinImagenAuditoria();
+        }
+
+        // 2. Procesar imagen de VTEX
+        if (data.imagenes.vtex && data.imagenes.vtex.data_url) {
+            mostrarImagenVTEX(data.imagenes.vtex);
+            tieneAlguna = true;
+        } else {
+            mostrarSinImagenVTEX();
+        }
+
+        // Si no hay ninguna imagen
+        if (!tieneAlguna) {
+            mostrarSinImagenes();
+        }
+
+        console.log(`✅ Imágenes cargadas: Auditoría=${!!data.imagenes.auditoria}, VTEX=${!!data.imagenes.vtex}`);
+
+    } catch (error) {
+        console.error('❌ Error cargando imágenes:', error);
+        mostrarSinImagenes();
+    }
+}
+
+/**
+ * Resetear estados de las imágenes (loading)
+ */
+function resetearEstadosImagenes() {
+    // Auditoría
+    const audLoading = document.getElementById('imagen-auditoria-loading');
+    const audImg = document.getElementById('imagen-auditoria-img');
+    const audEmpty = document.getElementById('imagen-auditoria-empty');
+    const audInfo = document.getElementById('imagen-auditoria-info');
+
+    if (audLoading) audLoading.style.display = 'block';
+    if (audImg) { audImg.style.display = 'none'; audImg.src = ''; }
+    if (audEmpty) audEmpty.style.display = 'none';
+    if (audInfo) { audInfo.style.display = 'none'; audInfo.innerHTML = ''; }
+
+    // VTEX
+    const vtexLoading = document.getElementById('imagen-vtex-loading');
+    const vtexImg = document.getElementById('imagen-vtex-img');
+    const vtexEmpty = document.getElementById('imagen-vtex-empty');
+    const vtexInfo = document.getElementById('imagen-vtex-info');
+
+    if (vtexLoading) vtexLoading.style.display = 'block';
+    if (vtexImg) { vtexImg.style.display = 'none'; vtexImg.src = ''; }
+    if (vtexEmpty) vtexEmpty.style.display = 'none';
+    if (vtexInfo) { vtexInfo.style.display = 'none'; vtexInfo.innerHTML = ''; }
+
+    // Mensaje de sin imágenes
+    const noDisponibles = document.getElementById('imagenes-no-disponibles');
+    if (noDisponibles) noDisponibles.style.display = 'none';
+}
+
+/**
+ * Mostrar imagen de AUDITORÍA
+ */
+function mostrarImagenAuditoria(datos) {
+    const loading = document.getElementById('imagen-auditoria-loading');
+    const img = document.getElementById('imagen-auditoria-img');
+    const info = document.getElementById('imagen-auditoria-info');
+
+    if (loading) loading.style.display = 'none';
+
+    if (img && datos.data_url) {
+        img.src = datos.data_url;
+        img.style.display = 'block';
+        img.title = 'Click para ampliar';
+    }
+
+    if (info) {
+        info.innerHTML = `
+            <strong>${datos.nombre || ''}</strong><br>
+            ${datos.marca ? `Marca: ${datos.marca}<br>` : ''}
+            ${datos.fecha ? `📅 ${formatearFecha(datos.fecha)}` : ''}
+        `;
+        info.style.display = 'block';
+    }
+}
+
+/**
+ * Mostrar que NO hay imagen de auditoría
+ */
+function mostrarSinImagenAuditoria() {
+    const loading = document.getElementById('imagen-auditoria-loading');
+    const empty = document.getElementById('imagen-auditoria-empty');
+
+    if (loading) loading.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+}
+
+/**
+ * Mostrar imagen de VTEX
+ */
+function mostrarImagenVTEX(datos) {
+    const loading = document.getElementById('imagen-vtex-loading');
+    const img = document.getElementById('imagen-vtex-img');
+    const info = document.getElementById('imagen-vtex-info');
+
+    if (loading) loading.style.display = 'none';
+
+    if (img && datos.data_url) {
+        img.src = datos.data_url;
+        img.style.display = 'block';
+        img.title = 'Click para ampliar';
+    }
+
+    if (info) {
+        info.innerHTML = `
+            <strong>${datos.nombre || ''}</strong><br>
+            ${datos.establecimiento ? `📍 ${datos.establecimiento}<br>` : ''}
+            ${datos.fecha ? `📅 ${formatearFecha(datos.fecha)}` : ''}
+        `;
+        info.style.display = 'block';
+    }
+}
+
+/**
+ * Mostrar que NO hay imagen de VTEX
+ */
+function mostrarSinImagenVTEX() {
+    const loading = document.getElementById('imagen-vtex-loading');
+    const empty = document.getElementById('imagen-vtex-empty');
+
+    if (loading) loading.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+}
+
+/**
+ * Mostrar mensaje de que no hay NINGUNA imagen
+ */
+function mostrarSinImagenes() {
+    mostrarSinImagenAuditoria();
+    mostrarSinImagenVTEX();
+
+    const noDisponibles = document.getElementById('imagenes-no-disponibles');
+    if (noDisponibles) {
+        noDisponibles.style.display = 'block';
+    }
+}
+
+/**
+ * Ampliar imagen en modal grande
+ */
+function ampliarImagenModal(src, titulo = 'Imagen del Producto') {
+    if (!src) return;
+
+    let modal = document.getElementById('modal-imagen-ampliada-simple');
+
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-imagen-ampliada-simple';
+        modal.style.cssText = `
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 3000;
+            padding: 20px;
+            cursor: pointer;
+            overflow: auto;
+        `;
+        modal.onclick = function (e) {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        };
+        document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+        <div style="
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px 25px;
+            border-radius: 25px;
+            font-weight: 500;
+            z-index: 3001;
+        ">
+            ${titulo}
+            <button onclick="document.getElementById('modal-imagen-ampliada-simple').style.display='none'"
+                    style="margin-left: 15px; background: #dc2626; color: white; border: none; padding: 5px 15px; border-radius: 15px; cursor: pointer;">
+                ✕ Cerrar
+            </button>
+        </div>
+
+        <div style="
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100%;
+            padding-top: 60px;
+        ">
+            <img src="${src}" style="
+                max-width: 95%;
+                max-height: 85vh;
+                object-fit: contain;
+                border-radius: 8px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            ">
+        </div>
+
+        <div style="
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #9ca3af;
+            font-size: 13px;
+        ">
+            Click fuera de la imagen para cerrar
+        </div>
+    `;
+
+    modal.style.display = 'block';
+
+    // Cerrar con ESC
+    const handleEsc = (e) => {
+        if (e.key === 'Escape') {
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', handleEsc);
+        }
+    };
+    document.addEventListener('keydown', handleEsc);
+}
+
+/**
+ * Formatear fecha ISO a formato legible
+ */
+function formatearFecha(fechaISO) {
+    if (!fechaISO) return '';
+    try {
+        const fecha = new Date(fechaISO);
+        return fecha.toLocaleDateString('es-CO', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+    } catch (e) {
+        return fechaISO;
+    }
+}
+
+// =============================================================
+// 🔧 MODIFICAR editarProducto() PARA CARGAR IMÁGENES
+// =============================================================
+// Busca la función editarProducto() existente y agrega esta línea
+// DESPUÉS de mostrar el modal:
+//
+//     // Cargar imágenes duales
+//     await cargarImagenesDuales(producto.id, producto.codigo_ean);
+//
+// Ejemplo de dónde agregarlo:
+/*
+async function editarProducto(id) {
+    // ... código existente ...
+
+    // Mostrar modal
+    document.getElementById("modal-editar").classList.add("active");
+
+    // 🆕 AGREGAR ESTA LÍNEA:
+    await cargarImagenesDuales(id, producto.codigo_ean);
+
+    // ... resto del código ...
+}
+*/
+
+// =============================================================
+// EXPORTAR FUNCIONES
+// =============================================================
+window.cargarImagenesDuales = cargarImagenesDuales;
+window.ampliarImagenModal = ampliarImagenModal;
+window.mostrarImagenAuditoria = mostrarImagenAuditoria;
+window.mostrarImagenVTEX = mostrarImagenVTEX;
+window.resetearEstadosImagenes = resetearEstadosImagenes;
+
+console.log('✅ Sistema de imágenes duales cargado');

@@ -1,675 +1,134 @@
 """
-product_matcher.py - VERSIÓN 9.6 - BÚSQUEDA POR PRECIO EXACTO + PLU SIMILAR
-========================================================================
+============================================================================
+PRODUCT MATCHER V10.0 - CON VALIDACIÓN DE AUDITORÍA
+============================================================================
+Versión: 10.0
+Fecha: 2025-11-29
 
-🎯 CAMBIOS V9.6:
-- 🆕 PASO 1.5: Busca por PRECIO EXACTO + PLU similar (±2 dígitos)
-- 🆕 Corrige errores OCR automáticamente (2326489 → 2326439)
-- 🆕 El precio es el criterio más confiable del OCR
-- ✅ Reduce duplicados causados por errores de lectura de PLU
+FLUJO DE VALIDACIÓN (orden de prioridad):
+1. PAPA - Producto ya validado 100%
+2. AUDITORÍA - EAN escaneado manualmente
+3. WEB (VTEX) - API del supermercado + validar contra auditoría
+4. CACHE VTEX - Datos guardados de búsquedas anteriores
+5. OCR - Última opción, solo datos del ticket
 
-🎯 CAMBIOS V9.5 (heredados):
-- ✅ Actualiza productos EXISTENTES con datos del web
-- ✅ Prioriza nombre del web sobre nombre OCR
-
-🎯 CAMBIOS V9.4 (heredados):
-- ✅ PASO 3.5 - Enriquecimiento Web antes de crear producto
-- ✅ Busca en cache local (plu_supermercado_mapping) primero
-
-AUTOR: LecFac Team
-ULTIMA ACTUALIZACION: 2025-11-28
-========================================================================
+============================================================================
 """
 
 import re
-from unidecode import unidecode
 from typing import Optional, Dict, Any, Tuple
-import traceback
+from difflib import SequenceMatcher
+from datetime import datetime
+
+# ============================================================================
+# CONFIGURACIÓN
+# ============================================================================
+
+UMBRAL_SIMILITUD_NOMBRE = 0.85  # 85% de similitud para considerar match
+UMBRAL_SIMILITUD_AUDITORIA = 0.80  # 80% para match con auditoría (más permisivo)
+
+PALABRAS_IGNORAR = {
+    "DE",
+    "LA",
+    "EL",
+    "EN",
+    "CON",
+    "SIN",
+    "POR",
+    "PARA",
+    "UND",
+    "UN",
+    "UNA",
+    "GR",
+    "ML",
+    "KG",
+    "LT",
+    "X",
+    "Y",
+    "O",
+    "A",
+    "AL",
+    "DEL",
+    "LOS",
+    "LAS",
+    "MAS",
+    "MENOS",
+    "PACK",
+    "PAQUETE",
+    "BOLSA",
+    "CAJA",
+    "BOTELLA",
+    "LATA",
+}
 
 
 # ============================================================================
-# IMPORTAR MÓDULOS
-# ============================================================================
-
-CORRECCIONES_OCR_AVAILABLE = False
-
-try:
-    from perplexity_validator import validar_con_perplexity
-
-    PERPLEXITY_AVAILABLE = True
-except ImportError:
-    PERPLEXITY_AVAILABLE = False
-    print("⚠️  perplexity_validator.py no disponible")
-
-try:
-    from aprendizaje_manager import AprendizajeManager
-
-    APRENDIZAJE_AVAILABLE = True
-except ImportError:
-    APRENDIZAJE_AVAILABLE = False
-    print("⚠️  aprendizaje_manager.py no disponible")
-
-try:
-    from plu_consolidator import aplicar_consolidacion_plu, ENABLE_PLU_CONSOLIDATION
-
-    PLU_CONSOLIDATOR_AVAILABLE = True
-except ImportError:
-    PLU_CONSOLIDATOR_AVAILABLE = False
-    ENABLE_PLU_CONSOLIDATION = False
-    print("⚠️  plu_consolidator.py no disponible")
-
-# 🆕 V9.4: Importar Web Enricher para enriquecimiento vía scraping VTEX
-try:
-    from web_enricher import WebEnricher, es_supermercado_vtex
-
-    WEB_ENRICHER_AVAILABLE = True
-except ImportError:
-    WEB_ENRICHER_AVAILABLE = False
-    print("⚠️  web_enricher.py no disponible")
-
-
-# ============================================================================
-# FUNCIONES AUXILIARES
+# FUNCIONES DE UTILIDAD
 # ============================================================================
 
 
-def normalizar_nombre_producto(
-    nombre: str, aplicar_correcciones_ocr: bool = True
-) -> str:
-    """Normaliza nombre del producto para búsquedas"""
+def limpiar_nombre(nombre: str) -> str:
+    """Limpia y normaliza un nombre de producto"""
     if not nombre:
         return ""
 
-    nombre = nombre.upper()
-    nombre = unidecode(nombre)
+    nombre = nombre.upper().strip()
     nombre = re.sub(r"[^\w\s]", " ", nombre)
     nombre = re.sub(r"\s+", " ", nombre)
 
-    return nombre.strip()[:100]
+    return nombre.strip()
 
 
 def calcular_similitud(nombre1: str, nombre2: str) -> float:
-    """Calcula similitud entre dos nombres de productos"""
-    n1 = normalizar_nombre_producto(nombre1, False)
-    n2 = normalizar_nombre_producto(nombre2, False)
-
-    if n1 == n2:
-        return 1.0
-
-    if n1 in n2 or n2 in n1:
-        return 0.8 + (0.2 * min(len(n1), len(n2)) / max(len(n1), len(n2)))
-
-    palabras1 = set(n1.split())
-    palabras2 = set(n2.split())
-
-    if not palabras1.union(palabras2):
+    """Calcula similitud entre dos nombres (0.0 - 1.0)"""
+    if not nombre1 or not nombre2:
         return 0.0
 
-    return len(palabras1.intersection(palabras2)) / len(palabras1.union(palabras2))
+    n1 = limpiar_nombre(nombre1)
+    n2 = limpiar_nombre(nombre2)
 
+    # Similitud directa
+    ratio = SequenceMatcher(None, n1, n2).ratio()
 
-def clasificar_codigo_tipo(codigo: str) -> str:
-    """Clasifica el tipo de código del producto"""
-    if not codigo:
-        return "DESCONOCIDO"
+    # Similitud por palabras significativas
+    palabras1 = set(p for p in n1.split() if p not in PALABRAS_IGNORAR and len(p) >= 3)
+    palabras2 = set(p for p in n2.split() if p not in PALABRAS_IGNORAR and len(p) >= 3)
 
-    codigo_limpio = "".join(filter(str.isdigit, str(codigo)))
-    longitud = len(codigo_limpio)
+    if palabras1 and palabras2:
+        interseccion = palabras1 & palabras2
+        union = palabras1 | palabras2
+        jaccard = len(interseccion) / len(union) if union else 0
 
-    if longitud >= 8:
-        return "EAN"
-    elif 3 <= longitud <= 7:
-        return "PLU"
+        # Promedio ponderado
+        return (ratio * 0.6) + (jaccard * 0.4)
 
-    return "DESCONOCIDO"
-
-
-def detectar_cadena(establecimiento: str) -> str:
-    """Detecta la cadena principal del establecimiento"""
-    if not establecimiento:
-        return "DESCONOCIDO"
-
-    establecimiento_upper = establecimiento.upper()
-
-    cadenas = {
-        "JUMBO": "JUMBO",
-        "EXITO": "EXITO",
-        "CARULLA": "CARULLA",
-        "OLIMPICA": "OLIMPICA",
-        "D1": "D1",
-        "ARA": "ARA",
-        "CRUZ VERDE": "CRUZ VERDE",
-        "FARMATODO": "FARMATODO",
-    }
-
-    for cadena_key, cadena_value in cadenas.items():
-        if cadena_key in establecimiento_upper:
-            return cadena_value
-
-    return establecimiento_upper.split()[0] if establecimiento_upper else "DESCONOCIDO"
-
-
-def buscar_en_productos_referencia(codigo_ean: str, cursor) -> Optional[Dict[str, Any]]:
-    """Busca producto en la tabla de referencia oficial"""
-    import os
-
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-    param = "%s" if is_postgresql else "?"
-
-    if not codigo_ean or len(codigo_ean) < 8:
-        return None
-
-    try:
-        cursor.execute(
-            f"""
-            SELECT codigo_ean, nombre, marca, categoria, presentacion, unidad_medida
-            FROM productos_referencia
-            WHERE codigo_ean = {param}
-            LIMIT 1
-        """,
-            (codigo_ean,),
-        )
-
-        resultado = cursor.fetchone()
-
-        if not resultado:
-            return None
-
-        ean = resultado[0]
-        nombre = resultado[1] or ""
-        marca = resultado[2] or ""
-        categoria = resultado[3] or ""
-        presentacion = resultado[4] or ""
-        unidad_medida = resultado[5] or ""
-
-        partes = []
-        if marca:
-            partes.append(marca.upper().strip())
-        if nombre:
-            partes.append(nombre.upper().strip())
-        if presentacion:
-            partes.append(presentacion.upper().strip())
-        if unidad_medida and unidad_medida.upper() not in ["UNIDAD", "UND", "U"]:
-            partes.append(unidad_medida.upper().strip())
-
-        nombre_oficial = " ".join(partes)
-
-        return {
-            "codigo_ean": ean,
-            "nombre_oficial": nombre_oficial,
-            "marca": marca,
-            "nombre": nombre,
-            "presentacion": presentacion,
-            "categoria": categoria,
-            "unidad_medida": unidad_medida,
-            "fuente": "productos_referencia",
-        }
-
-    except Exception as e:
-        print(f"   ⚠️ Error buscando en productos_referencia: {e}")
-        return None
-
-
-def buscar_nombre_por_plu_historial(
-    codigo_plu: str, establecimiento_id: int, cursor
-) -> Optional[Dict[str, Any]]:
-    """Busca el nombre más común para un PLU en el historial de compras - USA V2"""
-    if not codigo_plu or not establecimiento_id:
-        return None
-
-    try:
-        cursor.execute(
-            """
-            SELECT pm.nombre_consolidado, COUNT(*) as frecuencia, MAX(if2.fecha_creacion) as ultima_vez
-            FROM items_factura if2
-            JOIN productos_maestros_v2 pm ON if2.producto_maestro_id = pm.id
-            JOIN facturas f ON if2.factura_id = f.id
-            WHERE if2.codigo_leido = %s AND f.establecimiento_id = %s
-            GROUP BY pm.nombre_consolidado
-            ORDER BY frecuencia DESC, ultima_vez DESC
-            LIMIT 1
-        """,
-            (codigo_plu, establecimiento_id),
-        )
-
-        resultado = cursor.fetchone()
-
-        if resultado and len(resultado) >= 3:
-            frecuencia = resultado[1] or 1
-            return {
-                "nombre": resultado[0],
-                "frecuencia": frecuencia,
-                "ultima_vez": resultado[2],
-                "fuente": "historial_plu",
-                "confianza": min(0.85, 0.65 + (frecuencia * 0.05)),
-            }
-
-        return None
-
-    except Exception as e:
-        print(f"   ⚠️ Error buscando PLU en historial: {e}")
-        return None
-
-
-def marcar_para_revision_admin(
-    cursor,
-    conn,
-    producto_maestro_id: int,
-    nombre_ocr: str,
-    nombre_sugerido: str,
-    codigo: str,
-    establecimiento: str,
-    razon: str,
-) -> bool:
-    """Marca un producto para revisión por administrador"""
-    try:
-        cursor.execute(
-            """
-            INSERT INTO productos_revision_admin (
-                producto_maestro_id, nombre_ocr_original, nombre_sugerido, codigo_producto,
-                establecimiento, motivo_revision, razon_revision, estado, fecha_creacion
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'pendiente', CURRENT_TIMESTAMP)
-            ON CONFLICT (producto_maestro_id)
-            DO UPDATE SET
-                nombre_ocr_original = EXCLUDED.nombre_ocr_original,
-                nombre_sugerido = EXCLUDED.nombre_sugerido,
-                motivo_revision = EXCLUDED.motivo_revision,
-                razon_revision = EXCLUDED.razon_revision,
-                fecha_creacion = CURRENT_TIMESTAMP,
-                estado = 'pendiente'
-        """,
-            (
-                producto_maestro_id,
-                nombre_ocr[:200] if nombre_ocr else "",
-                nombre_sugerido[:200] if nombre_sugerido else "",
-                codigo[:50] if codigo else "",
-                establecimiento[:100] if establecimiento else "",
-                razon[:500] if razon else "Sin especificar",
-                razon[:500] if razon else "Sin especificar",
-            ),
-        )
-        conn.commit()
-        print(f"      📋 Marcado para revisión: {nombre_ocr[:40]}")
-        return True
-    except Exception as e:
-        print(f"      ⚠️ Error marcando para revisión: {e}")
-        return False
-
-
-def validar_nombre_con_sistema_completo(
-    nombre_ocr_original: str,
-    nombre_corregido: str,
-    precio: int,
-    establecimiento: str,
-    codigo: str = "",
-    aprendizaje_mgr=None,
-    factura_id: int = None,
-    usuario_id: int = None,
-    item_factura_id: int = None,
-    cursor=None,
-    establecimiento_id: int = None,
-    datos_web: Dict[str, Any] = None,
-) -> dict:
-    """V9.4: Sistema con jerarquía de validación + datos web"""
-
-    tipo_codigo = clasificar_codigo_tipo(codigo)
-    cadena = detectar_cadena(establecimiento)
-    marcar_revision = False
-    razon_revision = ""
-
-    # 🆕 V9.4: SI TENEMOS DATOS WEB → Usar directamente (95% confianza)
-    if datos_web and datos_web.get("encontrado"):
-        nombre_web = datos_web.get("nombre_web", "")
-        if nombre_web:
-            print(f"   ✅ USANDO DATOS WEB (enriquecimiento)")
-            print(f"   📝 Nombre web: {nombre_web}")
-            print(f"   🎯 Confianza: 95% (fuente web)")
-
-            # Guardar en aprendizaje si está disponible
-            if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
-                try:
-                    aprendizaje_mgr.guardar_correccion_aprendida(
-                        ocr_original=nombre_ocr_original,
-                        ocr_normalizado=nombre_corregido,
-                        nombre_validado=nombre_web,
-                        establecimiento=cadena,
-                        confianza_inicial=0.95,
-                        codigo_ean=datos_web.get("codigo_ean", codigo),
-                    )
-                except Exception as e:
-                    print(f"      ⚠️ Error guardando aprendizaje: {e}")
-
-            return {
-                "nombre_final": nombre_web,
-                "fue_validado": True,
-                "confianza": 0.95,
-                "categoria_confianza": "muy_alta",
-                "fuente": f"web_{datos_web.get('fuente', 'vtex')}",
-                "detalles": f"Enriquecido desde {datos_web.get('supermercado', 'web')}",
-                "necesita_revision": False,
-                "razon_revision": "",
-                "marca": datos_web.get("marca"),
-                "codigo_ean_web": datos_web.get("codigo_ean"),
-            }
-
-    # PASO 1: BUSCAR EN PRODUCTOS_REFERENCIA (99%)
-    if tipo_codigo == "EAN" and codigo and cursor:
-        producto_oficial = buscar_en_productos_referencia(codigo, cursor)
-
-        if producto_oficial:
-            print(f"   ✅ ENCONTRADO EN PRODUCTOS REFERENCIA")
-            print(f"   📝 Nombre oficial: {producto_oficial['nombre_oficial']}")
-            print(f"   🎯 Confianza: 99% (fuente oficial)")
-
-            if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
-                try:
-                    aprendizaje_mgr.guardar_correccion_aprendida(
-                        ocr_original=nombre_ocr_original,
-                        ocr_normalizado=nombre_corregido,
-                        nombre_validado=producto_oficial["nombre_oficial"],
-                        establecimiento=cadena,
-                        confianza_inicial=0.99,
-                        codigo_ean=codigo,
-                    )
-                except Exception as e:
-                    print(f"      ⚠️ Error guardando aprendizaje: {e}")
-
-            return {
-                "nombre_final": producto_oficial["nombre_oficial"],
-                "fue_validado": True,
-                "confianza": 0.99,
-                "categoria_confianza": "muy_alta",
-                "fuente": "productos_referencia",
-                "detalles": f"Código EAN oficial: {codigo}",
-                "necesita_revision": False,
-                "razon_revision": "",
-                "marca": producto_oficial.get("marca"),
-            }
-        else:
-            marcar_revision = True
-            razon_revision = f"EAN {codigo} no está en productos_referencia"
-
-    # PASO 2: BUSCAR PLU EN HISTORIAL (80%)
-    if tipo_codigo == "PLU" and codigo and cursor and establecimiento_id:
-        resultado_plu = buscar_nombre_por_plu_historial(
-            codigo, establecimiento_id, cursor
-        )
-
-        if resultado_plu and resultado_plu["frecuencia"] >= 2:
-            print(f"   ✅ PLU ENCONTRADO EN HISTORIAL")
-            print(f"   📝 Nombre histórico: {resultado_plu['nombre']}")
-            print(f"   📊 Frecuencia: {resultado_plu['frecuencia']} veces")
-            print(f"   🎯 Confianza: {resultado_plu['confianza']:.0%}")
-
-            similitud = calcular_similitud(nombre_corregido, resultado_plu["nombre"])
-            if similitud < 0.70:
-                marcar_revision = True
-                razon_revision = (
-                    f"Discrepancia OCR vs Historial (similitud {similitud:.0%})"
-                )
-
-            return {
-                "nombre_final": resultado_plu["nombre"],
-                "fue_validado": True,
-                "confianza": resultado_plu["confianza"],
-                "categoria_confianza": (
-                    "alta" if resultado_plu["confianza"] >= 0.80 else "media"
-                ),
-                "fuente": "historial_plu",
-                "detalles": f"PLU {codigo} visto {resultado_plu['frecuencia']} veces",
-                "necesita_revision": marcar_revision,
-                "razon_revision": razon_revision,
-                "marca": None,
-            }
-        elif tipo_codigo == "PLU":
-            marcar_revision = True
-            razon_revision = f"PLU {codigo} es nuevo (menos de 2 apariciones)"
-
-    # PASO 3: BUSCAR EN APRENDIZAJE (70%+)
-    if APRENDIZAJE_AVAILABLE and aprendizaje_mgr:
-        try:
-            correccion = aprendizaje_mgr.buscar_correccion_aprendida(
-                ocr_normalizado=nombre_corregido,
-                establecimiento=cadena,
-                codigo_ean=codigo if tipo_codigo == "EAN" else None,
-            )
-
-            if correccion and correccion["confianza"] >= 0.80:
-                confianza = correccion["confianza"]
-                aprendizaje_mgr.incrementar_confianza(correccion["id"], True)
-
-                print(f"   ✅ ENCONTRADO EN APRENDIZAJE")
-                print(f"   📝 Nombre validado: {correccion['nombre_validado']}")
-                print(f"   🎯 Confianza: {confianza:.0%}")
-
-                return {
-                    "nombre_final": correccion["nombre_validado"],
-                    "fue_validado": True,
-                    "confianza": confianza,
-                    "categoria_confianza": "alta" if confianza >= 0.85 else "media",
-                    "fuente": "aprendizaje",
-                    "detalles": f"Validado {correccion['veces_confirmado']} veces",
-                    "aprendizaje_id": correccion["id"],
-                    "necesita_revision": False,
-                    "razon_revision": "",
-                    "marca": None,
-                }
-        except Exception as e:
-            print(f"   ⚠️ Error consultando aprendizaje: {e}")
-
-    # PASO 4: USAR NOMBRE OCR (60%)
-    print(f"   📝 USANDO NOMBRE OCR CORREGIDO (sin validación externa)")
-
-    tiene_ean = tipo_codigo == "EAN"
-    confianza = 0.65 if tiene_ean else 0.60
-    categoria = "media" if confianza >= 0.65 else "baja"
-
-    if not marcar_revision:
-        marcar_revision = True
-        razon_revision = "Producto nuevo sin validación externa"
-
-    print(f"   ⚠️ NO se guarda en aprendizaje (requiere validación)")
-
-    return {
-        "nombre_final": nombre_corregido,
-        "fue_validado": False,
-        "confianza": confianza,
-        "categoria_confianza": categoria,
-        "fuente": "ocr_corregido",
-        "detalles": "Sin validación externa",
-        "necesita_revision": marcar_revision,
-        "razon_revision": razon_revision,
-        "marca": None,
-    }
-
-
-def crear_producto_en_v2(cursor, conn, nombre_normalizado, codigo_ean=None, marca=None):
-    """
-    ⭐ VERSIÓN 9.1: Crea producto en productos_maestros_v2 (tabla nueva)
-    """
-    try:
-        if not nombre_normalizado or not nombre_normalizado.strip():
-            print(f"   ❌ ERROR: nombre_normalizado vacío")
-            return None
-
-        nombre_final = nombre_normalizado.strip().upper()
-
-        codigo_ean_safe = codigo_ean if codigo_ean and codigo_ean.strip() else None
-        marca_safe = marca if marca and marca.strip() else None
-
-        print(f"   📝 Creando producto en V2: {nombre_final}")
-
-        cursor.execute(
-            """
-            INSERT INTO productos_maestros_v2 (
-                codigo_ean, nombre_consolidado, marca, categoria_id,
-                confianza_datos, veces_visto, estado,
-                fecha_primera_vez, fecha_ultima_actualizacion
-            ) VALUES (%s, %s, %s, NULL, 0.5, 1, 'pendiente', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-        """,
-            (codigo_ean_safe, nombre_final, marca_safe),
-        )
-
-        resultado = cursor.fetchone()
-
-        if not resultado or len(resultado) == 0:
-            print(f"   ❌ ERROR: INSERT no retornó ID")
-            conn.rollback()
-            return None
-
-        producto_id = resultado[0]
-
-        if not producto_id or producto_id <= 0:
-            print(f"   ❌ ERROR: ID inválido: {producto_id}")
-            conn.rollback()
-            return None
-
-        conn.commit()
-        print(f"   ✅ Producto creado en V2: ID {producto_id}")
-        return producto_id
-
-    except Exception as e:
-        print(f"   ❌ Error en crear_producto_en_v2: {e}")
-        traceback.print_exc()
-        conn.rollback()
-        return None
-
-
-def guardar_plu_en_establecimiento(
-    cursor,
-    conn,
-    producto_id: int,
-    establecimiento_id: int,
-    codigo_plu: str,
-    precio: int,
-) -> bool:
-    """
-    ⭐ V9.3: Guarda el PLU en productos_por_establecimiento con ACTUALIZACIÓN DE PRECIOS
-    """
-    if not producto_id or not establecimiento_id or not codigo_plu:
-        return False
-
-    try:
-        cursor.execute(
-            """
-            INSERT INTO productos_por_establecimiento (
-                producto_maestro_id, establecimiento_id, codigo_plu,
-                precio_actual, precio_unitario, precio_minimo, precio_maximo,
-                total_reportes, fecha_creacion, fecha_actualizacion, ultima_actualizacion
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (producto_maestro_id, establecimiento_id)
-            DO UPDATE SET
-                codigo_plu = EXCLUDED.codigo_plu,
-                precio_actual = EXCLUDED.precio_actual,
-                precio_unitario = EXCLUDED.precio_unitario,
-                precio_minimo = LEAST(COALESCE(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo), EXCLUDED.precio_minimo),
-                precio_maximo = GREATEST(COALESCE(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo), EXCLUDED.precio_maximo),
-                total_reportes = productos_por_establecimiento.total_reportes + 1,
-                fecha_actualizacion = CURRENT_TIMESTAMP,
-                ultima_actualizacion = CURRENT_TIMESTAMP
-        """,
-            (
-                producto_id,
-                establecimiento_id,
-                codigo_plu,
-                precio,
-                precio,
-                precio,
-                precio,
-            ),
-        )
-        conn.commit()
-        print(
-            f"   💾 PLU {codigo_plu} guardado/actualizado en productos_por_establecimiento"
-        )
-        return True
-    except Exception as e:
-        print(f"   ⚠️ Error guardando PLU en establecimiento: {e}")
-        traceback.print_exc()
-        return False
-
-
-# ═══════════════════════════════════════════════════════════════
-# 🆕 V9.6: CALCULAR DISTANCIA ENTRE PLUs (LEVENSHTEIN)
-# ═══════════════════════════════════════════════════════════════
+    return ratio
 
 
 def calcular_distancia_plu(plu1: str, plu2: str) -> int:
-    """
-    🆕 V9.6: Calcula la distancia de Levenshtein entre dos PLUs.
-    Retorna el número de caracteres diferentes.
-
-    Ejemplos:
-    - 2326439 vs 2326489 → 1 (un dígito diferente)
-    - 2326439 vs 2326493 → 2 (dos dígitos diferentes)
-    - 2326439 vs 2326439 → 0 (iguales)
-    """
+    """Calcula distancia de Levenshtein entre dos PLUs"""
     if not plu1 or not plu2:
         return 999
 
-    # Si son iguales
-    if plu1 == plu2:
-        return 0
+    p1 = "".join(c for c in plu1 if c.isdigit())
+    p2 = "".join(c for c in plu2 if c.isdigit())
 
-    len1, len2 = len(plu1), len(plu2)
+    if len(p1) != len(p2):
+        return abs(len(p1) - len(p2)) + 1
 
-    # Si la diferencia de longitud es mayor a 2, no son similares
-    if abs(len1 - len2) > 2:
-        return 999
-
-    # Matriz de distancias (Levenshtein)
-    dp = [[0] * (len2 + 1) for _ in range(len1 + 1)]
-
-    for i in range(len1 + 1):
-        dp[i][0] = i
-    for j in range(len2 + 1):
-        dp[0][j] = j
-
-    for i in range(1, len1 + 1):
-        for j in range(1, len2 + 1):
-            if plu1[i - 1] == plu2[j - 1]:
-                dp[i][j] = dp[i - 1][j - 1]
-            else:
-                dp[i][j] = 1 + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
-
-    return dp[len1][len2]
+    return sum(1 for a, b in zip(p1, p2) if a != b)
 
 
-# ═══════════════════════════════════════════════════════════════
-# 🆕 V9.6: BUSCAR POR PRECIO EXACTO + PLU SIMILAR
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# PASO 1: BUSCAR PAPA (Producto Aprendido y Perfeccionado por Auditoría)
+# ============================================================================
 
 
-def buscar_por_precio_y_plu_similar(
-    plu_leido: str, precio: int, establecimiento_id: int, cursor, max_distancia: int = 2
-) -> Optional[Dict[str, Any]]:
+def buscar_papa(plu: str, establecimiento_id: int, cursor) -> Optional[Dict]:
     """
-    🆕 V9.6: Busca producto donde:
-    - Precio sea EXACTO (igual al leído)
-    - PLU difiera en máximo 2 caracteres (Levenshtein)
-    - Mismo establecimiento
-
-    Esto corrige errores comunes de OCR como:
-    - 2326439 → 2326489 (un dígito diferente)
-    - 2326439 → 2326493 (dos dígitos diferentes)
-
-    El precio es el dato MÁS CONFIABLE del OCR porque:
-    - Los números se leen mejor que el texto
-    - El precio es único por producto+establecimiento en un momento dado
-
-    Returns:
-        Dict con datos del producto si encuentra match, None si no
+    Busca un producto PAPA (ya validado 100%).
     """
-    if not plu_leido or not precio or not establecimiento_id:
-        return None
-
-    # Solo aplica para PLUs (códigos cortos)
-    if len(plu_leido) >= 8:  # Es EAN, no PLU
-        return None
-
     try:
-        # Buscar productos con ese precio EXACTO en ese establecimiento
         cursor.execute(
             """
             SELECT
@@ -677,845 +136,700 @@ def buscar_por_precio_y_plu_similar(
                 pm.nombre_consolidado,
                 pm.codigo_ean,
                 pm.marca,
-                ppe.codigo_plu,
+                pm.categoria_id,
                 ppe.precio_unitario
             FROM productos_maestros_v2 pm
             JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
-            WHERE ppe.establecimiento_id = %s
-              AND ppe.precio_unitario = %s
+            WHERE ppe.codigo_plu = %s
+              AND ppe.establecimiento_id = %s
+              AND pm.es_producto_papa = TRUE
+            LIMIT 1
         """,
-            (establecimiento_id, precio),
+            (plu, establecimiento_id),
         )
 
-        candidatos = cursor.fetchall()
+        row = cursor.fetchone()
+        if row:
+            print(f"   👑 [PASO 1] PAPA encontrado: {row[1]}")
+            return {
+                "producto_id": row[0],
+                "nombre": row[1],
+                "codigo_ean": row[2],
+                "marca": row[3],
+                "categoria_id": row[4],
+                "precio_bd": row[5],
+                "fuente": "PAPA",
+                "confianza": 1.0,
+            }
+    except Exception as e:
+        print(f"   ⚠️ Error buscando PAPA: {e}")
 
-        if not candidatos:
-            return None
+    return None
 
-        print(
-            f"      🔍 Encontrados {len(candidatos)} productos con precio ${precio:,}"
+
+# ============================================================================
+# PASO 2: BUSCAR EN AUDITORÍA (productos_referencia_ean)
+# ============================================================================
+
+
+def buscar_en_auditoria_por_ean(ean: str, cursor) -> Optional[Dict]:
+    """
+    Busca un EAN en la tabla de productos escaneados manualmente.
+    """
+    if not ean or len(ean) < 8:
+        return None
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                codigo_ean,
+                nombre,
+                marca,
+                presentacion,
+                categoria,
+                validaciones
+            FROM productos_referencia_ean
+            WHERE codigo_ean = %s
+            LIMIT 1
+        """,
+            (ean,),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            print(f"   📱 [PASO 2] Auditoría por EAN: {row[2]}")
+            return {
+                "referencia_id": row[0],
+                "codigo_ean": row[1],
+                "nombre": row[2],
+                "marca": row[3],
+                "presentacion": row[4],
+                "categoria": row[5],
+                "validaciones": row[6],
+                "fuente": "AUDITORIA",
+                "confianza": 0.95,
+            }
+    except Exception as e:
+        print(f"   ⚠️ Error buscando en auditoría por EAN: {e}")
+
+    return None
+
+
+def buscar_en_auditoria_por_nombre(
+    nombre_ocr: str, cursor, umbral: float = UMBRAL_SIMILITUD_AUDITORIA
+) -> Optional[Dict]:
+    """
+    Busca por nombre similar en productos de auditoría.
+    Útil cuando el OCR no tiene EAN pero el nombre coincide.
+    """
+    if not nombre_ocr or len(nombre_ocr) < 3:
+        return None
+
+    try:
+        nombre_limpio = limpiar_nombre(nombre_ocr)
+
+        # Buscar candidatos
+        cursor.execute(
+            """
+            SELECT
+                id,
+                codigo_ean,
+                nombre,
+                marca,
+                presentacion,
+                categoria,
+                validaciones
+            FROM productos_referencia_ean
+            ORDER BY validaciones DESC
+            LIMIT 100
+        """
         )
 
         mejor_match = None
-        menor_distancia = 999
+        mejor_similitud = 0
 
-        for candidato in candidatos:
-            producto_id = candidato[0]
-            nombre = candidato[1]
-            codigo_ean = candidato[2]
-            marca = candidato[3]
-            plu_bd = candidato[4]
-            precio_bd = candidato[5]
-
-            if not plu_bd:
-                continue
-
-            # Calcular distancia entre PLUs
-            distancia = calcular_distancia_plu(plu_leido, plu_bd)
-
-            if distancia <= max_distancia and distancia < menor_distancia:
-                menor_distancia = distancia
+        for row in cursor.fetchall():
+            similitud = calcular_similitud(nombre_limpio, row[2])
+            if similitud > mejor_similitud and similitud >= umbral:
+                mejor_similitud = similitud
                 mejor_match = {
-                    "producto_id": producto_id,
-                    "nombre": nombre,
-                    "codigo_ean": codigo_ean,
-                    "marca": marca,
-                    "plu_correcto": plu_bd,
-                    "plu_leido": plu_leido,
-                    "distancia": distancia,
-                    "precio": precio_bd,
+                    "referencia_id": row[0],
+                    "codigo_ean": row[1],
+                    "nombre": row[2],
+                    "marca": row[3],
+                    "presentacion": row[4],
+                    "categoria": row[5],
+                    "validaciones": row[6],
+                    "similitud": similitud,
+                    "fuente": "AUDITORIA_NOMBRE",
+                    "confianza": 0.90 * similitud,
                 }
 
         if mejor_match:
-            print(f"      ✅ MATCH por precio+PLU similar:")
-            print(f"         PLU leído:    {plu_leido}")
-            print(f"         PLU correcto: {mejor_match['plu_correcto']}")
-            print(f"         Distancia:    {mejor_match['distancia']} carácter(es)")
-            print(f"         Producto:     {mejor_match['nombre'][:50]}")
-            return mejor_match
+            print(
+                f"   📱 [PASO 2] Auditoría por nombre ({mejor_similitud:.0%}): {mejor_match['nombre']}"
+            )
 
-        return None
+        return mejor_match
 
     except Exception as e:
-        print(f"      ⚠️ Error buscando por precio+PLU similar: {e}")
-        traceback.print_exc()
+        print(f"   ⚠️ Error buscando en auditoría por nombre: {e}")
+
+    return None
+
+
+# ============================================================================
+# PASO 3: BUSCAR EN WEB (VTEX) + VALIDAR CONTRA AUDITORÍA
+# ============================================================================
+
+
+def buscar_en_web_y_validar(
+    plu: str, nombre_ocr: str, establecimiento: str, precio_ocr: int, cursor
+) -> Optional[Dict]:
+    """
+    Busca en API VTEX y valida el resultado contra auditoría.
+    Si el EAN de VTEX existe en auditoría → confianza alta.
+    """
+    from web_enricher import WebEnricher, es_tienda_vtex
+
+    if not es_tienda_vtex(establecimiento):
         return None
 
-
-# ═══════════════════════════════════════════════════════════════
-# 🆕 V9.5: ACTUALIZAR PRODUCTO EXISTENTE CON DATOS WEB
-# ═══════════════════════════════════════════════════════════════
-
-
-def actualizar_producto_con_datos_web(
-    producto_id: int,
-    codigo: str,
-    nombre_ocr: str,
-    establecimiento: str,
-    precio: int,
-    cursor,
-    conn,
-    establecimiento_id: int = None,
-) -> bool:
-    """
-    🆕 V9.5: Actualiza un producto EXISTENTE con datos del web enricher.
-    """
-    if not WEB_ENRICHER_AVAILABLE:
-        return False
-
-    if not es_supermercado_vtex(establecimiento):
-        return False
-
     try:
-        print(
-            f"   🔄 V9.5: Verificando datos web para producto existente ID={producto_id}"
-        )
-
-        enricher = WebEnricher(cursor, conn)
-        resultado_web = enricher.enriquecer(
-            codigo=codigo,
+        enricher = WebEnricher(cursor, None)
+        resultado = enricher.enriquecer(
+            codigo=plu,
             nombre_ocr=nombre_ocr,
             establecimiento=establecimiento,
-            precio_ocr=precio,
+            precio_ocr=precio_ocr,
         )
 
-        if not resultado_web.encontrado:
-            print(f"      ℹ️ No se encontró en web, manteniendo datos actuales")
-            return False
+        if not resultado.encontrado:
+            return None
 
-        datos_web = resultado_web.to_dict()
-        nombre_web = datos_web.get("nombre_web", "")
-        ean_web = datos_web.get("codigo_ean", "")
-        marca_web = datos_web.get("marca", "")
+        print(f"   🌐 [PASO 3] Web encontró: {resultado.nombre_web}")
 
-        if not nombre_web:
-            return False
+        # Validar contra auditoría si tenemos EAN
+        confianza = 0.8
+        fuente = "WEB"
 
-        nombre_web_normalizado = nombre_web.upper().strip()
+        if resultado.codigo_ean:
+            auditoria = buscar_en_auditoria_por_ean(resultado.codigo_ean, cursor)
 
-        print(f"      ✅ Actualizando producto con datos web:")
-        print(f"         Nombre: {nombre_web_normalizado[:50]}")
-        print(f"         EAN: {ean_web or 'N/A'}")
+            if auditoria:
+                # EAN existe en auditoría → validado!
+                similitud_nombre = calcular_similitud(
+                    resultado.nombre_web, auditoria["nombre"]
+                )
 
-        if ean_web:
-            cursor.execute(
-                """
-                UPDATE productos_maestros_v2
-                SET nombre_consolidado = %s,
-                    codigo_ean = COALESCE(codigo_ean, %s),
-                    marca = COALESCE(marca, %s),
-                    confianza_datos = GREATEST(confianza_datos, 0.95),
-                    fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """,
-                (nombre_web_normalizado, ean_web, marca_web or None, producto_id),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE productos_maestros_v2
-                SET nombre_consolidado = %s,
-                    marca = COALESCE(marca, %s),
-                    confianza_datos = GREATEST(confianza_datos, 0.95),
-                    fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """,
-                (nombre_web_normalizado, marca_web or None, producto_id),
-            )
+                if similitud_nombre >= 0.7:
+                    print(
+                        f"   ✅ [PASO 3] EAN validado con auditoría ({similitud_nombre:.0%})"
+                    )
+                    confianza = 0.95
+                    fuente = "WEB_VALIDADO"
 
-        supermercado_key = establecimiento.upper()
-        for key in ["OLIMPICA", "CARULLA", "EXITO", "JUMBO"]:
-            if key in supermercado_key:
-                supermercado_key = key.lower()
-                break
+                    # Usar nombre de auditoría si es mejor
+                    if similitud_nombre < 0.95:
+                        resultado.nombre_web = auditoria["nombre"]
+                        resultado.marca = auditoria.get("marca") or resultado.marca
+                else:
+                    print(
+                        f"   ⚠️ [PASO 3] EAN coincide pero nombres muy diferentes ({similitud_nombre:.0%})"
+                    )
+                    confianza = 0.6
 
+        return {
+            "nombre": resultado.nombre_web,
+            "codigo_ean": resultado.codigo_ean,
+            "codigo_plu": resultado.codigo_plu,
+            "marca": resultado.marca,
+            "precio_web": resultado.precio_web,
+            "categoria": resultado.categoria,
+            "url": resultado.url_producto,
+            "imagen": resultado.imagen_url,
+            "fuente": fuente,
+            "confianza": confianza,
+        }
+
+    except Exception as e:
+        print(f"   ⚠️ Error buscando en web: {e}")
+
+    return None
+
+
+# ============================================================================
+# PASO 4: BUSCAR EN CACHE VTEX
+# ============================================================================
+
+
+def buscar_en_cache_vtex(plu: str, establecimiento: str, cursor) -> Optional[Dict]:
+    """
+    Busca en el cache local de productos VTEX.
+    """
+    try:
         cursor.execute(
             """
-            UPDATE plu_supermercado_mapping
-            SET producto_maestro_id = %s
-            WHERE codigo_plu = %s AND LOWER(supermercado) = %s
+            SELECT
+                id, nombre, ean, plu, marca, precio, categoria
+            FROM productos_vtex_cache
+            WHERE (plu = %s OR ean = %s)
+              AND establecimiento = %s
+            ORDER BY veces_usado DESC
+            LIMIT 1
         """,
-            (producto_id, codigo, supermercado_key),
+            (plu, plu, establecimiento.upper()),
         )
 
-        conn.commit()
-        print(f"      ✅ Producto ID={producto_id} actualizado con datos web")
-        return True
-
+        row = cursor.fetchone()
+        if row:
+            print(f"   💾 [PASO 4] Cache VTEX: {row[1]}")
+            return {
+                "cache_id": row[0],
+                "nombre": row[1],
+                "codigo_ean": row[2],
+                "codigo_plu": row[3],
+                "marca": row[4],
+                "precio_web": row[5],
+                "categoria": row[6],
+                "fuente": "CACHE_VTEX",
+                "confianza": 0.7,
+            }
     except Exception as e:
-        print(f"      ⚠️ Error actualizando con datos web: {e}")
-        traceback.print_exc()
-        return False
+        print(f"   ⚠️ Error buscando en cache: {e}")
+
+    return None
 
 
-# ═══════════════════════════════════════════════════════════════
-# 🎯 FASE 1.1: FUNCIÓN MEJORADA - BUSCAR PAPA PRIMERO
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# PASO 5: BUSCAR PLU EXISTENTE (sin PAPA)
+# ============================================================================
 
 
-def buscar_papa_primero(
-    codigo: str,
-    establecimiento_id: int,
-    cursor,
-    conn,
-    precio: int = None,
-) -> Optional[Dict[str, Any]]:
+def buscar_plu_existente(plu: str, establecimiento_id: int, cursor) -> Optional[Dict]:
     """
-    🎯 FASE 1.1 V9.3: Busca si existe un PAPA para este código
+    Busca si el PLU ya existe en la BD (aunque no sea PAPA).
     """
-    if not codigo or not establecimiento_id:
-        return None
-
-    tipo_codigo = clasificar_codigo_tipo(codigo)
-
     try:
-        # ESTRATEGIA 1: Buscar por EAN en PAPAS
-        if tipo_codigo == "EAN":
-            cursor.execute(
-                """
-                SELECT pm.id, pm.codigo_ean, pm.nombre_consolidado, pm.marca,
-                       pm.categoria_id, pm.veces_visto
-                FROM productos_maestros_v2 pm
-                WHERE pm.es_producto_papa = TRUE
-                  AND pm.codigo_ean = %s
-                LIMIT 1
-            """,
-                (codigo,),
-            )
+        cursor.execute(
+            """
+            SELECT
+                pm.id,
+                pm.nombre_consolidado,
+                pm.codigo_ean,
+                pm.marca,
+                pm.categoria_id,
+                pm.fuente_datos,
+                pm.confianza_datos,
+                ppe.precio_unitario
+            FROM productos_maestros_v2 pm
+            JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
+            WHERE ppe.codigo_plu = %s
+              AND ppe.establecimiento_id = %s
+            LIMIT 1
+        """,
+            (plu, establecimiento_id),
+        )
 
-            resultado = cursor.fetchone()
-
-            if resultado:
-                papa_id = resultado[0]
-                print(f"   👑 PAPA ENCONTRADO por EAN: ID={papa_id}")
-                print(f"      📝 Nombre PAPA: {resultado[2]}")
-                print(f"      🏷️  Marca: {resultado[3] or 'N/A'}")
-                print(f"      📊 Visto {resultado[5]} veces")
-
-                cursor.execute(
-                    """
-                    UPDATE productos_maestros_v2
-                    SET veces_visto = veces_visto + 1,
-                        fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """,
-                    (papa_id,),
-                )
-
-                if precio:
-                    cursor.execute(
-                        """
-                        INSERT INTO productos_por_establecimiento (
-                            producto_maestro_id, establecimiento_id, codigo_plu,
-                            precio_actual, precio_unitario, precio_minimo, precio_maximo,
-                            total_reportes, fecha_creacion, fecha_actualizacion, ultima_actualizacion
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        ON CONFLICT (producto_maestro_id, establecimiento_id)
-                        DO UPDATE SET
-                            precio_actual = EXCLUDED.precio_actual,
-                            precio_unitario = EXCLUDED.precio_unitario,
-                            precio_minimo = LEAST(COALESCE(productos_por_establecimiento.precio_minimo, EXCLUDED.precio_minimo), EXCLUDED.precio_minimo),
-                            precio_maximo = GREATEST(COALESCE(productos_por_establecimiento.precio_maximo, EXCLUDED.precio_maximo), EXCLUDED.precio_maximo),
-                            total_reportes = productos_por_establecimiento.total_reportes + 1,
-                            ultima_actualizacion = CURRENT_TIMESTAMP,
-                            fecha_actualizacion = CURRENT_TIMESTAMP
-                    """,
-                        (
-                            papa_id,
-                            establecimiento_id,
-                            codigo,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                        ),
-                    )
-                    print(
-                        f"      💾 Precios actualizados en productos_por_establecimiento"
-                    )
-
-                conn.commit()
-
-                return {
-                    "papa_id": papa_id,
-                    "codigo_ean": resultado[1],
-                    "nombre_consolidado": resultado[2],
-                    "marca": resultado[3],
-                    "categoria_id": resultado[4],
-                    "veces_visto": resultado[5] + 1,
-                    "fuente": "papa_ean",
-                }
-
-        # ESTRATEGIA 2: Buscar por PLU en productos_por_establecimiento
-        elif tipo_codigo == "PLU":
-            cursor.execute(
-                """
-                SELECT pm.id, pm.nombre_consolidado, pm.marca, pm.categoria_id,
-                       pm.veces_visto, ppe.codigo_plu
-                FROM productos_maestros_v2 pm
-                JOIN productos_por_establecimiento ppe ON pm.id = ppe.producto_maestro_id
-                WHERE pm.es_producto_papa = TRUE
-                  AND ppe.codigo_plu = %s
-                  AND ppe.establecimiento_id = %s
-                LIMIT 1
-            """,
-                (codigo, establecimiento_id),
-            )
-
-            resultado = cursor.fetchone()
-
-            if resultado:
-                papa_id = resultado[0]
-                print(f"   👑 PAPA ENCONTRADO por PLU: ID={papa_id}")
-                print(f"      📝 Nombre PAPA: {resultado[1]}")
-                print(f"      🏷️  Marca: {resultado[2] or 'N/A'}")
-                print(f"      📌 PLU: {resultado[5]}")
-                print(f"      📊 Visto {resultado[4]} veces")
-
-                cursor.execute(
-                    """
-                    UPDATE productos_maestros_v2
-                    SET veces_visto = veces_visto + 1,
-                        fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """,
-                    (papa_id,),
-                )
-
-                if precio:
-                    cursor.execute(
-                        """
-                        UPDATE productos_por_establecimiento
-                        SET precio_actual = %s,
-                            precio_unitario = %s,
-                            precio_minimo = LEAST(COALESCE(precio_minimo, %s), %s),
-                            precio_maximo = GREATEST(COALESCE(precio_maximo, %s), %s),
-                            total_reportes = total_reportes + 1,
-                            ultima_actualizacion = CURRENT_TIMESTAMP,
-                            fecha_actualizacion = CURRENT_TIMESTAMP
-                        WHERE producto_maestro_id = %s AND establecimiento_id = %s
-                    """,
-                        (
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            precio,
-                            papa_id,
-                            establecimiento_id,
-                        ),
-                    )
-                    print(
-                        f"      💾 Precios actualizados en productos_por_establecimiento"
-                    )
-
-                conn.commit()
-
-                return {
-                    "papa_id": papa_id,
-                    "codigo_plu": resultado[5],
-                    "nombre_consolidado": resultado[1],
-                    "marca": resultado[2],
-                    "categoria_id": resultado[3],
-                    "veces_visto": resultado[4] + 1,
-                    "fuente": "papa_plu",
-                }
-
-        return None
-
+        row = cursor.fetchone()
+        if row:
+            print(f"   📦 [PASO 5] PLU existente: {row[1]}")
+            return {
+                "producto_id": row[0],
+                "nombre": row[1],
+                "codigo_ean": row[2],
+                "marca": row[3],
+                "categoria_id": row[4],
+                "fuente": row[5] or "BD",
+                "confianza": float(row[6]) if row[6] else 0.5,
+                "precio_bd": row[7],
+            }
     except Exception as e:
-        print(f"   ⚠️ Error buscando PAPA: {e}")
-        traceback.print_exc()
-        return None
+        print(f"   ⚠️ Error buscando PLU existente: {e}")
+
+    return None
 
 
-# ═══════════════════════════════════════════════════════════════
-# FUNCIÓN PRINCIPAL - V9.6 CON BÚSQUEDA POR PRECIO + PLU SIMILAR
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# FUNCIÓN PRINCIPAL: BUSCAR O CREAR PRODUCTO INTELIGENTE
+# ============================================================================
 
 
 def buscar_o_crear_producto_inteligente(
     codigo: str,
-    nombre: str,
+    nombre_ocr: str,
     precio: int,
-    establecimiento: str,
+    establecimiento_id: int,
+    establecimiento_nombre: str,
     cursor,
     conn,
-    factura_id: int = None,
-    usuario_id: int = None,
-    item_factura_id: int = None,
-    establecimiento_id: int = None,
-) -> Optional[int]:
+) -> Dict[str, Any]:
     """
-    ⭐ VERSIÓN 9.6: Función principal con BÚSQUEDA POR PRECIO + PLU SIMILAR
+    Busca o crea un producto usando el flujo de validación completo.
 
-    FLUJO:
-    ✅ PASO 0: Buscar PAPA (si existe)
-    ✅ PASO 1: Buscar PLU exacto
-    🆕 PASO 1.5: Buscar por PRECIO EXACTO + PLU similar (±2 dígitos)
-    ✅ PASO 2: Buscar EAN exacto
-    ✅ PASO 3: Buscar por nombre similar
-    ✅ PASO 3.5: ENRIQUECIMIENTO WEB (si es supermercado VTEX)
-    ✅ PASO 4: Crear nuevo producto
+    Retorna:
+        {
+            'producto_id': int,
+            'nombre': str,
+            'codigo_ean': str,
+            'es_nuevo': bool,
+            'fuente': str,
+            'confianza': float
+        }
     """
-    import os
+    print(f"\n{'='*60}")
+    print(f"🔍 BUSCANDO: PLU={codigo} | {nombre_ocr[:30]}... | ${precio:,}")
+    print(f"   Establecimiento: {establecimiento_nombre} (ID: {establecimiento_id})")
+    print(f"{'='*60}")
 
-    print(f"\n🔍 BUSCAR O CREAR PRODUCTO V9.6 (PRECIO + PLU SIMILAR):")
-    print(f"   Código: {codigo or 'Sin código'}")
-    print(f"   Nombre OCR: {nombre[:50]}")
-    print(f"   Precio: ${precio:,}")
-    print(f"   Establecimiento: {establecimiento}")
-    print(f"   Establecimiento ID: {establecimiento_id}")
+    plu = str(codigo).strip() if codigo else ""
+    nombre_limpio = limpiar_nombre(nombre_ocr)
 
-    nombre_normalizado = normalizar_nombre_producto(nombre, True)
-    tipo_codigo = clasificar_codigo_tipo(codigo)
-    cadena = detectar_cadena(establecimiento)
+    # ========================================
+    # PASO 1: Buscar PAPA
+    # ========================================
+    print("\n📌 PASO 1: Buscando PAPA...")
+    papa = buscar_papa(plu, establecimiento_id, cursor)
+    if papa:
+        actualizar_precio_si_necesario(
+            papa["producto_id"], establecimiento_id, plu, precio, cursor, conn
+        )
+        return {
+            "producto_id": papa["producto_id"],
+            "nombre": papa["nombre"],
+            "codigo_ean": papa.get("codigo_ean"),
+            "es_nuevo": False,
+            "fuente": "PAPA",
+            "confianza": 1.0,
+        }
 
-    is_postgresql = os.environ.get("DATABASE_TYPE") == "postgresql"
-    param = "%s" if is_postgresql else "?"
+    # ========================================
+    # PASO 2: Buscar en Auditoría
+    # ========================================
+    print("\n📌 PASO 2: Buscando en Auditoría...")
 
-    # ═══════════════════════════════════════════════════════════════
-    # 🎯 PASO 0: BUSCAR PAPA PRIMERO
-    # ═══════════════════════════════════════════════════════════════
-    print(f"\n   🔍 PASO 0: Buscando PAPA...")
-    papa_encontrado = buscar_papa_primero(
-        codigo=codigo,
+    # Primero ver si el PLU ya tiene EAN asociado
+    plu_existente = buscar_plu_existente(plu, establecimiento_id, cursor)
+
+    if plu_existente and plu_existente.get("codigo_ean"):
+        auditoria = buscar_en_auditoria_por_ean(plu_existente["codigo_ean"], cursor)
+        if auditoria:
+            # Actualizar producto existente con datos de auditoría
+            actualizar_producto_con_auditoria(
+                plu_existente["producto_id"], auditoria, cursor, conn
+            )
+            actualizar_precio_si_necesario(
+                plu_existente["producto_id"],
+                establecimiento_id,
+                plu,
+                precio,
+                cursor,
+                conn,
+            )
+            return {
+                "producto_id": plu_existente["producto_id"],
+                "nombre": auditoria["nombre"],
+                "codigo_ean": auditoria["codigo_ean"],
+                "es_nuevo": False,
+                "fuente": "AUDITORIA",
+                "confianza": 0.95,
+            }
+
+    # Buscar por nombre similar
+    auditoria_nombre = buscar_en_auditoria_por_nombre(nombre_limpio, cursor)
+    if auditoria_nombre:
+        # Crear o actualizar producto con datos de auditoría
+        producto_id = crear_o_actualizar_producto(
+            plu=plu,
+            establecimiento_id=establecimiento_id,
+            datos=auditoria_nombre,
+            precio=precio,
+            cursor=cursor,
+            conn=conn,
+        )
+        return {
+            "producto_id": producto_id,
+            "nombre": auditoria_nombre["nombre"],
+            "codigo_ean": auditoria_nombre["codigo_ean"],
+            "es_nuevo": True,
+            "fuente": "AUDITORIA_NOMBRE",
+            "confianza": auditoria_nombre["confianza"],
+        }
+
+    # ========================================
+    # PASO 3: Buscar en Web (VTEX)
+    # ========================================
+    print("\n📌 PASO 3: Buscando en Web (VTEX)...")
+    web = buscar_en_web_y_validar(
+        plu, nombre_limpio, establecimiento_nombre, precio, cursor
+    )
+    if web:
+        producto_id = crear_o_actualizar_producto(
+            plu=plu,
+            establecimiento_id=establecimiento_id,
+            datos=web,
+            precio=precio,
+            cursor=cursor,
+            conn=conn,
+        )
+        return {
+            "producto_id": producto_id,
+            "nombre": web["nombre"],
+            "codigo_ean": web.get("codigo_ean"),
+            "es_nuevo": True,
+            "fuente": web["fuente"],
+            "confianza": web["confianza"],
+        }
+
+    # ========================================
+    # PASO 4: Buscar en Cache VTEX
+    # ========================================
+    print("\n📌 PASO 4: Buscando en Cache VTEX...")
+    cache = buscar_en_cache_vtex(plu, establecimiento_nombre, cursor)
+    if cache:
+        producto_id = crear_o_actualizar_producto(
+            plu=plu,
+            establecimiento_id=establecimiento_id,
+            datos=cache,
+            precio=precio,
+            cursor=cursor,
+            conn=conn,
+        )
+        return {
+            "producto_id": producto_id,
+            "nombre": cache["nombre"],
+            "codigo_ean": cache.get("codigo_ean"),
+            "es_nuevo": True,
+            "fuente": "CACHE_VTEX",
+            "confianza": 0.7,
+        }
+
+    # ========================================
+    # PASO 5: Usar PLU existente o crear con OCR
+    # ========================================
+    print("\n📌 PASO 5: Usando datos OCR...")
+
+    if plu_existente:
+        actualizar_precio_si_necesario(
+            plu_existente["producto_id"], establecimiento_id, plu, precio, cursor, conn
+        )
+        return {
+            "producto_id": plu_existente["producto_id"],
+            "nombre": plu_existente["nombre"],
+            "codigo_ean": plu_existente.get("codigo_ean"),
+            "es_nuevo": False,
+            "fuente": plu_existente["fuente"],
+            "confianza": plu_existente["confianza"],
+        }
+
+    # Crear producto nuevo con datos OCR
+    producto_id = crear_producto_ocr(
+        plu=plu,
+        nombre=nombre_limpio,
+        precio=precio,
         establecimiento_id=establecimiento_id,
         cursor=cursor,
         conn=conn,
-        precio=precio,
     )
 
-    if papa_encontrado:
-        print(f"   ✅ USANDO DATOS DEL PAPA")
-        return papa_encontrado["papa_id"]
+    return {
+        "producto_id": producto_id,
+        "nombre": nombre_limpio,
+        "codigo_ean": None,
+        "es_nuevo": True,
+        "fuente": "OCR",
+        "confianza": 0.5,
+    }
 
-    print(f"   ℹ️  No existe PAPA → Continuar búsqueda normal")
 
-    # ═══════════════════════════════════════════════════════════════
-    # PASO 1: BUSCAR POR PLU EXACTO EN productos_por_establecimiento
-    # ═══════════════════════════════════════════════════════════════
-    if tipo_codigo == "PLU" and codigo and establecimiento_id:
-        print(f"\n   🔍 PASO 1: Buscando PLU exacto...")
-        try:
+# ============================================================================
+# FUNCIONES DE ACTUALIZACIÓN Y CREACIÓN
+# ============================================================================
+
+
+def actualizar_precio_si_necesario(
+    producto_id: int, establecimiento_id: int, plu: str, precio_nuevo: int, cursor, conn
+):
+    """Actualiza el precio si es diferente al registrado"""
+    try:
+        cursor.execute(
+            """
+            UPDATE productos_por_establecimiento
+            SET precio_unitario = %s,
+                precio_actual = %s,
+                ultima_actualizacion = CURRENT_TIMESTAMP,
+                total_reportes = total_reportes + 1
+            WHERE producto_maestro_id = %s
+              AND establecimiento_id = %s
+              AND codigo_plu = %s
+        """,
+            (precio_nuevo, precio_nuevo, producto_id, establecimiento_id, plu),
+        )
+
+        conn.commit()
+    except Exception as e:
+        print(f"   ⚠️ Error actualizando precio: {e}")
+        conn.rollback()
+
+
+def actualizar_producto_con_auditoria(producto_id: int, auditoria: Dict, cursor, conn):
+    """Actualiza un producto existente con datos de auditoría"""
+    try:
+        cursor.execute(
+            """
+            UPDATE productos_maestros_v2
+            SET nombre_consolidado = %s,
+                marca = %s,
+                fuente_datos = 'AUDITORIA',
+                confianza_datos = 0.95,
+                es_producto_papa = TRUE,
+                fecha_validacion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """,
+            (auditoria["nombre"], auditoria.get("marca"), producto_id),
+        )
+
+        conn.commit()
+        print(f"   ✅ Producto {producto_id} actualizado con datos de auditoría")
+    except Exception as e:
+        print(f"   ⚠️ Error actualizando con auditoría: {e}")
+        conn.rollback()
+
+
+def crear_o_actualizar_producto(
+    plu: str, establecimiento_id: int, datos: Dict, precio: int, cursor, conn
+) -> int:
+    """Crea o actualiza un producto con los datos proporcionados"""
+    try:
+        # Verificar si ya existe por EAN
+        producto_id = None
+
+        if datos.get("codigo_ean"):
             cursor.execute(
                 """
-                SELECT producto_maestro_id
-                FROM productos_por_establecimiento
-                WHERE codigo_plu = %s AND establecimiento_id = %s
-                LIMIT 1
+                SELECT id FROM productos_maestros_v2 WHERE codigo_ean = %s
             """,
-                (codigo, establecimiento_id),
+                (datos["codigo_ean"],),
             )
-            resultado = cursor.fetchone()
+            row = cursor.fetchone()
+            if row:
+                producto_id = row[0]
 
-            if resultado:
-                producto_id = resultado[0]
-                print(
-                    f"   ✅ Encontrado por PLU en productos_por_establecimiento: ID={producto_id}"
-                )
-
-                cursor.execute(
-                    """
-                    UPDATE productos_maestros_v2
-                    SET veces_visto = veces_visto + 1,
-                        fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """,
-                    (producto_id,),
-                )
-
-                cursor.execute(
-                    """
-                    UPDATE productos_por_establecimiento
-                    SET precio_actual = %s,
-                        precio_unitario = %s,
-                        precio_minimo = LEAST(COALESCE(precio_minimo, %s), %s),
-                        precio_maximo = GREATEST(COALESCE(precio_maximo, %s), %s),
-                        total_reportes = total_reportes + 1,
-                        ultima_actualizacion = CURRENT_TIMESTAMP,
-                        fecha_actualizacion = CURRENT_TIMESTAMP
-                    WHERE producto_maestro_id = %s AND establecimiento_id = %s
-                """,
-                    (
-                        precio,
-                        precio,
-                        precio,
-                        precio,
-                        precio,
-                        precio,
-                        producto_id,
-                        establecimiento_id,
-                    ),
-                )
-
-                conn.commit()
-
-                actualizar_producto_con_datos_web(
-                    producto_id=producto_id,
-                    codigo=codigo,
-                    nombre_ocr=nombre,
-                    establecimiento=establecimiento,
-                    precio=precio,
-                    cursor=cursor,
-                    conn=conn,
-                    establecimiento_id=establecimiento_id,
-                )
-
-                return producto_id
-        except Exception as e:
-            print(f"   ⚠️ Error buscando PLU en productos_por_establecimiento: {e}")
-
-    # ═══════════════════════════════════════════════════════════════
-    # 🆕 PASO 1.5: BUSCAR POR PRECIO EXACTO + PLU SIMILAR
-    # ═══════════════════════════════════════════════════════════════
-    if tipo_codigo == "PLU" and codigo and establecimiento_id and precio > 0:
-        print(
-            f"\n   🔍 PASO 1.5: Buscando por PRECIO EXACTO (${precio:,}) + PLU similar..."
-        )
-
-        match_precio_plu = buscar_por_precio_y_plu_similar(
-            plu_leido=codigo,
-            precio=precio,
-            establecimiento_id=establecimiento_id,
-            cursor=cursor,
-            max_distancia=2,  # Máximo 2 caracteres de diferencia
-        )
-
-        if match_precio_plu:
-            producto_id = match_precio_plu["producto_id"]
-            plu_correcto = match_precio_plu["plu_correcto"]
-
-            print(f"   ✅ MATCH por PRECIO+PLU similar: ID={producto_id}")
-            print(f"   🔧 Error OCR corregido: {codigo} → {plu_correcto}")
-
-            # Actualizar veces_visto
+        if producto_id:
+            # Actualizar existente
             cursor.execute(
                 """
                 UPDATE productos_maestros_v2
-                SET veces_visto = veces_visto + 1,
-                    fecha_ultima_actualizacion = CURRENT_TIMESTAMP
+                SET nombre_consolidado = COALESCE(%s, nombre_consolidado),
+                    marca = COALESCE(%s, marca),
+                    fuente_datos = %s,
+                    confianza_datos = %s
                 WHERE id = %s
             """,
-                (producto_id,),
+                (
+                    datos.get("nombre"),
+                    datos.get("marca"),
+                    datos.get("fuente", "WEB"),
+                    datos.get("confianza", 0.8),
+                    producto_id,
+                ),
             )
-
-            # Actualizar precio en productos_por_establecimiento
+        else:
+            # Crear nuevo
             cursor.execute(
                 """
-                UPDATE productos_por_establecimiento
-                SET precio_actual = %s,
-                    precio_unitario = %s,
-                    total_reportes = total_reportes + 1,
-                    ultima_actualizacion = CURRENT_TIMESTAMP,
-                    fecha_actualizacion = CURRENT_TIMESTAMP
-                WHERE producto_maestro_id = %s AND establecimiento_id = %s
+                INSERT INTO productos_maestros_v2 (
+                    nombre_consolidado, codigo_ean, marca,
+                    fuente_datos, confianza_datos, veces_visto
+                ) VALUES (%s, %s, %s, %s, %s, 1)
+                RETURNING id
             """,
-                (precio, precio, producto_id, establecimiento_id),
+                (
+                    datos.get("nombre", "SIN NOMBRE"),
+                    datos.get("codigo_ean"),
+                    datos.get("marca"),
+                    datos.get("fuente", "WEB"),
+                    datos.get("confianza", 0.8),
+                ),
             )
+            producto_id = cursor.fetchone()[0]
 
-            conn.commit()
-
-            # Actualizar con datos web si es supermercado VTEX
-            actualizar_producto_con_datos_web(
-                producto_id=producto_id,
-                codigo=plu_correcto,  # Usar el PLU correcto para buscar en web
-                nombre_ocr=nombre,
-                establecimiento=establecimiento,
-                precio=precio,
-                cursor=cursor,
-                conn=conn,
-                establecimiento_id=establecimiento_id,
-            )
-
-            return producto_id
-
-    # ═══════════════════════════════════════════════════════════════
-    # PASO 2: BUSCAR POR EAN EXISTENTE EN V2
-    # ═══════════════════════════════════════════════════════════════
-    if tipo_codigo == "EAN" and codigo:
-        print(f"\n   🔍 PASO 2: Buscando EAN en V2...")
-        try:
-            cursor.execute(
-                f"SELECT id, nombre_consolidado FROM productos_maestros_v2 WHERE codigo_ean = {param}",
-                (codigo,),
-            )
-            resultado = cursor.fetchone()
-
-            if resultado and len(resultado) >= 1:
-                producto_id = resultado[0]
-                print(f"   ✅ Encontrado por EAN en V2: ID={producto_id}")
-
-                cursor.execute(
-                    """
-                    UPDATE productos_maestros_v2
-                    SET veces_visto = veces_visto + 1,
-                        fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """,
-                    (producto_id,),
-                )
-                conn.commit()
-
-                if establecimiento_id:
-                    guardar_plu_en_establecimiento(
-                        cursor, conn, producto_id, establecimiento_id, codigo, precio
-                    )
-
-                actualizar_producto_con_datos_web(
-                    producto_id=producto_id,
-                    codigo=codigo,
-                    nombre_ocr=nombre,
-                    establecimiento=establecimiento,
-                    precio=precio,
-                    cursor=cursor,
-                    conn=conn,
-                    establecimiento_id=establecimiento_id,
-                )
-
-                return producto_id
-        except Exception as e:
-            print(f"   ⚠️ Error buscando por EAN: {e}")
-
-    try:
-        # ═══════════════════════════════════════════════════════════════
-        # PASO 3: BUSCAR POR NOMBRE SIMILAR EN V2
-        # ═══════════════════════════════════════════════════════════════
-        if not codigo or tipo_codigo == "DESCONOCIDO":
-            print(f"\n   🔍 PASO 3: Buscando por nombre similar...")
-            try:
-                search_pattern = f"%{nombre_normalizado[:50]}%"
-                cursor.execute(
-                    f"""
-                    SELECT id, nombre_consolidado, codigo_ean
-                    FROM productos_maestros_v2
-                    WHERE nombre_consolidado {('ILIKE' if is_postgresql else 'LIKE')} {param}
-                    LIMIT 10
-                """,
-                    (search_pattern,),
-                )
-
-                candidatos = cursor.fetchall()
-
-                for candidato in candidatos:
-                    if not candidato or len(candidato) < 3:
-                        continue
-
-                    cand_id = candidato[0]
-                    cand_nombre = candidato[1]
-
-                    if not cand_id or not cand_nombre:
-                        continue
-
-                    similitud = calcular_similitud(nombre_normalizado, cand_nombre)
-
-                    if similitud >= 0.90:
-                        producto_id = cand_id
-                        print(
-                            f"   ✅ Encontrado por similitud en V2: ID={producto_id} (sim={similitud:.2f})"
-                        )
-
-                        cursor.execute(
-                            """
-                            UPDATE productos_maestros_v2
-                            SET veces_visto = veces_visto + 1,
-                                fecha_ultima_actualizacion = CURRENT_TIMESTAMP
-                            WHERE id = %s
-                        """,
-                            (producto_id,),
-                        )
-                        conn.commit()
-
-                        if codigo and establecimiento_id:
-                            guardar_plu_en_establecimiento(
-                                cursor,
-                                conn,
-                                producto_id,
-                                establecimiento_id,
-                                codigo,
-                                precio,
-                            )
-
-                        actualizar_producto_con_datos_web(
-                            producto_id=producto_id,
-                            codigo=codigo,
-                            nombre_ocr=nombre,
-                            establecimiento=establecimiento,
-                            precio=precio,
-                            cursor=cursor,
-                            conn=conn,
-                            establecimiento_id=establecimiento_id,
-                        )
-
-                        return producto_id
-
-            except Exception as e:
-                print(f"   ⚠️ Error buscando por similitud: {e}")
-                traceback.print_exc()
-
-        # ═══════════════════════════════════════════════════════════════
-        # 🆕 PASO 3.5: ENRIQUECIMIENTO WEB (VTEX)
-        # ═══════════════════════════════════════════════════════════════
-        datos_web = None
-
-        if WEB_ENRICHER_AVAILABLE and codigo:
-            print(f"\n   🌐 PASO 3.5: Enriquecimiento Web...")
-
-            if es_supermercado_vtex(establecimiento):
-                try:
-                    enricher = WebEnricher(cursor, conn)
-                    resultado_web = enricher.enriquecer(
-                        codigo=codigo,
-                        nombre_ocr=nombre,
-                        establecimiento=establecimiento,
-                        precio_ocr=precio,
-                    )
-
-                    if resultado_web.encontrado:
-                        datos_web = resultado_web.to_dict()
-                        print(f"      ✅ Datos web obtenidos:")
-                        print(f"         Nombre: {datos_web['nombre_web'][:50]}")
-                        print(f"         EAN: {datos_web['codigo_ean'] or 'N/A'}")
-                        print(f"         Marca: {datos_web['marca'] or 'N/A'}")
-                        print(f"         Fuente: {datos_web['fuente']}")
-
-                        if datos_web.get("codigo_ean") and tipo_codigo == "PLU":
-                            ean_web = datos_web["codigo_ean"]
-                            cursor.execute(
-                                f"SELECT id FROM productos_maestros_v2 WHERE codigo_ean = {param}",
-                                (ean_web,),
-                            )
-                            existe = cursor.fetchone()
-
-                            if existe:
-                                producto_id = existe[0]
-                                print(
-                                    f"      ✅ Producto encontrado por EAN web: ID={producto_id}"
-                                )
-
-                                if establecimiento_id:
-                                    guardar_plu_en_establecimiento(
-                                        cursor,
-                                        conn,
-                                        producto_id,
-                                        establecimiento_id,
-                                        codigo,
-                                        precio,
-                                    )
-
-                                return producto_id
-                    else:
-                        print(f"      ℹ️ No se encontró en web")
-
-                except Exception as e:
-                    print(f"      ⚠️ Error en enriquecimiento web: {e}")
-            else:
-                print(f"      ℹ️ {establecimiento} no es supermercado VTEX")
-
-        # ═══════════════════════════════════════════════════════════════
-        # PASO 4: NO ENCONTRADO → VALIDAR Y CREAR EN V2
-        # ═══════════════════════════════════════════════════════════════
-        print(f"\n   📝 PASO 4: Creando producto nuevo...")
-
-        aprendizaje_mgr = None
-
-        if APRENDIZAJE_AVAILABLE:
-            try:
-                aprendizaje_mgr = AprendizajeManager(cursor, conn)
-            except Exception as e:
-                print(f"   ⚠️ Error AprendizajeManager: {e}")
-
-        resultado_validacion = validar_nombre_con_sistema_completo(
-            nombre_ocr_original=nombre,
-            nombre_corregido=nombre_normalizado,
-            precio=precio,
-            establecimiento=cadena,
-            codigo=codigo,
-            aprendizaje_mgr=aprendizaje_mgr,
-            factura_id=factura_id,
-            usuario_id=usuario_id,
-            item_factura_id=item_factura_id,
-            cursor=cursor,
-            establecimiento_id=establecimiento_id,
-            datos_web=datos_web,
+        # Crear/actualizar relación con establecimiento
+        cursor.execute(
+            """
+            INSERT INTO productos_por_establecimiento (
+                producto_maestro_id, establecimiento_id, codigo_plu,
+                precio_unitario, precio_actual, ultima_actualizacion
+            ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (producto_maestro_id, establecimiento_id, codigo_plu)
+            DO UPDATE SET
+                precio_unitario = EXCLUDED.precio_unitario,
+                precio_actual = EXCLUDED.precio_actual,
+                ultima_actualizacion = CURRENT_TIMESTAMP,
+                total_reportes = productos_por_establecimiento.total_reportes + 1
+        """,
+            (producto_id, establecimiento_id, plu, precio, precio),
         )
 
-        nombre_final = resultado_validacion["nombre_final"]
-        marca_final = resultado_validacion.get("marca")
-
-        codigo_ean_final = None
-        if tipo_codigo == "EAN":
-            codigo_ean_final = codigo
-        elif datos_web and datos_web.get("codigo_ean"):
-            codigo_ean_final = datos_web["codigo_ean"]
-            print(f"   🔗 Usando EAN del web: {codigo_ean_final}")
-
-        print(f"   📊 Fuente: {resultado_validacion['fuente']}")
-        print(f"   🎯 Confianza: {resultado_validacion['confianza']:.0%}")
-
-        producto_id = crear_producto_en_v2(
-            cursor=cursor,
-            conn=conn,
-            nombre_normalizado=nombre_final,
-            codigo_ean=codigo_ean_final,
-            marca=marca_final,
-        )
-
-        if not producto_id:
-            print(f"   ❌ SKIP: No se pudo crear '{nombre_final}'")
-            return None
-
-        if codigo and establecimiento_id:
-            guardar_plu_en_establecimiento(
-                cursor, conn, producto_id, establecimiento_id, codigo, precio
-            )
-
-        if resultado_validacion.get("necesita_revision", False) and producto_id:
-            try:
-                marcar_para_revision_admin(
-                    cursor=cursor,
-                    conn=conn,
-                    producto_maestro_id=producto_id,
-                    nombre_ocr=nombre,
-                    nombre_sugerido=nombre_final,
-                    codigo=codigo or "",
-                    establecimiento=cadena,
-                    razon=resultado_validacion.get("razon_revision", "Sin especificar"),
-                )
-            except Exception as e:
-                print(f"      ⚠️ No se pudo marcar para revisión: {e}")
-
-        print(f"   ✅ Producto nuevo creado en V2: ID={producto_id}")
+        conn.commit()
+        print(f"   ✅ Producto {producto_id} creado/actualizado")
         return producto_id
 
     except Exception as e:
-        print(f"   ❌ ERROR CRÍTICO en buscar_o_crear_producto_inteligente: {e}")
-        traceback.print_exc()
-        return None
+        print(f"   ❌ Error creando producto: {e}")
+        conn.rollback()
+        raise
 
 
-# ═══════════════════════════════════════════════════════════════
-# MENSAJE DE CARGA
-# ═══════════════════════════════════════════════════════════════
-print("=" * 80)
-print("✅ product_matcher.py V9.6 - BÚSQUEDA POR PRECIO EXACTO + PLU SIMILAR")
-print("=" * 80)
-print("🎯 CAMBIOS V9.6:")
-print("   🆕 PASO 1.5: Busca por PRECIO EXACTO + PLU similar (±2 dígitos)")
-print("   🆕 Corrige errores OCR automáticamente (2326489 → 2326439)")
-print("   🆕 El precio es el criterio más confiable del OCR")
-print("   🆕 Reduce duplicados causados por errores de lectura de PLU")
-print("=" * 80)
-print("🎯 FLUJO DE BÚSQUEDA:")
-print("   PASO 0:   Buscar PAPA (producto validado)")
-print("   PASO 1:   Buscar PLU exacto")
-print("   PASO 1.5: 🆕 Buscar PRECIO EXACTO + PLU similar")
-print("   PASO 2:   Buscar EAN exacto")
-print("   PASO 3:   Buscar nombre similar (90%+)")
-print("   PASO 3.5: Enriquecimiento Web (VTEX)")
-print("   PASO 4:   Crear producto nuevo")
-print("=" * 80)
-print(f"{'✅' if APRENDIZAJE_AVAILABLE else '⚠️ '} Aprendizaje Automático")
-print(f"{'✅' if WEB_ENRICHER_AVAILABLE else '⚠️ '} Web Enricher (VTEX)")
-print("=" * 80)
+def crear_producto_ocr(
+    plu: str, nombre: str, precio: int, establecimiento_id: int, cursor, conn
+) -> int:
+    """Crea un producto nuevo solo con datos OCR"""
+    try:
+        cursor.execute(
+            """
+            INSERT INTO productos_maestros_v2 (
+                nombre_consolidado, fuente_datos, confianza_datos, veces_visto
+            ) VALUES (%s, 'OCR', 0.5, 1)
+            RETURNING id
+        """,
+            (nombre,),
+        )
+
+        producto_id = cursor.fetchone()[0]
+
+        cursor.execute(
+            """
+            INSERT INTO productos_por_establecimiento (
+                producto_maestro_id, establecimiento_id, codigo_plu,
+                precio_unitario, precio_actual, ultima_actualizacion
+            ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        """,
+            (producto_id, establecimiento_id, plu, precio, precio),
+        )
+
+        conn.commit()
+        print(f"   📝 Producto OCR creado: ID {producto_id}")
+        return producto_id
+
+    except Exception as e:
+        print(f"   ❌ Error creando producto OCR: {e}")
+        conn.rollback()
+        raise
+
+
+# ============================================================================
+# RESUMEN DE VERSIÓN
+# ============================================================================
+
+print("=" * 60)
+print("✅ PRODUCT MATCHER V10.0 CARGADO")
+print("   Flujo de validación:")
+print("   1. PAPA (100%)")
+print("   2. AUDITORÍA - EAN escaneado (95%)")
+print("   3. WEB + Validación auditoría (80-95%)")
+print("   4. CACHE VTEX (70%)")
+print("   5. OCR (50%)")
+print("=" * 60)

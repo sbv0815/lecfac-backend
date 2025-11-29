@@ -773,6 +773,217 @@ async def obtener_estadisticas_auditoria(
         conn.close()
 
 
+# ============================================
+# 🖼️ ENDPOINT: IMAGEN DE AUDITORÍA POR EAN
+# ============================================
+# Agregar a main.py o auditoria_api.py
+# ============================================
+
+
+@app.get("/api/v2/productos/imagen-auditoria/{ean}")
+async def get_imagen_auditoria_por_ean(ean: str):
+    """
+    Obtiene la imagen de auditoría de productos_referencia_ean por EAN.
+    Retorna la imagen en base64 si existe.
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Buscar imagen en productos_referencia_ean
+        cur.execute(
+            """
+            SELECT
+                id,
+                ean,
+                nombre,
+                marca,
+                presentacion,
+                categoria,
+                imagen_base64,
+                fecha_creacion,
+                usuario_id
+            FROM productos_referencia_ean
+            WHERE ean = %s
+            AND imagen_base64 IS NOT NULL
+            ORDER BY fecha_creacion DESC
+            LIMIT 1
+        """,
+            (ean,),
+        )
+
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not row:
+            return {
+                "success": False,
+                "tiene_imagen": False,
+                "mensaje": "No hay imagen de auditoría para este EAN",
+            }
+
+        return {
+            "success": True,
+            "tiene_imagen": True,
+            "fuente": "AUDITORIA",
+            "data": {
+                "id": row[0],
+                "ean": row[1],
+                "nombre": row[2],
+                "marca": row[3],
+                "presentacion": row[4],
+                "categoria": row[5],
+                "imagen_base64": row[6],  # Ya viene con el prefijo data:image/...
+                "fecha_captura": row[7].isoformat() if row[7] else None,
+                "usuario_id": row[8],
+            },
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo imagen auditoría: {e}")
+        return {"success": False, "tiene_imagen": False, "error": str(e)}
+
+
+@app.get("/api/v2/productos/{producto_id}/imagenes")
+async def get_todas_imagenes_producto(producto_id: int):
+    """
+    Obtiene TODAS las imágenes disponibles de un producto:
+    1. Imagen de Auditoría (productos_referencia_ean)
+    2. Imagen VTEX Cache (vtex_cache)
+
+    Útil para el modal de edición donde se muestran ambas.
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Primero obtener el EAN del producto
+        cur.execute(
+            """
+            SELECT codigo_ean, nombre, marca
+            FROM productos
+            WHERE id = %s
+        """,
+            (producto_id,),
+        )
+
+        producto = cur.fetchone()
+
+        if not producto:
+            cur.close()
+            conn.close()
+            return {"success": False, "error": "Producto no encontrado"}
+
+        ean = producto[0]
+        nombre_producto = producto[1]
+        marca_producto = producto[2]
+
+        resultado = {
+            "success": True,
+            "producto_id": producto_id,
+            "ean": ean,
+            "nombre": nombre_producto,
+            "imagenes": {"auditoria": None, "vtex": None},
+        }
+
+        if not ean:
+            cur.close()
+            conn.close()
+            resultado["mensaje"] = "Producto sin EAN - no se pueden buscar imágenes"
+            return resultado
+
+        # 1. Buscar imagen de AUDITORÍA
+        cur.execute(
+            """
+            SELECT
+                id,
+                nombre,
+                marca,
+                presentacion,
+                imagen_base64,
+                fecha_creacion
+            FROM productos_referencia_ean
+            WHERE ean = %s
+            AND imagen_base64 IS NOT NULL
+            ORDER BY fecha_creacion DESC
+            LIMIT 1
+        """,
+            (ean,),
+        )
+
+        auditoria = cur.fetchone()
+        if auditoria:
+            resultado["imagenes"]["auditoria"] = {
+                "id": auditoria[0],
+                "nombre": auditoria[1],
+                "marca": auditoria[2],
+                "presentacion": auditoria[3],
+                "data_url": auditoria[4],
+                "fecha": auditoria[5].isoformat() if auditoria[5] else None,
+                "fuente": "📸 Foto de Auditoría",
+            }
+
+        # 2. Buscar imagen de VTEX CACHE
+        cur.execute(
+            """
+            SELECT
+                id,
+                nombre,
+                marca,
+                establecimiento,
+                imagen_local,
+                fecha_actualizacion
+            FROM vtex_cache
+            WHERE ean = %s
+            AND imagen_local IS NOT NULL
+            ORDER BY fecha_actualizacion DESC
+            LIMIT 1
+        """,
+            (ean,),
+        )
+
+        vtex = cur.fetchone()
+        if vtex:
+            # Construir data_url desde imagen_local (que ya está en base64)
+            imagen_base64 = vtex[4]
+            # Si no tiene el prefijo data:, agregarlo
+            if imagen_base64 and not imagen_base64.startswith("data:"):
+                imagen_base64 = f"data:image/jpeg;base64,{imagen_base64}"
+
+            resultado["imagenes"]["vtex"] = {
+                "id": vtex[0],
+                "nombre": vtex[1],
+                "marca": vtex[2],
+                "establecimiento": vtex[3],
+                "data_url": imagen_base64,
+                "fecha": vtex[5].isoformat() if vtex[5] else None,
+                "fuente": "🌐 Catálogo Web",
+            }
+
+        cur.close()
+        conn.close()
+
+        # Resumen
+        tiene_auditoria = resultado["imagenes"]["auditoria"] is not None
+        tiene_vtex = resultado["imagenes"]["vtex"] is not None
+
+        resultado["resumen"] = {
+            "tiene_auditoria": tiene_auditoria,
+            "tiene_vtex": tiene_vtex,
+            "total_imagenes": int(tiene_auditoria) + int(tiene_vtex),
+        }
+
+        return resultado
+
+    except Exception as e:
+        print(f"❌ Error obteniendo imágenes: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
 # ============================================================================
 # RESUMEN
 # ============================================================================
