@@ -9311,11 +9311,11 @@ async def get_uso_api_resumen_admin(dias: int = 30):
             """
             SELECT
                 COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_total), 0) as tokens,
-                COALESCE(SUM(costo_total_usd), 0) as costo_usd,
+                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
+                COALESCE(SUM(costo_input_usd + costo_output_usd), 0) as costo_usd,
                 COUNT(DISTINCT user_id) as usuarios_activos
             FROM uso_api
-            WHERE fecha_operacion >= %s
+            WHERE fecha_creacion >= %s
         """,
             (primer_dia_mes,),
         )
@@ -9334,12 +9334,12 @@ async def get_uso_api_resumen_admin(dias: int = 30):
             SELECT
                 COALESCE(tipo_operacion, 'sin_clasificar') as operacion,
                 COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_total), 0) as tokens,
-                COALESCE(SUM(costo_total_usd), 0) as costo_usd
+                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
+                COALESCE(SUM(costo_input_usd + costo_output_usd), 0) as costo_usd
             FROM uso_api
-            WHERE fecha_operacion >= %s
+            WHERE fecha_creacion >= %s
             GROUP BY tipo_operacion
-            ORDER BY costo_usd DESC
+            ORDER BY SUM(costo_input_usd + costo_output_usd) DESC
         """,
             (primer_dia_mes,),
         )
@@ -9359,14 +9359,14 @@ async def get_uso_api_resumen_admin(dias: int = 30):
                 ua.user_id,
                 COALESCE(u.email, u.nombre, 'Usuario ' || ua.user_id::text) as nombre,
                 COUNT(*) as operaciones,
-                COALESCE(SUM(ua.tokens_total), 0) as tokens,
-                COALESCE(SUM(ua.costo_total_usd), 0) as costo_usd,
-                MAX(ua.fecha_operacion) as ultima_actividad
+                COALESCE(SUM(ua.tokens_input + ua.tokens_output), 0) as tokens,
+                COALESCE(SUM(ua.costo_input_usd + ua.costo_output_usd), 0) as costo_usd,
+                MAX(ua.fecha_creacion) as ultima_actividad
             FROM uso_api ua
             LEFT JOIN usuarios u ON ua.user_id = u.id
-            WHERE ua.fecha_operacion >= %s
+            WHERE ua.fecha_creacion >= %s
             GROUP BY ua.user_id, u.email, u.nombre
-            ORDER BY costo_usd DESC
+            ORDER BY SUM(ua.costo_input_usd + ua.costo_output_usd) DESC
         """,
             (primer_dia_mes,),
         )
@@ -9391,12 +9391,12 @@ async def get_uso_api_resumen_admin(dias: int = 30):
                 user_id,
                 COALESCE(tipo_operacion, 'sin_clasificar') as operacion,
                 COUNT(*) as operaciones,
-                COALESCE(SUM(tokens_total), 0) as tokens,
-                COALESCE(SUM(costo_total_usd), 0) as costo_usd
+                COALESCE(SUM(tokens_input + tokens_output), 0) as tokens,
+                COALESCE(SUM(costo_input_usd + costo_output_usd), 0) as costo_usd
             FROM uso_api
-            WHERE fecha_operacion >= %s
+            WHERE fecha_creacion >= %s
             GROUP BY user_id, tipo_operacion
-            ORDER BY user_id, costo_usd DESC
+            ORDER BY user_id, SUM(costo_input_usd + costo_output_usd) DESC
         """,
             (primer_dia_mes,),
         )
