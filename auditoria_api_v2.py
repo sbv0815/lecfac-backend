@@ -780,7 +780,7 @@ async def obtener_estadisticas_auditoria(
 # ============================================
 
 
-@app.get("/api/v2/productos/imagen-auditoria/{ean}")
+@router.get("/api/v2/productos/imagen-auditoria/{ean}")
 async def get_imagen_auditoria_por_ean(ean: str):
     """
     Obtiene la imagen de auditoría de productos_referencia_ean por EAN.
@@ -845,7 +845,7 @@ async def get_imagen_auditoria_por_ean(ean: str):
         return {"success": False, "tiene_imagen": False, "error": str(e)}
 
 
-@app.get("/api/v2/productos/{producto_id}/imagenes")
+@router.get("/api/v2/productos/{producto_id}/imagenes")
 async def get_todas_imagenes_producto(producto_id: int):
     """
     Obtiene TODAS las imágenes disponibles de un producto:
