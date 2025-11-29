@@ -786,7 +786,10 @@ async def get_imagen_auditoria_por_ean(ean: str):
     Obtiene la imagen de auditoría de productos_referencia_ean por EAN.
     Retorna la imagen en base64 si existe.
     """
+    from database import get_db_connection
+
     try:
+        conn = get_db_connection()
         conn = get_db_connection()
         cur = conn.cursor()
 
@@ -849,14 +852,12 @@ async def get_imagen_auditoria_por_ean(ean: str):
 async def get_todas_imagenes_producto(producto_id: int):
     """
     Obtiene TODAS las imágenes disponibles de un producto:
-    1. Imagen de Auditoría (productos_referencia_ean)
-    2. Imagen VTEX Cache (vtex_cache)
-
-    Útil para el modal de edición donde se muestran ambas.
+    ...
     """
+    from database import get_db_connection
+
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
 
         # Primero obtener el EAN del producto
         cur.execute(
