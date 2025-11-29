@@ -71,6 +71,7 @@ from validator import FacturaValidator
 from claude_invoice import parse_invoice_with_claude
 from comparador_api import router as comparador_router
 from fastapi.responses import FileResponse, HTMLResponse
+from vision_api import router as vision_router
 
 
 # ==========================================
@@ -546,6 +547,9 @@ print("✅ CORS configurado")
 
 app.include_router(productos_v2_router)
 print("✅ productos_v2_router registrado PRIMERO")
+
+# Cerca de los otros app.include_router()
+app.include_router(vision_router)
 
 # Ahora los demás routers de productos
 app.include_router(inventario_router)
