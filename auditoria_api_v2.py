@@ -50,6 +50,8 @@ class ProductoReferenciaCreate(BaseModel):
     presentacion: Optional[str] = None
     unidad_medida: Optional[str] = "unidades"
     fuente: Optional[str] = "AUDITORIA"
+    imagen_base64: Optional[str] = None  # Foto del producto
+    imagen_mime: Optional[str] = "image/jpeg"
 
 
 class ProductoReferenciaUpdate(BaseModel):
@@ -57,6 +59,8 @@ class ProductoReferenciaUpdate(BaseModel):
     marca: Optional[str] = None
     categoria: Optional[str] = None
     presentacion: Optional[str] = None
+    imagen_base64: Optional[str] = None  # Actualizar foto
+    imagen_mime: Optional[str] = None
 
 
 class ImagenAnalisisRequest(BaseModel):
@@ -203,7 +207,8 @@ async def buscar_producto_referencia(
             """
             SELECT
                 id, codigo_ean, nombre, marca, presentacion, categoria,
-                validaciones, fuente, fecha_creacion
+                validaciones, fuente, fecha_creacion,
+                CASE WHEN imagen_base64 IS NOT NULL THEN TRUE ELSE FALSE END as tiene_imagen
             FROM productos_referencia_ean
             WHERE codigo_ean = %s
         """,
@@ -224,6 +229,7 @@ async def buscar_producto_referencia(
                 "validaciones": row[6],
                 "fuente": row[7],
                 "fecha_creacion": row[8].isoformat() if row[8] else None,
+                "tiene_imagen": row[9],
             }
         else:
             print(f"⚠️ [AUDITORÍA] Producto no encontrado: {codigo_ean}")
@@ -276,26 +282,53 @@ async def crear_producto_referencia(
 
         if existente:
             # Actualizar existente e incrementar validaciones
-            cursor.execute(
-                """
-                UPDATE productos_referencia_ean
-                SET nombre = %s,
-                    marca = COALESCE(%s, marca),
-                    presentacion = COALESCE(%s, presentacion),
-                    categoria = COALESCE(%s, categoria),
-                    validaciones = validaciones + 1,
-                    fecha_actualizacion = CURRENT_TIMESTAMP
-                WHERE codigo_ean = %s
-                RETURNING id, codigo_ean, nombre, marca, presentacion, categoria, validaciones
-            """,
-                (
-                    producto.nombre.upper(),
-                    producto.marca,
-                    producto.presentacion,
-                    producto.categoria,
-                    producto.codigo_ean,
-                ),
-            )
+            # Si viene imagen nueva, actualizarla también
+            if producto.imagen_base64:
+                cursor.execute(
+                    """
+                    UPDATE productos_referencia_ean
+                    SET nombre = %s,
+                        marca = COALESCE(%s, marca),
+                        presentacion = COALESCE(%s, presentacion),
+                        categoria = COALESCE(%s, categoria),
+                        imagen_base64 = %s,
+                        imagen_mime = %s,
+                        validaciones = validaciones + 1,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                    WHERE codigo_ean = %s
+                    RETURNING id, codigo_ean, nombre, marca, presentacion, categoria, validaciones
+                """,
+                    (
+                        producto.nombre.upper(),
+                        producto.marca,
+                        producto.presentacion,
+                        producto.categoria,
+                        producto.imagen_base64,
+                        producto.imagen_mime or "image/jpeg",
+                        producto.codigo_ean,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE productos_referencia_ean
+                    SET nombre = %s,
+                        marca = COALESCE(%s, marca),
+                        presentacion = COALESCE(%s, presentacion),
+                        categoria = COALESCE(%s, categoria),
+                        validaciones = validaciones + 1,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                    WHERE codigo_ean = %s
+                    RETURNING id, codigo_ean, nombre, marca, presentacion, categoria, validaciones
+                """,
+                    (
+                        producto.nombre.upper(),
+                        producto.marca,
+                        producto.presentacion,
+                        producto.categoria,
+                        producto.codigo_ean,
+                    ),
+                )
 
             row = cursor.fetchone()
             conn.commit()
@@ -317,13 +350,13 @@ async def crear_producto_referencia(
             }
 
         else:
-            # Crear nuevo
+            # Crear nuevo con imagen si viene
             cursor.execute(
                 """
                 INSERT INTO productos_referencia_ean (
                     codigo_ean, nombre, marca, presentacion, categoria,
-                    fuente, usuario_id, validaciones
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
+                    fuente, usuario_id, validaciones, imagen_base64, imagen_mime
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
                 RETURNING id, codigo_ean, nombre, marca, presentacion, categoria, validaciones
             """,
                 (
@@ -334,13 +367,20 @@ async def crear_producto_referencia(
                     producto.categoria,
                     producto.fuente,
                     current_user["id"],
+                    producto.imagen_base64,
+                    (
+                        producto.imagen_mime or "image/jpeg"
+                        if producto.imagen_base64
+                        else None
+                    ),
                 ),
             )
 
             row = cursor.fetchone()
             conn.commit()
 
-            print(f"✅ [AUDITORÍA] Producto creado: ID {row[0]}")
+            tiene_imagen = "📷" if producto.imagen_base64 else ""
+            print(f"✅ [AUDITORÍA] Producto creado: ID {row[0]} {tiene_imagen}")
 
             return {
                 "success": True,
@@ -353,6 +393,7 @@ async def crear_producto_referencia(
                     "presentacion": row[4],
                     "categoria": row[5],
                     "validaciones": row[6],
+                    "tiene_imagen": producto.imagen_base64 is not None,
                 },
             }
 
@@ -406,6 +447,11 @@ async def actualizar_producto_referencia(
         if datos.categoria is not None:
             updates.append("categoria = %s")
             params.append(datos.categoria)
+        if datos.imagen_base64 is not None:
+            updates.append("imagen_base64 = %s")
+            params.append(datos.imagen_base64)
+            updates.append("imagen_mime = %s")
+            params.append(datos.imagen_mime or "image/jpeg")
 
         if not updates:
             raise HTTPException(status_code=400, detail="No hay datos para actualizar")
@@ -448,6 +494,65 @@ async def actualizar_producto_referencia(
     except Exception as e:
         print(f"❌ [AUDITORÍA] Error actualizando producto: {e}")
         conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================================
+# ENDPOINT: OBTENER IMAGEN DEL PRODUCTO
+# ============================================================================
+
+
+@router.get("/api/productos-referencia/{codigo_ean}/imagen")
+async def obtener_imagen_producto(
+    codigo_ean: str, current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene la imagen de un producto por su EAN.
+    Retorna la imagen en base64 con su mime type.
+    """
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a BD")
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT imagen_base64, imagen_mime, nombre
+            FROM productos_referencia_ean
+            WHERE codigo_ean = %s
+        """,
+            (codigo_ean,),
+        )
+
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        if not row[0]:
+            raise HTTPException(status_code=404, detail="Producto no tiene imagen")
+
+        print(f"📷 [AUDITORÍA] Imagen obtenida: {row[2]}")
+
+        return {
+            "success": True,
+            "codigo_ean": codigo_ean,
+            "imagen_base64": row[0],
+            "imagen_mime": row[1] or "image/jpeg",
+            "nombre": row[2],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [AUDITORÍA] Error obteniendo imagen: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
