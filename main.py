@@ -1739,14 +1739,19 @@ async def save_invoice_with_image(
                 # ========================================
                 # ✅ CAMBIO C: Usar buscar_o_crear_producto_inteligente
                 # ✅ CAMBIO C: Usar buscar_o_crear_producto_inteligente
-                producto_maestro_id = buscar_o_crear_producto_inteligente(
+                resultado_producto = buscar_o_crear_producto_inteligente(
                     codigo=codigo,
-                    nombre=nombre,
+                    nombre_ocr=nombre,
                     precio=int(precio),
-                    establecimiento=establecimiento,
+                    establecimiento_id=establecimiento_id,
+                    establecimiento_nombre=establecimiento,
                     cursor=cursor,
                     conn=conn,
-                    establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
+                )
+                producto_maestro_id = (
+                    resultado_producto.get("producto_id")
+                    if resultado_producto
+                    else None
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
@@ -2524,14 +2529,19 @@ async def process_video_background_task(
                     producto_maestro_id = None
 
                     if codigo and len(codigo) >= 3:
-                        producto_maestro_id = buscar_o_crear_producto_inteligente(
+                        resultado_producto = buscar_o_crear_producto_inteligente(
                             codigo=codigo,
-                            nombre=nombre,
+                            nombre_ocr=nombre,
                             precio=int(precio),
-                            establecimiento=establecimiento,
+                            establecimiento_id=establecimiento_id,
+                            establecimiento_nombre=establecimiento,
                             cursor=cursor,
                             conn=conn,
-                            establecimiento_id=establecimiento_id,
+                        )
+                        producto_maestro_id = (
+                            resultado_producto.get("producto_id")
+                            if resultado_producto
+                            else None
                         )
 
                         if not producto_maestro_id:
