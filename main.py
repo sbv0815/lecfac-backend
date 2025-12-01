@@ -2533,7 +2533,7 @@ async def process_video_background_task(
 
                     producto_maestro_id = None
 
-                    if codigo and len(codigo) >= 3:
+                    if codigo and len(codigo) >= 1:
                         resultado_producto = buscar_o_crear_producto_inteligente(
                             codigo=codigo,
                             nombre_ocr=nombre,
@@ -3521,7 +3521,7 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
                     # Buscar o crear producto
                     producto_maestro_id = None
 
-                    if codigo and len(codigo) >= 3:
+                    if codigo and len(codigo) >= 1:
                         resultado_producto = buscar_o_crear_producto_inteligente(
                             codigo=codigo,
                             nombre_ocr=nombre,
