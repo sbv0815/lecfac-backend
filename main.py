@@ -9671,6 +9671,82 @@ async def recalcular_analiticas(usuario_id: int):
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/verificar-analiticas/{usuario_id}")
+async def verificar_analiticas(usuario_id: int):
+    """Ver estado de tablas analíticas de un usuario"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        resultado = {"usuario_id": usuario_id}
+
+        # 1. Historial compras
+        cursor.execute(
+            """
+            SELECT COUNT(*), SUM(precio_pagado)
+            FROM historial_compras_usuario WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+        row = cursor.fetchone()
+        resultado["historial_compras"] = {
+            "registros": row[0],
+            "total": float(row[1]) if row[1] else 0,
+        }
+
+        # 2. Gastos mensuales
+        cursor.execute(
+            """
+            SELECT mes, anio, total_gastado
+            FROM gastos_mensuales WHERE usuario_id = %s
+            ORDER BY anio DESC, mes DESC
+        """,
+            (usuario_id,),
+        )
+        gastos = [
+            {"mes": r[0], "anio": r[1], "total": float(r[2])} for r in cursor.fetchall()
+        ]
+        resultado["gastos_mensuales"] = gastos
+
+        # 3. Inventario
+        cursor.execute(
+            """
+            SELECT COUNT(*), SUM(precio_ultima_compra * cantidad_actual)
+            FROM inventario_usuario WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+        row = cursor.fetchone()
+        resultado["inventario"] = {
+            "productos": row[0],
+            "valor_total": float(row[1]) if row[1] else 0,
+        }
+
+        # 4. Facturas (comparación)
+        cursor.execute(
+            """
+            SELECT COUNT(*), SUM(total_factura)
+            FROM facturas WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+        row = cursor.fetchone()
+        resultado["facturas"] = {
+            "cantidad": row[0],
+            "total": float(row[1]) if row[1] else 0,
+        }
+
+        cursor.close()
+        conn.close()
+
+        return resultado
+
+    except Exception as e:
+        import traceback
+
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
