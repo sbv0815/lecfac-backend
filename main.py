@@ -9747,6 +9747,73 @@ async def verificar_analiticas(usuario_id: int):
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+@app.get("/admin/recalcular-gastos/{usuario_id}")
+async def recalcular_gastos(usuario_id: int):
+    """Recalcula gastos mensuales desde las facturas"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Limpiar gastos existentes
+        cursor.execute(
+            "DELETE FROM gastos_mensuales WHERE usuario_id = %s", (usuario_id,)
+        )
+        eliminados = cursor.rowcount
+
+        # 2. Insertar gastos calculados desde facturas
+        cursor.execute(
+            """
+            INSERT INTO gastos_mensuales (usuario_id, mes, anio, total_gastado, num_facturas)
+            SELECT
+                usuario_id,
+                EXTRACT(MONTH FROM fecha_cargue)::int as mes,
+                EXTRACT(YEAR FROM fecha_cargue)::int as anio,
+                SUM(total_factura) as total_gastado,
+                COUNT(*) as num_facturas
+            FROM facturas
+            WHERE usuario_id = %s
+            GROUP BY usuario_id, EXTRACT(MONTH FROM fecha_cargue), EXTRACT(YEAR FROM fecha_cargue)
+        """,
+            (usuario_id,),
+        )
+        insertados = cursor.rowcount
+
+        conn.commit()
+
+        # 3. Verificar resultado
+        cursor.execute(
+            """
+            SELECT mes, anio, total_gastado, num_facturas
+            FROM gastos_mensuales
+            WHERE usuario_id = %s
+            ORDER BY anio DESC, mes DESC
+        """,
+            (usuario_id,),
+        )
+
+        gastos = [
+            {"mes": r[0], "anio": r[1], "total": float(r[2]), "facturas": r[3]}
+            for r in cursor.fetchall()
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "eliminados": eliminados,
+            "insertados": insertados,
+            "gastos_mensuales": gastos,
+        }
+
+    except Exception as e:
+        import traceback
+
+        if conn:
+            conn.rollback()
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
