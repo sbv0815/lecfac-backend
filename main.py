@@ -9591,14 +9591,32 @@ async def limpiar_facturas_duplicadas(usuario_id: int):
         # IDs a eliminar (todas menos la 9)
         ids_eliminar = [5, 6, 7, 8]
 
-        eliminados = {"items": 0, "facturas": 0}
+        eliminados = {"historial": 0, "items": 0, "jobs": 0, "facturas": 0}
 
         for fid in ids_eliminar:
+            # 1. Eliminar historial_compras_usuario
+            cursor.execute(
+                "DELETE FROM historial_compras_usuario WHERE factura_id = %s", (fid,)
+            )
+            eliminados["historial"] += cursor.rowcount
+
+            # 2. Eliminar items_factura
             cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (fid,))
             eliminados["items"] += cursor.rowcount
 
+            # 3. Eliminar processing_jobs
             cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (fid,))
+            eliminados["jobs"] += cursor.rowcount
 
+            # 4. Eliminar precios_historicos si existe
+            try:
+                cursor.execute(
+                    "DELETE FROM precios_historicos WHERE factura_id = %s", (fid,)
+                )
+            except:
+                pass
+
+            # 5. Finalmente eliminar factura
             cursor.execute(
                 "DELETE FROM facturas WHERE id = %s AND usuario_id = %s",
                 (fid, usuario_id),
@@ -9607,6 +9625,7 @@ async def limpiar_facturas_duplicadas(usuario_id: int):
 
         conn.commit()
 
+        # Verificar resultado
         cursor.execute(
             """
             SELECT COUNT(*), SUM(total_factura)
@@ -9630,6 +9649,8 @@ async def limpiar_facturas_duplicadas(usuario_id: int):
     except Exception as e:
         import traceback
 
+        if conn:
+            conn.rollback()
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
