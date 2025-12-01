@@ -9581,6 +9581,58 @@ async def stats_productos_referencia():
         conn.close()
 
 
+@app.get("/admin/limpiar-facturas-duplicadas/{usuario_id}")
+async def limpiar_facturas_duplicadas(usuario_id: int):
+    """Elimina facturas duplicadas, mantiene solo la más reciente"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # IDs a eliminar (todas menos la 9)
+        ids_eliminar = [5, 6, 7, 8]
+
+        eliminados = {"items": 0, "facturas": 0}
+
+        for fid in ids_eliminar:
+            cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (fid,))
+            eliminados["items"] += cursor.rowcount
+
+            cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (fid,))
+
+            cursor.execute(
+                "DELETE FROM facturas WHERE id = %s AND usuario_id = %s",
+                (fid, usuario_id),
+            )
+            eliminados["facturas"] += cursor.rowcount
+
+        conn.commit()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*), SUM(total_factura)
+            FROM facturas WHERE usuario_id = %s
+        """,
+            (usuario_id,),
+        )
+
+        stats = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "eliminados": eliminados,
+            "facturas_restantes": stats[0],
+            "total_correcto": float(stats[1]) if stats[1] else 0,
+        }
+
+    except Exception as e:
+        import traceback
+
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
