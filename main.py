@@ -1490,14 +1490,19 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
                 if codigo_ean and len(codigo_ean) >= 8 and codigo_ean.isdigit():
                     codigo_ean_valido = codigo_ean
 
-                producto_maestro_id = buscar_o_crear_producto_inteligente(
+                resultado_producto = buscar_o_crear_producto_inteligente(
                     codigo=codigo_ean_valido or "",
-                    nombre=nombre,
+                    nombre_ocr=nombre,
                     precio=precio_unitario,
-                    establecimiento=establecimiento_raw,
+                    establecimiento_id=establecimiento_id,
+                    establecimiento_nombre=establecimiento_raw,
                     cursor=cursor,
                     conn=conn,
-                    establecimiento_id=establecimiento_id,
+                )
+                producto_maestro_id = (
+                    resultado_producto.get("producto_id")
+                    if resultado_producto
+                    else None
                 )
 
                 print(f"   ✅ Producto Maestro ID: {producto_maestro_id} - {nombre}")
@@ -3517,14 +3522,19 @@ async def procesar_factura_v2(request: Request, background_tasks: BackgroundTask
                     producto_maestro_id = None
 
                     if codigo and len(codigo) >= 3:
-                        producto_maestro_id = buscar_o_crear_producto_inteligente(
+                        resultado_producto = buscar_o_crear_producto_inteligente(
                             codigo=codigo,
-                            nombre=nombre,
+                            nombre_ocr=nombre,
                             precio=int(precio),
-                            establecimiento=establecimiento,
+                            establecimiento_id=establecimiento_id,
+                            establecimiento_nombre=establecimiento,
                             cursor=cursor,
                             conn=conn,
-                            establecimiento_id=establecimiento_id,  # ← AGREGAR ESTO
+                        )
+                        producto_maestro_id = (
+                            resultado_producto.get("producto_id")
+                            if resultado_producto
+                            else None
                         )
 
                         if not producto_maestro_id:
