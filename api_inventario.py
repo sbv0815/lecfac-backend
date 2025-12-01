@@ -673,8 +673,7 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN cantidad_actual <= nivel_alerta THEN 1 ELSE 0 END) as bajos,
-                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios,
-                    COALESCE(SUM(cantidad_actual * precio_ultima_compra), 0) as valor_total
+                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios
                 FROM inventario_usuario
                 WHERE usuario_id = %s
                 """,
@@ -686,8 +685,7 @@ async def get_estadisticas_usuario(user_id: int):
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN cantidad_actual <= nivel_alerta THEN 1 ELSE 0 END) as bajos,
-                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios,
-                    COALESCE(SUM(cantidad_actual * precio_ultima_compra), 0) as valor_total
+                    SUM(CASE WHEN cantidad_actual <= nivel_alerta * 2 AND cantidad_actual > nivel_alerta THEN 1 ELSE 0 END) as medios
                 FROM inventario_usuario
                 WHERE usuario_id = ?
                 """,
@@ -698,7 +696,28 @@ async def get_estadisticas_usuario(user_id: int):
         total_productos = inv[0] or 0
         stock_bajo = inv[1] or 0
         stock_medio = inv[2] or 0
-        valor_total = float(inv[3]) if inv[3] else 0
+
+        # ✅ CORRECCIÓN: Valor total = suma de facturas (no items individuales)
+        if database_type == "postgresql":
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = %s
+                """,
+                (user_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_factura), 0)
+                FROM facturas
+                WHERE usuario_id = ?
+                """,
+                (user_id,),
+            )
+
+        valor_total = int(cursor.fetchone()[0] or 0)
 
         # 1.2 Productos por categoría - CORREGIDO
         if database_type == "postgresql":
