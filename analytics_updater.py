@@ -6,9 +6,11 @@ procesar una factura:
 - historial_compras_usuario
 - patrones_compra
 - productos_por_establecimiento
+- gastos_mensuales  ← NUEVO
 
 Autor: Santiago
 Fecha: 2025-11-13
+Actualizado: 2025-12-01 - Agregada función gastos_mensuales
 """
 
 import logging
@@ -53,7 +55,9 @@ def actualizar_historial_compras(cursor, conn, factura_id: int, usuario_id: int)
         conn.commit()
 
         count = len(result)
-        logger.info(f"✅ Historial compras: {count} registros insertados para factura {factura_id}")
+        logger.info(
+            f"✅ Historial compras: {count} registros insertados para factura {factura_id}"
+        )
         return count
 
     except Exception as e:
@@ -62,7 +66,9 @@ def actualizar_historial_compras(cursor, conn, factura_id: int, usuario_id: int)
         return 0
 
 
-def actualizar_patrones_compra(cursor, conn, usuario_id: int, productos_ids: list) -> int:
+def actualizar_patrones_compra(
+    cursor, conn, usuario_id: int, productos_ids: list
+) -> int:
     """
     Recalcula patrones_compra para los productos de un usuario.
 
@@ -80,7 +86,7 @@ def actualizar_patrones_compra(cursor, conn, usuario_id: int, productos_ids: lis
             return 0
 
         # Convertir lista a string para el query
-        productos_str = ','.join(str(pid) for pid in productos_ids)
+        productos_str = ",".join(str(pid) for pid in productos_ids)
 
         query = f"""
             INSERT INTO patrones_compra
@@ -109,7 +115,9 @@ def actualizar_patrones_compra(cursor, conn, usuario_id: int, productos_ids: lis
         conn.commit()
 
         count = len(result)
-        logger.info(f"✅ Patrones compra: {count} patrones actualizados para usuario {usuario_id}")
+        logger.info(
+            f"✅ Patrones compra: {count} patrones actualizados para usuario {usuario_id}"
+        )
         return count
 
     except Exception as e:
@@ -119,10 +127,7 @@ def actualizar_patrones_compra(cursor, conn, usuario_id: int, productos_ids: lis
 
 
 def actualizar_productos_por_establecimiento(
-    cursor,
-    conn,
-    establecimiento_id: int,
-    productos_ids: list
+    cursor, conn, establecimiento_id: int, productos_ids: list
 ) -> int:
     """
     Actualiza precios de productos por establecimiento.
@@ -140,7 +145,7 @@ def actualizar_productos_por_establecimiento(
         if not productos_ids:
             return 0
 
-        productos_str = ','.join(str(pid) for pid in productos_ids)
+        productos_str = ",".join(str(pid) for pid in productos_ids)
 
         query = f"""
             INSERT INTO productos_por_establecimiento
@@ -184,13 +189,89 @@ def actualizar_productos_por_establecimiento(
         return 0
 
 
+def actualizar_gastos_mensuales(cursor, conn, usuario_id: int, factura_id: int) -> int:
+    """
+    Actualiza gastos_mensuales para el usuario basándose en la factura procesada.
+
+    NUEVO: Esta función faltaba y causaba que gastos_mensuales no se actualizara
+    automáticamente después de procesar una factura.
+
+    Args:
+        cursor: Cursor de PostgreSQL
+        conn: Conexión a PostgreSQL
+        usuario_id: ID del usuario
+        factura_id: ID de la factura procesada
+
+    Returns:
+        int: 1 si se actualizó correctamente, 0 si hubo error
+    """
+    try:
+        # Obtener mes y año de la factura
+        cursor.execute(
+            """
+            SELECT
+                EXTRACT(MONTH FROM COALESCE(fecha_factura, fecha_cargue))::INT as mes,
+                EXTRACT(YEAR FROM COALESCE(fecha_factura, fecha_cargue))::INT as anio,
+                total_factura
+            FROM facturas
+            WHERE id = %s
+        """,
+            (factura_id,),
+        )
+
+        factura_data = cursor.fetchone()
+        if not factura_data:
+            logger.warning(
+                f"⚠️ Factura {factura_id} no encontrada para actualizar gastos"
+            )
+            return 0
+
+        mes, anio, total_factura = factura_data
+
+        # Recalcular totales del mes completo para este usuario
+        query = """
+            INSERT INTO gastos_mensuales (usuario_id, mes, anio, total_gastado, num_facturas)
+            SELECT
+                %s as usuario_id,
+                %s as mes,
+                %s as anio,
+                COALESCE(SUM(total_factura), 0) as total_gastado,
+                COUNT(*) as num_facturas
+            FROM facturas
+            WHERE usuario_id = %s
+              AND EXTRACT(MONTH FROM COALESCE(fecha_factura, fecha_cargue)) = %s
+              AND EXTRACT(YEAR FROM COALESCE(fecha_factura, fecha_cargue)) = %s
+            ON CONFLICT (usuario_id, mes, anio) DO UPDATE SET
+                total_gastado = EXCLUDED.total_gastado,
+                num_facturas = EXCLUDED.num_facturas,
+                fecha_actualizacion = NOW()
+            RETURNING id;
+        """
+
+        cursor.execute(query, (usuario_id, mes, anio, usuario_id, mes, anio))
+        result = cursor.fetchone()
+        conn.commit()
+
+        if result:
+            logger.info(
+                f"✅ Gastos mensuales actualizados: Usuario {usuario_id}, {mes}/{anio}"
+            )
+            return 1
+        return 0
+
+    except Exception as e:
+        logger.error(f"❌ Error actualizando gastos_mensuales: {e}")
+        conn.rollback()
+        return 0
+
+
 def actualizar_todas_las_tablas_analiticas(
     cursor,
     conn,
     factura_id: int,
     usuario_id: int,
     establecimiento_id: int,
-    productos_ids: list
+    productos_ids: list,
 ) -> dict:
     """
     Actualiza todas las tablas analíticas después de procesar una factura.
@@ -206,14 +287,17 @@ def actualizar_todas_las_tablas_analiticas(
     Returns:
         dict: Resumen de actualizaciones realizadas
     """
-    logger.info(f"🔄 Iniciando actualización de tablas analíticas para factura {factura_id}")
+    logger.info(
+        f"🔄 Iniciando actualización de tablas analíticas para factura {factura_id}"
+    )
 
     resultado = {
         "historial_compras": 0,
         "patrones_compra": 0,
         "productos_por_establecimiento": 0,
+        "gastos_mensuales": 0,  # ← NUEVO
         "exito": True,
-        "errores": []
+        "errores": [],
     }
 
     try:
@@ -228,8 +312,15 @@ def actualizar_todas_las_tablas_analiticas(
         )
 
         # 3. Actualizar productos por establecimiento
-        resultado["productos_por_establecimiento"] = actualizar_productos_por_establecimiento(
-            cursor, conn, establecimiento_id, productos_ids
+        resultado["productos_por_establecimiento"] = (
+            actualizar_productos_por_establecimiento(
+                cursor, conn, establecimiento_id, productos_ids
+            )
+        )
+
+        # 4. ✅ NUEVO: Actualizar gastos mensuales
+        resultado["gastos_mensuales"] = actualizar_gastos_mensuales(
+            cursor, conn, usuario_id, factura_id
         )
 
         logger.info(f"✅ Actualización completa: {resultado}")
@@ -242,7 +333,9 @@ def actualizar_todas_las_tablas_analiticas(
     return resultado
 
 
-def actualizar_codigo_producto(cursor, conn, producto_maestro_id: int, codigo: str) -> bool:
+def actualizar_codigo_producto(
+    cursor, conn, producto_maestro_id: int, codigo: str
+) -> bool:
     """
     Actualiza el código PLU/EAN de un producto en productos_maestros.
 
@@ -271,11 +364,15 @@ def actualizar_codigo_producto(cursor, conn, producto_maestro_id: int, codigo: s
         conn.commit()
 
         if result:
-            logger.info(f"✅ Código actualizado para producto {producto_maestro_id}: {codigo}")
+            logger.info(
+                f"✅ Código actualizado para producto {producto_maestro_id}: {codigo}"
+            )
             return True
         return False
 
     except Exception as e:
-        logger.error(f"❌ Error actualizando código de producto {producto_maestro_id}: {e}")
+        logger.error(
+            f"❌ Error actualizando código de producto {producto_maestro_id}: {e}"
+        )
         conn.rollback()
         return False

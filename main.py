@@ -1571,6 +1571,33 @@ async def parse_invoice(file: UploadFile = File(...), request: Request = None):
         except Exception as e:
             print(f"⚠️ Error actualizando inventario: {e}")
             traceback.print_exc()
+        # ✅ NUEVO: Actualizar tablas analíticas (incluyendo gastos_mensuales)
+        print(f"📊 Actualizando tablas analíticas...")
+        try:
+            cursor.execute(
+                """
+                SELECT producto_maestro_id
+                FROM items_factura
+                WHERE factura_id = %s AND producto_maestro_id IS NOT NULL
+            """,
+                (factura_id,),
+            )
+            productos_ids = [row[0] for row in cursor.fetchall()]
+
+            resultado_analytics = actualizar_todas_las_tablas_analiticas(
+                cursor=cursor,
+                conn=conn,
+                factura_id=factura_id,
+                usuario_id=usuario_id,
+                establecimiento_id=establecimiento_id,
+                productos_ids=productos_ids,
+            )
+            print(
+                f"   ✅ Analíticas: historial={resultado_analytics['historial_compras']}, patrones={resultado_analytics['patrones_compra']}, gastos={resultado_analytics['gastos_mensuales']}"
+            )
+        except Exception as e:
+            print(f"⚠️ Error actualizando tablas analíticas: {e}")
+            traceback.print_exc()
 
         print(f"💰 Guardando precios para comparación...")
         try:
