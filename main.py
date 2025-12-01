@@ -9581,51 +9581,62 @@ async def stats_productos_referencia():
         conn.close()
 
 
-@app.get("/admin/limpiar-facturas-duplicadas/{usuario_id}")
-async def limpiar_facturas_duplicadas(usuario_id: int):
-    """Elimina facturas duplicadas, mantiene solo la más reciente"""
+@app.get("/admin/recalcular-analiticas/{usuario_id}")
+async def recalcular_analiticas(usuario_id: int):
+    """Limpia y recalcula tablas analíticas desde las facturas"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # IDs a eliminar (todas menos la 9)
-        ids_eliminar = [5, 6, 7, 8]
+        # 1. Limpiar tablas analíticas
+        cursor.execute(
+            "DELETE FROM historial_compras_usuario WHERE usuario_id = %s", (usuario_id,)
+        )
+        hist = cursor.rowcount
 
-        eliminados = {"historial": 0, "items": 0, "jobs": 0, "facturas": 0}
+        cursor.execute(
+            "DELETE FROM patrones_compra WHERE usuario_id = %s", (usuario_id,)
+        )
+        patr = cursor.rowcount
 
-        for fid in ids_eliminar:
-            # 1. Eliminar historial_compras_usuario
-            cursor.execute(
-                "DELETE FROM historial_compras_usuario WHERE factura_id = %s", (fid,)
+        cursor.execute(
+            "DELETE FROM gastos_mensuales WHERE usuario_id = %s", (usuario_id,)
+        )
+        gast = cursor.rowcount
+
+        # 2. Recalcular inventario desde items_factura
+        cursor.execute(
+            "DELETE FROM inventario_usuario WHERE usuario_id = %s", (usuario_id,)
+        )
+        inv = cursor.rowcount
+
+        # 3. Reinsertar inventario correcto
+        cursor.execute(
+            """
+            INSERT INTO inventario_usuario (
+                usuario_id, producto_maestro_id, cantidad_actual,
+                precio_ultima_compra, establecimiento_nombre,
+                fecha_ultima_compra, fecha_ultima_actualizacion
             )
-            eliminados["historial"] += cursor.rowcount
+            SELECT
+                %s,
+                if2.producto_maestro_id,
+                SUM(if2.cantidad),
+                MAX(if2.precio_pagado),
+                MAX(f.establecimiento),
+                MAX(f.fecha_cargue::date),
+                CURRENT_TIMESTAMP
+            FROM items_factura if2
+            JOIN facturas f ON if2.factura_id = f.id
+            WHERE if2.usuario_id = %s
+              AND if2.producto_maestro_id IS NOT NULL
+            GROUP BY if2.producto_maestro_id
+        """,
+            (usuario_id, usuario_id),
+        )
+        insertados = cursor.rowcount
 
-            # 2. Eliminar items_factura
-            cursor.execute("DELETE FROM items_factura WHERE factura_id = %s", (fid,))
-            eliminados["items"] += cursor.rowcount
-
-            # 3. Eliminar processing_jobs
-            cursor.execute("DELETE FROM processing_jobs WHERE factura_id = %s", (fid,))
-            eliminados["jobs"] += cursor.rowcount
-
-            # 4. Eliminar precios_historicos si existe
-            try:
-                cursor.execute(
-                    "DELETE FROM precios_historicos WHERE factura_id = %s", (fid,)
-                )
-            except:
-                pass
-
-            # 5. Finalmente eliminar factura
-            cursor.execute(
-                "DELETE FROM facturas WHERE id = %s AND usuario_id = %s",
-                (fid, usuario_id),
-            )
-            eliminados["facturas"] += cursor.rowcount
-
-        conn.commit()
-
-        # Verificar resultado
+        # 4. Obtener totales correctos
         cursor.execute(
             """
             SELECT COUNT(*), SUM(total_factura)
@@ -9633,16 +9644,22 @@ async def limpiar_facturas_duplicadas(usuario_id: int):
         """,
             (usuario_id,),
         )
-
         stats = cursor.fetchone()
 
+        conn.commit()
         cursor.close()
         conn.close()
 
         return {
             "success": True,
-            "eliminados": eliminados,
-            "facturas_restantes": stats[0],
+            "limpiados": {
+                "historial": hist,
+                "patrones": patr,
+                "gastos": gast,
+                "inventario_viejo": inv,
+            },
+            "inventario_nuevo": insertados,
+            "facturas": stats[0],
             "total_correcto": float(stats[1]) if stats[1] else 0,
         }
 
