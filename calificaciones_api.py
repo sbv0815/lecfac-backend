@@ -1,7 +1,7 @@
 # ============================================================================
-# calificaciones_api.py - Sistema de Calificaciones de Productos
+# calificaciones_api.py - Sistema de Calificaciones de Productos V3
 # ============================================================================
-# Permite a usuarios calificar productos con estrellas (1-5) y comentarios
+# 3 CRITERIOS: Precio, Calidad, Presentación
 # ============================================================================
 
 from fastapi import APIRouter, HTTPException, Header, Query
@@ -18,27 +18,15 @@ router = APIRouter(prefix="/api/calificaciones", tags=["calificaciones"])
 # ============================================================================
 # MODELOS
 # ============================================================================
-class CalificacionCreate(BaseModel):
-    """Modelo para crear/actualizar una calificación"""
+class CalificacionSimpleCreate(BaseModel):
+    """Modelo para calificación con 3 criterios"""
 
     producto_maestro_id: int
-    calificacion: int = Field(..., ge=1, le=5, description="Estrellas del 1 al 5")
-    comentario: Optional[str] = Field(
-        None, max_length=280, description="Comentario opcional"
-    )
-
-
-class CalificacionResponse(BaseModel):
-    """Modelo de respuesta de calificación"""
-
-    id: int
-    usuario_id: int
-    producto_maestro_id: int
-    calificacion: int
-    comentario: Optional[str]
-    fecha_calificacion: datetime
-    nombre_producto: Optional[str] = None
-    nombre_usuario: Optional[str] = None
+    calificacion: Optional[int] = Field(None, ge=1, le=5)
+    calificacion_precio: Optional[int] = Field(None, ge=1, le=5)
+    calificacion_calidad: Optional[int] = Field(None, ge=1, le=5)
+    calificacion_presentacion: Optional[int] = Field(None, ge=1, le=5)
+    comentario: Optional[str] = Field(None, max_length=500)
 
 
 # ============================================================================
@@ -59,6 +47,28 @@ def get_user_id_from_token(authorization: Optional[str] = None) -> int:
         return 1
 
 
+def buscar_producto(cursor, producto_id: int) -> dict:
+    """Busca un producto en múltiples tablas"""
+    cursor.execute(
+        "SELECT id, nombre_consolidado FROM productos_maestros_v2 WHERE id = %s",
+        (producto_id,),
+    )
+    producto = cursor.fetchone()
+    if producto:
+        return {
+            "id": producto[0],
+            "nombre": producto[1],
+            "tabla": "productos_maestros_v2",
+        }
+
+    cursor.execute("SELECT id, nombre FROM productos WHERE id = %s", (producto_id,))
+    producto = cursor.fetchone()
+    if producto:
+        return {"id": producto[0], "nombre": producto[1], "tabla": "productos"}
+
+    return None
+
+
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
@@ -66,22 +76,38 @@ def get_user_id_from_token(authorization: Optional[str] = None) -> int:
 
 @router.post("/")
 async def crear_o_actualizar_calificacion(
-    calificacion: CalificacionCreate, authorization: Optional[str] = Header(None)
+    data: CalificacionSimpleCreate, authorization: Optional[str] = Header(None)
 ):
     """
-    ⭐ Crear o actualizar calificación de un producto
-
-    - Si el usuario ya calificó el producto, actualiza la calificación
-    - Si no, crea una nueva
+    ⭐ Crear o actualizar calificación con 3 criterios
     """
     usuario_id = get_user_id_from_token(authorization)
 
+    # Determinar valores de cada criterio
+    if data.calificacion_precio is not None:
+        precio = data.calificacion_precio
+        calidad = data.calificacion_calidad or precio
+        presentacion = data.calificacion_presentacion or precio
+    elif data.calificacion is not None:
+        precio = data.calificacion
+        calidad = data.calificacion
+        presentacion = data.calificacion
+    else:
+        raise HTTPException(
+            status_code=400, detail="Debe proporcionar al menos una calificación"
+        )
+
+    promedio = round((precio + calidad + presentacion) / 3, 1)
+
     print(
-        f"⭐ [CALIFICACIÓN] Usuario {usuario_id} califica producto {calificacion.producto_maestro_id}"
+        f"⭐ [CALIFICACIÓN] Usuario {usuario_id} califica producto {data.producto_maestro_id}"
     )
-    print(f"   Estrellas: {calificacion.calificacion}")
     print(
-        f"   Comentario: {calificacion.comentario[:50] if calificacion.comentario else 'Sin comentario'}..."
+        f"   💰 Precio: {precio} | 🏆 Calidad: {calidad} | 📦 Presentación: {presentacion}"
+    )
+    print(f"   📊 Promedio: {promedio}")
+    print(
+        f"   💬 Comentario: {data.comentario[:50] if data.comentario else 'Sin comentario'}..."
     )
 
     conn = None
@@ -89,71 +115,78 @@ async def crear_o_actualizar_calificacion(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar que el producto existe
-        cursor.execute(
-            "SELECT id, nombre_consolidado FROM productos_maestros_v2 WHERE id = %s",
-            (calificacion.producto_maestro_id,),
-        )
-        producto = cursor.fetchone()
-
+        producto = buscar_producto(cursor, data.producto_maestro_id)
         if not producto:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-        # Insertar o actualizar (UPSERT)
+        # UPSERT
         cursor.execute(
             """
             INSERT INTO calificaciones_productos
-                (usuario_id, producto_maestro_id, calificacion, comentario)
-            VALUES (%s, %s, %s, %s)
+                (usuario_id, producto_maestro_id, calificacion,
+                 calificacion_precio, calificacion_calidad, calificacion_presentacion,
+                 comentario)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (usuario_id, producto_maestro_id)
             DO UPDATE SET
                 calificacion = EXCLUDED.calificacion,
+                calificacion_precio = EXCLUDED.calificacion_precio,
+                calificacion_calidad = EXCLUDED.calificacion_calidad,
+                calificacion_presentacion = EXCLUDED.calificacion_presentacion,
                 comentario = EXCLUDED.comentario,
                 fecha_actualizacion = NOW()
             RETURNING id, fecha_calificacion
         """,
             (
                 usuario_id,
-                calificacion.producto_maestro_id,
-                calificacion.calificacion,
-                calificacion.comentario,
+                data.producto_maestro_id,
+                round(promedio),
+                precio,
+                calidad,
+                presentacion,
+                data.comentario,
             ),
         )
 
         result = cursor.fetchone()
         conn.commit()
 
-        # Obtener el rating promedio actualizado
+        # Stats
         cursor.execute(
             """
             SELECT
                 COUNT(*) as total,
-                ROUND(AVG(calificacion), 1) as promedio
+                ROUND(AVG(calificacion), 1) as promedio_general,
+                ROUND(AVG(calificacion_precio), 1) as promedio_precio,
+                ROUND(AVG(calificacion_calidad), 1) as promedio_calidad,
+                ROUND(AVG(calificacion_presentacion), 1) as promedio_presentacion
             FROM calificaciones_productos
             WHERE producto_maestro_id = %s
         """,
-            (calificacion.producto_maestro_id,),
+            (data.producto_maestro_id,),
         )
 
         stats = cursor.fetchone()
-
         conn.close()
-
-        print(
-            f"✅ Calificación guardada. Rating promedio: {stats[1]} ({stats[0]} opiniones)"
-        )
 
         return {
             "success": True,
             "mensaje": "¡Gracias por tu calificación!",
             "calificacion_id": result[0],
-            "producto": {
-                "id": calificacion.producto_maestro_id,
-                "nombre": producto[1],
-                "rating_promedio": (
-                    float(stats[1]) if stats[1] else calificacion.calificacion
-                ),
+            "producto": {"id": data.producto_maestro_id, "nombre": producto["nombre"]},
+            "mi_calificacion": {
+                "precio": precio,
+                "calidad": calidad,
+                "presentacion": presentacion,
+                "promedio": promedio,
+                "comentario": data.comentario,
+            },
+            "estadisticas": {
                 "total_calificaciones": stats[0],
+                "rating_promedio": float(stats[1]) if stats[1] else promedio,
+                "promedio_precio": float(stats[2]) if stats[2] else precio,
+                "promedio_calidad": float(stats[3]) if stats[3] else calidad,
+                "promedio_presentacion": float(stats[4]) if stats[4] else presentacion,
             },
         }
 
@@ -161,6 +194,9 @@ async def crear_o_actualizar_calificacion(
         raise
     except Exception as e:
         logger.error(f"❌ Error guardando calificación: {e}")
+        import traceback
+
+        traceback.print_exc()
         if conn:
             conn.rollback()
             conn.close()
@@ -173,15 +209,7 @@ async def obtener_calificaciones_producto(
     limit: int = Query(10, ge=1, le=50),
     authorization: Optional[str] = Header(None),
 ):
-    """
-    📊 Obtener calificaciones de un producto
-
-    Retorna:
-    - Rating promedio
-    - Total de calificaciones
-    - Lista de comentarios recientes
-    - Calificación del usuario actual (si existe)
-    """
+    """📊 Obtener calificaciones de un producto"""
     usuario_id = get_user_id_from_token(authorization)
 
     conn = None
@@ -189,55 +217,76 @@ async def obtener_calificaciones_producto(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Obtener info del producto y stats
+        producto = buscar_producto(cursor, producto_id)
+
+        if not producto:
+            return {
+                "success": True,
+                "producto": {"id": producto_id, "nombre": "Producto", "marca": None},
+                "estadisticas": {
+                    "total_calificaciones": 0,
+                    "rating_promedio": 0,
+                    "promedio_precio": 0,
+                    "promedio_calidad": 0,
+                    "promedio_presentacion": 0,
+                    "distribucion": {
+                        "5_estrellas": 0,
+                        "4_estrellas": 0,
+                        "3_estrellas": 0,
+                        "2_estrellas": 0,
+                        "1_estrella": 0,
+                    },
+                },
+                "mi_calificacion": None,
+                "comentarios": [],
+            }
+
+        # Stats
         cursor.execute(
             """
             SELECT
-                pm.id,
-                pm.nombre_consolidado,
-                pm.marca,
-                COUNT(cp.id) as total_calificaciones,
-                COALESCE(ROUND(AVG(cp.calificacion), 1), 0) as rating_promedio,
-                COUNT(CASE WHEN cp.calificacion >= 4 THEN 1 END) as positivas,
-                COUNT(CASE WHEN cp.calificacion <= 2 THEN 1 END) as negativas
-            FROM productos_maestros_v2 pm
-            LEFT JOIN calificaciones_productos cp ON pm.id = cp.producto_maestro_id
-            WHERE pm.id = %s
-            GROUP BY pm.id, pm.nombre_consolidado, pm.marca
+                COUNT(*) as total,
+                COALESCE(ROUND(AVG(calificacion), 1), 0) as promedio,
+                COALESCE(ROUND(AVG(calificacion_precio), 1), 0) as prom_precio,
+                COALESCE(ROUND(AVG(calificacion_calidad), 1), 0) as prom_calidad,
+                COALESCE(ROUND(AVG(calificacion_presentacion), 1), 0) as prom_pres,
+                COUNT(CASE WHEN calificacion = 5 THEN 1 END),
+                COUNT(CASE WHEN calificacion = 4 THEN 1 END),
+                COUNT(CASE WHEN calificacion = 3 THEN 1 END),
+                COUNT(CASE WHEN calificacion = 2 THEN 1 END),
+                COUNT(CASE WHEN calificacion = 1 THEN 1 END)
+            FROM calificaciones_productos
+            WHERE producto_maestro_id = %s
         """,
             (producto_id,),
         )
 
-        producto_stats = cursor.fetchone()
+        stats = cursor.fetchone()
 
-        if not producto_stats:
-            raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-        # Obtener calificación del usuario actual
+        # Mi calificación
         cursor.execute(
             """
-            SELECT calificacion, comentario, fecha_calificacion
+            SELECT calificacion, calificacion_precio, calificacion_calidad,
+                   calificacion_presentacion, comentario, fecha_calificacion
             FROM calificaciones_productos
             WHERE producto_maestro_id = %s AND usuario_id = %s
         """,
             (producto_id, usuario_id),
         )
 
-        mi_calificacion = cursor.fetchone()
+        mi_cal = cursor.fetchone()
 
-        # Obtener comentarios recientes (solo los que tienen comentario)
+        # Comentarios
         cursor.execute(
             """
             SELECT
-                cp.calificacion,
-                cp.comentario,
-                cp.fecha_calificacion,
-                u.nombre as nombre_usuario
+                cp.calificacion, cp.calificacion_precio, cp.calificacion_calidad,
+                cp.calificacion_presentacion, cp.comentario, cp.fecha_calificacion,
+                COALESCE(u.nombre, 'Usuario') as nombre
             FROM calificaciones_productos cp
             LEFT JOIN usuarios u ON cp.usuario_id = u.id
             WHERE cp.producto_maestro_id = %s
-              AND cp.comentario IS NOT NULL
-              AND cp.comentario != ''
+              AND cp.comentario IS NOT NULL AND cp.comentario != ''
             ORDER BY cp.fecha_calificacion DESC
             LIMIT %s
         """,
@@ -245,68 +294,74 @@ async def obtener_calificaciones_producto(
         )
 
         comentarios_rows = cursor.fetchall()
-
         conn.close()
 
-        # Formatear comentarios
         comentarios = []
         for row in comentarios_rows:
-            fecha = row[2]
-            if fecha:
-                dias = (datetime.now() - fecha).days
-                if dias == 0:
-                    fecha_str = "Hoy"
-                elif dias == 1:
-                    fecha_str = "Ayer"
-                elif dias <= 7:
-                    fecha_str = f"Hace {dias} días"
-                else:
-                    fecha_str = fecha.strftime("%d/%m/%Y")
-            else:
-                fecha_str = ""
+            fecha = row[5]
+            dias = (datetime.now() - fecha).days if fecha else 0
+            fecha_str = (
+                "Hoy"
+                if dias == 0
+                else (
+                    "Ayer"
+                    if dias == 1
+                    else (
+                        f"Hace {dias} días" if dias <= 7 else fecha.strftime("%d/%m/%Y")
+                    )
+                )
+            )
 
             comentarios.append(
                 {
                     "calificacion": row[0],
-                    "comentario": row[1],
+                    "precio": row[1],
+                    "calidad": row[2],
+                    "presentacion": row[3],
+                    "comentario": row[4],
                     "fecha": fecha_str,
-                    "usuario": row[3] or "Usuario",
+                    "usuario": row[6],
                 }
             )
 
         return {
             "success": True,
             "producto": {
-                "id": producto_stats[0],
-                "nombre": producto_stats[1],
-                "marca": producto_stats[2],
+                "id": producto_id,
+                "nombre": producto["nombre"],
+                "marca": None,
             },
             "estadisticas": {
-                "total_calificaciones": producto_stats[3],
-                "rating_promedio": float(producto_stats[4]) if producto_stats[4] else 0,
-                "positivas": producto_stats[5],
-                "negativas": producto_stats[6],
+                "total_calificaciones": stats[0],
+                "rating_promedio": float(stats[1]) if stats[1] else 0,
+                "promedio_precio": float(stats[2]) if stats[2] else 0,
+                "promedio_calidad": float(stats[3]) if stats[3] else 0,
+                "promedio_presentacion": float(stats[4]) if stats[4] else 0,
+                "distribucion": {
+                    "5_estrellas": stats[5],
+                    "4_estrellas": stats[6],
+                    "3_estrellas": stats[7],
+                    "2_estrellas": stats[8],
+                    "1_estrella": stats[9],
+                },
             },
             "mi_calificacion": (
                 {
-                    "calificacion": mi_calificacion[0],
-                    "comentario": mi_calificacion[1],
-                    "fecha": (
-                        mi_calificacion[2].isoformat()
-                        if mi_calificacion and mi_calificacion[2]
-                        else None
-                    ),
+                    "calificacion": mi_cal[0],
+                    "precio": mi_cal[1],
+                    "calidad": mi_cal[2],
+                    "presentacion": mi_cal[3],
+                    "comentario": mi_cal[4],
+                    "fecha": mi_cal[5].isoformat() if mi_cal and mi_cal[5] else None,
                 }
-                if mi_calificacion
+                if mi_cal
                 else None
             ),
             "comentarios": comentarios,
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"❌ Error obteniendo calificaciones: {e}")
+        logger.error(f"❌ Error: {e}")
         if conn:
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
@@ -316,74 +371,59 @@ async def obtener_calificaciones_producto(
 async def obtener_calificaciones_usuario(
     usuario_id: int, limit: int = Query(20, ge=1, le=100)
 ):
-    """
-    👤 Obtener todas las calificaciones de un usuario (para su perfil)
-
-    Retorna lista de productos calificados con sus estrellas
-    """
+    """👤 Obtener calificaciones de un usuario"""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Obtener estadísticas del usuario
         cursor.execute(
             """
             SELECT
-                COUNT(*) as total_calificaciones,
-                ROUND(AVG(calificacion), 1) as promedio_dado,
-                COUNT(CASE WHEN calificacion = 5 THEN 1 END) as cinco_estrellas,
-                COUNT(CASE WHEN calificacion = 4 THEN 1 END) as cuatro_estrellas,
-                COUNT(CASE WHEN calificacion = 3 THEN 1 END) as tres_estrellas,
-                COUNT(CASE WHEN calificacion = 2 THEN 1 END) as dos_estrellas,
-                COUNT(CASE WHEN calificacion = 1 THEN 1 END) as una_estrella,
-                COUNT(CASE WHEN comentario IS NOT NULL AND comentario != '' THEN 1 END) as con_comentario
-            FROM calificaciones_productos
-            WHERE usuario_id = %s
+                COUNT(*), ROUND(AVG(calificacion), 1),
+                ROUND(AVG(calificacion_precio), 1), ROUND(AVG(calificacion_calidad), 1),
+                ROUND(AVG(calificacion_presentacion), 1),
+                COUNT(CASE WHEN comentario IS NOT NULL AND comentario != '' THEN 1 END)
+            FROM calificaciones_productos WHERE usuario_id = %s
         """,
             (usuario_id,),
         )
 
         stats = cursor.fetchone()
 
-        # Obtener calificaciones recientes
         cursor.execute(
             """
-            SELECT
-                cp.id,
-                cp.producto_maestro_id,
-                pm.nombre_consolidado,
-                pm.marca,
-                cp.calificacion,
-                cp.comentario,
-                cp.fecha_calificacion
+            SELECT cp.id, cp.producto_maestro_id, pm.nombre_consolidado, pm.marca,
+                   cp.calificacion, cp.calificacion_precio, cp.calificacion_calidad,
+                   cp.calificacion_presentacion, cp.comentario, cp.fecha_calificacion
             FROM calificaciones_productos cp
             INNER JOIN productos_maestros_v2 pm ON cp.producto_maestro_id = pm.id
             WHERE cp.usuario_id = %s
-            ORDER BY cp.fecha_calificacion DESC
-            LIMIT %s
+            ORDER BY cp.fecha_calificacion DESC LIMIT %s
         """,
             (usuario_id, limit),
         )
 
-        calificaciones_rows = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
 
         calificaciones = []
-        for row in calificaciones_rows:
-            fecha = row[6]
-            if fecha:
-                dias = (datetime.now() - fecha).days
-                if dias == 0:
-                    fecha_str = "Hoy"
-                elif dias == 1:
-                    fecha_str = "Ayer"
-                elif dias <= 30:
-                    fecha_str = f"Hace {dias} días"
-                else:
-                    fecha_str = fecha.strftime("%d/%m/%Y")
-            else:
-                fecha_str = ""
+        for row in rows:
+            fecha = row[9]
+            dias = (datetime.now() - fecha).days if fecha else 0
+            fecha_str = (
+                "Hoy"
+                if dias == 0
+                else (
+                    "Ayer"
+                    if dias == 1
+                    else (
+                        f"Hace {dias} días"
+                        if dias <= 30
+                        else fecha.strftime("%d/%m/%Y")
+                    )
+                )
+            )
 
             calificaciones.append(
                 {
@@ -392,7 +432,10 @@ async def obtener_calificaciones_usuario(
                     "producto_nombre": row[2],
                     "marca": row[3],
                     "calificacion": row[4],
-                    "comentario": row[5],
+                    "precio": row[5],
+                    "calidad": row[6],
+                    "presentacion": row[7],
+                    "comentario": row[8],
                     "fecha": fecha_str,
                 }
             )
@@ -402,68 +445,17 @@ async def obtener_calificaciones_usuario(
             "usuario_id": usuario_id,
             "estadisticas": {
                 "total_calificaciones": stats[0] or 0,
-                "promedio_dado": float(stats[1]) if stats[1] else 0,
-                "distribucion": {
-                    "5_estrellas": stats[2] or 0,
-                    "4_estrellas": stats[3] or 0,
-                    "3_estrellas": stats[4] or 0,
-                    "2_estrellas": stats[5] or 0,
-                    "1_estrella": stats[6] or 0,
-                },
-                "con_comentario": stats[7] or 0,
+                "promedio_general": float(stats[1]) if stats[1] else 0,
+                "promedio_precio": float(stats[2]) if stats[2] else 0,
+                "promedio_calidad": float(stats[3]) if stats[3] else 0,
+                "promedio_presentacion": float(stats[4]) if stats[4] else 0,
+                "con_comentario": stats[5] or 0,
             },
             "calificaciones": calificaciones,
         }
 
     except Exception as e:
-        logger.error(f"❌ Error obteniendo calificaciones del usuario: {e}")
         if conn:
-            conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/{calificacion_id}")
-async def eliminar_calificacion(
-    calificacion_id: int, authorization: Optional[str] = Header(None)
-):
-    """
-    🗑️ Eliminar una calificación propia
-    """
-    usuario_id = get_user_id_from_token(authorization)
-
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Verificar que la calificación pertenece al usuario
-        cursor.execute(
-            """
-            DELETE FROM calificaciones_productos
-            WHERE id = %s AND usuario_id = %s
-            RETURNING id
-        """,
-            (calificacion_id, usuario_id),
-        )
-
-        result = cursor.fetchone()
-        conn.commit()
-        conn.close()
-
-        if not result:
-            raise HTTPException(
-                status_code=404,
-                detail="Calificación no encontrada o no tienes permiso para eliminarla",
-            )
-
-        return {"success": True, "mensaje": "Calificación eliminada"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error eliminando calificación: {e}")
-        if conn:
-            conn.rollback()
             conn.close()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -472,11 +464,7 @@ async def eliminar_calificacion(
 async def obtener_mi_calificacion(
     producto_id: int, authorization: Optional[str] = Header(None)
 ):
-    """
-    ⭐ Obtener mi calificación para un producto específico
-
-    Útil para mostrar las estrellas en el inventario
-    """
+    """⭐ Obtener mi calificación"""
     usuario_id = get_user_id_from_token(authorization)
 
     conn = None
@@ -486,7 +474,8 @@ async def obtener_mi_calificacion(
 
         cursor.execute(
             """
-            SELECT calificacion, comentario, fecha_calificacion
+            SELECT calificacion, calificacion_precio, calificacion_calidad,
+                   calificacion_presentacion, comentario, fecha_calificacion
             FROM calificaciones_productos
             WHERE producto_maestro_id = %s AND usuario_id = %s
         """,
@@ -501,22 +490,59 @@ async def obtener_mi_calificacion(
                 "success": True,
                 "calificado": True,
                 "calificacion": result[0],
-                "comentario": result[1],
-                "fecha": result[2].isoformat() if result[2] else None,
+                "precio": result[1],
+                "calidad": result[2],
+                "presentacion": result[3],
+                "comentario": result[4],
+                "fecha": result[5].isoformat() if result[5] else None,
             }
-        else:
-            return {
-                "success": True,
-                "calificado": False,
-                "calificacion": None,
-                "comentario": None,
-            }
+        return {
+            "success": True,
+            "calificado": False,
+            "calificacion": None,
+            "precio": None,
+            "calidad": None,
+            "presentacion": None,
+            "comentario": None,
+        }
 
     except Exception as e:
-        logger.error(f"❌ Error obteniendo mi calificación: {e}")
         if conn:
             conn.close()
         return {"success": False, "calificado": False, "calificacion": None}
 
 
-print("✅ API de Calificaciones cargada")
+@router.delete("/{calificacion_id}")
+async def eliminar_calificacion(
+    calificacion_id: int, authorization: Optional[str] = Header(None)
+):
+    """🗑️ Eliminar calificación"""
+    usuario_id = get_user_id_from_token(authorization)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "DELETE FROM calificaciones_productos WHERE id = %s AND usuario_id = %s RETURNING id",
+            (calificacion_id, usuario_id),
+        )
+        result = cursor.fetchone()
+        conn.commit()
+        conn.close()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Calificación no encontrada")
+        return {"success": True, "mensaje": "Calificación eliminada"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ API de Calificaciones V3 cargada (3 criterios)")
