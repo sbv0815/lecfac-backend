@@ -27,24 +27,26 @@ async def buscar_mejor_en_tienda(
     establecimiento_id: Optional[int] = Query(
         None, description="ID del supermercado (si no se envía, busca en todos)"
     ),
+    ordenar_por: str = Query(
+        "valor", description="Ordenar por: precio, rating, valor (precio+rating)"
+    ),
 ):
     """
-    🏪 MODO 1: Buscar productos por palabra clave y ver cuál es más barato
+    🏪 MODO 1: Buscar productos por palabra clave y ver cuál es mejor
 
-    Ejemplo: Buscar "empanadas" en Jumbo → Ver todas las marcas ordenadas por precio
+    Ejemplo: Buscar "empanadas" en Jumbo → Ver todas las marcas ordenadas
 
     Query params:
     - busqueda: Palabra clave (mínimo 2 caracteres)
-    - establecimiento_id: ID del supermercado (opcional, si no se envía busca en todos)
+    - establecimiento_id: ID del supermercado (opcional)
+    - ordenar_por: "precio" | "rating" | "valor" (combina ambos)
 
-    Retorna productos ordenados por precio con indicador de "mejor precio"
+    Retorna productos ordenados según criterio con indicador de "mejor opción"
     """
     print(f"\n{'='*60}")
     print(f"🏪 MODO TIENDA: Buscando '{busqueda}'")
-    if establecimiento_id:
-        print(f"   📍 En establecimiento ID: {establecimiento_id}")
-    else:
-        print(f"   📍 En TODOS los establecimientos")
+    print(f"   📍 Establecimiento ID: {establecimiento_id or 'Todos'}")
+    print(f"   📊 Ordenar por: {ordenar_por}")
     print(f"{'='*60}")
 
     conn = None
@@ -56,7 +58,7 @@ async def buscar_mejor_en_tienda(
         busqueda_limpia = busqueda.strip().upper()
         busqueda_pattern = f"%{busqueda_limpia}%"
 
-        # Query base
+        # Query con LEFT JOIN a calificaciones para obtener ratings
         query = """
             SELECT
                 pm.id,
@@ -67,12 +69,22 @@ async def buscar_mejor_en_tienda(
                 e.nombre_normalizado as establecimiento,
                 ppe.precio_unitario,
                 ppe.fecha_actualizacion,
-                COALESCE(ppe.total_reportes, 1) as veces_visto
+                COALESCE(ppe.total_reportes, 1) as veces_visto,
+                COALESCE(ratings.rating_promedio, 0) as rating,
+                COALESCE(ratings.total_calificaciones, 0) as num_opiniones
             FROM productos_maestros_v2 pm
             INNER JOIN productos_por_establecimiento ppe
                 ON pm.id = ppe.producto_maestro_id
             INNER JOIN establecimientos e
                 ON ppe.establecimiento_id = e.id
+            LEFT JOIN (
+                SELECT
+                    producto_maestro_id,
+                    ROUND(AVG(calificacion), 1) as rating_promedio,
+                    COUNT(*) as total_calificaciones
+                FROM calificaciones_productos
+                GROUP BY producto_maestro_id
+            ) ratings ON pm.id = ratings.producto_maestro_id
             WHERE UPPER(pm.nombre_consolidado) LIKE %s
               AND ppe.precio_unitario > 0
         """
@@ -83,8 +95,6 @@ async def buscar_mejor_en_tienda(
         if establecimiento_id:
             query += " AND e.id = %s"
             params.append(establecimiento_id)
-
-        query += " ORDER BY ppe.precio_unitario ASC"
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
@@ -114,11 +124,31 @@ async def buscar_mejor_en_tienda(
 
         # Procesar resultados
         productos = []
-        precio_minimo = rows[0][6]  # El primero es el más barato (ORDER BY precio ASC)
+        precio_minimo = min(row[6] for row in rows)
+        precio_maximo = max(row[6] for row in rows)
+        rating_maximo = max(row[9] for row in rows) or 5
 
         for row in rows:
             precio = float(row[6])
-            diferencia = precio - precio_minimo
+            rating = float(row[9]) if row[9] else 0
+            num_opiniones = row[10] or 0
+
+            # Calcular "score de valor" (60% rating, 40% precio inverso)
+            # Normalizar precio (0 = más caro, 1 = más barato)
+            if precio_maximo > precio_minimo:
+                precio_normalizado = 1 - (
+                    (precio - precio_minimo) / (precio_maximo - precio_minimo)
+                )
+            else:
+                precio_normalizado = 1
+
+            # Normalizar rating (0-1)
+            rating_normalizado = (
+                rating / 5 if rating > 0 else 0.5
+            )  # Si no hay rating, asumir 2.5
+
+            # Score de valor: combina calidad y precio
+            score_valor = (rating_normalizado * 0.6) + (precio_normalizado * 0.4)
 
             # Formatear fecha
             fecha = row[7]
@@ -145,17 +175,65 @@ async def buscar_mejor_en_tienda(
                     "establecimiento": row[5],
                     "precio": precio,
                     "precio_formateado": f"${precio:,.0f}".replace(",", "."),
-                    "es_mejor_precio": diferencia == 0,
-                    "diferencia": diferencia,
-                    "diferencia_formateada": (
-                        f"+${diferencia:,.0f}".replace(",", ".")
-                        if diferencia > 0
-                        else "⭐ Mejor precio"
-                    ),
+                    "rating": rating,
+                    "num_opiniones": num_opiniones,
+                    "score_valor": round(score_valor, 3),
                     "fecha_actualizado": fecha_str,
                     "veces_visto": row[8],
                 }
             )
+
+        # Ordenar según criterio
+        if ordenar_por == "precio":
+            productos.sort(key=lambda x: x["precio"])
+        elif ordenar_por == "rating":
+            productos.sort(
+                key=lambda x: (-x["rating"], x["precio"])
+            )  # Mayor rating primero, desempate por precio
+        else:  # "valor" (default)
+            productos.sort(key=lambda x: -x["score_valor"])  # Mayor score primero
+
+        # Marcar el mejor producto y calcular diferencias
+        if productos:
+            mejor_precio = (
+                productos[0]["precio"]
+                if ordenar_por == "precio"
+                else min(p["precio"] for p in productos)
+            )
+
+            for i, prod in enumerate(productos):
+                diferencia = prod["precio"] - mejor_precio
+
+                # Determinar si es "mejor opción" según el criterio
+                if ordenar_por == "precio":
+                    es_mejor = i == 0
+                elif ordenar_por == "rating":
+                    es_mejor = i == 0 and prod["rating"] > 0
+                else:  # valor
+                    es_mejor = i == 0
+
+                prod["es_mejor_opcion"] = es_mejor
+                prod["diferencia"] = diferencia
+                prod["diferencia_formateada"] = (
+                    f"+${diferencia:,.0f}".replace(",", ".") if diferencia > 0 else ""
+                )
+
+                # Etiquetas especiales
+                if es_mejor:
+                    if ordenar_por == "precio":
+                        prod["etiqueta"] = "💰 Más barato"
+                    elif ordenar_por == "rating":
+                        prod["etiqueta"] = "⭐ Mejor calificado"
+                    else:
+                        prod["etiqueta"] = "🏆 Mejor opción"
+                elif prod["precio"] == mejor_precio and ordenar_por != "precio":
+                    prod["etiqueta"] = "💰 Más barato"
+                elif prod["rating"] >= 4.5 and prod["num_opiniones"] >= 3:
+                    prod["etiqueta"] = "⭐ Muy bien calificado"
+                elif prod["rating"] <= 2 and prod["num_opiniones"] >= 2:
+                    prod["etiqueta"] = "⚠️ Calificación baja"
+                else:
+                    prod["etiqueta"] = None
 
         # Obtener nombre del establecimiento si se filtró
         nombre_establecimiento = None
@@ -164,19 +242,35 @@ async def buscar_mejor_en_tienda(
 
         conn.close()
 
-        print(f"✅ Retornando {len(productos)} productos")
-        print(f"   💰 Mejor precio: ${precio_minimo:,.0f}")
+        print(f"✅ Retornando {len(productos)} productos ordenados por {ordenar_por}")
 
         return {
             "success": True,
             "busqueda": busqueda,
             "establecimiento_id": establecimiento_id,
             "establecimiento_nombre": nombre_establecimiento,
+            "ordenado_por": ordenar_por,
             "productos": productos,
-            "mejor_precio": precio_minimo,
             "total": len(productos),
             "mensaje_usuario": f"Encontramos {len(productos)} productos con '{busqueda}'"
             + (f" en {nombre_establecimiento}" if nombre_establecimiento else ""),
+            "criterios_disponibles": [
+                {
+                    "valor": "valor",
+                    "etiqueta": "🏆 Mejor opción",
+                    "descripcion": "Combina calidad y precio",
+                },
+                {
+                    "valor": "precio",
+                    "etiqueta": "💰 Más barato",
+                    "descripcion": "Solo por precio",
+                },
+                {
+                    "valor": "rating",
+                    "etiqueta": "⭐ Mejor calificado",
+                    "descripcion": "Solo por calificación",
+                },
+            ],
         }
 
     except Exception as e:

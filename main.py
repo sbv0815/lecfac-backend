@@ -61,6 +61,7 @@ from database import (
     procesar_items_factura_y_guardar_precios,
 )
 from analytics_updater import actualizar_todas_las_tablas_analiticas
+from calificaciones_api import router as calificaciones_router
 
 # Importar routers
 from api_inventario import router as inventario_router
@@ -511,6 +512,7 @@ app = FastAPI(
 from routes import menus
 
 app.include_router(menus.router)
+app.include_router(calificaciones_router)
 
 
 # ==========================================
