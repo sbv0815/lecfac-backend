@@ -1,7 +1,6 @@
 """
 api_inventario.py - APIs REST para la App Flutter
-ACTUALIZADO: Usa productos_maestros_v2 correctamente
-CORREGIDO: JOINs y campos correctos para V2
+ACTUALIZADO: Incluye producto_maestro_id en la respuesta para calificaciones
 """
 
 from fastapi import APIRouter, HTTPException, Header
@@ -37,6 +36,7 @@ def verificar_token(authorization: str = Header(None)):
 async def get_inventario_usuario(user_id: int):
     """
     GET /api/inventario/usuario/{user_id}
+    ACTUALIZADO: Ahora incluye producto_maestro_id para calificaciones
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -79,7 +79,8 @@ async def get_inventario_usuario(user_id: int):
                     iu.ultima_factura_id,
                     iu.cantidad_por_unidad,
                     iu.dias_desde_ultima_compra,
-                    iu.marca
+                    iu.marca,
+                    iu.producto_maestro_id
                 FROM inventario_usuario iu
                 JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 LEFT JOIN categorias c ON pm.categoria_id = c.id
@@ -130,7 +131,8 @@ async def get_inventario_usuario(user_id: int):
                     iu.ultima_factura_id,
                     iu.cantidad_por_unidad,
                     iu.dias_desde_ultima_compra,
-                    iu.marca
+                    iu.marca,
+                    iu.producto_maestro_id
                 FROM inventario_usuario iu
                 JOIN productos_maestros_v2 pm ON iu.producto_maestro_id = pm.id
                 LEFT JOIN categorias c ON pm.categoria_id = c.id
@@ -178,6 +180,8 @@ async def get_inventario_usuario(user_id: int):
                     "ultima_factura_id": row[25],
                     "cantidad_por_unidad": float(row[26]) if row[26] else 1.0,
                     "dias_desde_ultima_compra": int(row[27]) if row[27] else 0,
+                    # ⭐ NUEVO: producto_maestro_id para calificaciones
+                    "producto_maestro_id": row[29] if len(row) > 29 else row[0],
                 }
             )
 
