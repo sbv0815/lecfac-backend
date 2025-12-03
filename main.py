@@ -73,6 +73,7 @@ from claude_invoice import parse_invoice_with_claude
 from comparador_api import router as comparador_router
 from fastapi.responses import FileResponse, HTMLResponse
 from auditoria_api_v2 import router as auditoria_router
+from api_listas_compras import router as listas_router
 
 
 # ==========================================
@@ -513,6 +514,8 @@ from routes import menus
 
 app.include_router(menus.router)
 app.include_router(calificaciones_router)
+app.include_router(listas_router)
+print("✅ listas_routes registrado")
 
 
 # ==========================================
