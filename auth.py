@@ -37,6 +37,11 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 # ============================================
 
 
+# ============================================
+# MODELOS PYDANTIC
+# ============================================
+
+
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
@@ -64,6 +69,39 @@ class UserRegister(BaseModel):
             raise ValueError("Debe aceptar la Política de Privacidad")
         if not v:
             raise ValueError("Debe aceptar la Autorización de Tratamiento de Datos")
+        return v
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+    @validator("email")
+    def validate_email(cls, v):
+        return v.lower().strip()
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+    @validator("email")
+    def validate_email(cls, v):
+        return v.lower().strip()
+
+
+class PasswordResetConfirm(BaseModel):
+    email: EmailStr
+    reset_code: str
+    new_password: str
+
+    @validator("email")
+    def validate_email(cls, v):
+        return v.lower().strip()
+
+    @validator("new_password")
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError("La contraseña debe tener al menos 6 caracteres")
         return v
 
 
