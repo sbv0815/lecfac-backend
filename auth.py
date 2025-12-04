@@ -722,11 +722,8 @@ async def request_password_reset(request: PasswordResetRequest):
         # En producción, enviar por email
         # Por ahora, devolver el código en la respuesta (solo para desarrollo)
         return {
-            "message": "Código de recuperación generado",
-            "data": {
-                "reset_code": reset_code,  # QUITAR EN PRODUCCIÓN
-                "expires_in": "1 hora",
-            },
+            "message": "Si el email existe, recibirás un código de recuperación",
+            "data": None,
         }
 
     except Exception as e:
