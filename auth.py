@@ -43,6 +43,9 @@ class UserRegister(BaseModel):
     nombres: Optional[str] = None
     apellidos: Optional[str] = None
     celular: Optional[str] = None
+    # ✅ NUEVOS CAMPOS - Aceptación de términos
+    acepto_politica_privacidad: bool = False
+    acepto_tratamiento_datos: bool = False
 
     @validator("password")
     def validate_password(cls, v):
@@ -54,37 +57,13 @@ class UserRegister(BaseModel):
     def validate_email(cls, v):
         return v.lower().strip()
 
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-    @validator("email")
-    def validate_email(cls, v):
-        return v.lower().strip()
-
-
-class PasswordResetRequest(BaseModel):
-    email: EmailStr
-
-    @validator("email")
-    def validate_email(cls, v):
-        return v.lower().strip()
-
-
-class PasswordResetConfirm(BaseModel):
-    email: EmailStr
-    reset_code: str
-    new_password: str
-
-    @validator("email")
-    def validate_email(cls, v):
-        return v.lower().strip()
-
-    @validator("new_password")
-    def validate_password(cls, v):
-        if len(v) < 6:
-            raise ValueError("La contraseña debe tener al menos 6 caracteres")
+    # ✅ NUEVO: Validar que ambos términos estén aceptados
+    @validator("acepto_tratamiento_datos")
+    def validate_terminos(cls, v, values):
+        if not values.get("acepto_politica_privacidad", False):
+            raise ValueError("Debe aceptar la Política de Privacidad")
+        if not v:
+            raise ValueError("Debe aceptar la Autorización de Tratamiento de Datos")
         return v
 
 
@@ -157,9 +136,11 @@ def decode_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
 # ============================================
 # FUNCIONES ADICIONALES PARA COMPATIBILIDAD
 # ============================================
+
 
 def create_jwt_token(user_id: int, email: str, rol: str = "usuario") -> str:
     """
@@ -174,12 +155,10 @@ def create_jwt_token(user_id: int, email: str, rol: str = "usuario") -> str:
     Returns:
         Token JWT como string
     """
-    token_data = {
-        "user_id": user_id,
-        "email": email,
-        "rol": rol
-    }
+    token_data = {"user_id": user_id, "email": email, "rol": rol}
     return create_access_token(token_data)
+
+
 # ============================================
 # DEPENDENCIAS PARA PROTEGER ENDPOINTS
 # ============================================
@@ -306,6 +285,7 @@ async def get_current_user(
 async def register(user_data: UserRegister):
     """
     Registra un nuevo usuario
+    ✅ ACTUALIZADO: Incluye aceptación de términos legales
 
     Returns:
         Token JWT y datos del usuario
@@ -333,22 +313,42 @@ async def register(user_data: UserRegister):
         # Hashear la contraseña
         password_hash = hash_password(user_data.password)
 
-        # ✅ CONSTRUIR NOMBRE COMPLETO
+        # Construir nombre completo
         nombre_completo = (
             f"{user_data.nombres or ''} {user_data.apellidos or ''}".strip()
         )
         if not nombre_completo:
             nombre_completo = user_data.email.split("@")[0]
 
-        # Insertar usuario
+        # ✅ NUEVO: Fecha de aceptación de términos
+        fecha_aceptacion = (
+            datetime.utcnow()
+            if (
+                user_data.acepto_politica_privacidad
+                and user_data.acepto_tratamiento_datos
+            )
+            else None
+        )
+
+        # Insertar usuario CON campos de términos
         if os.environ.get("DATABASE_TYPE") == "postgresql":
             cursor.execute(
                 """
-                INSERT INTO usuarios (email, password_hash, nombre, activo, rol)
-                VALUES (%s, %s, %s, TRUE, 'usuario')
+                INSERT INTO usuarios (
+                    email, password_hash, nombre, activo, rol,
+                    acepto_politica_privacidad, acepto_tratamiento_datos, fecha_aceptacion_terminos
+                )
+                VALUES (%s, %s, %s, TRUE, 'usuario', %s, %s, %s)
                 RETURNING id, email, nombre, fecha_registro
             """,
-                (user_data.email, password_hash, nombre_completo),
+                (
+                    user_data.email,
+                    password_hash,
+                    nombre_completo,
+                    user_data.acepto_politica_privacidad,
+                    user_data.acepto_tratamiento_datos,
+                    fecha_aceptacion,
+                ),
             )
 
             new_user = cursor.fetchone()
@@ -360,10 +360,20 @@ async def register(user_data: UserRegister):
         else:
             cursor.execute(
                 """
-                INSERT INTO usuarios (email, password_hash, nombre, activo, rol)
-                VALUES (?, ?, ?, 1, 'usuario')
+                INSERT INTO usuarios (
+                    email, password_hash, nombre, activo, rol,
+                    acepto_politica_privacidad, acepto_tratamiento_datos, fecha_aceptacion_terminos
+                )
+                VALUES (?, ?, ?, 1, 'usuario', ?, ?, ?)
             """,
-                (user_data.email, password_hash, nombre_completo),
+                (
+                    user_data.email,
+                    password_hash,
+                    nombre_completo,
+                    1 if user_data.acepto_politica_privacidad else 0,
+                    1 if user_data.acepto_tratamiento_datos else 0,
+                    fecha_aceptacion.isoformat() if fecha_aceptacion else None,
+                ),
             )
 
             user_id = cursor.lastrowid
@@ -372,6 +382,14 @@ async def register(user_data: UserRegister):
             fecha_registro = datetime.utcnow()
 
         conn.commit()
+
+        # ✅ LOG: Registrar aceptación de términos
+        print(f"✅ Usuario registrado: {email}")
+        print(
+            f"   📋 Acepta Política Privacidad: {user_data.acepto_politica_privacidad}"
+        )
+        print(f"   📋 Acepta Tratamiento Datos: {user_data.acepto_tratamiento_datos}")
+        print(f"   📅 Fecha aceptación: {fecha_aceptacion}")
 
         # Crear token JWT
         token_data = {"user_id": user_id, "email": email}
@@ -392,7 +410,10 @@ async def register(user_data: UserRegister):
         raise
     except Exception as e:
         conn.rollback()
-        print(f"Error en registro: {e}")
+        print(f"❌ Error en registro: {e}")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al registrar usuario: {str(e)}",
