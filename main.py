@@ -10437,6 +10437,133 @@ async def request_account_deletion(
 
 print("✅ Endpoints de perfil v3 registrados (columnas corregidas)")
 
+# ============================================================================
+# ENDPOINT: /api/mobile/my-stats - ESTADÍSTICAS PARA HOME
+# Buscar y REEMPLAZAR el endpoint existente en main.py
+# ============================================================================
+
+
+@app.get("/api/mobile/my-stats")
+async def get_my_stats_mobile(authorization: str = Header(None)):
+    """
+    Estadísticas del usuario para el HomeScreen.
+    Devuelve: total_facturas, total_establecimientos, total_gastado
+    """
+    print(f"\n📊 [MOBILE] Obteniendo estadísticas del usuario")
+
+    # Extraer user_id del token
+    user_id = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        try:
+            # Intentar decodificar JWT
+            import jwt
+
+            payload = jwt.decode(token, options={"verify_signature": False})
+            user_id = payload.get("user_id") or payload.get("sub")
+            print(f"   👤 User ID del token: {user_id}")
+        except Exception as e:
+            print(f"   ⚠️ Error decodificando token: {e}")
+
+    # Si no hay user_id, devolver datos vacíos
+    if not user_id:
+        print("   ⚠️ No se pudo obtener user_id")
+        return {
+            "success": True,
+            "data": {
+                "total_facturas": 0,
+                "total_establecimientos": 0,
+                "total_gastado": 0,
+                "total_productos": 0,
+            },
+        }
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Total de facturas del usuario
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM facturas
+            WHERE usuario_id = %s
+        """,
+            (user_id,),
+        )
+        total_facturas = cursor.fetchone()[0] or 0
+
+        # 2. Total de establecimientos distintos donde ha comprado
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT establecimiento_id)
+            FROM facturas
+            WHERE usuario_id = %s
+            AND establecimiento_id IS NOT NULL
+        """,
+            (user_id,),
+        )
+        total_establecimientos = cursor.fetchone()[0] or 0
+
+        # 3. Total gastado (suma de todas las facturas)
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(total), 0)
+            FROM facturas
+            WHERE usuario_id = %s
+        """,
+            (user_id,),
+        )
+        total_gastado = float(cursor.fetchone()[0] or 0)
+
+        # 4. Total de productos únicos comprados
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT producto_maestro_id)
+            FROM items_factura
+            WHERE usuario_id = %s
+            AND producto_maestro_id IS NOT NULL
+        """,
+            (user_id,),
+        )
+        total_productos = cursor.fetchone()[0] or 0
+
+        cursor.close()
+        conn.close()
+
+        print(
+            f"✅ [MOBILE] Stats: {total_facturas} facturas, {total_establecimientos} tiendas, ${total_gastado:,.0f} gastado"
+        )
+
+        # ⚠️ IMPORTANTE: Devolver dentro de "data" para que el HomeScreen lo encuentre
+        return {
+            "success": True,
+            "data": {
+                "total_facturas": total_facturas,
+                "total_establecimientos": total_establecimientos,
+                "total_gastado": total_gastado,
+                "total_productos": total_productos,
+            },
+        }
+
+    except Exception as e:
+        print(f"❌ Error obteniendo stats mobile: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        return {
+            "success": True,
+            "data": {
+                "total_facturas": 0,
+                "total_establecimientos": 0,
+                "total_gastado": 0,
+                "total_productos": 0,
+            },
+        }
+
 
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
