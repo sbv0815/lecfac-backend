@@ -9858,13 +9858,25 @@ from database import get_db_connection
 # ============================================================================
 # ENDPOINT PRINCIPAL: ESTADÍSTICAS DE GAMIFICACIÓN
 # ============================================================================
+# ============================================================================
+# ENDPOINTS DE PERFIL Y GAMIFICACIÓN - VERSIÓN 3 (COLUMNAS CORREGIDAS)
+# Agregar a main.py (reemplazar versión anterior)
+# ============================================================================
+
+from fastapi import APIRouter, HTTPException, Header, Request
+from datetime import datetime, timedelta
+from database import get_db_connection
+
+# ============================================================================
+# ENDPOINT PRINCIPAL: ESTADÍSTICAS DE GAMIFICACIÓN
+# ============================================================================
 
 
 @app.get("/api/v1/users/{user_id}/stats")
 async def get_user_stats(user_id: int, authorization: str = Header(None)):
     """
     Obtiene estadísticas de gamificación del usuario para el perfil móvil.
-    VERSIÓN CORREGIDA con métricas reales.
+    VERSIÓN 3 - Columnas corregidas según esquema real de BD.
     """
     print(f"\n{'='*60}")
     print(f"📊 OBTENIENDO STATS DE GAMIFICACIÓN - Usuario {user_id}")
@@ -9915,12 +9927,10 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         """
         )
         total_usuarios = cursor.fetchone()[0] or 0
-        otros_usuarios = max(0, total_usuarios - 1)  # Excluir al usuario actual
         print(f"   👥 Total usuarios en comunidad: {total_usuarios}")
 
         # =====================================================
         # 4. USUARIOS QUE COMPARTEN PRODUCTOS CONTIGO
-        # (Otros usuarios que han comprado al menos un producto que tú también compraste)
         # =====================================================
         cursor.execute(
             """
@@ -9936,12 +9946,11 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         )
         usuarios_conectados = cursor.fetchone()[0] or 0
         stats["usuarios_beneficiados"] = usuarios_conectados
-        stats["beneficiado_por"] = usuarios_conectados  # Es simétrico
-        print(f"   🤝 Usuarios conectados (comparten productos): {usuarios_conectados}")
+        stats["beneficiado_por"] = usuarios_conectados
+        print(f"   🤝 Usuarios conectados: {usuarios_conectados}")
 
         # =====================================================
         # 5. PRODUCTOS EN COMÚN CON LA COMUNIDAD
-        # (Productos que tú tienes Y al menos otro usuario también tiene)
         # =====================================================
         cursor.execute(
             """
@@ -9959,11 +9968,10 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         )
         productos_compartidos = cursor.fetchone()[0] or 0
         stats["productos_compartidos"] = productos_compartidos
-        print(f"   🔗 Productos compartidos con otros: {productos_compartidos}")
+        print(f"   🔗 Productos compartidos: {productos_compartidos}")
 
         # =====================================================
-        # 6. PRECIOS CONTRIBUIDOS A LA COMUNIDAD
-        # (Registros de precio únicos que este usuario agregó)
+        # 6. PRECIOS CONTRIBUIDOS
         # =====================================================
         cursor.execute(
             """
@@ -9979,31 +9987,35 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
 
         # =====================================================
         # 7. DINERO AHORRADO ESTIMADO
-        # Suma de (precio máximo conocido - precio que pagaste) para cada item
+        # Usar precio_pagado de items_factura (columna correcta)
         # =====================================================
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(ahorro), 0) as total_ahorro
-            FROM (
-                SELECT
-                    GREATEST(0, pp.precio_maximo - if1.precio_unitario) as ahorro
-                FROM items_factura if1
-                INNER JOIN (
+        try:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(ahorro), 0) as total_ahorro
+                FROM (
                     SELECT
-                        producto_maestro_id,
-                        MAX(precio_unitario) as precio_maximo
-                    FROM items_factura
-                    WHERE producto_maestro_id IS NOT NULL
-                    GROUP BY producto_maestro_id
-                ) pp ON if1.producto_maestro_id = pp.producto_maestro_id
-                WHERE if1.usuario_id = %s
-                AND if1.producto_maestro_id IS NOT NULL
-            ) ahorros
-        """,
-            (user_id,),
-        )
-        result = cursor.fetchone()
-        stats["dinero_ahorrado"] = float(result[0]) if result and result[0] else 0
+                        GREATEST(0, pp.precio_maximo - if1.precio_pagado) as ahorro
+                    FROM items_factura if1
+                    INNER JOIN (
+                        SELECT
+                            producto_maestro_id,
+                            MAX(precio_pagado) as precio_maximo
+                        FROM items_factura
+                        WHERE producto_maestro_id IS NOT NULL
+                        GROUP BY producto_maestro_id
+                    ) pp ON if1.producto_maestro_id = pp.producto_maestro_id
+                    WHERE if1.usuario_id = %s
+                    AND if1.producto_maestro_id IS NOT NULL
+                ) ahorros
+            """,
+                (user_id,),
+            )
+            result = cursor.fetchone()
+            stats["dinero_ahorrado"] = float(result[0]) if result and result[0] else 0
+        except Exception as e:
+            print(f"   ⚠️ Error calculando ahorro: {e}")
+            stats["dinero_ahorrado"] = 0
         print(f"   💰 Dinero ahorrado: ${stats['dinero_ahorrado']:,.0f}")
 
         # =====================================================
@@ -10021,12 +10033,10 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
 
         fechas = [row[0] for row in cursor.fetchall()]
 
-        # Calcular racha actual
         racha_actual = 0
         hoy = datetime.now().date()
 
         if fechas:
-            # Verificar si hay factura hoy o ayer
             if fechas[0] == hoy or fechas[0] == hoy - timedelta(days=1):
                 racha_actual = 1
                 fecha_anterior = fechas[0]
@@ -10038,7 +10048,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
                     else:
                         break
 
-        # Calcular mejor racha histórica
         mejor_racha = 0
         if fechas:
             racha_temp = 1
@@ -10059,13 +10068,12 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         # 9. CALCULAR XP Y NIVEL
         # =====================================================
         xp = 0
-        xp += stats["facturas_escaneadas"] * 10  # 10 XP por factura
-        xp += stats["productos_agregados"] * 5  # 5 XP por producto único
-        xp += stats["racha_mejor"] * 15  # 15 XP por día de mejor racha
-        xp += productos_compartidos * 3  # 3 XP por producto compartido
-        xp += precios_contribuidos  # 1 XP por precio contribuido
+        xp += stats["facturas_escaneadas"] * 10
+        xp += stats["productos_agregados"] * 5
+        xp += stats["racha_mejor"] * 15
+        xp += productos_compartidos * 3
+        xp += precios_contribuidos
 
-        # Determinar nivel
         niveles = [
             (0, "Novato", 100),
             (100, "Explorador", 250),
@@ -10093,11 +10101,10 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         print(f"   ⭐ Nivel: {nivel_actual} ({xp} XP)")
 
         # =====================================================
-        # 10. LOGROS DESBLOQUEADOS
+        # 10. LOGROS
         # =====================================================
         logros = []
 
-        # Primera Factura
         logros.append(
             {
                 "id": "primera_factura",
@@ -10110,7 +10117,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Ahorrador (ahorro real)
         logros.append(
             {
                 "id": "ahorrador",
@@ -10123,7 +10129,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Colaborador (productos compartidos)
         logros.append(
             {
                 "id": "colaborador",
@@ -10136,7 +10141,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Constante (racha)
         logros.append(
             {
                 "id": "constante",
@@ -10149,7 +10153,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Catalogador Pro
         logros.append(
             {
                 "id": "catalogador_pro",
@@ -10162,7 +10165,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Escaneador Experto
         logros.append(
             {
                 "id": "escaneador_experto",
@@ -10181,7 +10183,7 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         print(f"   🏅 Logros: {stats['logros_desbloqueados']}/{stats['total_logros']}")
 
         # =====================================================
-        # 11. DATOS ADICIONALES DEL USUARIO
+        # 11. DATOS ADICIONALES
         # =====================================================
         cursor.execute(
             """
@@ -10201,7 +10203,6 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             stats["miembro_desde"] = None
             stats["dias_como_miembro"] = 1
 
-        # Info de comunidad
         stats["total_usuarios_comunidad"] = total_usuarios
 
         cursor.close()
@@ -10224,7 +10225,7 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
 
 
 # ============================================================================
-# ENDPOINT: DATOS DEL PERFIL DEL USUARIO
+# ENDPOINT: DATOS DEL PERFIL DEL USUARIO (SIN TELEFONO)
 # ============================================================================
 
 
@@ -10232,6 +10233,7 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
 async def get_user_profile(user_id: int, authorization: str = Header(None)):
     """
     Obtiene los datos del perfil del usuario.
+    VERSIÓN CORREGIDA - Sin columna telefono.
     """
     print(f"👤 Obteniendo perfil del usuario {user_id}")
 
@@ -10240,13 +10242,13 @@ async def get_user_profile(user_id: int, authorization: str = Header(None)):
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Sin telefono - esa columna no existe
         cursor.execute(
             """
             SELECT
                 id,
                 email,
                 nombre,
-                telefono,
                 fecha_registro
             FROM usuarios
             WHERE id = %s
@@ -10270,8 +10272,8 @@ async def get_user_profile(user_id: int, authorization: str = Header(None)):
                 "id": user[0],
                 "email": user[1],
                 "name": user[2] or user[1].split("@")[0],
-                "phone": user[3],
-                "created_at": user[4].isoformat() if user[4] else None,
+                "phone": None,  # No existe en BD
+                "created_at": user[3].isoformat() if user[3] else None,
             },
         }
 
@@ -10285,7 +10287,7 @@ async def get_user_profile(user_id: int, authorization: str = Header(None)):
 
 
 # ============================================================================
-# ENDPOINT: ACTUALIZAR PERFIL
+# ENDPOINT: ACTUALIZAR PERFIL (SIN TELEFONO)
 # ============================================================================
 
 
@@ -10312,9 +10314,8 @@ async def update_user_profile(
             updates.append("nombre = %s")
             params.append(data["name"])
 
-        if "phone" in data:
-            updates.append("telefono = %s")
-            params.append(data["phone"])
+        # Nota: telefono no existe en la BD actual
+        # Si quieres agregarlo, ejecuta: ALTER TABLE usuarios ADD COLUMN telefono VARCHAR(20);
 
         if "current_password" in data and "new_password" in data:
             cursor.execute(
@@ -10434,7 +10435,7 @@ async def request_account_deletion(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ Endpoints de perfil y gamificación v2 registrados")
+print("✅ Endpoints de perfil v3 registrados (columnas corregidas)")
 
 
 if __name__ == "__main__":  # ← AGREGAR :
