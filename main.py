@@ -9851,12 +9851,14 @@ async def recalcular_gastos(usuario_id: int):
 # Agregar a main.py
 # ============================================================================
 
-from fastapi import APIRouter, HTTPException, Header
+# ============================================================================
+# ENDPOINTS DE PERFIL Y GAMIFICACIÓN - VERSIÓN CORREGIDA
+# Agregar a main.py (reemplazar versión anterior)
+# ============================================================================
+
+from fastapi import APIRouter, HTTPException, Header, Request
 from datetime import datetime, timedelta
 from database import get_db_connection
-
-# Si quieres usar router separado:
-# profile_router = APIRouter(prefix="/api/v1", tags=["profile"])
 
 # ============================================================================
 # ENDPOINT PRINCIPAL: ESTADÍSTICAS DE GAMIFICACIÓN
@@ -9867,16 +9869,7 @@ from database import get_db_connection
 async def get_user_stats(user_id: int, authorization: str = Header(None)):
     """
     Obtiene estadísticas de gamificación del usuario para el perfil móvil.
-
-    Retorna:
-    - Facturas escaneadas
-    - Productos agregados (contribuciones únicas)
-    - Usuarios beneficiados (a cuántos ayudó con sus precios)
-    - Beneficiado por (cuántos le ayudaron)
-    - Dinero ahorrado estimado
-    - Racha actual y mejor racha
-    - Nivel y XP
-    - Logros desbloqueados
+    VERSIÓN CORREGIDA con métricas reales.
     """
     print(f"\n{'='*60}")
     print(f"📊 OBTENIENDO STATS DE GAMIFICACIÓN - Usuario {user_id}")
@@ -9919,9 +9912,20 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         print(f"   📦 Productos agregados: {stats['productos_agregados']}")
 
         # =====================================================
-        # 3. USUARIOS BENEFICIADOS
-        # Cuántos usuarios distintos han visto precios de productos
-        # que este usuario escaneó primero o contribuyó
+        # 3. TOTAL DE USUARIOS EN LA COMUNIDAD
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT id) FROM usuarios
+        """
+        )
+        total_usuarios = cursor.fetchone()[0] or 0
+        otros_usuarios = max(0, total_usuarios - 1)  # Excluir al usuario actual
+        print(f"   👥 Total usuarios en comunidad: {total_usuarios}")
+
+        # =====================================================
+        # 4. USUARIOS QUE COMPARTEN PRODUCTOS CONTIGO
+        # (Otros usuarios que han comprado al menos un producto que tú también compraste)
         # =====================================================
         cursor.execute(
             """
@@ -9929,57 +9933,76 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             FROM items_factura if1
             INNER JOIN items_factura if2
                 ON if1.producto_maestro_id = if2.producto_maestro_id
-                AND if2.usuario_id != %s
             WHERE if1.usuario_id = %s
+            AND if2.usuario_id != %s
             AND if1.producto_maestro_id IS NOT NULL
         """,
             (user_id, user_id),
         )
-        stats["usuarios_beneficiados"] = cursor.fetchone()[0] or 0
-        print(f"   👥 Usuarios beneficiados: {stats['usuarios_beneficiados']}")
+        usuarios_conectados = cursor.fetchone()[0] or 0
+        stats["usuarios_beneficiados"] = usuarios_conectados
+        stats["beneficiado_por"] = usuarios_conectados  # Es simétrico
+        print(f"   🤝 Usuarios conectados (comparten productos): {usuarios_conectados}")
 
         # =====================================================
-        # 4. BENEFICIADO POR
-        # Cuántos usuarios distintos contribuyeron precios de productos
-        # que este usuario también compró
+        # 5. PRODUCTOS EN COMÚN CON LA COMUNIDAD
+        # (Productos que tú tienes Y al menos otro usuario también tiene)
         # =====================================================
         cursor.execute(
             """
-            SELECT COUNT(DISTINCT if2.usuario_id)
+            SELECT COUNT(DISTINCT if1.producto_maestro_id)
             FROM items_factura if1
-            INNER JOIN items_factura if2
-                ON if1.producto_maestro_id = if2.producto_maestro_id
-                AND if2.usuario_id != %s
             WHERE if1.usuario_id = %s
             AND if1.producto_maestro_id IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM items_factura if2
+                WHERE if2.producto_maestro_id = if1.producto_maestro_id
+                AND if2.usuario_id != %s
+            )
         """,
             (user_id, user_id),
         )
-        stats["beneficiado_por"] = cursor.fetchone()[0] or 0
-        print(f"   🤝 Beneficiado por: {stats['beneficiado_por']}")
+        productos_compartidos = cursor.fetchone()[0] or 0
+        stats["productos_compartidos"] = productos_compartidos
+        print(f"   🔗 Productos compartidos con otros: {productos_compartidos}")
 
         # =====================================================
-        # 5. DINERO AHORRADO ESTIMADO
-        # Diferencia entre precio máximo y precio que pagó
+        # 6. PRECIOS CONTRIBUIDOS A LA COMUNIDAD
+        # (Registros de precio únicos que este usuario agregó)
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM precios_productos
+            WHERE usuario_id = %s
+        """,
+            (user_id,),
+        )
+        precios_contribuidos = cursor.fetchone()[0] or 0
+        stats["precios_contribuidos"] = precios_contribuidos
+        print(f"   💵 Precios contribuidos: {precios_contribuidos}")
+
+        # =====================================================
+        # 7. DINERO AHORRADO ESTIMADO
+        # Suma de (precio máximo conocido - precio que pagaste) para cada item
         # =====================================================
         cursor.execute(
             """
             SELECT COALESCE(SUM(ahorro), 0) as total_ahorro
             FROM (
                 SELECT
-                    if1.producto_maestro_id,
-                    GREATEST(0, pp.precio_maximo - if1.precio_pagado) as ahorro
+                    GREATEST(0, pp.precio_maximo - if1.precio_unitario) as ahorro
                 FROM items_factura if1
-                LEFT JOIN (
+                INNER JOIN (
                     SELECT
                         producto_maestro_id,
                         MAX(precio_unitario) as precio_maximo
-                    FROM precios_productos
+                    FROM items_factura
+                    WHERE producto_maestro_id IS NOT NULL
                     GROUP BY producto_maestro_id
                 ) pp ON if1.producto_maestro_id = pp.producto_maestro_id
                 WHERE if1.usuario_id = %s
                 AND if1.producto_maestro_id IS NOT NULL
-                AND pp.precio_maximo IS NOT NULL
             ) ahorros
         """,
             (user_id,),
@@ -9989,7 +10012,7 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         print(f"   💰 Dinero ahorrado: ${stats['dinero_ahorrado']:,.0f}")
 
         # =====================================================
-        # 6. RACHA DE DÍAS CONSECUTIVOS
+        # 8. RACHA DE DÍAS CONSECUTIVOS
         # =====================================================
         cursor.execute(
             """
@@ -10038,15 +10061,14 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         print(f"   🏆 Mejor racha: {mejor_racha} días")
 
         # =====================================================
-        # 7. CALCULAR XP Y NIVEL
+        # 9. CALCULAR XP Y NIVEL
         # =====================================================
         xp = 0
         xp += stats["facturas_escaneadas"] * 10  # 10 XP por factura
         xp += stats["productos_agregados"] * 5  # 5 XP por producto único
         xp += stats["racha_mejor"] * 15  # 15 XP por día de mejor racha
-        xp += (
-            min(stats["usuarios_beneficiados"], 100) * 2
-        )  # 2 XP por usuario ayudado (max 200)
+        xp += productos_compartidos * 3  # 3 XP por producto compartido
+        xp += precios_contribuidos  # 1 XP por precio contribuido
 
         # Determinar nivel
         niveles = [
@@ -10076,7 +10098,7 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         print(f"   ⭐ Nivel: {nivel_actual} ({xp} XP)")
 
         # =====================================================
-        # 8. LOGROS DESBLOQUEADOS
+        # 10. LOGROS DESBLOQUEADOS
         # =====================================================
         logros = []
 
@@ -10093,38 +10115,38 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Ahorrador (>$10,000 ahorrados)
+        # Ahorrador (ahorro real)
         logros.append(
             {
                 "id": "ahorrador",
                 "nombre": "Ahorrador",
-                "descripcion": "Ahorraste más de $10,000",
+                "descripcion": "Ahorraste $10,000 o más",
                 "icono": "💰",
                 "desbloqueado": stats["dinero_ahorrado"] >= 10000,
-                "progreso": min(stats["dinero_ahorrado"], 10000),
+                "progreso": min(int(stats["dinero_ahorrado"]), 10000),
                 "objetivo": 10000,
             }
         )
 
-        # Héroe Comunitario (100+ usuarios ayudados)
+        # Colaborador (productos compartidos)
         logros.append(
             {
-                "id": "heroe_comunitario",
-                "nombre": "Héroe Comunitario",
-                "descripcion": "Ayudaste a 100+ usuarios",
-                "icono": "🦸",
-                "desbloqueado": stats["usuarios_beneficiados"] >= 100,
-                "progreso": min(stats["usuarios_beneficiados"], 100),
-                "objetivo": 100,
+                "id": "colaborador",
+                "nombre": "Colaborador",
+                "descripcion": "Tienes 10+ productos en común con la comunidad",
+                "icono": "🤝",
+                "desbloqueado": productos_compartidos >= 10,
+                "progreso": min(productos_compartidos, 10),
+                "objetivo": 10,
             }
         )
 
-        # Constante (7 días de racha)
+        # Constante (racha)
         logros.append(
             {
                 "id": "constante",
                 "nombre": "Constante",
-                "descripcion": "7 días consecutivos escaneando",
+                "descripcion": "Racha de 7 días consecutivos",
                 "icono": "🔥",
                 "desbloqueado": stats["racha_mejor"] >= 7,
                 "progreso": min(stats["racha_mejor"], 7),
@@ -10132,25 +10154,25 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             }
         )
 
-        # Catalogador Pro (500+ productos)
+        # Catalogador Pro
         logros.append(
             {
                 "id": "catalogador_pro",
                 "nombre": "Catalogador Pro",
-                "descripcion": "Agregaste 500+ productos",
+                "descripcion": "Agregaste 100+ productos",
                 "icono": "📦",
-                "desbloqueado": stats["productos_agregados"] >= 500,
-                "progreso": min(stats["productos_agregados"], 500),
-                "objetivo": 500,
+                "desbloqueado": stats["productos_agregados"] >= 100,
+                "progreso": min(stats["productos_agregados"], 100),
+                "objetivo": 100,
             }
         )
 
-        # Escaneador Experto (50 facturas)
+        # Escaneador Experto
         logros.append(
             {
                 "id": "escaneador_experto",
                 "nombre": "Escaneador Experto",
-                "descripcion": "Escaneaste 50 facturas",
+                "descripcion": "Escaneaste 50+ facturas",
                 "icono": "📱",
                 "desbloqueado": stats["facturas_escaneadas"] >= 50,
                 "progreso": min(stats["facturas_escaneadas"], 50),
@@ -10161,10 +10183,10 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
         stats["logros"] = logros
         stats["logros_desbloqueados"] = sum(1 for l in logros if l["desbloqueado"])
         stats["total_logros"] = len(logros)
-        print(f"   🎖️ Logros: {stats['logros_desbloqueados']}/{stats['total_logros']}")
+        print(f"   🏅 Logros: {stats['logros_desbloqueados']}/{stats['total_logros']}")
 
         # =====================================================
-        # 9. FECHA DE REGISTRO (miembro desde)
+        # 11. DATOS ADICIONALES DEL USUARIO
         # =====================================================
         cursor.execute(
             """
@@ -10175,21 +10197,23 @@ async def get_user_stats(user_id: int, authorization: str = Header(None)):
             (user_id,),
         )
         result = cursor.fetchone()
+
         if result and result[0]:
             stats["miembro_desde"] = result[0].isoformat()
             dias_miembro = (datetime.now().date() - result[0].date()).days
-            stats["dias_como_miembro"] = dias_miembro
+            stats["dias_como_miembro"] = max(1, dias_miembro)
         else:
-            stats["miembro_desde"] = datetime.now().isoformat()
-            stats["dias_como_miembro"] = 0
+            stats["miembro_desde"] = None
+            stats["dias_como_miembro"] = 1
 
-        print(f"   📅 Días como miembro: {stats['dias_como_miembro']}")
+        # Info de comunidad
+        stats["total_usuarios_comunidad"] = total_usuarios
 
         cursor.close()
         conn.close()
 
         print(f"{'='*60}")
-        print(f"✅ STATS COMPLETADAS")
+        print(f"✅ Stats calculadas correctamente")
         print(f"{'='*60}\n")
 
         return {"success": True, "user_id": user_id, "stats": stats}
@@ -10250,8 +10274,7 @@ async def get_user_profile(user_id: int, authorization: str = Header(None)):
             "user": {
                 "id": user[0],
                 "email": user[1],
-                "name": user[2]
-                or user[1].split("@")[0],  # Usar parte del email si no hay nombre
+                "name": user[2] or user[1].split("@")[0],
                 "phone": user[3],
                 "created_at": user[4].isoformat() if user[4] else None,
             },
@@ -10298,9 +10321,7 @@ async def update_user_profile(
             updates.append("telefono = %s")
             params.append(data["phone"])
 
-        # Cambio de contraseña
         if "current_password" in data and "new_password" in data:
-            # Verificar contraseña actual
             cursor.execute(
                 """
                 SELECT password_hash FROM usuarios WHERE id = %s
@@ -10361,7 +10382,6 @@ async def request_account_deletion(
 ):
     """
     Solicita la eliminación de la cuenta del usuario.
-    No elimina inmediatamente, solo registra la solicitud.
     """
     print(f"🗑️ Solicitud de eliminación de cuenta - Usuario {user_id}")
 
@@ -10374,7 +10394,6 @@ async def request_account_deletion(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar que el usuario existe
         cursor.execute("SELECT id, email FROM usuarios WHERE id = %s", (user_id,))
         user = cursor.fetchone()
 
@@ -10383,7 +10402,6 @@ async def request_account_deletion(
             conn.close()
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-        # Registrar solicitud en audit_logs
         cursor.execute(
             """
             INSERT INTO audit_logs (
@@ -10421,11 +10439,7 @@ async def request_account_deletion(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ Endpoints de perfil y gamificación registrados:")
-print("   GET  /api/v1/users/{user_id}/stats  - Estadísticas de gamificación")
-print("   GET  /api/v1/users/{user_id}        - Datos del perfil")
-print("   PUT  /api/v1/users/{user_id}        - Actualizar perfil")
-print("   POST /api/v1/users/{user_id}/delete-request - Solicitar eliminación")
+print("✅ Endpoints de perfil y gamificación v2 registrados")
 
 
 if __name__ == "__main__":  # ← AGREGAR :
