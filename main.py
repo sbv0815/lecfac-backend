@@ -5781,7 +5781,7 @@ print("✅ Endpoint /admin/fix-categorias-final agregado")
 async def migrar_aprendizaje():
     """
     Ejecutar migración del constraint de aprendizaje (VERSIÓN CORREGIDA)
-    Visitar: https://tu-app.railway.app/admin/migrar-aprendizaje
+    Visitar: https:lecfac-backend-production.up.railway.app/admin/migrar-aprendizaje
     """
     try:
         from database import get_db_connection
@@ -9845,11 +9845,6 @@ async def recalcular_gastos(usuario_id: int):
             conn.rollback()
         return {"error": str(e), "traceback": traceback.format_exc()}
 
-
-# ============================================================================
-# ENDPOINTS DE PERFIL Y GAMIFICACIÓN
-# Agregar a main.py
-# ============================================================================
 
 # ============================================================================
 # ENDPOINTS DE PERFIL Y GAMIFICACIÓN - VERSIÓN CORREGIDA
