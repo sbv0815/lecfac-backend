@@ -9846,6 +9846,588 @@ async def recalcular_gastos(usuario_id: int):
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+# ============================================================================
+# ENDPOINTS DE PERFIL Y GAMIFICACIÓN
+# Agregar a main.py
+# ============================================================================
+
+from fastapi import APIRouter, HTTPException, Header
+from datetime import datetime, timedelta
+from database import get_db_connection
+
+# Si quieres usar router separado:
+# profile_router = APIRouter(prefix="/api/v1", tags=["profile"])
+
+# ============================================================================
+# ENDPOINT PRINCIPAL: ESTADÍSTICAS DE GAMIFICACIÓN
+# ============================================================================
+
+
+@app.get("/api/v1/users/{user_id}/stats")
+async def get_user_stats(user_id: int, authorization: str = Header(None)):
+    """
+    Obtiene estadísticas de gamificación del usuario para el perfil móvil.
+
+    Retorna:
+    - Facturas escaneadas
+    - Productos agregados (contribuciones únicas)
+    - Usuarios beneficiados (a cuántos ayudó con sus precios)
+    - Beneficiado por (cuántos le ayudaron)
+    - Dinero ahorrado estimado
+    - Racha actual y mejor racha
+    - Nivel y XP
+    - Logros desbloqueados
+    """
+    print(f"\n{'='*60}")
+    print(f"📊 OBTENIENDO STATS DE GAMIFICACIÓN - Usuario {user_id}")
+    print(f"{'='*60}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # =====================================================
+        # 1. FACTURAS ESCANEADAS
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM facturas
+            WHERE usuario_id = %s
+        """,
+            (user_id,),
+        )
+        stats["facturas_escaneadas"] = cursor.fetchone()[0] or 0
+        print(f"   📄 Facturas escaneadas: {stats['facturas_escaneadas']}")
+
+        # =====================================================
+        # 2. PRODUCTOS AGREGADOS (contribuciones únicas)
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT producto_maestro_id)
+            FROM items_factura
+            WHERE usuario_id = %s
+            AND producto_maestro_id IS NOT NULL
+        """,
+            (user_id,),
+        )
+        stats["productos_agregados"] = cursor.fetchone()[0] or 0
+        print(f"   📦 Productos agregados: {stats['productos_agregados']}")
+
+        # =====================================================
+        # 3. USUARIOS BENEFICIADOS
+        # Cuántos usuarios distintos han visto precios de productos
+        # que este usuario escaneó primero o contribuyó
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT if2.usuario_id)
+            FROM items_factura if1
+            INNER JOIN items_factura if2
+                ON if1.producto_maestro_id = if2.producto_maestro_id
+                AND if2.usuario_id != %s
+            WHERE if1.usuario_id = %s
+            AND if1.producto_maestro_id IS NOT NULL
+        """,
+            (user_id, user_id),
+        )
+        stats["usuarios_beneficiados"] = cursor.fetchone()[0] or 0
+        print(f"   👥 Usuarios beneficiados: {stats['usuarios_beneficiados']}")
+
+        # =====================================================
+        # 4. BENEFICIADO POR
+        # Cuántos usuarios distintos contribuyeron precios de productos
+        # que este usuario también compró
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT if2.usuario_id)
+            FROM items_factura if1
+            INNER JOIN items_factura if2
+                ON if1.producto_maestro_id = if2.producto_maestro_id
+                AND if2.usuario_id != %s
+            WHERE if1.usuario_id = %s
+            AND if1.producto_maestro_id IS NOT NULL
+        """,
+            (user_id, user_id),
+        )
+        stats["beneficiado_por"] = cursor.fetchone()[0] or 0
+        print(f"   🤝 Beneficiado por: {stats['beneficiado_por']}")
+
+        # =====================================================
+        # 5. DINERO AHORRADO ESTIMADO
+        # Diferencia entre precio máximo y precio que pagó
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(ahorro), 0) as total_ahorro
+            FROM (
+                SELECT
+                    if1.producto_maestro_id,
+                    GREATEST(0, pp.precio_maximo - if1.precio_pagado) as ahorro
+                FROM items_factura if1
+                LEFT JOIN (
+                    SELECT
+                        producto_maestro_id,
+                        MAX(precio_unitario) as precio_maximo
+                    FROM precios_productos
+                    GROUP BY producto_maestro_id
+                ) pp ON if1.producto_maestro_id = pp.producto_maestro_id
+                WHERE if1.usuario_id = %s
+                AND if1.producto_maestro_id IS NOT NULL
+                AND pp.precio_maximo IS NOT NULL
+            ) ahorros
+        """,
+            (user_id,),
+        )
+        result = cursor.fetchone()
+        stats["dinero_ahorrado"] = float(result[0]) if result and result[0] else 0
+        print(f"   💰 Dinero ahorrado: ${stats['dinero_ahorrado']:,.0f}")
+
+        # =====================================================
+        # 6. RACHA DE DÍAS CONSECUTIVOS
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT DISTINCT DATE(fecha_cargue) as fecha
+            FROM facturas
+            WHERE usuario_id = %s
+            ORDER BY fecha DESC
+        """,
+            (user_id,),
+        )
+
+        fechas = [row[0] for row in cursor.fetchall()]
+
+        # Calcular racha actual
+        racha_actual = 0
+        hoy = datetime.now().date()
+
+        if fechas:
+            # Verificar si hay factura hoy o ayer
+            if fechas[0] == hoy or fechas[0] == hoy - timedelta(days=1):
+                racha_actual = 1
+                fecha_anterior = fechas[0]
+
+                for fecha in fechas[1:]:
+                    if fecha_anterior - fecha == timedelta(days=1):
+                        racha_actual += 1
+                        fecha_anterior = fecha
+                    else:
+                        break
+
+        # Calcular mejor racha histórica
+        mejor_racha = 0
+        if fechas:
+            racha_temp = 1
+            for i in range(1, len(fechas)):
+                if fechas[i - 1] - fechas[i] == timedelta(days=1):
+                    racha_temp += 1
+                else:
+                    mejor_racha = max(mejor_racha, racha_temp)
+                    racha_temp = 1
+            mejor_racha = max(mejor_racha, racha_temp)
+
+        stats["racha_actual"] = racha_actual
+        stats["racha_mejor"] = mejor_racha
+        print(f"   🔥 Racha actual: {racha_actual} días")
+        print(f"   🏆 Mejor racha: {mejor_racha} días")
+
+        # =====================================================
+        # 7. CALCULAR XP Y NIVEL
+        # =====================================================
+        xp = 0
+        xp += stats["facturas_escaneadas"] * 10  # 10 XP por factura
+        xp += stats["productos_agregados"] * 5  # 5 XP por producto único
+        xp += stats["racha_mejor"] * 15  # 15 XP por día de mejor racha
+        xp += (
+            min(stats["usuarios_beneficiados"], 100) * 2
+        )  # 2 XP por usuario ayudado (max 200)
+
+        # Determinar nivel
+        niveles = [
+            (0, "Novato", 100),
+            (100, "Explorador", 250),
+            (250, "Colaborador", 500),
+            (500, "Experto", 1000),
+            (1000, "Maestro", 2000),
+            (2000, "Leyenda", 999999),
+        ]
+
+        nivel_actual = "Novato"
+        xp_siguiente = 100
+        xp_nivel_actual = 0
+
+        for i, (xp_min, nombre, xp_max) in enumerate(niveles):
+            if xp >= xp_min:
+                nivel_actual = nombre
+                xp_nivel_actual = xp_min
+                xp_siguiente = xp_max
+
+        stats["nivel"] = nivel_actual
+        stats["puntos_experiencia"] = xp
+        stats["puntos_siguiente_nivel"] = xp_siguiente
+        stats["xp_en_nivel_actual"] = xp - xp_nivel_actual
+        stats["xp_para_siguiente"] = xp_siguiente - xp_nivel_actual
+        print(f"   ⭐ Nivel: {nivel_actual} ({xp} XP)")
+
+        # =====================================================
+        # 8. LOGROS DESBLOQUEADOS
+        # =====================================================
+        logros = []
+
+        # Primera Factura
+        logros.append(
+            {
+                "id": "primera_factura",
+                "nombre": "Primera Factura",
+                "descripcion": "Escaneaste tu primera factura",
+                "icono": "📄",
+                "desbloqueado": stats["facturas_escaneadas"] >= 1,
+                "progreso": min(stats["facturas_escaneadas"], 1),
+                "objetivo": 1,
+            }
+        )
+
+        # Ahorrador (>$10,000 ahorrados)
+        logros.append(
+            {
+                "id": "ahorrador",
+                "nombre": "Ahorrador",
+                "descripcion": "Ahorraste más de $10,000",
+                "icono": "💰",
+                "desbloqueado": stats["dinero_ahorrado"] >= 10000,
+                "progreso": min(stats["dinero_ahorrado"], 10000),
+                "objetivo": 10000,
+            }
+        )
+
+        # Héroe Comunitario (100+ usuarios ayudados)
+        logros.append(
+            {
+                "id": "heroe_comunitario",
+                "nombre": "Héroe Comunitario",
+                "descripcion": "Ayudaste a 100+ usuarios",
+                "icono": "🦸",
+                "desbloqueado": stats["usuarios_beneficiados"] >= 100,
+                "progreso": min(stats["usuarios_beneficiados"], 100),
+                "objetivo": 100,
+            }
+        )
+
+        # Constante (7 días de racha)
+        logros.append(
+            {
+                "id": "constante",
+                "nombre": "Constante",
+                "descripcion": "7 días consecutivos escaneando",
+                "icono": "🔥",
+                "desbloqueado": stats["racha_mejor"] >= 7,
+                "progreso": min(stats["racha_mejor"], 7),
+                "objetivo": 7,
+            }
+        )
+
+        # Catalogador Pro (500+ productos)
+        logros.append(
+            {
+                "id": "catalogador_pro",
+                "nombre": "Catalogador Pro",
+                "descripcion": "Agregaste 500+ productos",
+                "icono": "📦",
+                "desbloqueado": stats["productos_agregados"] >= 500,
+                "progreso": min(stats["productos_agregados"], 500),
+                "objetivo": 500,
+            }
+        )
+
+        # Escaneador Experto (50 facturas)
+        logros.append(
+            {
+                "id": "escaneador_experto",
+                "nombre": "Escaneador Experto",
+                "descripcion": "Escaneaste 50 facturas",
+                "icono": "📱",
+                "desbloqueado": stats["facturas_escaneadas"] >= 50,
+                "progreso": min(stats["facturas_escaneadas"], 50),
+                "objetivo": 50,
+            }
+        )
+
+        stats["logros"] = logros
+        stats["logros_desbloqueados"] = sum(1 for l in logros if l["desbloqueado"])
+        stats["total_logros"] = len(logros)
+        print(f"   🎖️ Logros: {stats['logros_desbloqueados']}/{stats['total_logros']}")
+
+        # =====================================================
+        # 9. FECHA DE REGISTRO (miembro desde)
+        # =====================================================
+        cursor.execute(
+            """
+            SELECT fecha_registro
+            FROM usuarios
+            WHERE id = %s
+        """,
+            (user_id,),
+        )
+        result = cursor.fetchone()
+        if result and result[0]:
+            stats["miembro_desde"] = result[0].isoformat()
+            dias_miembro = (datetime.now().date() - result[0].date()).days
+            stats["dias_como_miembro"] = dias_miembro
+        else:
+            stats["miembro_desde"] = datetime.now().isoformat()
+            stats["dias_como_miembro"] = 0
+
+        print(f"   📅 Días como miembro: {stats['dias_como_miembro']}")
+
+        cursor.close()
+        conn.close()
+
+        print(f"{'='*60}")
+        print(f"✅ STATS COMPLETADAS")
+        print(f"{'='*60}\n")
+
+        return {"success": True, "user_id": user_id, "stats": stats}
+
+    except Exception as e:
+        print(f"❌ Error obteniendo stats: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ENDPOINT: DATOS DEL PERFIL DEL USUARIO
+# ============================================================================
+
+
+@app.get("/api/v1/users/{user_id}")
+async def get_user_profile(user_id: int, authorization: str = Header(None)):
+    """
+    Obtiene los datos del perfil del usuario.
+    """
+    print(f"👤 Obteniendo perfil del usuario {user_id}")
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                email,
+                nombre,
+                telefono,
+                fecha_registro
+            FROM usuarios
+            WHERE id = %s
+        """,
+            (user_id,),
+        )
+
+        user = cursor.fetchone()
+
+        if not user:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "user": {
+                "id": user[0],
+                "email": user[1],
+                "name": user[2]
+                or user[1].split("@")[0],  # Usar parte del email si no hay nombre
+                "phone": user[3],
+                "created_at": user[4].isoformat() if user[4] else None,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo perfil: {e}")
+        if conn:
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ENDPOINT: ACTUALIZAR PERFIL
+# ============================================================================
+
+
+@app.put("/api/v1/users/{user_id}")
+async def update_user_profile(
+    user_id: int, request: Request, authorization: str = Header(None)
+):
+    """
+    Actualiza los datos del perfil del usuario.
+    """
+    print(f"✏️ Actualizando perfil del usuario {user_id}")
+
+    conn = None
+    try:
+        data = await request.json()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if "name" in data:
+            updates.append("nombre = %s")
+            params.append(data["name"])
+
+        if "phone" in data:
+            updates.append("telefono = %s")
+            params.append(data["phone"])
+
+        # Cambio de contraseña
+        if "current_password" in data and "new_password" in data:
+            # Verificar contraseña actual
+            cursor.execute(
+                """
+                SELECT password_hash FROM usuarios WHERE id = %s
+            """,
+                (user_id,),
+            )
+            result = cursor.fetchone()
+
+            if result:
+                from database import verify_password, hash_password
+
+                if verify_password(data["current_password"], result[0]):
+                    updates.append("password_hash = %s")
+                    params.append(hash_password(data["new_password"]))
+                else:
+                    cursor.close()
+                    conn.close()
+                    raise HTTPException(
+                        status_code=400, detail="Contraseña actual incorrecta"
+                    )
+
+        if not updates:
+            cursor.close()
+            conn.close()
+            return {"success": True, "message": "No hay cambios"}
+
+        params.append(user_id)
+
+        query = f"UPDATE usuarios SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, params)
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Perfil actualizado")
+
+        return {"success": True, "message": "Perfil actualizado correctamente"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error actualizando perfil: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ENDPOINT: SOLICITAR ELIMINACIÓN DE CUENTA
+# ============================================================================
+
+
+@app.post("/api/v1/users/{user_id}/delete-request")
+async def request_account_deletion(
+    user_id: int, request: Request, authorization: str = Header(None)
+):
+    """
+    Solicita la eliminación de la cuenta del usuario.
+    No elimina inmediatamente, solo registra la solicitud.
+    """
+    print(f"🗑️ Solicitud de eliminación de cuenta - Usuario {user_id}")
+
+    conn = None
+    try:
+        data = await request.json()
+        reason = data.get("reason", "No especificado")
+        feedback = data.get("feedback", "")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que el usuario existe
+        cursor.execute("SELECT id, email FROM usuarios WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        # Registrar solicitud en audit_logs
+        cursor.execute(
+            """
+            INSERT INTO audit_logs (
+                usuario_id,
+                accion,
+                descripcion,
+                fecha
+            ) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """,
+            (
+                user_id,
+                "solicitud_eliminacion",
+                f"Motivo: {reason}. Feedback: {feedback}",
+            ),
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"✅ Solicitud de eliminación registrada para {user[1]}")
+
+        return {
+            "success": True,
+            "message": "Solicitud de eliminación registrada. Tu cuenta será eliminada en 48 horas.",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error en solicitud de eliminación: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+print("✅ Endpoints de perfil y gamificación registrados:")
+print("   GET  /api/v1/users/{user_id}/stats  - Estadísticas de gamificación")
+print("   GET  /api/v1/users/{user_id}        - Datos del perfil")
+print("   PUT  /api/v1/users/{user_id}        - Actualizar perfil")
+print("   POST /api/v1/users/{user_id}/delete-request - Solicitar eliminación")
+
+
 if __name__ == "__main__":  # ← AGREGAR :
     print("\n" + "=" * 60)
     print("🚀 INICIANDO SERVIDOR LECFAC")
