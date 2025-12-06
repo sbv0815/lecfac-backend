@@ -84,6 +84,7 @@ class AuditoriaAutomatica:
         "colsubsidio": "Colsubsidio",
         "cruz verde": "Cruz Verde",
         "farmatodo": "Farmatodo",
+        "OXXO": "OXXO",
     }
 
     @staticmethod

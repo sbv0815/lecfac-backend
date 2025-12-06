@@ -1952,6 +1952,8 @@ function autoLlenarBuscadorVTEX() {
                 'JUMBO': 'JUMBO',
                 'ALKOSTO': 'ALKOSTO',
                 'MAKRO': 'MAKRO',
+                'OXXO': 'OXXO',
+                'D1': 'D1',
                 'COLSUBSIDIO': 'COLSUBSIDIO'
             };
 
@@ -2245,6 +2247,8 @@ async function agregarPLUDeVTEX(pluVtex, establecimientoNombre, precio) {
         'EXITO': 'EXITO', 'ÉXITO': 'EXITO',
         'CARULLA': 'CARULLA', 'JUMBO': 'JUMBO',
         'ALKOSTO': 'ALKOSTO', 'MAKRO': 'MAKRO',
+        'OXXO': 'OXXO',
+        'D1': 'D1',
         'COLSUBSIDIO': 'COLSUBSIDIO'
     };
 

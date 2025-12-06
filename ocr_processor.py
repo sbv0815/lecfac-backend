@@ -550,7 +550,7 @@ class OCRProcessor:
         print("✅ product_matcher V9.0 integrado")
         print("✅ Guarda en productos_maestros_v2")
         print("✅ PLUs en productos_por_establecimiento")
-        print("🏪 Soporta: ARA, D1, Exito, Jumbo, Olimpica y mas")
+        print("🏪 Soporta: ARA, D1, Exito, Jumbo,Oxxo,Olimpica y mas")
         print("=" * 80)
 
     def stop(self):

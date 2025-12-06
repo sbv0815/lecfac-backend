@@ -1684,11 +1684,11 @@ async def buscar_en_vtex(establecimiento: str, codigo: str):
         conn.close()
 
 
+# En productos_api_v2.py - actualizar listar_supermercados_vtex
+
+
 @router.get("/api/v2/supermercados-vtex")
 async def listar_supermercados_vtex():
-    """
-    Lista los supermercados con API VTEX disponible.
-    """
     return {
         "success": True,
         "supermercados": [
@@ -1703,6 +1703,11 @@ async def listar_supermercados_vtex():
         "sin_soporte": [
             {"codigo": "D1", "nombre": "D1", "razon": "No tiene API pública"},
             {"codigo": "ARA", "nombre": "Ara", "razon": "No tiene API pública"},
+            {
+                "codigo": "OXXO",
+                "nombre": "OXXO",
+                "razon": "Usa app propietaria (Iridian), no VTEX",
+            },
             {
                 "codigo": "FARMATODO",
                 "nombre": "Farmatodo",

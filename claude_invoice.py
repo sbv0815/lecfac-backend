@@ -228,6 +228,7 @@ def normalizar_establecimiento(nombre_raw: str) -> str:
         "cruz verde": "CRUZ VERDE",
         "supermercados premium": "SUPERMERCADOS PREMIUM",
         "ramirez hermanos": "SUPERMERCADOS PREMIUM",
+        "CADENA COMERCIAL OXXO COLOMBIA": "OXXO",
     }
 
     for clave, normalizado in establecimientos.items():

@@ -79,9 +79,10 @@ MAPEO_SUPERMERCADOS = {
     "olímpica": "Olímpica",
     "sao": "Olímpica",
     "supertiendas olimpica": "Olímpica",
+    "Cadena comercial oxxo colombia": "",
 }
 
-SUPERMERCADOS_VTEX = ["Carulla", "Éxito", "Jumbo", "Olímpica"]
+SUPERMERCADOS_VTEX = ["Carulla", "Éxito", "Jumbo", "Olímpica", "Oxxo"]
 
 
 # ============================================================================
