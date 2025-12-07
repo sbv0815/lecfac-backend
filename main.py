@@ -541,16 +541,21 @@ from routes import productos_admin
 app.include_router(productos_admin.router)
 
 
-@app.delete("/api/inventario/{usuario_id}/{inventario_id}")
-async def api_eliminar_item_inventario(usuario_id: int, inventario_id: int):
-    """Elimina un item específico del inventario del usuario"""
-    return eliminar_item_inventario(usuario_id, inventario_id)
-
-
 @app.delete("/api/inventario/{usuario_id}/limpiar")
 async def api_limpiar_inventario(usuario_id: int):
     """Elimina TODO el inventario del usuario"""
+    from inventario import limpiar_inventario_usuario
+
     return limpiar_inventario_usuario(usuario_id)
+
+
+# 2️⃣ DESPUÉS: Ruta genérica (eliminar uno)
+@app.delete("/api/inventario/{usuario_id}/{inventario_id}")
+async def api_eliminar_item_inventario(usuario_id: int, inventario_id: int):
+    """Elimina un item específico del inventario del usuario"""
+    from inventario import eliminar_item_inventario
+
+    return eliminar_item_inventario(usuario_id, inventario_id)
 
 
 # ==========================================
