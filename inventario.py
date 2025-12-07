@@ -610,3 +610,149 @@ def obtener_alertas_usuario(usuario_id: int, solo_activas: bool = True):
         print(f"❌ Error obteniendo alertas: {e}")
         conn.close()
         return []
+
+
+def eliminar_item_inventario(usuario_id: int, inventario_id: int):
+    """
+    Elimina un item específico del inventario del usuario.
+
+    ⚠️ IMPORTANTE: Solo elimina el registro de inventario_usuario,
+    NO afecta productos_maestros ni otros usuarios.
+
+    Args:
+        usuario_id: ID del usuario (para validar propiedad)
+        inventario_id: ID del registro en inventario_usuario
+
+    Returns:
+        dict: Resultado de la operación
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar que el item pertenece al usuario
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                """
+                SELECT id, producto_maestro_id
+                FROM inventario_usuario
+                WHERE id = %s AND usuario_id = %s
+                """,
+                (inventario_id, usuario_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id, producto_maestro_id
+                FROM inventario_usuario
+                WHERE id = ? AND usuario_id = ?
+                """,
+                (inventario_id, usuario_id),
+            )
+
+        item = cursor.fetchone()
+
+        if not item:
+            conn.close()
+            return {
+                "success": False,
+                "error": "Item no encontrado o no pertenece al usuario",
+            }
+
+        # Eliminar el item del inventario
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                "DELETE FROM inventario_usuario WHERE id = %s AND usuario_id = %s",
+                (inventario_id, usuario_id),
+            )
+        else:
+            cursor.execute(
+                "DELETE FROM inventario_usuario WHERE id = ? AND usuario_id = ?",
+                (inventario_id, usuario_id),
+            )
+
+        conn.commit()
+        conn.close()
+
+        print(
+            f"🗑️ Item {inventario_id} eliminado del inventario del usuario {usuario_id}"
+        )
+
+        return {"success": True, "mensaje": "Producto eliminado de tu inventario"}
+
+    except Exception as e:
+        print(f"❌ Error eliminando item de inventario: {e}")
+        conn.rollback()
+        conn.close()
+        return {"success": False, "error": str(e)}
+
+
+def limpiar_inventario_usuario(usuario_id: int):
+    """
+    Elimina TODOS los items del inventario de un usuario.
+
+    ⚠️ CUIDADO: Operación destructiva, elimina todo el inventario.
+    Solo afecta a inventario_usuario, no a productos_maestros.
+
+    Args:
+        usuario_id: ID del usuario
+
+    Returns:
+        dict: Resultado con cantidad de items eliminados
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Contar items antes de eliminar
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                "SELECT COUNT(*) FROM inventario_usuario WHERE usuario_id = %s",
+                (usuario_id,),
+            )
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) FROM inventario_usuario WHERE usuario_id = ?",
+                (usuario_id,),
+            )
+
+        total_items = cursor.fetchone()[0]
+
+        if total_items == 0:
+            conn.close()
+            return {
+                "success": True,
+                "mensaje": "Tu inventario ya está vacío",
+                "items_eliminados": 0,
+            }
+
+        # Eliminar todos los items del usuario
+        if os.environ.get("DATABASE_TYPE") == "postgresql":
+            cursor.execute(
+                "DELETE FROM inventario_usuario WHERE usuario_id = %s",
+                (usuario_id,),
+            )
+        else:
+            cursor.execute(
+                "DELETE FROM inventario_usuario WHERE usuario_id = ?",
+                (usuario_id,),
+            )
+
+        conn.commit()
+        conn.close()
+
+        print(
+            f"🗑️ Inventario completo del usuario {usuario_id} eliminado ({total_items} items)"
+        )
+
+        return {
+            "success": True,
+            "mensaje": f"Se eliminaron {total_items} productos de tu inventario",
+            "items_eliminados": total_items,
+        }
+
+    except Exception as e:
+        print(f"❌ Error limpiando inventario: {e}")
+        conn.rollback()
+        conn.close()
+        return {"success": False, "error": str(e)}

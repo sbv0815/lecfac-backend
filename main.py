@@ -74,6 +74,7 @@ from comparador_api import router as comparador_router
 from fastapi.responses import FileResponse, HTMLResponse
 from auditoria_api_v2 import router as auditoria_router
 from api_listas_compras import router as listas_router
+from inventario import eliminar_item_inventario, limpiar_inventario_usuario
 
 
 # ==========================================
@@ -538,6 +539,20 @@ print("🔥 ENDPOINT /test-deploy-check REGISTRADO")
 from routes import productos_admin
 
 app.include_router(productos_admin.router)
+
+
+@app.delete("/api/inventario/{usuario_id}/{inventario_id}")
+async def api_eliminar_item_inventario(usuario_id: int, inventario_id: int):
+    """Elimina un item específico del inventario del usuario"""
+    return eliminar_item_inventario(usuario_id, inventario_id)
+
+
+@app.delete("/api/inventario/{usuario_id}/limpiar")
+async def api_limpiar_inventario(usuario_id: int):
+    """Elimina TODO el inventario del usuario"""
+    return limpiar_inventario_usuario(usuario_id)
+
+
 # ==========================================
 # CONFIGURAR CORS
 # ==========================================
