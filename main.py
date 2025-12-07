@@ -541,7 +541,7 @@ from routes import productos_admin
 app.include_router(productos_admin.router)
 
 
-@app.delete("/api/inventario/{usuario_id}/limpiar")
+@app.delete("/api/inventario/limpiar/{usuario_id}")
 async def api_limpiar_inventario(usuario_id: int):
     """Elimina TODO el inventario del usuario"""
     from inventario import limpiar_inventario_usuario
