@@ -1,9 +1,23 @@
 """
 ============================================================================
-PRODUCT MATCHER V10.0 - CON VALIDACIÓN DE AUDITORÍA
+PRODUCT MATCHER V10.3 - CON DIFERENCIACIÓN POR METROS
 ============================================================================
-Versión: 10.0
-Fecha: 2025-11-29
+Versión: 10.3
+Fecha: 2025-12-07
+
+MEJORAS V10.3:
+- Extracción de metros (15M, 30M) para papel higiénico/toallas
+- Penalización por marca diferente (-20%)
+- Penalización por metros diferentes (-25%)
+- Bonus por metros coincidentes (+15%)
+- Mejor diferenciación entre variantes de misma marca
+
+MEJORAS V10.2:
+- Diccionario de abreviaturas de tickets colombianos
+- Extracción de marcas conocidas
+- Extracción de cantidades
+- Búsqueda mejorada por nombre con bonus por marca/cantidad
+- Umbral reducido a 45% para mejor match
 
 FLUJO DE VALIDACIÓN (orden de prioridad):
 1. PAPA - Producto ya validado 100%
@@ -25,7 +39,7 @@ from datetime import datetime
 # ============================================================================
 
 UMBRAL_SIMILITUD_NOMBRE = 0.85  # 85% de similitud para considerar match
-UMBRAL_SIMILITUD_AUDITORIA = 0.55  # 80% para match con auditoría (más permisivo)
+UMBRAL_SIMILITUD_AUDITORIA = 0.45  # 45% para match con auditoría (permite abreviaturas)
 
 PALABRAS_IGNORAR = {
     "DE",
@@ -61,6 +75,208 @@ PALABRAS_IGNORAR = {
     "LATA",
 }
 
+# ============================================================================
+# DICCIONARIO DE ABREVIATURAS COLOMBIANAS (tickets de supermercado)
+# ============================================================================
+
+ABREVIATURAS_COLOMBIA = {
+    # Papel higiénico y aseo
+    "P HIG": "PAPEL HIGIENICO",
+    "PAP HIG": "PAPEL HIGIENICO",
+    "P.HIG": "PAPEL HIGIENICO",
+    "PHIG": "PAPEL HIGIENICO",
+    "P HIGI": "PAPEL HIGIENICO",
+    "PAP HIGI": "PAPEL HIGIENICO",
+    "TOA COC": "TOALLAS COCINA",
+    "TOA HIG": "TOALLAS HIGIENICAS",
+    "SERV": "SERVILLETAS",
+    "SERVILL": "SERVILLETAS",
+    "PROT FEM": "PROTECTORES FEMENINOS",
+    # Marcas abreviadas en tickets
+    "FAM": "FAMILIA",
+    "ROSAL30H": "ROSAL 30M",
+    "ROSAL15H": "ROSAL 15M",
+    "ROSALSON": "ROSAL",
+    "SCOTT15": "SCOTT 15M",
+    "SCOTT30": "SCOTT 30M",
+    # Alimentos básicos
+    "ACE VEG": "ACEITE VEGETAL",
+    "ACE VEGT": "ACEITE VEGETAL",
+    "ACE GIR": "ACEITE GIRASOL",
+    "ARR BLCO": "ARROZ BLANCO",
+    "ARR BLC": "ARROZ BLANCO",
+    "AREPA MAI": "AREPA MAIZ",
+    "AREPA MZ": "AREPA MAIZ",
+    "PAN TAJ": "PAN TAJADO",
+    "PAN MOLD": "PAN MOLDE",
+    "HUEV": "HUEVOS",
+    "HVO": "HUEVOS",
+    "HUEVOS ORO AA": "HUEVOS ORO",
+    # Lácteos
+    "LCH ENT": "LECHE ENTERA",
+    "LCH DESLA": "LECHE DESLACTOSADA",
+    "LCH DESC": "LECHE DESCREMADA",
+    "LECH ENT": "LECHE ENTERA",
+    "YOG": "YOGURT",
+    "QUES": "QUESO",
+    "QUESO CAMPES": "QUESO CAMPESINO",
+    "MANT": "MANTEQUILLA",
+    "MARG": "MARGARINA",
+    # Carnes y embutidos
+    "JAMN": "JAMON",
+    "JAM": "JAMON",
+    "SALCH": "SALCHICHA",
+    "SALCHICH": "SALCHICHA",
+    "PECH POL": "PECHUGA POLLO",
+    "CARN MOL": "CARNE MOLIDA",
+    # Bebidas
+    "GAL AGUA": "GALON AGUA",
+    "BEB GASEO": "BEBIDA GASEOSA",
+    "GASEO": "GASEOSA",
+    "JUG NAR": "JUGO NARANJA",
+    "JGO NAR": "JUGO NARANJA",
+    "GATOR": "GATORADE",
+    # Limpieza
+    "JAB LAV": "JABON LAVAPLATOS",
+    "JAB TOC": "JABON TOCADOR",
+    "JAB LIQ": "JABON LIQUIDO",
+    "DET LIQ": "DETERGENTE LIQUIDO",
+    "DET POL": "DETERGENTE POLVO",
+    "LIMP MUL": "LIMPIADOR MULTIUSOS",
+    "LIMP VID": "LIMPIADOR VIDRIOS",
+    "SUAV ROA": "SUAVIZANTE ROPA",
+    "SUAV": "SUAVIZANTE",
+    "BLANQ": "BLANQUEADOR",
+    # Salsas y condimentos
+    "SALSAMEN": "SALSA MAYONESA",
+    "SALSA TOM": "SALSA TOMATE",
+    "SALSA BBQ": "SALSA BARBECUE",
+    "MAYO": "MAYONESA",
+    "KETCH": "KETCHUP",
+    "MOST": "MOSTAZA",
+    # Snacks y dulces
+    "CHOC POL": "CHOCOLATE POLVO",
+    "CHOC TAB": "CHOCOLATE TABLETA",
+    "GAL SAL": "GALLETAS SALADAS",
+    "GAL DUL": "GALLETAS DULCES",
+    "PAP FRI": "PAPAS FRITAS",
+    # Cuidado personal
+    "CREM DENT": "CREMA DENTAL",
+    "CEP DENT": "CEPILLO DENTAL",
+    "DESOD": "DESODORANTE",
+    "SHAMPO": "SHAMPOO",
+    "SHAMP": "SHAMPOO",
+    "ACOND": "ACONDICIONADOR",
+    "CREMA CORP": "CREMA CORPORAL",
+    # Otros
+    "LEV INST": "LEVADURA INSTANTANEA",
+    "HAR TRIG": "HARINA TRIGO",
+    "AZUC": "AZUCAR",
+    "SAL REF": "SAL REFINADA",
+    "CAFE MOL": "CAFE MOLIDO",
+    "CAFE INST": "CAFE INSTANTANEO",
+    # Unidades (corrección OCR)
+    "UHD": "UNIDADES",
+    "UND": "UNIDADES",
+    "UNDS": "UNIDADES",
+    "UNID": "UNIDADES",
+}
+
+# Marcas comunes colombianas (para extraer de nombres OCR)
+MARCAS_CONOCIDAS = {
+    # Papel y aseo
+    "ROSAL",
+    "FAMILIA",
+    "SUAVE",
+    "SCOTT",
+    "ELITE",
+    "TECNOQUIMICAS",
+    "NOSOTRAS",
+    # Alimentos
+    "RAMO",
+    "BIMBO",
+    "COMAPAN",
+    "SANTA CLARA",
+    "ORO",
+    "KIKES",
+    "SANTAREYES",
+    "HUEVOS ORO",
+    "DIANA",
+    "FLORHUILA",
+    "ROA",
+    "ARROZ ROA",
+    "ARROZ DIANA",
+    "DORIA",
+    "PASTAS DORIA",
+    "COMARRICO",
+    "LA MUÑECA",
+    "ALPINA",
+    "COLANTA",
+    "ALQUERIA",
+    "PARMALAT",
+    "ZENÚ",
+    "RICA",
+    "PIETRÁN",
+    "SUIZO",
+    # Bebidas
+    "POSTOBON",
+    "COCA COLA",
+    "PEPSI",
+    "QUATRO",
+    "COLOMBIANA",
+    "HIT",
+    "TAMPICO",
+    "FRUTTO",
+    "DEL VALLE",
+    # Salsas
+    "FRUCO",
+    "RESPIN",
+    "MAGGI",
+    "LA CONSTANCIA",
+    "SAN JORGE",
+    # Limpieza
+    "FAB",
+    "ARIEL",
+    "ACE",
+    "DERSA",
+    "TOP",
+    "VANISH",
+    "AXION",
+    "LAVAPLATOS",
+    "FABULOSO",
+    # Cuidado personal
+    "COLGATE",
+    "FORTIDENT",
+    "KOLYNOS",
+    "ORAL B",
+    "PALMOLIVE",
+    "PROTEX",
+    "DOVE",
+    "REXONA",
+    "AXE",
+    "HEAD SHOULDERS",
+    "SEDAL",
+    "PANTENE",
+    "ELVIVE",
+    # Snacks
+    "MARGARITA",
+    "DE TODITO",
+    "YUPI",
+    "SUPER RICAS",
+    "FESTIVAL",
+    "SALTINAS",
+    "DUCALES",
+    "CLUB SOCIAL",
+    # Otros
+    "NESCAFE",
+    "SELLO ROJO",
+    "AGUILA ROJA",
+    "COLCAFE",
+    "MANUELITA",
+    "INCAUCA",
+    "RIOPAILA",
+}
+
 
 # ============================================================================
 # FUNCIONES DE UTILIDAD
@@ -77,6 +293,113 @@ def limpiar_nombre(nombre: str) -> str:
     nombre = re.sub(r"\s+", " ", nombre)
 
     return nombre.strip()
+
+
+def expandir_abreviaturas(nombre: str) -> str:
+    """
+    Expande abreviaturas comunes en nombres de tickets colombianos.
+    """
+    if not nombre:
+        return ""
+
+    nombre_upper = nombre.upper()
+
+    # Ordenar por longitud descendente para evitar reemplazos parciales
+    abreviaturas_ordenadas = sorted(
+        ABREVIATURAS_COLOMBIA.items(), key=lambda x: len(x[0]), reverse=True
+    )
+
+    for abrev, expansion in abreviaturas_ordenadas:
+        # Buscar la abreviatura como palabra completa
+        patron = r"\b" + re.escape(abrev) + r"\b"
+        nombre_upper = re.sub(patron, expansion, nombre_upper)
+
+    # Limpiar espacios múltiples
+    nombre_upper = re.sub(r"\s+", " ", nombre_upper).strip()
+
+    return nombre_upper
+
+
+def extraer_marca(nombre: str) -> Optional[str]:
+    """
+    Extrae la marca de un nombre de producto si es conocida.
+    """
+    if not nombre:
+        return None
+
+    nombre_upper = nombre.upper()
+
+    # Buscar marcas de más largas a más cortas (para evitar matches parciales)
+    marcas_ordenadas = sorted(MARCAS_CONOCIDAS, key=len, reverse=True)
+
+    for marca in marcas_ordenadas:
+        if marca in nombre_upper:
+            return marca
+
+    return None
+
+
+def extraer_cantidad(nombre: str) -> Optional[str]:
+    """
+    Extrae información de cantidad (ej: 12, X12, 30M, 500G).
+    Retorna solo el número principal.
+    """
+    if not nombre:
+        return None
+
+    nombre_upper = nombre.upper()
+
+    # Buscar patrones como: X12, 12UND, 30M, 500G, 1LT, X12R
+    patrones = [
+        r"X(\d+)[RU]?\b",  # X12, X12R, X12U
+        r"(\d+)\s*UND",  # 12UND, 12 UND
+        r"(\d+)\s*UHD",  # 12UHD (OCR mal leído)
+        r"(\d+)\s*UNID",  # 12UNID
+        r"(\d+)\s*[R]\b",  # 12R (rollos)
+        r"(\d+)\s*GR?\b",  # 500G, 500GR
+        r"(\d+)\s*KG\b",  # 1KG
+        r"(\d+)\s*ML\b",  # 500ML
+        r"(\d+)\s*LT?\b",  # 1L, 1LT
+    ]
+
+    for patron in patrones:
+        match = re.search(patron, nombre_upper)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def extraer_metros(nombre: str) -> Optional[str]:
+    """
+    Extrae metros de papel higiénico/toallas (15M, 30M, etc).
+    Importante para diferenciar variantes de misma marca.
+
+    OCR a veces confunde M→H, así que buscamos ambos.
+    Ejemplo: "ROSAL30H" = "ROSAL 30M"
+    """
+    if not nombre:
+        return None
+
+    nombre_upper = nombre.upper()
+
+    # Patrones para metros (M o H por error OCR)
+    patrones = [
+        r"(\d+)\s*M\b",  # 30M, 15M
+        r"(\d+)\s*H\b",  # 30H, 15H (OCR confunde M→H)
+        r"(\d+)\s*MTS?\b",  # 30MTS, 30MT
+        r"(\d+)\s*METROS?\b",  # 30 METROS
+    ]
+
+    for patron in patrones:
+        match = re.search(patron, nombre_upper)
+        if match:
+            metros = match.group(1)
+            # Solo valores típicos de papel higiénico: 15, 20, 25, 30, 40, 50
+            if metros in ["15", "20", "25", "30", "40", "50"]:
+                return metros
+
+    return None
 
 
 def calcular_similitud(nombre1: str, nombre2: str) -> float:
@@ -218,11 +541,11 @@ def buscar_en_auditoria_por_ean(ean: str, cursor) -> Optional[Dict]:
 
 
 def buscar_en_auditoria_por_nombre(
-    nombre_ocr: str, cursor, umbral: float = 0.55  # ← Bajé de 0.80 a 0.55
+    nombre_ocr: str, cursor, umbral: float = UMBRAL_SIMILITUD_AUDITORIA
 ) -> Optional[Dict]:
     """
     Busca por nombre similar en productos de auditoría.
-    MEJORADO V10.1: Busca primero por palabras clave para reducir candidatos.
+    MEJORADO V10.2: Expande abreviaturas y busca por marca + cantidad.
     """
     if not nombre_ocr or len(nombre_ocr) < 3:
         return None
@@ -230,23 +553,37 @@ def buscar_en_auditoria_por_nombre(
     try:
         nombre_limpio = limpiar_nombre(nombre_ocr)
 
-        # Extraer palabras significativas para búsqueda
+        # PASO 0: Expandir abreviaturas
+        nombre_expandido = expandir_abreviaturas(nombre_limpio)
+        print(f"   🔄 Nombre expandido: {nombre_limpio} → {nombre_expandido}")
+
+        # Extraer marca, cantidad y metros para búsqueda inteligente
+        marca = extraer_marca(nombre_limpio) or extraer_marca(nombre_expandido)
+        cantidad = extraer_cantidad(nombre_limpio)
+        metros = extraer_metros(nombre_limpio) or extraer_metros(nombre_expandido)
+        print(f"   🏷️ Marca: {marca} | Cantidad: {cantidad} | Metros: {metros}")
+
+        # Extraer palabras significativas (del nombre expandido)
         palabras_busqueda = [
             p
-            for p in nombre_limpio.split()
+            for p in nombre_expandido.split()
             if p not in PALABRAS_IGNORAR and len(p) >= 3
         ]
+
+        # Agregar marca si existe y no está en palabras
+        if marca and marca not in palabras_busqueda:
+            palabras_busqueda.insert(0, marca)
 
         print(f"   🔎 Palabras clave: {palabras_busqueda}")
 
         if not palabras_busqueda:
             return None
 
-        # PASO A: Buscar candidatos que contengan AL MENOS una palabra clave
-        condiciones = " OR ".join(
-            ["UPPER(nombre) LIKE %s" for _ in palabras_busqueda[:3]]
-        )
-        parametros = [f"%{p}%" for p in palabras_busqueda[:3]]
+        # PASO A: Buscar candidatos que contengan palabras clave
+        # Usar hasta 4 palabras para la búsqueda
+        palabras_query = palabras_busqueda[:4]
+        condiciones = " OR ".join(["UPPER(nombre) LIKE %s" for _ in palabras_query])
+        parametros = [f"%{p}%" for p in palabras_query]
 
         query = f"""
             SELECT
@@ -268,23 +605,66 @@ def buscar_en_auditoria_por_nombre(
 
         print(f"   🔎 Candidatos encontrados: {len(candidatos)}")
 
-        # PASO B: Calcular similitud entre candidatos
+        # PASO B: Calcular similitud con múltiples estrategias
         mejor_match = None
-        mejor_similitud = 0
+        mejor_score = 0
 
         for row in candidatos:
-            similitud = calcular_similitud(nombre_limpio, row[2])
+            nombre_ref = row[2]
+            nombre_ref_expandido = expandir_abreviaturas(nombre_ref)
 
-            # Bonus si coinciden múltiples palabras clave
-            nombre_ref_upper = row[2].upper()
+            # Similitud 1: Nombre expandido vs nombre expandido
+            sim1 = calcular_similitud(nombre_expandido, nombre_ref_expandido)
+
+            # Similitud 2: Nombre original vs referencia
+            sim2 = calcular_similitud(nombre_limpio, nombre_ref)
+
+            # Similitud 3: Nombre expandido vs referencia original
+            sim3 = calcular_similitud(nombre_expandido, nombre_ref)
+
+            # Tomar la mejor
+            similitud = max(sim1, sim2, sim3)
+
+            # BONUS por coincidencias específicas
+            bonus = 0
+            penalizacion = 0
+
+            # Bonus por marca coincidente
+            marca_ref = extraer_marca(nombre_ref)
+            if marca and marca_ref and marca == marca_ref:
+                bonus += 0.15
+            elif marca and marca_ref and (marca in marca_ref or marca_ref in marca):
+                bonus += 0.10
+            elif marca and marca_ref and marca != marca_ref:
+                # Penalizar si las marcas son diferentes (evita confundir ROSAL con FAMILIA)
+                penalizacion += 0.20
+
+            # Bonus/Penalización por metros (crucial para papel higiénico)
+            metros_ref = extraer_metros(nombre_ref)
+            if metros and metros_ref:
+                if metros == metros_ref:
+                    bonus += 0.15  # Mismo metraje = muy probable que sea el mismo
+                else:
+                    penalizacion += (
+                        0.25  # Diferente metraje = probablemente otro producto
+                    )
+
+            # Bonus por cantidad coincidente
+            cantidad_ref = extraer_cantidad(nombre_ref)
+            if cantidad and cantidad_ref and cantidad == cantidad_ref:
+                bonus += 0.10
+
+            # Bonus por palabras clave que coinciden
+            nombre_ref_upper = nombre_ref.upper()
             palabras_coinciden = sum(
                 1 for p in palabras_busqueda if p in nombre_ref_upper
             )
-            bonus = 0.05 * palabras_coinciden  # +5% por cada palabra que coincide
-            similitud_ajustada = min(1.0, similitud + bonus)
+            bonus += 0.05 * min(palabras_coinciden, 3)  # Máximo +15% por palabras
 
-            if similitud_ajustada > mejor_similitud and similitud_ajustada >= umbral:
-                mejor_similitud = similitud_ajustada
+            score_final = min(1.0, max(0, similitud + bonus - penalizacion))
+
+            if score_final > mejor_score and score_final >= umbral:
+                mejor_score = score_final
                 mejor_match = {
                     "referencia_id": row[0],
                     "codigo_ean": row[1],
@@ -293,14 +673,17 @@ def buscar_en_auditoria_por_nombre(
                     "presentacion": row[4],
                     "categoria": row[5],
                     "validaciones": row[6],
-                    "similitud": similitud_ajustada,
+                    "similitud": score_final,
                     "fuente": "AUDITORIA_NOMBRE",
-                    "confianza": 0.90 * similitud_ajustada,
+                    "confianza": 0.85 * score_final,
                 }
+                print(
+                    f"      📊 {nombre_ref[:35]}: sim={similitud:.0%} +bonus={bonus:.0%} -pen={penalizacion:.0%} = {score_final:.0%}"
+                )
 
         if mejor_match:
             print(
-                f"   📱 [PASO 2] Auditoría por nombre ({mejor_similitud:.0%}): {mejor_match['nombre']}"
+                f"   ✅ [PASO 2] Match encontrado ({mejor_score:.0%}): {mejor_match['nombre']}"
             )
         else:
             print(f"   ❌ No se encontró match >= {umbral:.0%}")
@@ -573,7 +956,7 @@ def buscar_o_crear_producto_inteligente(
                 "confianza": 0.95,
             }
 
-    # Buscar por nombre similar
+    # Buscar por nombre similar (con expansión de abreviaturas)
     auditoria_nombre = buscar_en_auditoria_por_nombre(nombre_limpio, cursor)
     if auditoria_nombre:
         # Crear o actualizar producto con datos de auditoría
@@ -861,11 +1244,18 @@ def crear_producto_ocr(
 # ============================================================================
 
 print("=" * 60)
-print("✅ PRODUCT MATCHER V10.0 CARGADO")
+print("✅ PRODUCT MATCHER V10.3 CARGADO")
+print("   Mejoras:")
+print("   - Expansión de abreviaturas colombianas")
+print("   - Detección de marcas conocidas (FAM→FAMILIA)")
+print("   - Extracción de metros (30M, 15M)")
+print("   - Penalización marca diferente (-20%)")
+print("   - Penalización metros diferentes (-25%)")
+print("   - Umbral: 45% con bonus/penalización")
 print("   Flujo de validación:")
 print("   1. PAPA (100%)")
-print("   2. AUDITORÍA - EAN escaneado (95%)")
-print("   3. WEB + Validación auditoría (80-95%)")
+print("   2. AUDITORÍA - EAN/Nombre (95%)")
+print("   3. WEB + Validación (80-95%)")
 print("   4. CACHE VTEX (70%)")
 print("   5. OCR (50%)")
 print("=" * 60)
