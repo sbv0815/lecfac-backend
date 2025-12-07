@@ -25,7 +25,7 @@ from datetime import datetime
 # ============================================================================
 
 UMBRAL_SIMILITUD_NOMBRE = 0.85  # 85% de similitud para considerar match
-UMBRAL_SIMILITUD_AUDITORIA = 0.80  # 80% para match con auditoría (más permisivo)
+UMBRAL_SIMILITUD_AUDITORIA = 0.55  # 80% para match con auditoría (más permisivo)
 
 PALABRAS_IGNORAR = {
     "DE",
@@ -218,11 +218,11 @@ def buscar_en_auditoria_por_ean(ean: str, cursor) -> Optional[Dict]:
 
 
 def buscar_en_auditoria_por_nombre(
-    nombre_ocr: str, cursor, umbral: float = UMBRAL_SIMILITUD_AUDITORIA
+    nombre_ocr: str, cursor, umbral: float = 0.55  # ← Bajé de 0.80 a 0.55
 ) -> Optional[Dict]:
     """
     Busca por nombre similar en productos de auditoría.
-    Útil cuando el OCR no tiene EAN pero el nombre coincide.
+    MEJORADO V10.1: Busca primero por palabras clave para reducir candidatos.
     """
     if not nombre_ocr or len(nombre_ocr) < 3:
         return None
@@ -230,9 +230,25 @@ def buscar_en_auditoria_por_nombre(
     try:
         nombre_limpio = limpiar_nombre(nombre_ocr)
 
-        # Buscar candidatos
-        cursor.execute(
-            """
+        # Extraer palabras significativas para búsqueda
+        palabras_busqueda = [
+            p
+            for p in nombre_limpio.split()
+            if p not in PALABRAS_IGNORAR and len(p) >= 3
+        ]
+
+        print(f"   🔎 Palabras clave: {palabras_busqueda}")
+
+        if not palabras_busqueda:
+            return None
+
+        # PASO A: Buscar candidatos que contengan AL MENOS una palabra clave
+        condiciones = " OR ".join(
+            ["UPPER(nombre) LIKE %s" for _ in palabras_busqueda[:3]]
+        )
+        parametros = [f"%{p}%" for p in palabras_busqueda[:3]]
+
+        query = f"""
             SELECT
                 id,
                 codigo_ean,
@@ -242,18 +258,33 @@ def buscar_en_auditoria_por_nombre(
                 categoria,
                 validaciones
             FROM productos_referencia_ean
+            WHERE {condiciones}
             ORDER BY validaciones DESC
-            LIMIT 100
+            LIMIT 50
         """
-        )
 
+        cursor.execute(query, parametros)
+        candidatos = cursor.fetchall()
+
+        print(f"   🔎 Candidatos encontrados: {len(candidatos)}")
+
+        # PASO B: Calcular similitud entre candidatos
         mejor_match = None
         mejor_similitud = 0
 
-        for row in cursor.fetchall():
+        for row in candidatos:
             similitud = calcular_similitud(nombre_limpio, row[2])
-            if similitud > mejor_similitud and similitud >= umbral:
-                mejor_similitud = similitud
+
+            # Bonus si coinciden múltiples palabras clave
+            nombre_ref_upper = row[2].upper()
+            palabras_coinciden = sum(
+                1 for p in palabras_busqueda if p in nombre_ref_upper
+            )
+            bonus = 0.05 * palabras_coinciden  # +5% por cada palabra que coincide
+            similitud_ajustada = min(1.0, similitud + bonus)
+
+            if similitud_ajustada > mejor_similitud and similitud_ajustada >= umbral:
+                mejor_similitud = similitud_ajustada
                 mejor_match = {
                     "referencia_id": row[0],
                     "codigo_ean": row[1],
@@ -262,20 +293,25 @@ def buscar_en_auditoria_por_nombre(
                     "presentacion": row[4],
                     "categoria": row[5],
                     "validaciones": row[6],
-                    "similitud": similitud,
+                    "similitud": similitud_ajustada,
                     "fuente": "AUDITORIA_NOMBRE",
-                    "confianza": 0.90 * similitud,
+                    "confianza": 0.90 * similitud_ajustada,
                 }
 
         if mejor_match:
             print(
                 f"   📱 [PASO 2] Auditoría por nombre ({mejor_similitud:.0%}): {mejor_match['nombre']}"
             )
+        else:
+            print(f"   ❌ No se encontró match >= {umbral:.0%}")
 
         return mejor_match
 
     except Exception as e:
         print(f"   ⚠️ Error buscando en auditoría por nombre: {e}")
+        import traceback
+
+        traceback.print_exc()
 
     return None
 
