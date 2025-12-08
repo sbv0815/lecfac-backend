@@ -76,6 +76,7 @@ from auditoria_api_v2 import router as auditoria_router
 from api_listas_compras import router as listas_router
 from inventario import eliminar_item_inventario, limpiar_inventario_usuario
 from api_aprendizaje import router as aprendizaje_router
+from api_reportes import router as reportes_router
 
 
 # ==========================================
@@ -520,6 +521,7 @@ app.include_router(listas_router)
 print("✅ listas_routes registrado")
 
 app.include_router(aprendizaje_router)
+app.include_router(reportes_router)
 
 
 # ==========================================
