@@ -692,8 +692,8 @@ async def descartar_reporte(
             conn.close()
 
 
-@router.get("/api/admin/reportes/{reporte_id}")
-async def detalle_reporte(reporte_id: int):
+@router.get("/api/admin/reportes/estadisticas")
+async def estadisticas_reportes():
     """
     Obtiene estadísticas de los reportes.
     """
