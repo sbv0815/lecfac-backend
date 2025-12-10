@@ -724,8 +724,8 @@
                 <div class="logo-text">LecFac <span>/ Reportes</span></div>
             </div>
             <div class="api-config">
-                <input type="text" id="apiUrl" class="api-input"
-                    placeholder="URL del API (ej: https://tu-app.railway.app)" value="">
+                <input type="text" id="apiUrl" class="api-input" placeholder="URL del API"
+                    value="https://lecfac-backend-production.up.railway.app">
                 <button class="btn btn-primary" onclick="cargarDatos()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path
@@ -901,11 +901,15 @@
 
         // Inicialización
         document.addEventListener('DOMContentLoaded', () => {
-            // Intentar cargar URL guardada
+            // Usar URL por defecto o guardada
             const savedUrl = localStorage.getItem('lecfac_api_url');
             if (savedUrl) {
                 document.getElementById('apiUrl').value = savedUrl;
-                API_URL = savedUrl;
+            }
+            API_URL = document.getElementById('apiUrl').value.trim();
+
+            // Auto-cargar si hay URL
+            if (API_URL) {
                 cargarDatos();
             }
         });
@@ -938,10 +942,13 @@
                 const response = await fetch(`${API_URL}/api/admin/reportes/estadisticas`);
                 const data = await response.json();
 
-                document.getElementById('statPendientes').textContent = data.pendientes || 0;
-                document.getElementById('statRevision').textContent = data.en_revision || 0;
-                document.getElementById('statResueltos').textContent = data.resueltos_hoy || 0;
-                document.getElementById('statAprendizaje').textContent = data.con_aprendizaje || 0;
+                // El API devuelve { success, estadisticas: {...} }
+                const stats = data.estadisticas || data;
+
+                document.getElementById('statPendientes').textContent = stats.pendientes || 0;
+                document.getElementById('statRevision').textContent = stats.en_revision || 0;
+                document.getElementById('statResueltos').textContent = stats.resueltos_7_dias || 0;
+                document.getElementById('statAprendizaje').textContent = stats.con_aprendizaje || 0;
             } catch (error) {
                 console.error('Error cargando estadísticas:', error);
             }
@@ -954,11 +961,17 @@
 
             let url = `${API_URL}/api/admin/reportes?`;
             if (estado) url += `estado=${estado}&`;
-            if (prioridad) url += `prioridad=${prioridad}&`;
+            if (prioridad) {
+                const prioridadNum = { alta: 3, media: 2, baja: 1 }[prioridad] || '';
+                if (prioridadNum) url += `prioridad=${prioridadNum}&`;
+            }
 
             try {
                 const response = await fetch(url);
-                reportesData = await response.json();
+                const data = await response.json();
+
+                // El API devuelve { success, reportes: [...], total }
+                reportesData = data.reportes || data || [];
                 renderizarReportes();
             } catch (error) {
                 console.error('Error cargando reportes:', error);
@@ -1006,19 +1019,26 @@
                 return;
             }
 
-            tbody.innerHTML = reportesFiltrados.map(r => `
+            tbody.innerHTML = reportesFiltrados.map(r => {
+                // Mapear prioridad numérica a texto
+                const prioridadMap = { 1: 'low', 2: 'medium', 3: 'high' };
+                const prioridadTexto = { 1: 'Baja', 2: 'Media', 3: 'Alta' };
+                const prioridadClass = prioridadMap[r.prioridad] || 'low';
+                const prioridadLabel = prioridadTexto[r.prioridad] || 'Baja';
+
+                return `
                 <tr>
                     <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">#${r.id}</td>
                     <td>
                         <div class="product-name">
-                            ${r.nombre_producto || 'Sin nombre'}
+                            ${r.nombre_actual || r.nombre_producto || 'Sin nombre'}
                             ${r.nombre_sugerido ? `<small>💡 Sugerido: ${r.nombre_sugerido}</small>` : ''}
                         </div>
                     </td>
                     <td><span class="tipo-problema">${formatTipo(r.tipo_problema)}</span></td>
                     <td><span class="badge badge-${getEstadoClass(r.estado)}">${r.estado}</span></td>
-                    <td><span class="badge badge-${r.prioridad}">${r.prioridad}</span></td>
-                    <td class="fecha">${formatFecha(r.created_at)}</td>
+                    <td><span class="badge badge-${prioridadClass}">${prioridadLabel}</span></td>
+                    <td class="fecha">${formatFecha(r.fecha_creacion || r.created_at)}</td>
                     <td class="actions">
                         <button class="btn btn-secondary btn-sm" onclick="verDetalle(${r.id})">Ver</button>
                         ${r.estado === 'pendiente' ? `
@@ -1026,22 +1046,31 @@
                         ` : ''}
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         // Ver detalle del reporte
         async function verDetalle(id) {
             try {
                 const response = await fetch(`${API_URL}/api/admin/reportes/${id}`);
-                reporteActual = await response.json();
+                const data = await response.json();
+
+                // El API devuelve { success, reporte: {...} }
+                reporteActual = data.reporte || data;
+
+                // Mapear prioridad numérica a texto
+                const prioridadMap = { 1: 'low', 2: 'medium', 3: 'high' };
+                const prioridadTexto = { 1: 'Baja', 2: 'Media', 3: 'Alta' };
+                const prioridadClass = prioridadMap[reporteActual.prioridad] || 'low';
+                const prioridadLabel = prioridadTexto[reporteActual.prioridad] || 'Baja';
 
                 document.getElementById('modalReporteId').textContent = id;
-                document.getElementById('modalProducto').textContent = reporteActual.nombre_producto || 'Sin nombre';
+                document.getElementById('modalProducto').textContent = reporteActual.nombre_actual || reporteActual.nombre_producto || 'Sin nombre';
                 document.getElementById('modalTipo').textContent = formatTipo(reporteActual.tipo_problema);
                 document.getElementById('modalDescripcion').textContent = reporteActual.descripcion || 'Sin descripción';
                 document.getElementById('modalSugerido').textContent = reporteActual.nombre_sugerido || 'No proporcionado';
                 document.getElementById('modalEstado').innerHTML = `<span class="badge badge-${getEstadoClass(reporteActual.estado)}">${reporteActual.estado}</span>`;
-                document.getElementById('modalPrioridad').innerHTML = `<span class="badge badge-${reporteActual.prioridad}">${reporteActual.prioridad}</span>`;
+                document.getElementById('modalPrioridad').innerHTML = `<span class="badge badge-${prioridadClass}">${prioridadLabel}</span>`;
 
                 // Limpiar búsqueda anterior
                 document.getElementById('searchProducto').value = reporteActual.nombre_sugerido || '';
@@ -1076,11 +1105,28 @@
             }
 
             try {
+                // Intentar endpoint de búsqueda
                 const response = await fetch(`${API_URL}/api/productos/buscar?q=${encodeURIComponent(query)}&limit=10`);
-                const productos = await response.json();
-                mostrarResultadosBusqueda(productos);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const productos = data.productos || data;
+                    mostrarResultadosBusqueda(productos);
+                } else {
+                    // Si no existe el endpoint, mostrar mensaje
+                    document.getElementById('searchResults').innerHTML = `
+                        <div style="padding: 1rem; color: var(--text-muted); text-align: center;">
+                            Usa los productos sugeridos arriba o agrega el endpoint /api/productos/buscar
+                        </div>`;
+                    document.getElementById('searchResults').style.display = 'block';
+                }
             } catch (error) {
                 console.error('Error buscando productos:', error);
+                document.getElementById('searchResults').innerHTML = `
+                    <div style="padding: 1rem; color: var(--text-muted); text-align: center;">
+                        Error buscando productos
+                    </div>`;
+                document.getElementById('searchResults').style.display = 'block';
             }
         }
 
@@ -1132,18 +1178,25 @@
             if (!reporteActual) return;
 
             try {
-                const response = await fetch(`${API_URL}/api/admin/reportes/${reporteActual.id}/resolver`, {
+                // admin_id=1 por defecto (puedes cambiarlo o agregar login)
+                const response = await fetch(`${API_URL}/api/admin/reportes/${reporteActual.id}/resolver?admin_id=1`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        producto_correcto_id: parseInt(productoId)
+                        producto_correcto_id: parseInt(productoId),
+                        notas: 'Resuelto desde panel admin'
                     })
                 });
 
                 const result = await response.json();
 
                 if (result.success || response.ok) {
-                    showToast('✅ Reporte resuelto y aprendizaje aplicado', 'success');
+                    let mensaje = '✅ Reporte resuelto';
+                    if (result.aprendizaje_aplicado) mensaje += ' y aprendizaje aplicado';
+                    if (result.reportes_similares_cerrados > 0) {
+                        mensaje += ` (${result.reportes_similares_cerrados} similares cerrados)`;
+                    }
+                    showToast(mensaje, 'success');
                     cerrarModal();
                     cargarDatos();
                 } else {
@@ -1159,13 +1212,18 @@
         async function descartarReporte() {
             if (!reporteActual) return;
 
-            const motivo = prompt('Motivo del descarte (opcional):');
+            const razon = prompt('Motivo del descarte (requerido):');
+            if (!razon) {
+                showToast('Debes indicar un motivo', 'error');
+                return;
+            }
 
             try {
-                const response = await fetch(`${API_URL}/api/admin/reportes/${reporteActual.id}/descartar`, {
+                // admin_id=1 por defecto
+                const response = await fetch(`${API_URL}/api/admin/reportes/${reporteActual.id}/descartar?admin_id=1`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ motivo: motivo || 'Descartado por admin' })
+                    body: JSON.stringify({ razon: razon })
                 });
 
                 const result = await response.json();
