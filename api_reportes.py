@@ -753,11 +753,91 @@ async def estadisticas_reportes():
 
 
 # =============================================================================
-# INTEGRACIÓN CON MAIN.PY
+# AGREGAR ESTE ENDPOINT A api_reportes.py (al final, antes del comentario de integración)
 # =============================================================================
-"""
-Para agregar estos endpoints a tu main.py:
 
-from api_reportes import router as reportes_router
-app.include_router(reportes_router)
-"""
+
+@router.get("/api/productos/buscar")
+async def buscar_productos(
+    q: str = Query(..., min_length=2, description="Texto a buscar"),
+    limit: int = Query(10, le=50),
+):
+    """
+    Busca productos por nombre, EAN o PLU para el panel de administración.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Normalizar búsqueda
+        busqueda = q.upper().strip()
+
+        # Buscar por código exacto primero
+        cursor.execute(
+            """
+            SELECT id, nombre_consolidado, codigo_ean, marca, categoria
+            FROM productos_maestros_v2
+            WHERE codigo_ean = %s OR codigo_plu = %s
+            LIMIT 1
+        """,
+            (busqueda, busqueda),
+        )
+
+        resultado_exacto = cursor.fetchone()
+        if resultado_exacto:
+            return {
+                "success": True,
+                "productos": [
+                    {
+                        "id": resultado_exacto[0],
+                        "nombre": resultado_exacto[1],
+                        "ean": resultado_exacto[2],
+                        "marca": resultado_exacto[3],
+                        "categoria": resultado_exacto[4],
+                    }
+                ],
+            }
+
+        # Buscar por nombre (palabras parciales)
+        palabras = [p for p in busqueda.split() if len(p) >= 2][:4]
+
+        if not palabras:
+            return {"success": True, "productos": []}
+
+        # Construir condiciones LIKE
+        condiciones = " AND ".join(
+            ["UPPER(nombre_consolidado) LIKE %s" for _ in palabras]
+        )
+        params = [f"%{p}%" for p in palabras]
+
+        cursor.execute(
+            f"""
+            SELECT id, nombre_consolidado, codigo_ean, marca, categoria
+            FROM productos_maestros_v2
+            WHERE {condiciones}
+            ORDER BY veces_visto DESC NULLS LAST, nombre_consolidado
+            LIMIT %s
+        """,
+            params + [limit],
+        )
+
+        productos = []
+        for row in cursor.fetchall():
+            productos.append(
+                {
+                    "id": row[0],
+                    "nombre": row[1],
+                    "ean": row[2],
+                    "marca": row[3],
+                    "categoria": row[4],
+                }
+            )
+
+        return {"success": True, "productos": productos, "total": len(productos)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()

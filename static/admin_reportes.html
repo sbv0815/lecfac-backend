@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LecFac Admin - Reportes de Productos</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0b;
+            --bg-secondary: #141416;
+            --bg-tertiary: #1c1c1f;
+            --bg-hover: #242428;
+            --border-color: #2a2a2e;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1a6;
+            --text-muted: #636366;
+            --accent-orange: #f97316;
+            --accent-orange-dim: #f9731620;
+            --accent-green: #22c55e;
+            --accent-green-dim: #22c55e20;
+            --accent-red: #ef4444;
+            --accent-red-dim: #ef444420;
+            --accent-blue: #3b82f6;
+            --accent-blue-dim: #3b82f620;
+            --accent-yellow: #eab308;
+            --accent-yellow-dim: #eab30820;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-orange), #fb923c);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .logo-text {
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        .logo-text span {
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .api-config {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .api-input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.5rem 1rem;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            width: 320px;
+            transition: border-color 0.2s;
+        }
+
+        .api-input:focus {
+            outline: none;
+            border-color: var(--accent-orange);
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            border: none;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--accent-orange);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #ea580c;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+        }
+
+        .btn-success {
+            background: var(--accent-green);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #16a34a;
+        }
+
+        .btn-danger {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        /* Main Layout */
+        .main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 1.25rem;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-orange);
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .stat-value.orange {
+            color: var(--accent-orange);
+        }
+
+        .stat-value.green {
+            color: var(--accent-green);
+        }
+
+        .stat-value.blue {
+            color: var(--accent-blue);
+        }
+
+        .stat-value.yellow {
+            color: var(--accent-yellow);
+        }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem 0.75rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--accent-orange);
+        }
+
+        /* Reports Table */
+        .reports-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .reports-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .reports-title {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .reports-title::before {
+            content: '🚩';
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem 1.5rem;
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: middle;
+        }
+
+        tr:hover td {
+            background: var(--bg-tertiary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .product-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            max-width: 250px;
+        }
+
+        .product-name small {
+            display: block;
+            color: var(--text-muted);
+            font-weight: 400;
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-pending {
+            background: var(--accent-orange-dim);
+            color: var(--accent-orange);
+        }
+
+        .badge-review {
+            background: var(--accent-blue-dim);
+            color: var(--accent-blue);
+        }
+
+        .badge-resolved {
+            background: var(--accent-green-dim);
+            color: var(--accent-green);
+        }
+
+        .badge-discarded {
+            background: var(--accent-red-dim);
+            color: var(--accent-red);
+        }
+
+        .badge-high {
+            background: var(--accent-red-dim);
+            color: var(--accent-red);
+        }
+
+        .badge-medium {
+            background: var(--accent-yellow-dim);
+            color: var(--accent-yellow);
+        }
+
+        .badge-low {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+        }
+
+        .tipo-problema {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .fecha {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-sm {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            width: 90%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow: hidden;
+            transform: translateY(20px);
+            transition: transform 0.3s;
+        }
+
+        .modal-overlay.active .modal {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.25rem;
+            line-height: 1;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+            max-height: calc(85vh - 140px);
+        }
+
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+
+        /* Detail Sections */
+        .detail-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .detail-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .detail-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .detail-value {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 1rem;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        /* Product Search */
+        .search-section {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .search-box {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .search-input {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-orange);
+        }
+
+        .search-results {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+        }
+
+        .search-result-item {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-result-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .search-result-item.selected {
+            background: var(--accent-orange-dim);
+            border-left: 3px solid var(--accent-orange);
+        }
+
+        .search-result-name {
+            font-weight: 500;
+        }
+
+        .search-result-name small {
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .search-result-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-orange);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+            animation: slideIn 0.3s ease;
+            min-width: 300px;
+        }
+
+        .toast.success {
+            border-left: 3px solid var(--accent-green);
+        }
+
+        .toast.error {
+            border-left: 3px solid var(--accent-red);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .api-input {
+                width: 200px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .api-config {
+                width: 100%;
+            }
+
+            .api-input {
+                flex: 1;
+            }
+
+            .filters {
+                flex-direction: column;
+            }
+
+            td,
+            th {
+                padding: 0.75rem;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">L</div>
+                <div class="logo-text">LecFac <span>/ Reportes</span></div>
+            </div>
+            <div class="api-config">
+                <input type="text" id="apiUrl" class="api-input"
+                    placeholder="URL del API (ej: https://tu-app.railway.app)" value="">
+                <button class="btn btn-primary" onclick="cargarDatos()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                    </svg>
+                    Cargar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Pendientes</div>
+                <div class="stat-value orange" id="statPendientes">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">En Revisión</div>
+                <div class="stat-value blue" id="statRevision">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Resueltos (Hoy)</div>
+                <div class="stat-value green" id="statResueltos">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Con Aprendizaje</div>
+                <div class="stat-value yellow" id="statAprendizaje">-</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filter-group">
+                <span class="filter-label">Estado:</span>
+                <select id="filtroEstado" onchange="filtrarReportes()">
+                    <option value="">Todos</option>
+                    <option value="pendiente" selected>Pendiente</option>
+                    <option value="en_revision">En Revisión</option>
+                    <option value="corregido">Corregido</option>
+                    <option value="descartado">Descartado</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Prioridad:</span>
+                <select id="filtroPrioridad" onchange="filtrarReportes()">
+                    <option value="">Todas</option>
+                    <option value="alta">Alta</option>
+                    <option value="media">Media</option>
+                    <option value="baja">Baja</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Tipo:</span>
+                <select id="filtroTipo" onchange="filtrarReportes()">
+                    <option value="">Todos</option>
+                    <option value="nombre_incorrecto">Nombre Incorrecto</option>
+                    <option value="producto_equivocado">Producto Equivocado</option>
+                    <option value="duplicado">Duplicado</option>
+                    <option value="otro">Otro</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Reports Table -->
+        <div class="reports-container">
+            <div class="reports-header">
+                <div class="reports-title">Reportes de Usuarios</div>
+                <span id="reportCount" style="color: var(--text-muted); font-size: 0.9rem;">0 reportes</span>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Producto Reportado</th>
+                            <th>Tipo</th>
+                            <th>Estado</th>
+                            <th>Prioridad</th>
+                            <th>Fecha</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportesBody">
+                        <tr>
+                            <td colspan="7">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📋</div>
+                                    <p>Configura la URL del API y haz clic en "Cargar"</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Detalle -->
+    <div class="modal-overlay" id="modalDetalle">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">📝 Detalle del Reporte #<span id="modalReporteId"></span></div>
+                <button class="modal-close" onclick="cerrarModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-grid">
+                    <div class="detail-section">
+                        <div class="detail-label">Producto Reportado</div>
+                        <div class="detail-value" id="modalProducto">-</div>
+                    </div>
+                    <div class="detail-section">
+                        <div class="detail-label">Tipo de Problema</div>
+                        <div class="detail-value" id="modalTipo">-</div>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Descripción del Usuario</div>
+                    <div class="detail-value" id="modalDescripcion">Sin descripción</div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Nombre Sugerido por Usuario</div>
+                    <div class="detail-value" id="modalSugerido">No proporcionado</div>
+                </div>
+
+                <div class="detail-grid">
+                    <div class="detail-section">
+                        <div class="detail-label">Estado Actual</div>
+                        <div class="detail-value" id="modalEstado">-</div>
+                    </div>
+                    <div class="detail-section">
+                        <div class="detail-label">Prioridad</div>
+                        <div class="detail-value" id="modalPrioridad">-</div>
+                    </div>
+                </div>
+
+                <!-- Búsqueda de Producto Correcto -->
+                <div class="search-section">
+                    <div class="detail-label">🔍 Buscar Producto Correcto</div>
+                    <div class="search-box">
+                        <input type="text" id="searchProducto" class="search-input"
+                            placeholder="Buscar por nombre, EAN o PLU..." onkeyup="buscarProductos()">
+                        <button class="btn btn-secondary" onclick="buscarProductos()">Buscar</button>
+                    </div>
+                    <div class="search-results" id="searchResults" style="display: none;">
+                        <!-- Resultados dinámicos -->
+                    </div>
+                    <input type="hidden" id="productoSeleccionadoId">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+                <button class="btn btn-danger" onclick="descartarReporte()">Descartar</button>
+                <button class="btn btn-success" onclick="resolverReporte()" id="btnResolver">
+                    ✓ Resolver y Aplicar Aprendizaje
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // Estado global
+        let reportesData = [];
+        let reporteActual = null;
+        let API_URL = '';
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', () => {
+            // Intentar cargar URL guardada
+            const savedUrl = localStorage.getItem('lecfac_api_url');
+            if (savedUrl) {
+                document.getElementById('apiUrl').value = savedUrl;
+                API_URL = savedUrl;
+                cargarDatos();
+            }
+        });
+
+        // Cargar datos del API
+        async function cargarDatos() {
+            API_URL = document.getElementById('apiUrl').value.trim();
+            if (!API_URL) {
+                showToast('Por favor ingresa la URL del API', 'error');
+                return;
+            }
+
+            // Guardar URL
+            localStorage.setItem('lecfac_api_url', API_URL);
+
+            try {
+                // Cargar estadísticas
+                await cargarEstadisticas();
+                // Cargar reportes
+                await cargarReportes();
+            } catch (error) {
+                console.error('Error cargando datos:', error);
+                showToast('Error conectando con el API', 'error');
+            }
+        }
+
+        // Cargar estadísticas
+        async function cargarEstadisticas() {
+            try {
+                const response = await fetch(`${API_URL}/api/admin/reportes/estadisticas`);
+                const data = await response.json();
+
+                document.getElementById('statPendientes').textContent = data.pendientes || 0;
+                document.getElementById('statRevision').textContent = data.en_revision || 0;
+                document.getElementById('statResueltos').textContent = data.resueltos_hoy || 0;
+                document.getElementById('statAprendizaje').textContent = data.con_aprendizaje || 0;
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+
+        // Cargar reportes
+        async function cargarReportes() {
+            const estado = document.getElementById('filtroEstado').value;
+            const prioridad = document.getElementById('filtroPrioridad').value;
+
+            let url = `${API_URL}/api/admin/reportes?`;
+            if (estado) url += `estado=${estado}&`;
+            if (prioridad) url += `prioridad=${prioridad}&`;
+
+            try {
+                const response = await fetch(url);
+                reportesData = await response.json();
+                renderizarReportes();
+            } catch (error) {
+                console.error('Error cargando reportes:', error);
+                document.getElementById('reportesBody').innerHTML = `
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">⚠️</div>
+                                <p>Error cargando reportes. Verifica la URL del API.</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Filtrar reportes
+        function filtrarReportes() {
+            cargarReportes();
+        }
+
+        // Renderizar tabla de reportes
+        function renderizarReportes() {
+            const tbody = document.getElementById('reportesBody');
+            const tipo = document.getElementById('filtroTipo').value;
+
+            let reportesFiltrados = reportesData;
+            if (tipo) {
+                reportesFiltrados = reportesData.filter(r => r.tipo_problema === tipo);
+            }
+
+            document.getElementById('reportCount').textContent = `${reportesFiltrados.length} reportes`;
+
+            if (reportesFiltrados.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">✨</div>
+                                <p>No hay reportes con estos filtros</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = reportesFiltrados.map(r => `
+                <tr>
+                    <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">#${r.id}</td>
+                    <td>
+                        <div class="product-name">
+                            ${r.nombre_producto || 'Sin nombre'}
+                            ${r.nombre_sugerido ? `<small>💡 Sugerido: ${r.nombre_sugerido}</small>` : ''}
+                        </div>
+                    </td>
+                    <td><span class="tipo-problema">${formatTipo(r.tipo_problema)}</span></td>
+                    <td><span class="badge badge-${getEstadoClass(r.estado)}">${r.estado}</span></td>
+                    <td><span class="badge badge-${r.prioridad}">${r.prioridad}</span></td>
+                    <td class="fecha">${formatFecha(r.created_at)}</td>
+                    <td class="actions">
+                        <button class="btn btn-secondary btn-sm" onclick="verDetalle(${r.id})">Ver</button>
+                        ${r.estado === 'pendiente' ? `
+                            <button class="btn btn-success btn-sm" onclick="verDetalle(${r.id})">Resolver</button>
+                        ` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Ver detalle del reporte
+        async function verDetalle(id) {
+            try {
+                const response = await fetch(`${API_URL}/api/admin/reportes/${id}`);
+                reporteActual = await response.json();
+
+                document.getElementById('modalReporteId').textContent = id;
+                document.getElementById('modalProducto').textContent = reporteActual.nombre_producto || 'Sin nombre';
+                document.getElementById('modalTipo').textContent = formatTipo(reporteActual.tipo_problema);
+                document.getElementById('modalDescripcion').textContent = reporteActual.descripcion || 'Sin descripción';
+                document.getElementById('modalSugerido').textContent = reporteActual.nombre_sugerido || 'No proporcionado';
+                document.getElementById('modalEstado').innerHTML = `<span class="badge badge-${getEstadoClass(reporteActual.estado)}">${reporteActual.estado}</span>`;
+                document.getElementById('modalPrioridad').innerHTML = `<span class="badge badge-${reporteActual.prioridad}">${reporteActual.prioridad}</span>`;
+
+                // Limpiar búsqueda anterior
+                document.getElementById('searchProducto').value = reporteActual.nombre_sugerido || '';
+                document.getElementById('searchResults').style.display = 'none';
+                document.getElementById('productoSeleccionadoId').value = '';
+
+                // Si hay productos sugeridos, mostrarlos
+                if (reporteActual.productos_sugeridos && reporteActual.productos_sugeridos.length > 0) {
+                    mostrarResultadosBusqueda(reporteActual.productos_sugeridos);
+                }
+
+                // Mostrar modal
+                document.getElementById('modalDetalle').classList.add('active');
+            } catch (error) {
+                console.error('Error cargando detalle:', error);
+                showToast('Error cargando detalle del reporte', 'error');
+            }
+        }
+
+        // Cerrar modal
+        function cerrarModal() {
+            document.getElementById('modalDetalle').classList.remove('active');
+            reporteActual = null;
+        }
+
+        // Buscar productos
+        async function buscarProductos() {
+            const query = document.getElementById('searchProducto').value.trim();
+            if (query.length < 2) {
+                document.getElementById('searchResults').style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/productos/buscar?q=${encodeURIComponent(query)}&limit=10`);
+                const productos = await response.json();
+                mostrarResultadosBusqueda(productos);
+            } catch (error) {
+                console.error('Error buscando productos:', error);
+            }
+        }
+
+        // Mostrar resultados de búsqueda
+        function mostrarResultadosBusqueda(productos) {
+            const container = document.getElementById('searchResults');
+
+            if (!productos || productos.length === 0) {
+                container.innerHTML = '<div style="padding: 1rem; color: var(--text-muted); text-align: center;">No se encontraron productos</div>';
+                container.style.display = 'block';
+                return;
+            }
+
+            container.innerHTML = productos.map(p => `
+                <div class="search-result-item" onclick="seleccionarProducto(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}')">
+                    <div class="search-result-name">
+                        ${p.nombre || 'Sin nombre'}
+                        <small>${p.marca || ''}</small>
+                    </div>
+                    <span class="search-result-code">${p.ean || p.plu || ''}</span>
+                </div>
+            `).join('');
+
+            container.style.display = 'block';
+        }
+
+        // Seleccionar producto
+        function seleccionarProducto(id, nombre) {
+            document.getElementById('productoSeleccionadoId').value = id;
+
+            // Marcar como seleccionado visualmente
+            document.querySelectorAll('.search-result-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+
+            showToast(`Producto seleccionado: ${nombre}`, 'success');
+        }
+
+        // Resolver reporte
+        async function resolverReporte() {
+            const productoId = document.getElementById('productoSeleccionadoId').value;
+
+            if (!productoId) {
+                showToast('Selecciona un producto correcto primero', 'error');
+                return;
+            }
+
+            if (!reporteActual) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/admin/reportes/${reporteActual.id}/resolver`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        producto_correcto_id: parseInt(productoId)
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success || response.ok) {
+                    showToast('✅ Reporte resuelto y aprendizaje aplicado', 'success');
+                    cerrarModal();
+                    cargarDatos();
+                } else {
+                    showToast(result.detail || 'Error resolviendo reporte', 'error');
+                }
+            } catch (error) {
+                console.error('Error resolviendo:', error);
+                showToast('Error de conexión', 'error');
+            }
+        }
+
+        // Descartar reporte
+        async function descartarReporte() {
+            if (!reporteActual) return;
+
+            const motivo = prompt('Motivo del descarte (opcional):');
+
+            try {
+                const response = await fetch(`${API_URL}/api/admin/reportes/${reporteActual.id}/descartar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ motivo: motivo || 'Descartado por admin' })
+                });
+
+                const result = await response.json();
+
+                if (result.success || response.ok) {
+                    showToast('Reporte descartado', 'success');
+                    cerrarModal();
+                    cargarDatos();
+                } else {
+                    showToast(result.detail || 'Error descartando reporte', 'error');
+                }
+            } catch (error) {
+                console.error('Error descartando:', error);
+                showToast('Error de conexión', 'error');
+            }
+        }
+
+        // Helpers
+        function formatTipo(tipo) {
+            const tipos = {
+                'nombre_incorrecto': '📝 Nombre incorrecto',
+                'producto_equivocado': '❌ Producto equivocado',
+                'duplicado': '👯 Duplicado',
+                'precio_mal': '💰 Precio mal',
+                'otro': '❓ Otro'
+            };
+            return tipos[tipo] || tipo;
+        }
+
+        function getEstadoClass(estado) {
+            const clases = {
+                'pendiente': 'pending',
+                'en_revision': 'review',
+                'corregido': 'resolved',
+                'descartado': 'discarded'
+            };
+            return clases[estado] || 'pending';
+        }
+
+        function formatFecha(fecha) {
+            if (!fecha) return '-';
+            const d = new Date(fecha);
+            return d.toLocaleDateString('es-CO', {
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '✓' : '⚠'}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Cerrar modal con Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') cerrarModal();
+        });
+
+        // Cerrar modal clickeando fuera
+        document.getElementById('modalDetalle').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) cerrarModal();
+        });
+    </script>
+</body>
+
+</html>
